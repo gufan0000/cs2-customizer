@@ -10,6 +10,10 @@
 # Linux 的 2 倍。`on: pull_request` 只要没有门槛,任何陌生人开一个 PR 就能
 # 在仓库主人的额度下起两台 Windows 机器——这是公开仓库最常见的算力滥用形态。
 # 下面的分支/路径限制只能减少"顺手触发",**真正的闸门在仓库设置里**:
+# ⚠ 触发分支必须与仓库默认分支一致。开源化时默认分支定为 main,
+# 而这里一度还写着 master —— workflow 语法完全合法、文件也不会报错,
+# 只是**永远不会被触发**:CI 从不运行,README 的徽章恒显示 "no status",
+# 而"看起来有 CI"比"没有 CI"更糟。改分支名时记得回来改这里。
 #   Settings → Actions → General → Fork pull request workflows
 #   → 勾选 "Require approval for all outside collaborators"(建议)
 #      或 "Require approval for all external contributors"(更严)
@@ -19,9 +23,9 @@ name: ci
 
 on:
   push:
-    branches: [master]
+    branches: [main]
   pull_request:
-    branches: [master]
+    branches: [main]
     # 纯文档改动不值得起两台 Windows runner。
     # ⚠ 如果把 ci 设成 master 的 required status check,这里的 paths-ignore
     # 会让"只改文档"的 PR 永远等不到那个检查而卡住合并——真要设必选检查时,
