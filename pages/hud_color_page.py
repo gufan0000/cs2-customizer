@@ -210,7 +210,7 @@ class HudColorPage(QWidget):
 
         key_card, key_card_layout = SettingsCard.make(
             "数字键颜色映射",
-            "这一组会写进 fanpai.cfg，软件关闭后依然可用，适合放最常按的道具或武器切换颜色。", spacing=10
+            "这一组会写进 cs2customizer.cfg，软件关闭后依然可用，适合放最常按的道具或武器切换颜色。", spacing=10
         )
         key_layout = QGridLayout()
         key_layout.setContentsMargins(8, 6, 8, 6)
@@ -351,7 +351,7 @@ class HudColorPage(QWidget):
             return
 
         if not getattr(config, "csgo_dir", ""):
-            self.context_hint_label.setText("当前还没配置 CS2 目录，规则可以先保存到软件配置，但暂时不会写出 fanpai.cfg。")
+            self.context_hint_label.setText("当前还没配置 CS2 目录，规则可以先保存到软件配置，但暂时不会写出 cs2customizer.cfg。")
             self.context_hint_label.show()
             return
 
@@ -533,9 +533,9 @@ class HudColorPage(QWidget):
                 QMessageBox.warning(self, "提示", "规则已保存到软件配置，请先在高级设置中配置 CS2 目录后再写入 CFG。")
                 return True
 
-            from core.cfg_compiler import write_fanpai_cfg
+            from core.cfg_compiler import write_cs2customizer_cfg
 
-            warnings = write_fanpai_cfg(config)
+            warnings = write_cs2customizer_cfg(config)
             if warnings:
                 from ui_toast import toast_warning
 
@@ -555,9 +555,9 @@ class HudColorPage(QWidget):
                     self,
                     "保存成功",
                     "HUD 规则已保存。\n\n"
-                    f"fanpai.cfg: {cfg_path}\n"
-                    f"fanpai_hud_runtime.cfg: {runtime_cfg_path}\n\n"
-                    "游戏内执行: exec fanpai.cfg",
+                    f"cs2customizer.cfg: {cfg_path}\n"
+                    f"cs2customizer_hud_runtime.cfg: {runtime_cfg_path}\n\n"
+                    "游戏内执行: exec cs2customizer.cfg",
                 )
             self.logger.info("HUD统一规则保存完成")
             return True

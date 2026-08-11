@@ -355,8 +355,8 @@ def test_hotkey_result_is_reported_to_user():
 
 @pytest.fixture()
 def preset_home(monkeypatch):
-    """把预设目录指到临时位置，绝不碰用户真实的 %APPDATA%/FanTool/presets。"""
-    tmp = tempfile.mkdtemp(prefix="fanpai_mypreset_")
+    """把预设目录指到临时位置，绝不碰用户真实的 %APPDATA%/CS2Customizer/presets。"""
+    tmp = tempfile.mkdtemp(prefix="cs2customizer_mypreset_")
     import core.presets.my_presets as mp
 
     monkeypatch.setattr(mp, "presets_dir", lambda: tmp)

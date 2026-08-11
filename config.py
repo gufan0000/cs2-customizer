@@ -22,7 +22,7 @@ from core.gun_sound_profiles import (
 )
 
 # 应用程序信息
-APP_NAME = "FanTool"
+APP_NAME = "CS2Customizer"
 CONFIG_FILENAME = "config.json"
 VERSION = "2.2.2"
 
@@ -141,9 +141,9 @@ def normalize_gun_sound_hold_duration(value, fallback):
 
 def get_config_dir():
     """获取配置文件目录"""
-    # 测试隔离 / 自定义部署：允许用 FANPAI_CONFIG_DIR 覆盖配置目录，
-    # 避免在真实机器上跑测试时把夹具值写进用户的 %LOCALAPPDATA%\FanTool\config.json。
-    override_dir = os.environ.get('FANPAI_CONFIG_DIR')
+    # 测试隔离 / 自定义部署：允许用 CS2C_CONFIG_DIR 覆盖配置目录，
+    # 避免在真实机器上跑测试时把夹具值写进用户的 %LOCALAPPDATA%\CS2Customizer\config.json。
+    override_dir = os.environ.get('CS2C_CONFIG_DIR')
     if override_dir:
         os.makedirs(override_dir, exist_ok=True)
         return override_dir
@@ -771,7 +771,7 @@ class Config:
         """迁移旧目录中的配置文件（如果存在）。
 
         这条迁移是给**源码运行 / 老版本就地升级**用的：早年配置存在程序目录旁，
-        后来改存 `%LOCALAPPDATA%\\FanTool\\`，所以启动时把旧的搬过来一次。
+        后来改存 `%LOCALAPPDATA%\\CS2Customizer\\`，所以启动时把旧的搬过来一次。
 
         ⚠ **QA-001：冻结态一律不迁。**
         打包后的程序目录（`_MEIPASS` / `_internal`）里那份 `config.json` 天然不是
@@ -1413,7 +1413,7 @@ class Config:
                 # 模块级 `config = Config()` 在 import 时就跑 load_config，
                 # 而下面那个 except 只兜 (FileNotFoundError, JSONDecodeError, KeyError)，
                 # ValueError/TypeError 一路冒泡到 import config —— 没界面、没提示、
-                # 没自愈，用户只能自己去 %LOCALAPPDATA%\FanTool\config.json 手改或删掉。
+                # 没自愈，用户只能自己去 %LOCALAPPDATA%\CS2Customizer\config.json 手改或删掉。
                 # 实测：值为 "abc" → ValueError；值为 {"a":1} → TypeError；
                 #       ""/[]/null/"20"/20 靠后面的 `or 20` 侥幸兜住。
                 # 顺手把范围也钳住：负数/0 会让 prune_snapshots 把快照全删光。

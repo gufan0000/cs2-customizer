@@ -123,7 +123,7 @@ def test_capture_uses_window_handle_when_available(monkeypatch, tmp_path):
 def _build_spec(stage_dir: Path, mode: str) -> str:
     return build_release.build_spec_text(
         stage_dir=stage_dir,
-        app_name="FanTool",
+        app_name="CS2Customizer",
         mode=mode,
         upx_enabled=False,
         runtime_modules=[],
@@ -517,7 +517,7 @@ def _count_near_color(image, box, color, tolerance=24):
 
 
 def test_splash_branding_constants_are_exact():
-    assert make_installer_assets.SPLASH_TITLE == "帆派助手"
+    assert make_installer_assets.SPLASH_TITLE == "CS2 Customizer"
     assert make_installer_assets.SPLASH_STATUS == "正在启动…"
     assert make_installer_assets.SPLASH_SIZE == (600, 360)
 

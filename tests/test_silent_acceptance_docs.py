@@ -6,12 +6,12 @@ from pathlib import Path
 # 相对仓库根定位:硬编码 H:\ 在 CI runner/他人机器上必挂(CI #6 实锤)
 DOCS_DIR = Path(__file__).resolve().parent.parent / "docs"
 
-MAIN_DOC = DOCS_DIR / "帆派助手_后台静默自查规范_v1.md"
-INDEX_DOC = DOCS_DIR / "帆派助手_后台静默自查索引_v1.md"
-EXECUTION_DOC = DOCS_DIR / "帆派助手_后台静默自查执行模板_v1.md"
-COVERAGE_DOC = DOCS_DIR / "帆派助手_后台静默自查覆盖矩阵_v1.md"
-RECORD_DOC = DOCS_DIR / "帆派助手_后台静默自查记录模板_v1.md"
-FAILURE_DOC = DOCS_DIR / "帆派助手_后台静默自查常见失败处理手册_v1.md"
+MAIN_DOC = DOCS_DIR / "CS2Customizer_后台静默自查规范_v1.md"
+INDEX_DOC = DOCS_DIR / "CS2Customizer_后台静默自查索引_v1.md"
+EXECUTION_DOC = DOCS_DIR / "CS2Customizer_后台静默自查执行模板_v1.md"
+COVERAGE_DOC = DOCS_DIR / "CS2Customizer_后台静默自查覆盖矩阵_v1.md"
+RECORD_DOC = DOCS_DIR / "CS2Customizer_后台静默自查记录模板_v1.md"
+FAILURE_DOC = DOCS_DIR / "CS2Customizer_后台静默自查常见失败处理手册_v1.md"
 
 ALL_DOCS = [
     MAIN_DOC,

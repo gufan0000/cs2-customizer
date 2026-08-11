@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-FanTool release builder.
+CS2Customizer release builder.
 
 Goals:
 1. Keep full feature compatibility.
@@ -151,7 +151,7 @@ MIN_PYINSTALLER_SPLASH_CENTER = (6, 21, 0)
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build FanTool release package")
+    parser = argparse.ArgumentParser(description="Build CS2Customizer release package")
     parser.add_argument(
         "--mode",
         choices=["onefile", "onedir"],
@@ -817,8 +817,8 @@ def main() -> int:
     config_file = project_root / "config.py"
 
     version = read_version(config_file)
-    app_name = f"帆派助手{version}"  # 发布产物目录名:带版本号,保留历史
-    exe_name = "帆派助手"  # C4 修复:打包出的 exe 固定名(不带版本),使开机自启/快捷方式路径跨版本稳定
+    app_name = f"CS2 Customizer {version}"  # 发布产物目录名:带版本号,保留历史（须与 installer.iss 的 AppDirName 逐字一致）
+    exe_name = "CS2 Customizer"  # C4 修复:打包出的 exe 固定名(不带版本),使开机自启/快捷方式路径跨版本稳定
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     work_root = project_root / ".build" / f"release-{stamp}"
     stage_dir = work_root / "stage"

@@ -30,7 +30,7 @@ class OnboardingDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("onboardingDialog")
-        self.setWindowTitle("欢迎使用帆派助手 · 快速上手")
+        self.setWindowTitle("欢迎使用 CS2 Customizer · 快速上手")
         self.setModal(True)
         self.resize(560, 420)
         self._build_ui()
@@ -45,7 +45,7 @@ class OnboardingDialog(QDialog):
         title.setObjectName("titleLabel")
         layout.addWidget(title)
 
-        intro = QLabel("跟着下面三步走，就能让帆派助手和 CS2 联动起来。随时可以「跳过」，之后在「高级设置 / 基础设置」里也能完成。")
+        intro = QLabel("跟着下面三步走，就能让 CS2 Customizer 和 CS2 联动起来。随时可以「跳过」，之后在「高级设置 / 基础设置」里也能完成。")
         intro.setObjectName("hintLabel")
         intro.setWordWrap(True)
         layout.addWidget(intro)
@@ -185,7 +185,7 @@ class OnboardingDialog(QDialog):
 
     def _write_gsi(self, silent=False):
         try:
-            from cfg_utils import ensure_cfg_exists, ensure_fanpai_cfg_exists
+            from cfg_utils import ensure_cfg_exists, ensure_cs2customizer_cfg_exists
 
             csgo_dir = str(getattr(config, "csgo_dir", "") or "")
             if not (csgo_dir and os.path.isdir(csgo_dir)):
@@ -194,7 +194,7 @@ class OnboardingDialog(QDialog):
                 return
             ensure_cfg_exists(csgo_dir)
             try:
-                ensure_fanpai_cfg_exists(csgo_dir)
+                ensure_cs2customizer_cfg_exists(csgo_dir)
             except Exception:
                 pass
             logger.info("引导：GSI 配置已写入/校验")

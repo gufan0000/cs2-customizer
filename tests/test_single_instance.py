@@ -28,7 +28,7 @@ from core.single_instance import ensure_single_instance  # noqa: E402
 class TestSingleInstance(unittest.TestCase):
     def setUp(self):
         # 每个用例用独立的锁文件，避免跨用例污染
-        fd, self.lock_path = tempfile.mkstemp(suffix="_fanpai_test.lock")
+        fd, self.lock_path = tempfile.mkstemp(suffix="_cs2customizer_test.lock")
         os.close(fd)
         # QLockFile 要求目标文件不存在或为 stale；删掉预留的空文件
         try:
@@ -63,7 +63,7 @@ class TestSingleInstance(unittest.TestCase):
         try:
             ok, _lock, msg = ensure_single_instance(lock_path=self.lock_path)
             self.assertFalse(ok, "应当检测到已有实例")
-            self.assertIn("帆派助手", msg)
+            self.assertIn("CS2 Customizer", msg)
         finally:
             holder.unlock()
 

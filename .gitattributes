@@ -1,4 +1,4 @@
-# 帆派助手 — 行尾规范化 (防止 CRLF/LF 噪音再次污染 diff)
+# CS2 Customizer — 行尾规范化 (防止 CRLF/LF 噪音再次污染 diff)
 # 仓库内所有文本文件统一 LF；二进制资源标记为 binary 不做转换。
 
 * text=auto eol=lf

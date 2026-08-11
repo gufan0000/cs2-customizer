@@ -16,7 +16,7 @@ try:
 except Exception:  # pragma: no cover - 极端情况降级
     _SensitiveFilter = None
 
-APP_NAME = "FanTool"
+APP_NAME = "CS2Customizer"
 
 # ==================== 文件日志级别与保留策略（UP-004）====================
 # 背景:文件 handler 原先硬编码 DEBUG 且无开关。GSI 在游戏中每秒产生数十条 DEBUG
@@ -25,8 +25,8 @@ APP_NAME = "FanTool"
 # 37 个文件 36MB 且会无限涨。
 #
 # 现在:文件日志默认 INFO；需要排查 GSI 问题时用下面任一方式开回 DEBUG——
-#   1) 配置项 debug_file_log = true（%LOCALAPPDATA%\FanTool\config.json）
-#   2) 环境变量 FANPAI_DEBUG_LOG=1（临时排障，不改配置）
+#   1) 配置项 debug_file_log = true（%LOCALAPPDATA%\CS2Customizer\config.json）
+#   2) 环境变量 CS2C_DEBUG_LOG=1（临时排障，不改配置）
 # 注意:logger 不能 import config（config.py 第 1 行就 import 本模块，会循环依赖），
 # 因此这里直接读 JSON，且任何异常都退化为默认值，绝不阻塞日志系统启动。
 _LOG_RETENTION_DAYS = 14
@@ -34,7 +34,7 @@ _LOG_RETENTION_DAYS = 14
 
 def _resolve_config_dir_for_log() -> str:
     """与 config.get_config_dir() 同口径，但不 import config（避免循环依赖）。"""
-    override_dir = os.environ.get("FANPAI_CONFIG_DIR")
+    override_dir = os.environ.get("CS2C_CONFIG_DIR")
     if override_dir:
         return override_dir
     appdata_dir = os.environ.get("LOCALAPPDATA")
@@ -45,7 +45,7 @@ def _resolve_config_dir_for_log() -> str:
 
 def _want_debug_file_log() -> bool:
     """是否把文件日志开到 DEBUG。读不到就返回 False（默认 INFO）。"""
-    env = os.environ.get("FANPAI_DEBUG_LOG", "").strip().lower()
+    env = os.environ.get("CS2C_DEBUG_LOG", "").strip().lower()
     if env in ("1", "true", "yes", "on"):
         return True
     if env in ("0", "false", "no", "off"):
@@ -74,7 +74,7 @@ def _purge_old_logs(log_dir: Path, keep_days: int = _LOG_RETENTION_DAYS) -> int:
 
     cutoff = _time.time() - keep_days * 86400
     removed = 0
-    for pattern in ("fanpai_*.log", "fanpai_*.log.*", "bootstrap_crash_*.log"):
+    for pattern in ("cs2customizer_*.log", "cs2customizer_*.log.*", "bootstrap_crash_*.log"):
         for path in log_dir.glob(pattern):
             try:
                 if path.is_file() and path.stat().st_mtime < cutoff:
@@ -108,7 +108,7 @@ class Logger:
         # 创建根logger
         # 根 logger 保持 DEBUG：具体放行到哪一级由各 handler 自己决定，
         # 这样开发时挂个 DEBUG handler 依然能拿到全部记录。
-        self.logger = logging.getLogger("FanPai")
+        self.logger = logging.getLogger("CS2Customizer")
         self.logger.setLevel(logging.DEBUG)
 
         # 清除已有的handler（避免重复）
@@ -119,7 +119,7 @@ class Logger:
         file_level = logging.DEBUG if self._debug_file_log else logging.INFO
 
         # 创建文件handler（带轮转）
-        log_file = self.log_dir / f"fanpai_{datetime.now().strftime('%Y%m%d')}.log"
+        log_file = self.log_dir / f"cs2customizer_{datetime.now().strftime('%Y%m%d')}.log"
         file_handler = RotatingFileHandler(
             log_file,
             maxBytes=10*1024*1024,  # 10MB
@@ -167,7 +167,7 @@ class Logger:
         
         # 记录启动信息
         self.info("=" * 60)
-        self.info("帆派助手 - 现代版 (PySide6 Widget)")
+        self.info("CS2 Customizer - 现代版 (PySide6 Widget)")
         self.info("=" * 60)
         self.info(f"日志文件: {log_file.absolute()}")
         # 这一行必须每次都打:audio_event_audit.py 靠它判断本份日志是不是 DEBUG 级,
@@ -190,7 +190,7 @@ class Logger:
 
     def _start_log_purge(self):
         """后台清理 14 天前的日志文件（失败不影响任何功能）。"""
-        # 双保险:测试进程一律不清理。即便某个测试忘了设 FANPAI_LOG_DIR,
+        # 双保险:测试进程一律不清理。即便某个测试忘了设 CS2C_LOG_DIR,
         # 也不会误删用户的真实历史日志。
         if "PYTEST_CURRENT_TEST" in os.environ or "pytest" in sys.modules:
             return
@@ -213,11 +213,11 @@ class Logger:
     def _resolve_log_dir() -> Path:
         """优先写入 AppData，避免在 EXE 目录生成 logs 文件夹。
 
-        FANPAI_LOG_DIR 覆盖用于测试隔离:否则跑测试会往用户真实日志目录写入,
+        CS2C_LOG_DIR 覆盖用于测试隔离:否则跑测试会往用户真实日志目录写入,
         且 UP-004 的过期清理会真的删掉用户的历史日志(已经发生过一次)。
-        与 FANPAI_CONFIG_DIR 同一套思路。
+        与 CS2C_CONFIG_DIR 同一套思路。
         """
-        override_dir = os.environ.get("FANPAI_LOG_DIR")
+        override_dir = os.environ.get("CS2C_LOG_DIR")
         if override_dir:
             return Path(override_dir)
         appdata_dir = os.environ.get("LOCALAPPDATA")
@@ -269,7 +269,7 @@ class Logger:
     
     def get_logger(self, name):
         """获取子logger"""
-        return logging.getLogger(f"FanPai.{name}")
+        return logging.getLogger(f"CS2Customizer.{name}")
 
 
 # 全局logger实例

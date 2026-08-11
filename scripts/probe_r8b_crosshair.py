@@ -21,10 +21,10 @@ import sys
 import tempfile
 import time
 
-_ISOLATED = tempfile.mkdtemp(prefix="fanpai_probe_r8b_")
-os.environ["FANPAI_CONFIG_DIR"] = os.path.join(_ISOLATED, "config")
-os.environ["FANPAI_LOG_DIR"] = os.path.join(_ISOLATED, "logs")
-os.environ["FANPAI_SAFE_MODE_ACTIVE"] = "1"
+_ISOLATED = tempfile.mkdtemp(prefix="cs2customizer_probe_r8b_")
+os.environ["CS2C_CONFIG_DIR"] = os.path.join(_ISOLATED, "config")
+os.environ["CS2C_LOG_DIR"] = os.path.join(_ISOLATED, "logs")
+os.environ["CS2C_SAFE_MODE_ACTIVE"] = "1"
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 os.environ.setdefault("SDL_AUDIODRIVER", "dummy")

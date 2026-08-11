@@ -146,12 +146,12 @@ REVERTS = [
     Revert(
         "R9-B", "子进程闸门被移到压缩之后",
         "main_widget.py",
-        '        if not os.environ.get("_FANPAI_CRASHLOG_COMPACTED"):\n'
+        '        if not os.environ.get("_CS2C_CRASHLOG_COMPACTED"):\n'
         "            _compact_native_crash_log(crash_path)\n"
-        '            os.environ["_FANPAI_CRASHLOG_COMPACTED"] = "1"',
+        '            os.environ["_CS2C_CRASHLOG_COMPACTED"] = "1"',
         "        _compact_native_crash_log(crash_path)\n"
-        '        if not os.environ.get("_FANPAI_CRASHLOG_COMPACTED"):\n'
-        '            os.environ["_FANPAI_CRASHLOG_COMPACTED"] = "1"',
+        '        if not os.environ.get("_CS2C_CRASHLOG_COMPACTED"):\n'
+        '            os.environ["_CS2C_CRASHLOG_COMPACTED"] = "1"',
         "tests/test_native_crash_log_r9b.py::test_subprocesses_do_not_compact",
         "三个进程各压一遍，主进程的 append 句柄被打乱",
     ),
@@ -836,8 +836,8 @@ REVERTS = [
     Revert(
         'VER', 'version_info.txt 的 ProductName 忘了跟着抬',
         'version_info.txt',
-        "StringStruct(u'ProductName', u'帆派助手2.2.2')",
-        "StringStruct(u'ProductName', u'帆派助手2.2.1')",
+        "StringStruct(u'ProductName', u'CS2 Customizer 2.2.2')",
+        "StringStruct(u'ProductName', u'CS2 Customizer 2.2.1')",
         'tests/test_version_consistency.py::test_version_info_strings_match',
         '任务管理器/属性页显示的产品名还是旧版本号',
     ),
@@ -855,7 +855,7 @@ REVERTS = [
         '#define AppVersion "2.2.2"',
         '#define AppVersion "2.2.1"',
         'tests/test_version_consistency.py::test_installer_iss_appversion_matches',
-        '后果最重：装进 帆派助手<旧版本> 目录，升级变成两份并存',
+        '后果最重：装进 CS2 Customizer<旧版本> 目录，升级变成两份并存',
     ),
     Revert(
         'VER', 'installer.iss 头部注释停在旧版本',
@@ -880,6 +880,74 @@ REVERTS = [
         '## [2.2.3] - ',
         'tests/test_version_consistency.py::test_changelog_has_section_for_current_version',
         '抬了版本号却忘了写 changelog，发布时没有可抄的内容（闭源版发 2.2.0/2.2.1 时踩过）',
+    ),
+
+    # ==================================== BRAND：旧品牌不得回流（2026-08-12 建立）
+    # 开源改名那一轮动了 107 个文件 507 处。这类机械改名的失败方式不是"改错"而是"改漏"，
+    # 而漏掉运行时标识**不会让任何用例变红**：程序照跑，只是把数据写进了另一个产品的目录。
+    # 前四条是行为判据（读运行时真正用的常量），最后两条是文本判据与白名单防腐。
+    Revert(
+        'BRAND', '数据目录名漏改（config.APP_NAME 退回旧品牌）',
+        'config.py',
+        'APP_NAME = "CS2Customizer"',
+        'APP_NAME = "FanTool"',
+        'tests/test_no_legacy_brand.py::test_runtime_app_name_is_not_legacy',
+        '开源版与闭源版共用 %LOCALAPPDATA%；两边配置键集合不同，'
+        'save_config 写的是显式白名单 dict，后写的一方会静默删掉对方独有的键',
+    ),
+    Revert(
+        'BRAND', '两处 APP_NAME 只改了一处（配置目录与日志目录被拆到两个文件夹）',
+        'core/utils/logger.py',
+        'APP_NAME = "CS2Customizer"',
+        'APP_NAME = "FanTool"',
+        'tests/test_no_legacy_brand.py::test_runtime_app_name_is_not_legacy',
+        '日志写进 A 目录、配置写进 B 目录；用户按提示去删配置目录清不掉日志，排障时也找不到日志',
+    ),
+    Revert(
+        'BRAND', '单实例锁文件名漏改',
+        'core/single_instance.py',
+        'LOCK_FILENAME = "CS2Customizer_single_instance.lock"',
+        'LOCK_FILENAME = "FanTool_single_instance.lock"',
+        'tests/test_no_legacy_brand.py::test_single_instance_and_autostart_keys_are_not_legacy',
+        '闭源版在跑时开源版会以为"自己已经在运行"而直接退出——两个产品变成互斥的',
+    ),
+    Revert(
+        'BRAND', '开机自启注册表值名漏改',
+        'core/utils/autostart.py',
+        '_VALUE_NAME = "CS2Customizer"',
+        '_VALUE_NAME = "FanTool帆派助手"',
+        'tests/test_no_legacy_brand.py::test_single_instance_and_autostart_keys_are_not_legacy',
+        '两者的开机自启项互相覆盖，用户只能自启其中一个，且不知道是谁把谁顶掉了',
+    ),
+    Revert(
+        'BRAND', '写进用户游戏目录的 cfg 文件名漏改',
+        'core/cfg_compiler.py',
+        '"cs2customizer.cfg")',
+        '"fanpai.cfg")',
+        'tests/test_no_legacy_brand.py::test_generated_game_cfg_names_are_not_legacy',
+        '旧品牌名长期躺在用户的 CS2 目录里；两个产品还会抢同一个 cfg 文件互相覆盖',
+    ),
+    Revert(
+        'BRAND', '白名单腐烂：豁免条目里已经没有旧名了却还挂着',
+        'core/presets/share_file.py',
+        # 注意要连注释一起换掉：只删常量的话文件里还留着注释中的旧扩展名，
+        # 判据照绿——那样这个断点自己就是假的。
+        '#: 前身（闭源版）导出的分享文件用 `.fanpai`。**只在打开对话框的过滤器里认它**——\n'
+        '#: 容器格式与安检逻辑完全一致，没有理由让用户手工改扩展名才能导入；\n'
+        '#: 但导出一律写新扩展名，不再产生旧后缀的文件。\n'
+        'LEGACY_SHARE_EXTS = (".fanpai",)',
+        'LEGACY_SHARE_EXTS = ()',
+        'tests/test_no_legacy_brand.py::test_allowlist_entries_still_exist',
+        '白名单变成只增不减的免检清单——文件早就不含旧名，条目还在，'
+        '下次有人往这个文件里加东西就免检了',
+    ),
+    Revert(
+        'BRAND', '旧品牌回流到白名单之外的文件（文本判据本体）',
+        'CONTRIBUTING.md',
+        '本仓库是闭源商业版的**功能子集**',
+        '本仓库是帆派助手的**功能子集**',
+        'tests/test_no_legacy_brand.py::test_no_legacy_brand_outside_allowlist',
+        '前面几条行为判据只看那几个常量；旧名从文档、注释、界面文案回流时得靠这条兜底',
     ),
 ]
 

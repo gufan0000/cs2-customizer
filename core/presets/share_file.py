@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""`.fanpai` 配置分享文件(R2-1,2026-06-12)。
+"""`.cs2customizer` 配置分享文件(R2-1,2026-06-12)。
 
 容器 = zip(manifest.json + bundle.json [+ 未来的 resources/])。
 v1 只读取两个 json,zip 里任何其它内容一律忽略——但解析前仍执行全部安全红线:
@@ -25,7 +25,11 @@ from config import VERSION
 
 from .preset_center import SCHEMA_VERSION, validate_bundle
 
-SHARE_EXT = ".fanpai"
+SHARE_EXT = ".cs2c"
+#: 前身（闭源版）导出的分享文件用 `.fanpai`。**只在打开对话框的过滤器里认它**——
+#: 容器格式与安检逻辑完全一致，没有理由让用户手工改扩展名才能导入；
+#: 但导出一律写新扩展名，不再产生旧后缀的文件。
+LEGACY_SHARE_EXTS = (".fanpai",)
 MANIFEST_NAME = "manifest.json"
 BUNDLE_NAME = "bundle.json"
 
@@ -61,9 +65,9 @@ def _entry_is_unsafe(name: str) -> Optional[str]:
 
 
 def write_share_file(path: str, bundle: Dict, title: str = "", author: str = "") -> None:
-    """写 .fanpai 文件。bundle 需是 export_bundle 的产物。"""
+    """写 .cs2customizer 文件。bundle 需是 export_bundle 的产物。"""
     manifest = {
-        "format": "fanpai_share",
+        "format": "cs2customizer_share",
         "schema_version": SCHEMA_VERSION,
         "app_version": VERSION,
         "created_at": int(time.time()),
@@ -77,7 +81,7 @@ def write_share_file(path: str, bundle: Dict, title: str = "", author: str = "")
 
 
 def read_share_file(path: str) -> ShareReadResult:
-    """读取并全量安检 .fanpai;返回 bundle(尚未应用)。"""
+    """读取并全量安检 .cs2customizer;返回 bundle(尚未应用)。"""
     warnings: List[str] = []
     try:
         if os.path.getsize(path) > MAX_ARCHIVE_BYTES:
@@ -114,7 +118,7 @@ def read_share_file(path: str) -> ShareReadResult:
             except Exception as exc:
                 return ShareReadResult(ok=False, errors=[f"bundle.json 解析失败: {exc}"])
     except zipfile.BadZipFile:
-        return ShareReadResult(ok=False, errors=["不是有效的 .fanpai(zip)文件"])
+        return ShareReadResult(ok=False, errors=["不是有效的 .cs2customizer(zip)文件"])
     except OSError as exc:
         return ShareReadResult(ok=False, errors=[f"读取失败: {exc}"])
 

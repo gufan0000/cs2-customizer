@@ -1,8 +1,8 @@
-# 帆派助手后台静默自查规范 v1
+# CS2 Customizer 后台静默自查规范 v1
 
 ## 1. 文档定位
 
-本文档是 `cfg-fanpai` 仓库内长期执行的交付规范。
+本文档是 `cfg-cs2customizer` 仓库内长期执行的交付规范。
 
 目标只有一个：
 
@@ -19,11 +19,11 @@
 
 配套文档：
 
-- [帆派助手_后台静默自查索引_v1.md](./帆派助手_后台静默自查索引_v1.md)
-- [帆派助手_后台静默自查执行模板_v1.md](./帆派助手_后台静默自查执行模板_v1.md)
-- [帆派助手_后台静默自查覆盖矩阵_v1.md](./帆派助手_后台静默自查覆盖矩阵_v1.md)
-- [帆派助手_后台静默自查记录模板_v1.md](./帆派助手_后台静默自查记录模板_v1.md)
-- [帆派助手_后台静默自查常见失败处理手册_v1.md](./帆派助手_后台静默自查常见失败处理手册_v1.md)
+- [CS2Customizer_后台静默自查索引_v1.md](./CS2Customizer_后台静默自查索引_v1.md)
+- [CS2Customizer_后台静默自查执行模板_v1.md](./CS2Customizer_后台静默自查执行模板_v1.md)
+- [CS2Customizer_后台静默自查覆盖矩阵_v1.md](./CS2Customizer_后台静默自查覆盖矩阵_v1.md)
+- [CS2Customizer_后台静默自查记录模板_v1.md](./CS2Customizer_后台静默自查记录模板_v1.md)
+- [CS2Customizer_后台静默自查常见失败处理手册_v1.md](./CS2Customizer_后台静默自查常见失败处理手册_v1.md)
 
 ---
 
@@ -178,7 +178,7 @@
 
 不得做的事：
 
-- 直接读写用户当前 `%LOCALAPPDATA%\\FanTool\\config.json`
+- 直接读写用户当前 `%LOCALAPPDATA%\\CS2Customizer\\config.json`
 - 直接写用户真实资源目录
 
 ## 7.3 副作用隔离

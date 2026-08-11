@@ -17,7 +17,7 @@ from core.utils.logger import get_logger
 logger = get_logger("Autostart")
 
 _RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
-_VALUE_NAME = "FanTool帆派助手"
+_VALUE_NAME = "CS2Customizer"
 
 
 def _launch_command() -> str:

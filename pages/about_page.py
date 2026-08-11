@@ -26,7 +26,7 @@ from widgets.settings_card import SettingsCard
 # 这里只保留一组指向本仓库自身的常量，换 owner 时改这一处即可。
 PROJECT_NAME = "CS2 Customizer"
 PROJECT_LICENSE = "GPL-3.0"
-PROJECT_REPO_URL = "https://github.com/OWNER/cs2-customizer"
+PROJECT_REPO_URL = "https://github.com/gufan0000/cs2-customizer"
 PROJECT_ISSUES_URL = f"{PROJECT_REPO_URL}/issues"
 PROJECT_RELEASES_URL = f"{PROJECT_REPO_URL}/releases"
 
@@ -48,7 +48,7 @@ class AboutPage(QWidget):
     def _build_info_text(self):
         return (
             "<p style='font-size: 14px; line-height: 1.8;'>"
-            f"<b>项目：</b>{PROJECT_NAME}（原「帆派助手」开源版）<br>"
+            f"<b>项目：</b>{PROJECT_NAME}（原「 CS2 Customizer 」开源版）<br>"
             "<b>作者：</b>孤帆<br>"
             f"<b>仓库：</b>{PROJECT_REPO_URL}<br><br>"
             "本工具通过监听 CS2 官方游戏状态接口 (GSI) 来实现击杀音效等功能，"

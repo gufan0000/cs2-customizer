@@ -1,14 +1,11 @@
-# ⚠️ 维护者注意：下面 URL 里的 OWNER/REPO 是占位符。
-# GitHub 要求 contact_links 必须是绝对 URL，发布前请全部替换成本仓库的真实地址，
-# 否则这几个入口会指向 404。
 blank_issues_enabled: false
 contact_links:
   - name: 🔒 安全漏洞（请勿开公开 issue）
-    url: https://github.com/OWNER/REPO/security/advisories/new
+    url: https://github.com/gufan0000/cs2-customizer/security/advisories/new
     about: 走 GitHub 私密漏洞上报通道。公开 issue 里贴 PoC 等于在补丁发布前把它推给所有用户。
   - name: 💬 提问 / 使用求助 / 想法讨论
-    url: https://github.com/OWNER/REPO/discussions
+    url: https://github.com/gufan0000/cs2-customizer/discussions
     about: 不确定是不是缺陷、想问怎么用、想先聊聊某个想法，都请到讨论区。
   - name: 📖 贡献指南（提 PR 前必读）
-    url: https://github.com/OWNER/REPO/blob/master/CONTRIBUTING.md
+    url: https://github.com/gufan0000/cs2-customizer/blob/main/CONTRIBUTING.md
     about: 测试要逐文件跑、新增判据要做回退验证、提交要 git commit -s，都写在这里。

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """D2：单实例互斥锁。
 
-目的：防止同一台机器同时运行两份帆派助手——双开会导致：
+目的：防止同一台机器同时运行两份 CS2 Customizer——双开会导致：
 - Flask GSI 抢同一个 127.0.0.1:3000 端口
 - 全局热键（keyboard/mouse hook）被双份处理
 - config.json 读写互相覆盖
@@ -9,7 +9,7 @@
 
 设计：
 - 使用 Qt 原生 `QLockFile`（无新依赖）
-- 锁文件放在用户 temp 目录 → ``%TEMP%\\FanTool_single_instance.lock``
+- 锁文件放在用户 temp 目录 → ``%TEMP%\\CS2Customizer_single_instance.lock``
 - 30 秒 stale 超时：进程异常退出后，30 秒后其他实例可自动接管
 - 任何异常都 **默认放行**：锁机制自身的 bug 绝不能把用户锁在门外
 
@@ -19,7 +19,7 @@
     ok, lock, msg = ensure_single_instance()
     if not ok:
         # 已有实例在跑，友好提示后退出
-        QMessageBox.information(None, "帆派助手", msg)
+        QMessageBox.information(None, "CS2 Customizer", msg)
         sys.exit(0)
     # 把 lock 挂到 app 上，整个进程期间持有
     app._single_instance_lock = lock
@@ -34,7 +34,7 @@ import os
 import tempfile
 from typing import Any, Optional, Tuple
 
-LOCK_FILENAME = "FanTool_single_instance.lock"
+LOCK_FILENAME = "CS2Customizer_single_instance.lock"
 STALE_TIMEOUT_MS = 30_000  # 30 秒
 
 
@@ -51,7 +51,7 @@ def ensure_single_instance(
     lock_path: Optional[str] = None,
     stale_timeout_ms: int = STALE_TIMEOUT_MS,
 ) -> Tuple[bool, Optional[Any], str]:
-    """检测是否已有帆派助手实例在运行。
+    """检测是否已有 CS2 Customizer 实例在运行。
 
     返回 ``(ok, lock, message)``：
     - ``ok=True``  当前进程拿到锁，可继续启动；``lock`` 是 QLockFile 对象，
@@ -84,9 +84,9 @@ def ensure_single_instance(
 
         # 没拿到锁 → 已有实例
         msg = (
-            "帆派助手已在运行中。\n\n"
+            "CS2 Customizer 已在运行中。\n\n"
             "如果你在任务栏找不到窗口，可以：\n"
-            "  1. 检查系统托盘是否有帆派图标\n"
+            "  1. 检查系统托盘是否有 CS2 Customizer 图标\n"
             "  2. 打开任务管理器结束现有进程后再启动\n"
             f"  3. 或等待 {stale_timeout_ms // 1000} 秒后重试（残留锁会自动清理）"
         )

@@ -15,7 +15,7 @@ def test_get_keyboard_key_for_sync_normalizes_scrolllock():
 
 
 def test_write_magnifier_runtime_cfg_switches_between_zoom_and_default(tmp_path):
-    runtime_cfg_path = tmp_path / "fanpai_magnifier_runtime.cfg"
+    runtime_cfg_path = tmp_path / "cs2customizer_magnifier_runtime.cfg"
 
     write_magnifier_runtime_cfg(str(runtime_cfg_path), 1.2, 0.82, True)
     active_content = runtime_cfg_path.read_text(encoding="utf-8")

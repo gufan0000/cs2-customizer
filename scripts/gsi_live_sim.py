@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-帆派助手 — 活体 GSI 模拟器 (live HTTP simulation)
+CS2 Customizer — 活体 GSI 模拟器 (live HTTP simulation)
 
 与 gsi_full_sim.py 不同: 本脚本不在进程内调 handler, 而是把一整局 CS2 的
-GSI 状态帧通过真实 HTTP POST 打到正在运行的帆派助手 GSI 服务器
+GSI 状态帧通过真实 HTTP POST 打到正在运行的 CS2 Customizer GSI 服务器
 (http://127.0.0.1:3000), 跑通完整管线:
     Flask 收包 -> data_queue -> process_data 线程 -> 8 个 handler -> 真实音效/准心/闪光/放大镜/音乐/HUD
 
@@ -107,7 +107,7 @@ def main():
         SCRIPT = _build_script()
 
     print("=" * 72)
-    print("  帆派助手 — 活体 GSI 模拟 (HTTP POST 到运行中的服务器)")
+    print("  CS2 Customizer — 活体 GSI 模拟 (HTTP POST 到运行中的服务器)")
     print(f"  目标: {args.url}   帧数: {len(SCRIPT)}   帧间隔: {args.delay}s")
     print("=" * 72)
 
@@ -118,7 +118,7 @@ def main():
         print(f"  [探活] 服务器在线, HTTP {st} ({ms}ms)")
     except urllib.error.URLError as e:
         print(f"  [探活失败] 无法连接 {args.url} : {e}")
-        print("  请确认帆派助手已启动且 GSI 服务器监听 3000。")
+        print("  请确认 CS2 Customizer 已启动且 GSI 服务器监听 3000。")
         return 2
 
     print("-" * 72)
@@ -136,7 +136,7 @@ def main():
 
     print("-" * 72)
     print(f"  完成: {ok} 帧成功 / {fail} 帧失败 / 共 {len(SCRIPT)} 帧")
-    print("  提示: 现在去看 app 的准心/闪光/放大镜等效果, 并检查 FanTool 日志确认各 handler 触发。")
+    print("  提示: 现在去看 app 的准心/闪光/放大镜等效果, 并检查 CS2Customizer 日志确认各 handler 触发。")
     print("=" * 72)
     return 0 if fail == 0 else 1
 

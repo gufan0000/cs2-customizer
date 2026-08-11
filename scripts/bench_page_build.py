@@ -49,11 +49,11 @@ except Exception:
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import tempfile  # noqa: E402
 
-_bench_tmp = Path(tempfile.gettempdir()) / "fanpai_bench"
+_bench_tmp = Path(tempfile.gettempdir()) / "cs2customizer_bench"
 (_bench_tmp / "config").mkdir(parents=True, exist_ok=True)
 (_bench_tmp / "logs").mkdir(parents=True, exist_ok=True)
-os.environ.setdefault("FANPAI_CONFIG_DIR", str(_bench_tmp / "config"))
-os.environ.setdefault("FANPAI_LOG_DIR", str(_bench_tmp / "logs"))
+os.environ.setdefault("CS2C_CONFIG_DIR", str(_bench_tmp / "config"))
+os.environ.setdefault("CS2C_LOG_DIR", str(_bench_tmp / "logs"))
 
 
 # 只测"构造时不起线程/设备/子进程"的页面。
@@ -180,7 +180,7 @@ def compare(old: dict, new: dict) -> str:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="帆派助手 离屏建页基准")
+    ap = argparse.ArgumentParser(description="CS2 Customizer 离屏建页基准")
     ap.add_argument("--repeat", type=int, default=3, help="每页测量轮数（取中位）")
     ap.add_argument("--only", default="", help="只测这些页，逗号分隔")
     ap.add_argument("--json", action="store_true")

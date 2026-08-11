@@ -14,13 +14,13 @@ from core.hud.rule_model import (
 )
 
 
-HUD_RULES_BEGIN = "// -- HUD Rules Begin (FanPai) --"
-HUD_RULES_END = "// -- HUD Rules End (FanPai) --"
+HUD_RULES_BEGIN = "// -- HUD Rules Begin (CS2 Customizer) --"
+HUD_RULES_END = "// -- HUD Rules End (CS2 Customizer) --"
 
 
 def compile_cfg_rules(config_obj):
     """
-    Compile configurable HUD rules into fanpai.cfg lines.
+    Compile configurable HUD rules into cs2customizer.cfg lines.
     Static rules (default color, key slot mappings) + multi-key refresh.
 
     Uses multi-command bind (not alias) so CS2 settings UI can still
@@ -65,8 +65,8 @@ def compile_cfg_rules(config_obj):
         for key, action in move_keys.items():
             minus_action = action.replace("+", "-")
             alias = f"fp_hud_{key}"
-            lines.append(f'alias +{alias} "{action}; exec fanpai_hud_runtime.cfg"')
-            lines.append(f'alias -{alias} "{minus_action}; exec fanpai_hud_runtime.cfg"')
+            lines.append(f'alias +{alias} "{action}; exec cs2customizer_hud_runtime.cfg"')
+            lines.append(f'alias -{alias} "{minus_action}; exec cs2customizer_hud_runtime.cfg"')
             lines.append(f"bind {key} +{alias}")
 
         # mouse1 alias 代理刷新（按下+释放都 exec）
@@ -75,23 +75,23 @@ def compile_cfg_rules(config_obj):
             lines.append(
                 'alias +fp_hud_mouse1 "+attack;'
                 " cl_crosshair_recoil 1;"
-                ' exec fanpai_hud_runtime.cfg"'
+                ' exec cs2customizer_hud_runtime.cfg"'
             )
             lines.append(
                 'alias -fp_hud_mouse1 "-attack;'
                 " cl_crosshair_recoil 0;"
-                ' exec fanpai_hud_runtime.cfg"'
+                ' exec cs2customizer_hud_runtime.cfg"'
             )
             lines.append("bind mouse1 +fp_hud_mouse1")
             lines.append("cl_crosshair_recoil 0")
         else:
             lines.append(
                 'alias +fp_hud_mouse1 "+attack;'
-                ' exec fanpai_hud_runtime.cfg"'
+                ' exec cs2customizer_hud_runtime.cfg"'
             )
             lines.append(
                 'alias -fp_hud_mouse1 "-attack;'
-                ' exec fanpai_hud_runtime.cfg"'
+                ' exec cs2customizer_hud_runtime.cfg"'
             )
             lines.append("bind mouse1 +fp_hud_mouse1")
 
@@ -121,8 +121,8 @@ def get_cfg_paths(csgo_dir):
         return None, None
     cfg_base = os.path.join(csgo_dir, "game", "csgo", "cfg")
     return (
-        os.path.join(cfg_base, "fanpai.cfg"),
-        os.path.join(cfg_base, "fanpai_hud_runtime.cfg"),
+        os.path.join(cfg_base, "cs2customizer.cfg"),
+        os.path.join(cfg_base, "cs2customizer_hud_runtime.cfg"),
     )
 
 

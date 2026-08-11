@@ -27,7 +27,7 @@ try:
 except Exception:
     pass
 
-work = Path(tempfile.gettempdir()) / "fanpai_dirty_cfg_probe"
+work = Path(tempfile.gettempdir()) / "cs2customizer_dirty_cfg_probe"
 
 
 def probe(value, label: str) -> tuple[bool, str]:
@@ -39,8 +39,8 @@ def probe(value, label: str) -> tuple[bool, str]:
         json.dumps({"config_snapshot_max_keep": value}, ensure_ascii=False),
         encoding="utf-8")
     env = {**os.environ,
-           "FANPAI_CONFIG_DIR": str(cfg_dir),
-           "FANPAI_LOG_DIR": str(log_dir),
+           "CS2C_CONFIG_DIR": str(cfg_dir),
+           "CS2C_LOG_DIR": str(log_dir),
            "PYTHONIOENCODING": "utf-8"}
     p = subprocess.run(
         [sys.executable, "-c",
@@ -74,7 +74,7 @@ print(f"\n共 {len(results)} 档，其中 **{len(bad)} 档导致 import 失败**
 
 if bad:
     print("\n再问一个更要紧的问题：用户能不能自救？")
-    print("  —— 软件起不来，用户看不到任何界面；配置文件在 %LOCALAPPDATA%\\FanTool\\config.json，")
+    print("  —— 软件起不来，用户看不到任何界面；配置文件在 %LOCALAPPDATA%\\CS2Customizer\\config.json，")
     print("     只能手动找到并删掉/改掉。对普通玩家等于变砖。")
     print("  —— 而且 1420 行的 except 分支（隔离损坏文件 + 回落默认）**根本走不到**，")
     print("     因为 ValueError 不在它捕获的三种异常里。")

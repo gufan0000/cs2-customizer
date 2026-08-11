@@ -35,7 +35,7 @@ def main() -> int:
         return 1
 
     header = (
-        "# 帆派助手 · 发版依赖锁定文件(自动生成,请勿手改)\n"
+        "# CS2 Customizer · 发版依赖锁定文件(自动生成,请勿手改)\n"
         f"# 生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
         f"# Python:   {sys.version.split()[0]}  ({sys.executable})\n"
         f"# 平台:     {sys.platform}\n"

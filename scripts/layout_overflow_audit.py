@@ -39,7 +39,7 @@
    现在用 `--compact` 跑这一档，CI 也跑。
 
 同时本脚本会：
-- 设 `FANPAI_SAFE_MODE_ACTIVE=1`，让 MainWindow 跳过 pygame 准心的延迟自动显示
+- 设 `CS2C_SAFE_MODE_ACTIVE=1`，让 MainWindow 跳过 pygame 准心的延迟自动显示
   （否则跑到一半会有一个全屏置顶的准心覆盖窗冒出来）；
 - 把系统托盘声明为不可用，避免原生平台下真的在任务栏托盘里冒出一个图标；
 - 隔离配置与日志目录，绝不碰用户真实数据。
@@ -61,15 +61,15 @@ import tempfile
 from pathlib import Path
 
 # 让 MainWindow 跳过 pygame 准心自动显示(gui_widget 里认这个变量)
-os.environ.setdefault("FANPAI_SAFE_MODE_ACTIVE", "1")
+os.environ.setdefault("CS2C_SAFE_MODE_ACTIVE", "1")
 # 注意:QT_QPA_PLATFORM 在 main() 里按 --offscreen 决定,见那里的说明。
 # 它只需早于 QApplication 构造,不必早于 import。
 
-_tmp = Path(tempfile.gettempdir()) / "fanpai_layout_audit"
+_tmp = Path(tempfile.gettempdir()) / "cs2customizer_layout_audit"
 (_tmp / "config").mkdir(parents=True, exist_ok=True)
 (_tmp / "logs").mkdir(parents=True, exist_ok=True)
-os.environ.setdefault("FANPAI_CONFIG_DIR", str(_tmp / "config"))
-os.environ.setdefault("FANPAI_LOG_DIR", str(_tmp / "logs"))
+os.environ.setdefault("CS2C_CONFIG_DIR", str(_tmp / "config"))
+os.environ.setdefault("CS2C_LOG_DIR", str(_tmp / "logs"))
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 try:
@@ -250,7 +250,7 @@ def _overflow_of(scope):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="帆派助手 排版溢出审计")
+    ap = argparse.ArgumentParser(description="CS2 Customizer 排版溢出审计")
     # 默认留空，好让 --compact 换掉整档默认值而又不覆盖用户显式给的尺寸
     ap.add_argument("--width", type=int, default=None)
     ap.add_argument("--height", type=int, default=None)
@@ -311,7 +311,7 @@ def main():
     from ui_design_system import apply_font_scale
 
     # UP-090: 配置/日志目录已隔离，但 csgo_dir 是自动探测的，会指到用户真实
-    # 游戏目录。放大镜页构建时会往那里写 fanpai.cfg（还是默认配置的内容）。
+    # 游戏目录。放大镜页构建时会往那里写 cs2customizer.cfg（还是默认配置的内容）。
     from _audit_sandbox import sandbox_external_writes
 
     sandbox_external_writes()

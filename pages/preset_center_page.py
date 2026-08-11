@@ -194,7 +194,7 @@ class PresetCenterPage(MyPresetsMixin, QWidget, DirtyPageMixin):
         self.import_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         actions.addWidget(self.import_btn, 0, 1)
 
-        # R2-1: .fanpai 分享文件(zip 容器,带安检与确认)
+        # R2-1: .cs2customizer 分享文件(zip 容器,带安检与确认)
         self.share_export_btn = QPushButton("导出分享文件")
         self.share_export_btn.setObjectName("secondaryButton")
         self.share_export_btn.clicked.connect(self._export_share_file)
@@ -340,11 +340,11 @@ class PresetCenterPage(MyPresetsMixin, QWidget, DirtyPageMixin):
         self.mode_combo.currentIndexChanged.connect(self._on_selection_changed)
         self._update_compact_layout()
 
-        # R2-1: 拖 .fanpai 进页面即走导入确认流程
+        # R2-1: 拖 .cs2customizer 进页面即走导入确认流程
         try:
             from widgets.drop_import_mixin import enable_file_drop
 
-            enable_file_drop(self, (".fanpai",), self._on_share_file_dropped)
+            enable_file_drop(self, (".cs2customizer",), self._on_share_file_dropped)
         except Exception:
             self.logger.exception("分享文件拖拽初始化失败")
 
@@ -593,7 +593,7 @@ class PresetCenterPage(MyPresetsMixin, QWidget, DirtyPageMixin):
             "已绑定: " + ", ".join(rules) if rules else "尚无地图绑定。勾选范围 → 选图 → 保存即可。"
         )
 
-    # ---------------- R2-1: .fanpai 分享文件 ----------------
+    # ---------------- R2-1: .cs2customizer 分享文件 ----------------
 
     def _export_share_file(self):
         from core.presets.share_file import SHARE_EXT, write_share_file
@@ -609,7 +609,7 @@ class PresetCenterPage(MyPresetsMixin, QWidget, DirtyPageMixin):
             self,
             "导出分享文件",
             os.path.join(default_dir, f"我的配置{SHARE_EXT}"),
-            f"帆派分享文件 (*{SHARE_EXT})",
+            f"CS2 Customizer 分享文件 (*{SHARE_EXT})",
         )
         if not path:
             return
@@ -625,13 +625,14 @@ class PresetCenterPage(MyPresetsMixin, QWidget, DirtyPageMixin):
             QMessageBox.warning(self, "导出失败", str(exc))
 
     def _import_share_file_dialog(self):
-        from core.presets.share_file import SHARE_EXT
+        from core.presets.share_file import LEGACY_SHARE_EXTS, SHARE_EXT
 
+        patterns = " ".join(f"*{ext}" for ext in (SHARE_EXT, *LEGACY_SHARE_EXTS))
         path, _ = QFileDialog.getOpenFileName(
             self,
             "导入分享文件",
             ResourceManager.get_app_data_path("presets"),
-            f"帆派分享文件 (*{SHARE_EXT})",
+            f"CS2 Customizer 分享文件 ({patterns})",
         )
         if path:
             self._import_share_path(path)

@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-帆派助手 2.0 - Widget版本
+CS2 Customizer 2.0 - Widget版本
 主入口文件
 """
 
@@ -23,21 +23,21 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 
-APP_NAME = "FanTool"
+APP_NAME = "CS2Customizer"
 # 版本无关：AUMID 应跨版本稳定，避免任务栏固定/归类随版本丢失（原来硬编码 2_1_0 与实际版本不一致）
-APP_USER_MODEL_ID = "FanTool.Assistant"
+APP_USER_MODEL_ID = "CS2Customizer.App"
 
 
 def _resolve_runtime_log_dir() -> Path:
     """优先写入 AppData，避免在 EXE 目录下创建 logs。
 
     必须与 `core/utils/logger.LoggerManager._resolve_log_dir()` 保持同一套口径，
-    包括认 `FANPAI_LOG_DIR` 覆盖。R4 实测发现两处不一致：logger 认这个变量、
+    包括认 `CS2C_LOG_DIR` 覆盖。R4 实测发现两处不一致：logger 认这个变量、
     这里不认，于是 `scripts/live_run.py` 声称"隔离运行、不碰用户真实目录"，
-    实际每跑一次都往用户真实的 `%LOCALAPPDATA%\\FanTool\\logs\\native_crash.log`
+    实际每跑一次都往用户真实的 `%LOCALAPPDATA%\\CS2Customizer\\logs\\native_crash.log`
     追加一次会话记录。诊断文件写错地方，比不写更糟——它会污染真实的崩溃取证材料。
     """
-    override_dir = os.environ.get("FANPAI_LOG_DIR")
+    override_dir = os.environ.get("CS2C_LOG_DIR")
     if override_dir:
         return Path(override_dir)
     appdata_dir = os.environ.get("LOCALAPPDATA")
@@ -214,9 +214,9 @@ def _enable_faulthandler() -> None:
         # 只在**主进程**压一次。子进程是 multiprocessing spawn 重新 import 本模块起来的，
         # 会把这段再跑一遍；环境变量随 spawn 继承下去，于是子进程自动跳过。
         # （不这么做的话，闪光/击杀图标子进程会在主进程已经握着句柄之后再压一次。）
-        if not os.environ.get("_FANPAI_CRASHLOG_COMPACTED"):
+        if not os.environ.get("_CS2C_CRASHLOG_COMPACTED"):
             _compact_native_crash_log(crash_path)
-            os.environ["_FANPAI_CRASHLOG_COMPACTED"] = "1"
+            os.environ["_CS2C_CRASHLOG_COMPACTED"] = "1"
         # 追加模式常开：文件句柄需在进程生命周期内保持存活，faulthandler 才能写入
         _FAULT_LOG_FP = open(crash_path, "a", encoding="utf-8", buffering=1)
         try:
@@ -382,7 +382,7 @@ if hasattr(threading, "excepthook"):
 # 策略：
 #   1) 渲染前写哨兵、渲染成功后删除；下次启动若哨兵仍在＝上次死在渲染，
 #      自动切「软件渲染兼容模式」并持久记住，实现「第二次启动自愈」。
-#   2) 兼容模式亦可手动开启：--safe / FANPAI_SAFE_MODE=1 / safe_mode.flag。
+#   2) 兼容模式亦可手动开启：--safe / CS2C_SAFE_MODE=1 / safe_mode.flag。
 # 正常机器永不崩在此步，哨兵每次都清掉，兼容模式永不触发——对绝大多数用户零影响。
 
 
@@ -413,7 +413,7 @@ def _is_safe_mode_requested() -> bool:
         for arg in sys.argv[1:]:
             if str(arg).lower() in ("--safe", "--safe-mode", "/safe"):
                 return True
-        if str(os.environ.get("FANPAI_SAFE_MODE", "")).strip().lower() in ("1", "true", "yes", "on"):
+        if str(os.environ.get("CS2C_SAFE_MODE", "")).strip().lower() in ("1", "true", "yes", "on"):
             return True
         for marker in (_exe_dir() / "safe_mode.flag", _app_data_dir() / "safe_mode.flag", _safe_render_pref_path()):
             try:
@@ -464,13 +464,13 @@ def _apply_display_hardening(logger=None):
                 pass
 
     # 高 DPI 取整策略：规避分数缩放（如 1707x912）下的 Qt 渲染异常。
-    # 可用 FANPAI_DPI_ROUNDING 覆盖；默认 PassThrough（贴合 Windows 实际缩放，
+    # 可用 CS2C_DPI_ROUNDING 覆盖；默认 PassThrough（贴合 Windows 实际缩放，
     # 避免 Qt 二次取整与后备缓冲尺寸不一致）。对整数缩放用户为无感操作。
     try:
         from PySide6.QtGui import QGuiApplication
         from PySide6.QtCore import Qt
 
-        policy_name = str(os.environ.get("FANPAI_DPI_ROUNDING", "PassThrough")).strip()
+        policy_name = str(os.environ.get("CS2C_DPI_ROUNDING", "PassThrough")).strip()
         policy_map = {
             "PassThrough": Qt.HighDpiScaleFactorRoundingPolicy.PassThrough,
             "Round": Qt.HighDpiScaleFactorRoundingPolicy.Round,
@@ -516,7 +516,7 @@ def _apply_display_hardening(logger=None):
                 QCoreApplication.setAttribute(Qt.AA_UseSoftwareOpenGL, True)
             except Exception:
                 pass
-            os.environ["FANPAI_SAFE_MODE_ACTIVE"] = "1"
+            os.environ["CS2C_SAFE_MODE_ACTIVE"] = "1"
             _log("显示加固：🛡️ 兼容模式已启用（软件渲染 / 关GPU / 关DPI缩放 / FreeType字体）")
         except Exception as exc:
             _log(f"兼容模式应用失败(忽略): {exc}")
@@ -603,7 +603,7 @@ def main():
     logger = get_logger()
     _boot_phase("imports就绪")
     logger.info("=" * 60)
-    logger.info(f"帆派助手 {VERSION} - Widget版 (PySide6) - 快速启动模式")
+    logger.info(f"CS2 Customizer {VERSION} - Widget版 (PySide6) - 快速启动模式")
     logger.info(f"权限模式: {'管理员' if is_admin() else '普通用户（默认）'}")
     logger.info("=" * 60)
 
@@ -617,8 +617,8 @@ def main():
     # 注意：Qt6 默认启用高 DPI 支持，无需手动设置
     # AA_EnableHighDpiScaling 和 AA_UseHighDpiPixmaps 在 Qt6 中已废弃
     app = QApplication(sys.argv)
-    app.setApplicationName("帆派助手")
-    app.setOrganizationName("FanTool")
+    app.setApplicationName("CS2 Customizer")
+    app.setOrganizationName("CS2Customizer")
     # 尽早接管 Qt 消息：捕获 window.show() 首次渲染时可能的 qFatal(abort) 原因
     _install_qt_message_handler(logger)
     _boot_phase("QApplication")
@@ -650,12 +650,12 @@ def main():
         from core.single_instance import ensure_single_instance
         _si_ok, _si_lock, _si_msg = ensure_single_instance()
         if not _si_ok:
-            QMessageBox.information(None, "帆派助手", _si_msg)
-            logger.info("检测到已有帆派助手实例在运行，当前进程退出")
+            QMessageBox.information(None, "CS2 Customizer", _si_msg)
+            logger.info("检测到已有 CS2 Customizer 实例在运行，当前进程退出")
             sys.exit(0)
         # 把锁挂到 app 上，整个进程生命周期保持强引用
         if _si_lock is not None:
-            app._fanpai_single_instance_lock = _si_lock  # type: ignore[attr-defined]
+            app._cs2customizer_single_instance_lock = _si_lock  # type: ignore[attr-defined]
             logger.info("✅ 单实例锁已获取")
     except Exception as _si_exc:
         logger.warning(f"单实例检测异常（已放行）: {_si_exc}")
@@ -698,7 +698,7 @@ def main():
     #      **音频设备初始化搬到后台守护线程**，设备归属与回调线程亲和性都变了。
     #      对一个以音频为核心的软件，这个风险不能在没有真机验证的情况下上线。
     #   2. 这批模块还会拉入 pygame/SDL，与 window.show() 首次渲染并发，正是本仓库
-    #      记录在案的原生崩溃路径（FANPAI_SAFE_MODE_ACTIVE 兼容模式因此存在）。
+    #      记录在案的原生崩溃路径（CS2C_SAFE_MODE_ACTIVE 兼容模式因此存在）。
     #   3. 复核实测 show() 之前只剩约 80ms 余量，join 超时兜底反而可能变成静默冻结。
     # UP-008 真正需要的是结构性改法（把 GSI 构造异步化 / 让 audio_manager 惰性初始化），
     # 不是抢跑 import。已退回问题清单，留待带真机验证的轮次再做。
@@ -1180,7 +1180,7 @@ def main():
                     "game",
                     "csgo",
                     "cfg",
-                    "gamestate_integration_fanpai.cfg",
+                    "gamestate_integration_cs2customizer.cfg",
                 )
                 if os.path.isfile(gsi_cfg_path):
                     logger.info(f"[GSIConfig] 已确认 GSI 配置文件: {gsi_cfg_path}")

@@ -35,7 +35,7 @@ def measure_once() -> dict:
     t0 = time.perf_counter()
     app = QApplication.instance() or QApplication(sys.argv)
     # UP-090: csgo_dir 是自动探测的，不沙箱化会把用户真实 CS2 目录里的
-    # fanpai.cfg 覆盖成默认配置的内容。见 scripts/_audit_sandbox.py。
+    # cs2customizer.cfg 覆盖成默认配置的内容。见 scripts/_audit_sandbox.py。
     from _audit_sandbox import sandbox_external_writes
 
     sandbox_external_writes()

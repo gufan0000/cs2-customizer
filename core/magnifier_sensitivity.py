@@ -14,7 +14,7 @@ DEFAULT_SYNC_TRIGGER_KEY = "SCROLLLOCK"
 def get_magnifier_runtime_cfg_path(csgo_dir: str) -> str | None:
     if not csgo_dir:
         return None
-    return os.path.join(csgo_dir, "game", "csgo", "cfg", "fanpai_magnifier_runtime.cfg")
+    return os.path.join(csgo_dir, "game", "csgo", "cfg", "cs2customizer_magnifier_runtime.cfg")
 
 
 def compute_zoom_sensitivity(base_sensitivity: float, multiplier: float) -> float:
@@ -56,7 +56,7 @@ def write_magnifier_runtime_cfg(
     fd, tmp_path = tempfile.mkstemp(dir=cfg_dir, prefix="magnifier_runtime_", suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write("// FanPai magnifier runtime sensitivity\n")
+            f.write("// CS2 Customizer magnifier runtime sensitivity\n")
             f.write(f"sensitivity {format_sensitivity_value(target_sensitivity)}\n")
         os.replace(tmp_path, runtime_cfg_path)
     except Exception:

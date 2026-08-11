@@ -14,11 +14,11 @@
             onboarding_completed=True。
             期望：**一个字都不许改**（不误伤），且不留纠正标记。
 
-两档都跑隔离目录，用户真实的 %LOCALAPPDATA%\\FanTool 不受影响。
+两档都跑隔离目录，用户真实的 %LOCALAPPDATA%\\CS2Customizer 不受影响。
 关窗用 PostMessage(WM_CLOSE)（同 smoke_packaged.py），超时兜底 taskkill，
 保证不留孤儿进程。
 
-    python scripts/verify_qa001_repair_packaged.py --exe "release/帆派助手2.2.2/帆派助手.exe"
+    python scripts/verify_qa001_repair_packaged.py --exe "release/CS2 Customizer 2.2.2/CS2 Customizer.exe"
 
 退出码：0=两档都符合预期；1=有一档不符。
 """
@@ -57,8 +57,8 @@ def _seed(work: Path, data: dict) -> dict:
         json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8"
     )
     env = dict(os.environ)
-    env["FANPAI_CONFIG_DIR"] = str(cfg_dir)
-    env["FANPAI_LOG_DIR"] = str(log_dir)
+    env["CS2C_CONFIG_DIR"] = str(cfg_dir)
+    env["CS2C_LOG_DIR"] = str(log_dir)
     return env
 
 
@@ -82,13 +82,13 @@ def _run(exe: Path, env: dict, seconds: int) -> tuple[dict, str]:
             proc.wait(timeout=20)
         except subprocess.TimeoutExpired:
             pass
-    cfg_path = Path(env["FANPAI_CONFIG_DIR"]) / "config.json"
+    cfg_path = Path(env["CS2C_CONFIG_DIR"]) / "config.json"
     try:
         result = json.loads(cfg_path.read_text(encoding="utf-8"))
     except Exception as exc:
         print(f"    !! 读回配置失败: {exc}")
         result = {}
-    return result, _read_log(Path(env["FANPAI_LOG_DIR"]))
+    return result, _read_log(Path(env["CS2C_LOG_DIR"]))
 
 
 def main() -> int:
@@ -104,7 +104,7 @@ def main() -> int:
         return 1
 
     base = Path(args.workdir) if args.workdir else \
-        Path(os.environ.get("TEMP", "/tmp")) / "fanpai_qa001_e2e"
+        Path(os.environ.get("TEMP", "/tmp")) / "cs2customizer_qa001_e2e"
 
     # 用仓库根那份真实的开发机配置当种子（就是当年被打进包里的那一份）
     dev_cfg_path = ROOT / "config.json"

@@ -162,7 +162,7 @@ def run_flask():
             return  # 正常退出（stop）
         except OSError:
             logger.exception(f"端口 {port} 启动失败，尝试下一候选端口")
-    _startup_error = "GSI服务器连续多次端口启动失败，请关闭其他帆派助手实例后重启软件"
+    _startup_error = "GSI服务器连续多次端口启动失败，请关闭其他 CS2 Customizer 实例后重启软件"
     logger.error(_startup_error)
 
 class GSIServer:

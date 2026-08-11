@@ -1,16 +1,16 @@
 # -*- coding: utf-8 -*-
 """审计脚本的外部写入沙箱（UP-090）。
 
-**为什么需要它**：审计脚本已经隔离了配置目录和日志目录（`FANPAI_CONFIG_DIR` /
-`FANPAI_LOG_DIR`），但那两个变量管不到第三个出口——**CS2 游戏目录**。
+**为什么需要它**：审计脚本已经隔离了配置目录和日志目录（`CS2C_CONFIG_DIR` /
+`CS2C_LOG_DIR`），但那两个变量管不到第三个出口——**CS2 游戏目录**。
 
 `config.csgo_dir` 是自动探测的：隔离配置是空的 → 探测器扫盘 → 扫到用户真机上
 任意一个 CS2 安装。于是排版审计构建放大镜页时，
 `_ensure_sensitivity_support_files_if_needed()` 会往那个真实游戏目录写
-`fanpai.cfg` / `fanpai_magnifier_runtime.cfg`，**内容还是默认配置生成的**，
+`cs2customizer.cfg` / `cs2customizer_magnifier_runtime.cfg`，**内容还是默认配置生成的**，
 把用户原来的绑定覆盖掉。
 
-R9-A 实测抓到：`G:\\SteamLibrary\\...\\cfg\\fanpai.cfg` 被写成默认配置的 2007 字节版本
+R9-A 实测抓到：`G:\\SteamLibrary\\...\\cfg\\cs2customizer.cfg` 被写成默认配置的 2007 字节版本
 （用户真实配置应生成 2075 字节）。这事已经悄悄发生过很多轮了——审计本身"绿"，
 副作用不在任何判据的视野里。
 
@@ -45,7 +45,7 @@ def sandbox_external_writes(verbose: bool = True) -> Path:
     # 路径必须**固定**，不能用 mkdtemp：`page_fingerprint.py` 要求同一份代码跑两次
     # 得出同一个指纹，而高级设置页会把 CS2 目录原样显示出来。随机目录名会让
     # 指纹每次都不同，于是"页面变了"这个信号彻底失效。
-    sandbox = Path(tempfile.gettempdir()) / "fanpai_audit_game_sandbox"
+    sandbox = Path(tempfile.gettempdir()) / "cs2customizer_audit_game_sandbox"
     # 建出 CS2 的目录形状，写入方 os.makedirs 也能自己建，但先建好更接近真实布局
     (sandbox / "game" / "csgo" / "cfg").mkdir(parents=True, exist_ok=True)
 

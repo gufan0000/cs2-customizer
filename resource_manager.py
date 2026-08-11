@@ -482,7 +482,7 @@ class ResourceManager:
             if failures:
                 logger.error(
                     "[资源迁移] %d 个目录复制失败：%s。**不写迁移完成标记**，"
-                    "下次启动会重试。若持续失败，请检查 %%LOCALAPPDATA%%\\FanTool 的"
+                    "下次启动会重试。若持续失败，请检查 %%LOCALAPPDATA%%\\CS2Customizer 的"
                     "磁盘空间与写入权限（内置音效可能不完整）。",
                     len(failures), ", ".join(failures),
                 )

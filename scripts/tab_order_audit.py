@@ -48,18 +48,18 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 # UP-083: 本脚本会真实实例化页面,而页面构造会触发 config 写盘 ——
 # 实测跑一次就把 config.json 整个重新序列化了一遍。原先它**一行隔离都没有**,
-# 于是每跑一次审计都在动用户真实的 %LOCALAPPDATA%\FanTool\config.json。
+# 于是每跑一次审计都在动用户真实的 %LOCALAPPDATA%\CS2Customizer\config.json。
 # 这次没造成值变化(重写保留了原值),但那是运气:同目录下的
 # layout_overflow_audit 会设 config.ui_expert_mode=True,
 # 换个脚本、换个属性就是真真切切改用户设置了。
 # 与 UP-065 同类:诊断/审计工具写错地方,污染的是用户的真实数据。
-_tmp = Path(tempfile.gettempdir()) / "fanpai_tab_audit"
+_tmp = Path(tempfile.gettempdir()) / "cs2customizer_tab_audit"
 (_tmp / "config").mkdir(parents=True, exist_ok=True)
 (_tmp / "logs").mkdir(parents=True, exist_ok=True)
-os.environ.setdefault("FANPAI_CONFIG_DIR", str(_tmp / "config"))
-os.environ.setdefault("FANPAI_LOG_DIR", str(_tmp / "logs"))
+os.environ.setdefault("CS2C_CONFIG_DIR", str(_tmp / "config"))
+os.environ.setdefault("CS2C_LOG_DIR", str(_tmp / "logs"))
 # 页面里若有准心/音频的自动启动分支,别让审计把它拉起来
-os.environ.setdefault("FANPAI_SAFE_MODE_ACTIVE", "1")
+os.environ.setdefault("CS2C_SAFE_MODE_ACTIVE", "1")
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.stdout.reconfigure(encoding="utf-8")

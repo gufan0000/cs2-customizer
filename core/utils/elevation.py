@@ -39,7 +39,7 @@ def is_admin() -> bool:
 def _build_relaunch_command() -> tuple[str, str]:
     """构造重启命令 (可执行文件, 参数串)。
 
-    - 冻结 exe：``sys.executable`` 就是帆派助手本体，参数只带原始 argv[1:]。
+    - 冻结 exe：``sys.executable`` 就是 CS2 Customizer 本体，参数只带原始 argv[1:]。
     - 源码运行：``sys.executable`` 是 python.exe，参数 = 入口脚本 + argv[1:]。
     """
     if getattr(sys, "frozen", False):

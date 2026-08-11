@@ -9,7 +9,7 @@
     3. 脱敏日志、单实例、atexit、资源标志、优雅退出 5 项优化仍生效
 
 用法：
-    cd H:\\cs_py\\cfg-fanpai
+    cd H:\\cs_py\\cfg-cs2customizer
     python scripts/smoke.py
 
 退出码：

@@ -5,7 +5,7 @@
 内置样式/资源(style id 取证自 config 默认值与各页样式表),零外部素材、
 零版权风险。应用走 preset_center.apply_bundle(自动快照,可回滚)。
 
-后续扩展:外置 .fanpai 精选包放官网,经 R2-1 安检导入——机制已就绪,
+后续扩展:外置 .cs2customizer 精选包放官网,经 R2-1 安检导入——机制已就绪,
 素材按"自录/授权/CC0"红线另行立项(规划决策点②)。
 """
 from __future__ import annotations
@@ -75,7 +75,7 @@ _PACKS: List[Tuple[str, str, str, Dict]] = [
     (
         "full_experience",
         "全功能体验",
-        "准心联动+屏幕特效+HUD 规则全开——一次看到帆派的完整能力。",
+        "准心联动+屏幕特效+HUD 规则全开——一次看到 CS2 Customizer 的完整能力。",
         {
             "schema": SCHEMA_NAME,
             "schema_version": SCHEMA_VERSION,

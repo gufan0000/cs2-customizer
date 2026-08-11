@@ -44,7 +44,7 @@ def test_reads_nonzero_memory():
 
 def test_log_line_matches_probe_regex(caplog):
     """采样日志必须能被基线探针解析,否则埋了等于没埋。"""
-    caplog.set_level("INFO", logger="FanPai.Mem")
+    caplog.set_level("INFO", logger="CS2Customizer.Mem")
     mem_mod.start_mem_monitor(t0=time.perf_counter() - 12.5)
 
     lines = [r.getMessage() for r in caplog.records if "[内存]" in r.getMessage()]
@@ -66,7 +66,7 @@ def test_start_is_idempotent():
 def test_single_failure_does_not_stop(monkeypatch, caplog):
     """瞬时失败不许永久失明——第一次 _tick 恰在启动最繁忙的时刻。"""
     monkeypatch.setattr(mem_mod, "_read_memory_bytes", lambda: (0, 0))
-    caplog.set_level("INFO", logger="FanPai.Mem")
+    caplog.set_level("INFO", logger="CS2Customizer.Mem")
 
     monitor = mem_mod.start_mem_monitor()
 
@@ -79,7 +79,7 @@ def test_stops_after_consecutive_failures(caplog):
     """连续失败到阈值才停表，且必须留下 warning——否则排查时无法区分是老版本还是探针挂了。"""
     import core.utils.mem_monitor as m
 
-    caplog.set_level("WARNING", logger="FanPai.Mem")
+    caplog.set_level("WARNING", logger="CS2Customizer.Mem")
     monitor = m.start_mem_monitor()
     monitor._fail_streak = 0
 

@@ -29,12 +29,12 @@ import time
 from ctypes import wintypes
 from pathlib import Path
 
-_tmp = Path(tempfile.gettempdir()) / "fanpai_verify_r8b"
+_tmp = Path(tempfile.gettempdir()) / "cs2customizer_verify_r8b"
 (_tmp / "config").mkdir(parents=True, exist_ok=True)
 (_tmp / "logs").mkdir(parents=True, exist_ok=True)
-os.environ.setdefault("FANPAI_CONFIG_DIR", str(_tmp / "config"))
-os.environ.setdefault("FANPAI_LOG_DIR", str(_tmp / "logs"))
-os.environ.setdefault("FANPAI_SAFE_MODE_ACTIVE", "1")
+os.environ.setdefault("CS2C_CONFIG_DIR", str(_tmp / "config"))
+os.environ.setdefault("CS2C_LOG_DIR", str(_tmp / "logs"))
+os.environ.setdefault("CS2C_SAFE_MODE_ACTIVE", "1")
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.stdout.reconfigure(encoding="utf-8")

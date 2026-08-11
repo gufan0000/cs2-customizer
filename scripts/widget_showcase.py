@@ -140,7 +140,7 @@ def main() -> int:
     tm.apply_theme("dark")
 
     win = QMainWindow()
-    win.setWindowTitle("帆派助手 - v5 Widget Showcase")
+    win.setWindowTitle("CS2 Customizer - v5 Widget Showcase")
     win.resize(1100, 800)
 
     scroll = QScrollArea()

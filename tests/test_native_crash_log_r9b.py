@@ -246,8 +246,8 @@ def test_subprocesses_do_not_compact(compact, tmp_path):
     append 句柄之后重写文件。判据盯的是"那道环境变量闸门还在"。
     """
     src = (REPO / "main_widget.py").read_text(encoding="utf-8")
-    assert "_FANPAI_CRASHLOG_COMPACTED" in src
+    assert "_CS2C_CRASHLOG_COMPACTED" in src
     # 闸门必须**包住**压缩调用，而不是只出现在文件某处
-    idx_guard = src.index("_FANPAI_CRASHLOG_COMPACTED")
+    idx_guard = src.index("_CS2C_CRASHLOG_COMPACTED")
     idx_call = src.index("_compact_native_crash_log(crash_path)")
     assert idx_guard < idx_call, "环境变量闸门必须在压缩调用之前"

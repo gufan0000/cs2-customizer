@@ -60,7 +60,7 @@ UI 专项结项后跑了一轮**非 UI 维度排查**：八个维度并行只读
 
 2026-08-10 用户手工装了一次 2.2.2。取证时读到卸载注册表项 `DisplayVersion=2.2.0`、
 `InstallDate=20260612`、键 `LastWriteTime` 停在 6-12、`DisplayIcon` 指向早被
-`[InstallDelete]` 删掉的 `帆派助手2.2.0.exe`（`Test-Path`=False）——
+`[InstallDelete]` 删掉的 `CS2 Customizer 2.2.0.exe`（`Test-Path`=False）——
 而同一次安装把 1973 个文件、卸载器、三个快捷方式全刷新了。
 证据链看着很硬，全机 15 把同类 Inno 键里只有这一把例外，还被"7 月装过一次但
 `InstallDate` 仍停在 6 月"佐证。**结论是错的。**
@@ -77,7 +77,7 @@ UI 专项结项后跑了一轮**非 UI 维度排查**：八个维度并行只读
 `EstimatedSize` 也从 238916 变成 245894。**Inno 一步没落下，2.2.2 的安装完全正确。**
 
 判定这是影子而不是"读错 hive / 读错视图"的判据：**同级 26 把子键逐个对拉，
-只有帆派这一把内外不同**，其余 25 把名字、`LastWriteTime`、值数全部相同。
+只有 CS2 Customizer 这一把内外不同**，其余 25 把名字、`LastWriteTime`、值数全部相同。
 另：换 `reg.exe`（非 .NET API）结果一样，排除 API 差异；文件侧读数内外**逐行相同**，
 所以文件类取证（`unins000.dat` 的安装史、文件数、时间戳）仍然可信，失真的只有注册表侧。
 
@@ -341,10 +341,10 @@ B 量**重开**（面板里是不是当次搜索的结果，焦点用 monkeypatc
 ### QA-001 · 发布包带着开发机的活配置（**这批里唯一的 high**）
 
 `build_release.py` 把仓库根的 `config.json` 打进每个发布包
-（已在实物产物 `release/帆派助手2.2.1/_internal/config.json` 验证），
+（已在实物产物 `release/CS2 Customizer 2.2.1/_internal/config.json` 验证），
 而那是**开发者自己在用的那一份**，`csgo_dir` 指向打包机的 Steam 库盘符。
 
-**任何一台没装过帆派的机器，首启 100% 中招**，链路三段：
+**任何一台没装过 CS2 Customizer 的机器，首启 100% 中招**，链路三段：
 
 1. `config.py:659` → `Config.__init__` 无条件调 `migrate_old_config()`
 2. 它看到「程序目录旁有 config.json、用户目录没有」→ `shutil.copy2` 复制成用户配置
@@ -510,7 +510,7 @@ UI 密集的 `main_widget.py` 特别吃亏。
 
 | 验的是什么 | 怎么验的 | 结果 |
 |---|---|---|
-| 产物里还有没有开发机配置 | `find release/帆派助手2.2.2 -name config.json` | **0 个**（对照：2.2.1 产物有 1 个） |
+| 产物里还有没有开发机配置 | `find release/CS2 Customizer 2.2.2 -name config.json` | **0 个**（对照：2.2.1 产物有 1 个） |
 | 安装包里还有没有 | 解析 ISCC 编译日志的收录清单，逐条比对文件名 | 1974 个文件，**0 个** `config.json`（15 种 json 全是图标字库/拼音词典/launcher_config） |
 | 反向断言是不是假绿 | `scripts/verify_qa001_gate.py` —— 真产物原样必须过、塞一份 config.json 进去必须炸 | 两问都答对 |
 | 存量纠正在冻结产物里管不管用 | `scripts/verify_qa001_repair_packaged.py` —— 受害者档 + 正常用户对照档，各跑一遍真 exe | 受害者：纠正标记落盘 / 日志有 warning / **首启引导真的弹了出来**；正常用户：一个字没改、引导没弹 |
@@ -614,7 +614,7 @@ UI 密集的 `main_widget.py` 特别吃亏。
 `load_config`；而 `load_config` 的 `except` 只兜
 `(FileNotFoundError, json.JSONDecodeError, KeyError)` ——
 `ValueError`/`TypeError` 一路冒泡到 import。**软件没有界面、没有提示、
-没有自愈**，用户只能自己去 `%LOCALAPPDATA%\FanTool\config.json` 手改或删掉。
+没有自愈**，用户只能自己去 `%LOCALAPPDATA%\CS2Customizer\config.json` 手改或删掉。
 那条「隔离损坏文件 + 回落默认值」的分支**根本走不到**。
 
 **但触发面比报的窄**（这部分是复核补上的）：

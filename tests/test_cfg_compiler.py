@@ -37,10 +37,10 @@ def _build_config_obj():
 def test_compile_all_contains_all_sections():
     cfg = _build_config_obj()
     content, warnings = compile_all(cfg)
-    assert "// 帆派助手CFG配置文件" in content
-    assert "// -- Viewmodel Settings (FanPai) --" in content
-    assert "// -- HUD Rules Begin (FanPai) --" in content
-    assert '帆派助手CFG配置文件已加载' in content
+    assert "// CS2 Customizer CFG配置文件" in content
+    assert "// -- Viewmodel Settings (CS2 Customizer) --" in content
+    assert "// -- HUD Rules Begin (CS2 Customizer) --" in content
+    assert 'CS2 Customizer CFG配置文件已加载' in content
 
 
 def test_compile_all_idempotent():
@@ -116,8 +116,8 @@ def test_compile_magnifier_runtime_when_enabled():
 
     content = compile_magnifier_runtime(cfg)
 
-    assert "// -- Magnifier Sensitivity Sync (FanPai) --" in content
-    assert 'bind SCROLLLOCK "exec fanpai_magnifier_runtime.cfg"' in content
+    assert "// -- Magnifier Sensitivity Sync (CS2 Customizer) --" in content
+    assert 'bind SCROLLLOCK "exec cs2customizer_magnifier_runtime.cfg"' in content
 
 
 def test_compile_magnifier_runtime_skips_when_disabled():

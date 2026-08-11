@@ -1,4 +1,4 @@
-# 帆派助手 2.0 - Qt版本依赖
+# CS2 Customizer 2.0 - Qt版本依赖
 # 现代化UI所需的额外依赖
 
 # Qt框架
@@ -11,7 +11,7 @@ qtawesome>=1.4.0
 pycaw; platform_system == "Windows"
 comtypes; platform_system == "Windows"
 
-# --- 2026-06-10 安全下限（pip-audit 体检后确定，详见 帆派助手_深度体检报告_20260610.md）---
+# --- 2026-06-10 安全下限（pip-audit 体检后确定）---
 # pillow 12.1.x 含 6 个图片解析 CVE（本软件处理用户导入图片，属真实攻击面）
 pillow>=12.2.0
 # requests/urllib3 升级修复已知 CVE（更新检测/账号登录链路使用）

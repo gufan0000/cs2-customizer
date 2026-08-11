@@ -66,7 +66,7 @@ def test_detects_main_thread_stall(caplog):
     _monitor = jank_mod.start_jank_monitor(t0=time.perf_counter())
     _drain(120)  # 先让心跳正常跑几拍
 
-    caplog.set_level("INFO", logger="FanPai.Jank")
+    caplog.set_level("INFO", logger="CS2Customizer.Jank")
     caplog.clear()
 
     # 阻塞主线程 400ms —— 远超 120ms 阈值
@@ -82,7 +82,7 @@ def test_detects_main_thread_stall(caplog):
 def test_no_false_positive_when_idle(caplog):
     """空闲时不许刷日志(阈值以下不报)。"""
     jank_mod.start_jank_monitor(t0=time.perf_counter())
-    caplog.set_level("INFO", logger="FanPai.Jank")
+    caplog.set_level("INFO", logger="CS2Customizer.Jank")
     caplog.clear()
 
     _drain(300)  # 只跑事件循环,不阻塞

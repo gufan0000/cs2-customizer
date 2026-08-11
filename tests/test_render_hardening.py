@@ -18,9 +18,9 @@ def mw(tmp_path, monkeypatch):
     """把 LOCALAPPDATA 指向临时目录，隔离真实用户数据；清空相关环境变量。"""
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     for key in (
-        "FANPAI_SAFE_MODE",
-        "FANPAI_SAFE_MODE_ACTIVE",
-        "FANPAI_DPI_ROUNDING",
+        "CS2C_SAFE_MODE",
+        "CS2C_SAFE_MODE_ACTIVE",
+        "CS2C_DPI_ROUNDING",
         "QT_OPENGL",
         "QSG_RHI_BACKEND",
         "QT_ENABLE_HIGHDPI_SCALING",
@@ -53,7 +53,7 @@ def test_render_crash_triggers_auto_recovery(mw):
     assert os.environ.get("QT_OPENGL") == "software"
     assert os.environ.get("QT_ENABLE_HIGHDPI_SCALING") == "0"
     assert os.environ.get("QT_QPA_PLATFORM") == "windows:fontengine=freetype"
-    assert os.environ.get("FANPAI_SAFE_MODE_ACTIVE") == "1"
+    assert os.environ.get("CS2C_SAFE_MODE_ACTIVE") == "1"
 
 
 def test_qt_message_handler_routes_warning_to_logger(mw):
@@ -108,7 +108,7 @@ def test_sentinel_write_and_clear_roundtrip(mw):
 
 
 def test_env_var_forces_safe_mode(mw, monkeypatch):
-    monkeypatch.setenv("FANPAI_SAFE_MODE", "1")
+    monkeypatch.setenv("CS2C_SAFE_MODE", "1")
     assert mw._is_safe_mode_requested() is True
     safe, auto = mw._apply_display_hardening()
     assert safe is True

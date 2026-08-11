@@ -1,4 +1,4 @@
-# 帆派助手后台静默自查执行模板 v1
+# CS2 Customizer 后台静默自查执行模板 v1
 
 ## 1. 文档定位
 
@@ -11,9 +11,9 @@
 
 配套文档：
 
-- [帆派助手_后台静默自查索引_v1.md](./帆派助手_后台静默自查索引_v1.md)
-- [帆派助手_后台静默自查规范_v1.md](./帆派助手_后台静默自查规范_v1.md)
-- [帆派助手_后台静默自查覆盖矩阵_v1.md](./帆派助手_后台静默自查覆盖矩阵_v1.md)
+- [CS2Customizer_后台静默自查索引_v1.md](./CS2Customizer_后台静默自查索引_v1.md)
+- [CS2Customizer_后台静默自查规范_v1.md](./CS2Customizer_后台静默自查规范_v1.md)
+- [CS2Customizer_后台静默自查覆盖矩阵_v1.md](./CS2Customizer_后台静默自查覆盖矩阵_v1.md)
 
 ---
 
@@ -99,7 +99,7 @@
 
 凡是涉及以下能力的页面，在静默检查前必须额外断开真实系统写入：
 
-- 写出 `fanpai.cfg`
+- 写出 `cs2customizer.cfg`
 - 写出运行期 CFG
 - 修改 `autoexec.cfg`
 - 自动检测并补齐游戏侧配置
@@ -109,12 +109,12 @@
 - `magnifier_page.py`
 - `viewmodel_page.py`
 - `hud_color_page.py`
-- 以及任何会直接调用 `write_fanpai_cfg`、`setup_autoexec`、`ensure_cfg_exists` 的页面
+- 以及任何会直接调用 `write_cs2customizer_cfg`、`setup_autoexec`、`ensure_cfg_exists` 的页面
 
 对这些页面，静默检查前至少满足下面一条：
 
 1. 显式把 `config.csgo_dir` 置空到临时态，避免落到真实 CS2 目录
-2. monkeypatch `write_fanpai_cfg`
+2. monkeypatch `write_cs2customizer_cfg`
 3. monkeypatch `setup_autoexec`
 4. monkeypatch 启动期自动检测或自动写配置逻辑
 

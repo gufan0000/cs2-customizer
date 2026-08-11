@@ -14,14 +14,14 @@
 
 | 内容 | 位置 |
 | --- | --- |
-| 全部设置（含准心、音效、快捷键、目录等） | `%LOCALAPPDATA%\FanTool\config.json` |
-| 运行日志 | `%LOCALAPPDATA%\FanTool\logs\` |
-| 页面打开次数（给侧栏「常用」排序用） | `%LOCALAPPDATA%\FanTool\usage\page_usage.json` |
-| 道具瞄点使用频次 | `%LOCALAPPDATA%\FanTool\` 下的数据文件 |
+| 全部设置（含准心、音效、快捷键、目录等） | `%LOCALAPPDATA%\CS2Customizer\config.json` |
+| 运行日志 | `%LOCALAPPDATA%\CS2Customizer\logs\` |
+| 页面打开次数（给侧栏「常用」排序用） | `%LOCALAPPDATA%\CS2Customizer\usage\page_usage.json` |
+| 道具瞄点使用频次 | `%LOCALAPPDATA%\CS2Customizer\` 下的数据文件 |
 | 你导入的素材 | 你选择的目录 / 程序数据目录 |
 | 写给游戏的配置 | 你的 CS2 安装目录下的 `cfg` 文件夹 |
 
-想彻底清除：退出程序后删除 `%LOCALAPPDATA%\FanTool` 整个目录即可
+想彻底清除：退出程序后删除 `%LOCALAPPDATA%\CS2Customizer` 整个目录即可
 （这会同时清掉设置，卸载不会自动删它，是为了重装后配置还在）。
 
 **没有账号、没有服务器上的用户档案，也就没有「注销账号」这回事。**
@@ -82,7 +82,7 @@
 
 流程是这样的：
 
-1. 程序启动后发现有**新的**崩溃日志（`%LOCALAPPDATA%\FanTool\logs\bootstrap_crash_*.log`，
+1. 程序启动后发现有**新的**崩溃日志（`%LOCALAPPDATA%\CS2Customizer\logs\bootstrap_crash_*.log`，
    且 mtime 晚于上次处理过的时间）；
 2. 弹一个**非模态**对话框（不会打断你正在做的事），并把**将要发送的内容前 20 行直接摊给你看**；
 3. 三个按钮：**发送并帮助改进** / **本次不发** / **不再询问**；
@@ -104,7 +104,7 @@
 代码：`core/utils/logger.py`、`core/utils/log_filter.py`
 
 - 文件日志默认级别 **INFO**（不是 DEBUG）；需要排查问题时可临时开到 DEBUG：
-  配置项 `debug_file_log = true`，或设环境变量 `FANPAI_DEBUG_LOG=1`；
+  配置项 `debug_file_log = true`，或设环境变量 `CS2C_DEBUG_LOG=1`；
 - 日志按大小轮转，并**保留 14 天**自动清理，不会无限增长；
 - 写入前会过一道脱敏过滤器 `SensitiveFilter`，覆盖：
   `token` / `access_token` / `refresh_token` / `api_key` / `password` / `secret` 等键值对、
@@ -187,4 +187,5 @@ CS2 的 Game State Integration 是 Valve 官方接口：游戏把「你现在是
 
 - 一般问题：开 issue；
 - 涉及安全/隐私漏洞：请走 [SECURITY.md](SECURITY.md) 的私密上报通道；
-- 邮件：`<维护者邮箱>`（**维护者注意：发布前替换成真实邮箱**）。
+- 需要私下联系：走 SECURITY.md 里的 GitHub 私密上报表单（本项目不公布维护者邮箱，
+  原因见该文件）。

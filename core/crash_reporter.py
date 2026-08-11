@@ -32,7 +32,7 @@ MAX_REPORT_BYTES = 64 * 1024
 def _crash_log_dir() -> Path:
     appdata = os.environ.get("LOCALAPPDATA")
     if appdata:
-        return Path(appdata) / "FanTool" / "logs"
+        return Path(appdata) / "CS2Customizer" / "logs"
     return Path("logs")
 
 
@@ -86,7 +86,7 @@ def send_crash_report(report_text: str, version: str, timeout: int = 8) -> Optio
                 "report": str(report_text or "")[: MAX_REPORT_BYTES],
             },
             timeout=timeout,
-            headers={"User-Agent": "FanToolDesktop/2.1"},
+            headers={"User-Agent": "CS2CustomizerDesktop/2.1"},
         )
         if resp.status_code == 404:
             return None

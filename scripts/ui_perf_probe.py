@@ -34,7 +34,7 @@ RE_JANK = re.compile(r"\[卡顿\]\s*主线程停顿\s*(\d+)ms\s*\(启动后\s*([
 RE_PAGE_CREATE = re.compile(r"\[懒加载\]\s*创建页面:\s*(\S+)")
 RE_EXIT_SLOW = re.compile(r"退出步骤\[(.+?)\]偏慢:\s*([\d.]+)s")
 RE_EXIT_TOTAL = re.compile(r"退出清理完成[,，]?\s*共\s*(\d+)\s*步[,，]?\s*总耗时\s*([\d.]+)s")
-RE_SESSION_START = re.compile(r"帆派助手.*?- Widget版")
+RE_SESSION_START = re.compile(r"CS2 Customizer.*?- Widget版")
 RE_QSS_LEN = re.compile(r"样式表总长度:\s*(\d+)\s*字符")
 RE_THEME_CB = re.compile(r"已注册主题变化回调")
 # UP-003 内存采样(core/utils/mem_monitor.py)。改动须同步 tests/test_mem_monitor.py
@@ -171,14 +171,14 @@ except Exception:
 def default_log_dirs() -> list:
     """默认只扫用户运行时日志目录。
 
-    仓库里的 cfg-fanpai/logs/ 躺着 2025 年的历史日志,口径与现在完全不同,
+    仓库里的 cfg-cs2customizer/logs/ 躺着 2025 年的历史日志,口径与现在完全不同,
     无条件合并进来会把两个时代的会话混进同一组中位数。要看它们请显式
     `--logs <path>`。
     """
     dirs = []
     local = os.environ.get("LOCALAPPDATA")
     if local:
-        dirs.append(Path(local) / "FanTool" / "logs")
+        dirs.append(Path(local) / "CS2Customizer" / "logs")
     if not dirs:  # 没有 LOCALAPPDATA 的环境才回退到仓库内 logs/
         dirs.append(Path(__file__).resolve().parent.parent / "logs")
     return [d for d in dirs if d.is_dir()]
@@ -388,14 +388,14 @@ def render_markdown(summary: dict, sessions: list) -> str:
         # 绝不能静默不打印:R0 唯一测到的回调泄漏证据(最大 12425 次注册)是 DEBUG 级,
         # UP-004 降级后它不再写盘。不说明的话,读到"没有这一节"会误以为泄漏已解决。
         A("> **主题变化回调注册数：指标不可用**（该埋点是 DEBUG 级，而所有样本会话都是"
-          " INFO 级日志）。要复现 R0 的回调泄漏证据，需设 `FANPAI_DEBUG_LOG=1` 后跑一次。")
+          " INFO 级日志）。要复现 R0 的回调泄漏证据，需设 `CS2C_DEBUG_LOG=1` 后跑一次。")
         A("")
     return "\n".join(L)
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="帆派助手 UI 性能基线探针")
-    ap.add_argument("--logs", nargs="*", help="日志目录(默认自动探测 %%LOCALAPPDATA%%/FanTool/logs 与 ./logs)")
+    ap = argparse.ArgumentParser(description="CS2 Customizer UI 性能基线探针")
+    ap.add_argument("--logs", nargs="*", help="日志目录(默认自动探测 %%LOCALAPPDATA%%/CS2Customizer/logs 与 ./logs)")
     ap.add_argument("--last", type=int, default=0, help="只统计最近 N 次会话")
     ap.add_argument("--json", action="store_true", help="输出 JSON")
     ap.add_argument("--save", metavar="PATH", help="把 JSON 快照存盘(供下一轮 --compare)")
@@ -408,7 +408,7 @@ def main() -> int:
         return 1
 
     files = sorted(
-        (f for d in dirs for f in d.glob("fanpai_*.log")),
+        (f for d in dirs for f in d.glob("cs2customizer_*.log")),
         key=lambda p: p.stat().st_mtime,
     )
     sessions = [s for f in files for s in parse_log(f)]

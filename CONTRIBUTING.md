@@ -1,6 +1,6 @@
 # 贡献指南
 
-感谢你愿意为 **CS2 Customizer（CS2 个性化定制）** 出力。本文写的都是这个仓库真实在用的规矩，
+感谢你愿意为 **CS2 Customizer （CS2 个性化定制）** 出力。本文写的都是这个仓库真实在用的规矩，
 不是模板套话——尤其是「判据纪律」那一节，它是这个项目区别于大多数桌面工具的地方，请务必读完。
 
 本项目以 **GPL-3.0** 发布。提交贡献即表示你同意你的代码以同一许可证发布（见文末 DCO）。
@@ -67,16 +67,16 @@ python build_tools/run_tests.py config hud # 只跑文件名含关键词的
 
 `tests/conftest.py` 已经把测试进程的配置目录、日志目录、以及配置里的 `csgo_dir`
 全部重定向到临时沙箱——**这三个出口都是被真实事故推着补上的**（曾经误删过 45 个用户历史日志、
-曾经每跑一次 pytest 就往真机 CS2 目录写一次 `fanpai.cfg`）。
+曾经每跑一次 pytest 就往真机 CS2 目录写一次 `cs2customizer.cfg`）。
 
 但 `scripts/` 下的审计/探针脚本**不走 conftest**，手动跑它们时必须自己设隔离前缀：
 
 ```bash
 # bash
-FANPAI_CONFIG_DIR=/tmp/fp_cfg FANPAI_LOG_DIR=/tmp/fp_log python scripts/layout_overflow_audit.py ...
+CS2C_CONFIG_DIR=/tmp/fp_cfg CS2C_LOG_DIR=/tmp/fp_log python scripts/layout_overflow_audit.py ...
 
 # PowerShell
-$env:FANPAI_CONFIG_DIR="$env:TEMP\fp_cfg"; $env:FANPAI_LOG_DIR="$env:TEMP\fp_log"; python scripts\layout_overflow_audit.py ...
+$env:CS2C_CONFIG_DIR="$env:TEMP\fp_cfg"; $env:CS2C_LOG_DIR="$env:TEMP\fp_log"; python scripts\layout_overflow_audit.py ...
 ```
 
 判断标准很简单：**跑完仓库外面不该多出、少掉或改动任何文件。**

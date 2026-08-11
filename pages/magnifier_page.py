@@ -11,7 +11,7 @@ from PySide6.QtCore import Qt, QSize, Signal
 from PySide6.QtGui import QIntValidator, QDoubleValidator
 from config import config
 from cfg_utils import setup_autoexec
-from core.cfg_compiler import write_fanpai_cfg
+from core.cfg_compiler import write_cs2customizer_cfg
 from core.magnifier_sensitivity import (
     DEFAULT_SYNC_TRIGGER_KEY,
     compute_zoom_sensitivity,
@@ -625,7 +625,7 @@ class MagnifierPage(QWidget):
         sensitivity_layout.addWidget(self.zoom_profile_label)
 
         self.sensitivity_hint_label = QLabel(
-            "基础灵敏度请填写你在 CS2 里的 sensitivity；联动开启后会直接按这里的预设同步。首次在当前游戏会话启用时，如未生效请在控制台执行一次 exec fanpai.cfg。"
+            "基础灵敏度请填写你在 CS2 里的 sensitivity；联动开启后会直接按这里的预设同步。首次在当前游戏会话启用时，如未生效请在控制台执行一次 exec cs2customizer.cfg。"
         )
         self.sensitivity_hint_label.setObjectName("subtitleLabel")
         self.sensitivity_hint_label.setWordWrap(True)
@@ -998,7 +998,7 @@ class MagnifierPage(QWidget):
 
         try:
             setup_autoexec(csgo_dir)
-            warnings = write_fanpai_cfg(self.config)
+            warnings = write_cs2customizer_cfg(self.config)
             runtime_cfg_path = get_magnifier_runtime_cfg_path(csgo_dir)
             write_magnifier_runtime_cfg(
                 runtime_cfg_path,
@@ -1076,7 +1076,7 @@ class MagnifierPage(QWidget):
             if ok:
                 try:
                     from ui_toast import toast_info
-                    toast_info("已同步到 CFG；若当前游戏会话首次启用，请在控制台执行一次 exec fanpai.cfg", 4500)
+                    toast_info("已同步到 CFG；若当前游戏会话首次启用，请在控制台执行一次 exec cs2customizer.cfg", 4500)
                 except Exception:
                     pass
             else:
@@ -1813,7 +1813,7 @@ class MagnifierPage(QWidget):
         box.setText("放大功能初始化失败。")
         box.setInformativeText(
             "绝大多数电脑普通权限即可使用放大；当前环境初始化失败，\n"
-            "以管理员身份重启帆派助手通常可以解决。\n\n"
+            "以管理员身份重启 CS2 Customizer 通常可以解决。\n\n"
             "是否现在以管理员身份重启？"
         )
         restart_btn = box.addButton("以管理员身份重启", QMessageBox.AcceptRole)

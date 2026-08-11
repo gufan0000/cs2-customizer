@@ -280,7 +280,7 @@ GSI 线程 ──► manager._kill_signal.emit(is_headshot)   # QObject 的 Sign
 回退仍是一行：`config.json` 里加 `"crosshair_renderer": "pygame"`，
 老实现代码保留一个发布周期。
 
-`FANPAI_SAFE_MODE_ACTIVE=1`（兼容模式）下的处置**要改**：
+`CS2C_SAFE_MODE_ACTIVE=1`（兼容模式）下的处置**要改**：
 现在是「跳过准心」，Qt 化之后兼容模式**不再需要跳过**——
 跳过的理由是 SDL 与 Qt 抢资源，而 Qt 渲染器没有 SDL。
 但**本轮不动这一行**：先让两条路并存跑满一个周期，

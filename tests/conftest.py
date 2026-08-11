@@ -11,22 +11,22 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 # 测试隔离：把配置目录重定向到临时目录，避免测试中对 config 的夹具改动
 # （如 weapon_switch_sounds=styleSwitch）经防抖/atexit/显式 save 写进用户真实配置。
 # 必须在任何测试 import config 之前设置（conftest 在收集阶段最先执行）。
-_fanpai_test_cfg_dir = os.path.join(tempfile.gettempdir(), "fanpai_test_config")
-os.makedirs(_fanpai_test_cfg_dir, exist_ok=True)
-os.environ["FANPAI_CONFIG_DIR"] = _fanpai_test_cfg_dir
+_cs2customizer_test_cfg_dir = os.path.join(tempfile.gettempdir(), "cs2customizer_test_config")
+os.makedirs(_cs2customizer_test_cfg_dir, exist_ok=True)
+os.environ["CS2C_CONFIG_DIR"] = _cs2customizer_test_cfg_dir
 
 # 同理隔离日志目录（UP-004）：否则测试会往用户真实的
-# %LOCALAPPDATA%\FanTool\logs 写入，而且过期清理会真的删掉用户的历史日志
+# %LOCALAPPDATA%\CS2Customizer\logs 写入，而且过期清理会真的删掉用户的历史日志
 # —— 这在开发 UP-004 时已经真实发生过一次（误删 45 个历史日志）。
-_fanpai_test_log_dir = os.path.join(tempfile.gettempdir(), "fanpai_test_logs")
-os.makedirs(_fanpai_test_log_dir, exist_ok=True)
-os.environ["FANPAI_LOG_DIR"] = _fanpai_test_log_dir
+_cs2customizer_test_log_dir = os.path.join(tempfile.gettempdir(), "cs2customizer_test_logs")
+os.makedirs(_cs2customizer_test_log_dir, exist_ok=True)
+os.environ["CS2C_LOG_DIR"] = _cs2customizer_test_log_dir
 
 # ==================== 第三个出口：CS2 游戏目录（UP-090）====================
 # 上面两条隔离管的是配置和日志，管不到 `config.csgo_dir`——那是**存在配置里**
 # 的一个路径。隔离配置一旦被自动探测填过一次（实测填成了用户的
 # <盘符>:\SteamLibrary\...\Counter-Strike Global Offensive），之后每一次 pytest 都会
-# 让建页的测试往用户真机的游戏目录写 fanpai.cfg，内容还是测试环境编译出来的。
+# 让建页的测试往用户真机的游戏目录写 cs2customizer.cfg，内容还是测试环境编译出来的。
 #
 # 实测：一次 `python -m pytest -q` 就会改写那个文件的 mtime。这事已经无声发生
 # 很久了——测试全绿，因为没有任何判据看着"测试有没有写仓库外的东西"。
@@ -34,19 +34,19 @@ os.environ["FANPAI_LOG_DIR"] = _fanpai_test_log_dir
 # 这里在**任何测试 import config 之前**把持久化的 csgo_dir 按到沙箱目录上。
 # 用固定路径而不是 mkdtemp：`page_fingerprint.py` 要求指纹可复现，而高级设置页
 # 会把这个路径原样显示出来。与 `scripts/_audit_sandbox.py` 用的是同一个目录。
-_fanpai_game_sandbox = os.path.join(tempfile.gettempdir(), "fanpai_audit_game_sandbox")
-os.makedirs(os.path.join(_fanpai_game_sandbox, "game", "csgo", "cfg"), exist_ok=True)
-_fanpai_test_cfg_file = os.path.join(_fanpai_test_cfg_dir, "config.json")
+_cs2customizer_game_sandbox = os.path.join(tempfile.gettempdir(), "cs2customizer_audit_game_sandbox")
+os.makedirs(os.path.join(_cs2customizer_game_sandbox, "game", "csgo", "cfg"), exist_ok=True)
+_cs2customizer_test_cfg_file = os.path.join(_cs2customizer_test_cfg_dir, "config.json")
 try:
     import json as _json
 
     _seed = {}
-    if os.path.exists(_fanpai_test_cfg_file):
-        with open(_fanpai_test_cfg_file, encoding="utf-8") as _fp:
+    if os.path.exists(_cs2customizer_test_cfg_file):
+        with open(_cs2customizer_test_cfg_file, encoding="utf-8") as _fp:
             _seed = _json.load(_fp)
-    if _seed.get("csgo_dir") != _fanpai_game_sandbox:
-        _seed["csgo_dir"] = _fanpai_game_sandbox
-        with open(_fanpai_test_cfg_file, "w", encoding="utf-8") as _fp:
+    if _seed.get("csgo_dir") != _cs2customizer_game_sandbox:
+        _seed["csgo_dir"] = _cs2customizer_game_sandbox
+        with open(_cs2customizer_test_cfg_file, "w", encoding="utf-8") as _fp:
             _json.dump(_seed, _fp, ensure_ascii=False, indent=1)
 except Exception:
     # 隔离设施本身绝不能让测试跑不起来；真失效了由

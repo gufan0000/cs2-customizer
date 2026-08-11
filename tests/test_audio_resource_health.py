@@ -171,7 +171,7 @@ def test_gsi_cfg_check_reports_missing_match_stats(tmp_path, monkeypatch):
 
     cfg_dir = tmp_path / "game" / "csgo" / "cfg"
     cfg_dir.mkdir(parents=True)
-    cfg_path = cfg_dir / "gamestate_integration_fanpai.cfg"
+    cfg_path = cfg_dir / "gamestate_integration_cs2customizer.cfg"
     cfg_path.write_text('"data" { "player_state" "1" }', encoding="utf-8")
 
     monkeypatch.setattr(config, "csgo_dir", str(tmp_path), raising=False)

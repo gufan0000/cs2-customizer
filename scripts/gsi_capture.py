@@ -9,15 +9,15 @@
 - CS2 的 GSI 是游戏客户端在「实际运行(或回放 demo)」时通过 HTTP POST 实时发到
   本机 127.0.0.1:3000 的;**.dem 录像文件里不含 GSI**——所以采集必须在游戏运行时进行。
 
-用法(Windows;需先关闭帆派助手以腾出 3000 端口,cfg 已指向 3000,无需改):
-    1) 关闭帆派助手
+用法(Windows;需先关闭 CS2 Customizer 以腾出 3000 端口,cfg 已指向 3000,无需改):
+    1) 关闭 CS2 Customizer
     2) python scripts/gsi_capture.py            # 开始监听
     3) 打开 CS2 打一局死斗(或 console 里 playdemo 某录像),正常游戏
     4) 回到本窗口 Ctrl+C 结束
     5) 产出 tests/fixtures/gsi_captures/gsi_capture_<时间>.jsonl,发给助手生成回归用例
 
 参数:
-    --port 3000     监听端口(须与 gamestate_integration_fanpai.cfg 的 uri 端口一致)
+    --port 3000     监听端口(须与 gamestate_integration_cs2customizer.cfg 的 uri 端口一致)
     --out  <路径>   输出 jsonl(默认 tests/fixtures/gsi_captures/gsi_capture_<时间>.jsonl)
 """
 from __future__ import annotations
@@ -75,10 +75,10 @@ def main() -> int:
     httpd.frame_count = 0
 
     print("=" * 64)
-    print("  帆派助手 — 真机 GSI 采集器")
+    print("  CS2 Customizer — 真机 GSI 采集器")
     print(f"  监听 127.0.0.1:{args.port}    输出 {out_path}")
     print("  现在打开 CS2 游戏(或 playdemo);Ctrl+C 结束采集。")
-    print("  注意:需先关闭帆派助手以释放 3000 端口。")
+    print("  注意:需先关闭 CS2 Customizer 以释放 3000 端口。")
     print("=" * 64)
     t0 = time.time()
     try:

@@ -34,7 +34,7 @@ def test_compile_cfg_rules_contains_key_bind_and_alias():
     lines = compile_cfg_rules(cfg)
     assert any("alias fp_hud_slot_1" in line for line in lines)
     assert any('bind 1 "fp_hud_slot_1"' in line for line in lines)
-    assert not any("exec fanpai_hud_runtime.cfg" in line for line in lines)
+    assert not any("exec cs2customizer_hud_runtime.cfg" in line for line in lines)
 
 
 def test_compile_cfg_rules_contains_refresh_proxy_when_runtime_enabled():
@@ -43,24 +43,24 @@ def test_compile_cfg_rules_contains_refresh_proxy_when_runtime_enabled():
 
     for key in ("w", "s", "a", "d"):
         assert any(
-            f"alias +fp_hud_{key}" in line and "exec fanpai_hud_runtime.cfg" in line
+            f"alias +fp_hud_{key}" in line and "exec cs2customizer_hud_runtime.cfg" in line
             for line in lines
         ), f"+alias {key} missing"
         assert any(
-            f"alias -fp_hud_{key}" in line and "exec fanpai_hud_runtime.cfg" in line
+            f"alias -fp_hud_{key}" in line and "exec cs2customizer_hud_runtime.cfg" in line
             for line in lines
         ), f"-alias {key} missing"
         assert any(f"bind {key} +fp_hud_{key}" in line for line in lines), f"bind {key} missing"
 
-    assert any('alias +fp_hud_a "+left; exec fanpai_hud_runtime.cfg"' == line for line in lines)
-    assert any('alias +fp_hud_d "+right; exec fanpai_hud_runtime.cfg"' == line for line in lines)
+    assert any('alias +fp_hud_a "+left; exec cs2customizer_hud_runtime.cfg"' == line for line in lines)
+    assert any('alias +fp_hud_d "+right; exec cs2customizer_hud_runtime.cfg"' == line for line in lines)
 
     assert any(
-        "alias +fp_hud_mouse1" in line and "exec fanpai_hud_runtime.cfg" in line
+        "alias +fp_hud_mouse1" in line and "exec cs2customizer_hud_runtime.cfg" in line
         for line in lines
     )
     assert any(
-        "alias -fp_hud_mouse1" in line and "exec fanpai_hud_runtime.cfg" in line
+        "alias -fp_hud_mouse1" in line and "exec cs2customizer_hud_runtime.cfg" in line
         for line in lines
     )
     assert any("bind mouse1 +fp_hud_mouse1" in line for line in lines)
@@ -82,6 +82,6 @@ def test_compile_cfg_rules_mouse1_merges_crosshair_reset():
 
 
 def test_get_cfg_paths():
-    fanpai_cfg, runtime_cfg = get_cfg_paths(r"C:\cs2")
-    assert fanpai_cfg.endswith(r"game\csgo\cfg\fanpai.cfg")
-    assert runtime_cfg.endswith(r"game\csgo\cfg\fanpai_hud_runtime.cfg")
+    cs2customizer_cfg, runtime_cfg = get_cfg_paths(r"C:\cs2")
+    assert cs2customizer_cfg.endswith(r"game\csgo\cfg\cs2customizer.cfg")
+    assert runtime_cfg.endswith(r"game\csgo\cfg\cs2customizer_hud_runtime.cfg")

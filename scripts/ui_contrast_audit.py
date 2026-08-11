@@ -29,14 +29,14 @@ import tempfile
 from pathlib import Path
 
 # UP-083: 本脚本虽然只做 token 数学,但 import theme_manager 会连带把 config /
-# logger 拉起来,于是每跑一次就往用户真实的 %LOCALAPPDATA%\FanTool\logs 追加
+# logger 拉起来,于是每跑一次就往用户真实的 %LOCALAPPDATA%\CS2Customizer\logs 追加
 # 一段启动横幅。诊断工具污染真实日志 = 污染真实崩溃的取证材料(UP-065 的教训)。
 # 隔离必须在 import 产品代码之前设好。
-_tmp = Path(tempfile.gettempdir()) / "fanpai_contrast_audit"
+_tmp = Path(tempfile.gettempdir()) / "cs2customizer_contrast_audit"
 (_tmp / "config").mkdir(parents=True, exist_ok=True)
 (_tmp / "logs").mkdir(parents=True, exist_ok=True)
-os.environ.setdefault("FANPAI_CONFIG_DIR", str(_tmp / "config"))
-os.environ.setdefault("FANPAI_LOG_DIR", str(_tmp / "logs"))
+os.environ.setdefault("CS2C_CONFIG_DIR", str(_tmp / "config"))
+os.environ.setdefault("CS2C_LOG_DIR", str(_tmp / "logs"))
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -172,7 +172,7 @@ def _disabled_distinguishable(theme) -> tuple[bool, float]:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="帆派助手 主题对比度审计")
+    ap = argparse.ArgumentParser(description="CS2 Customizer 主题对比度审计")
     ap.add_argument("--verbose", action="store_true", help="打印全部比值，不只是失败项")
     ap.add_argument("--target", type=float, default=None,
                     help="覆盖正文阈值（默认 WCAG AA 4.5）")

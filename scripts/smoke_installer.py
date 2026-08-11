@@ -37,12 +37,12 @@ except Exception:
 
 ISS = ROOT / "build_tools" / "installer.iss"
 SMOKE_ISS = ROOT / "build_tools" / "installer_smoketest.iss"
-SMOKE_APPID = "{{9E3B7C7F-5A3C-4F3D-AD72-FANPAISMOKE26}}"
-SMOKE_DIRNAME = r"{localappdata}\FanToolInstallSmoke\{#AppName}"
+SMOKE_APPID = "{{71FC196A-0F18-4608-B746-0983A65518E4}}"
+SMOKE_DIRNAME = r"{localappdata}\CS2CustomizerInstallSmoke\{#AppName}"
 SMOKE_GROUP = "{#AppName} 安装冒烟"
 
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
-RUN_VALUE = "FanTool帆派助手"
+RUN_VALUE = "CS2Customizer"
 UNINST_KEY = r"Software\Microsoft\Windows\CurrentVersion\Uninstall"
 
 ISCC_CANDIDATES = [
@@ -73,7 +73,7 @@ def find_iscc() -> Path | None:
 #      跟本进程在同一个容器里，它的写入落进同一份影子。所以「已登记 / 已删除」
 #      这两条**必须继续用 winreg 读**——同上下文才对得上。换成容器外读反而全错。
 #
-#   B. **开发机原有的状态**（帆派真实卸载项、开机自启值）。这是**真机事实**，
+#   B. **开发机原有的状态**（ CS2 Customizer 真实卸载项、开机自启值）。这是**真机事实**，
 #      影子里那份可能是几个月前的旧快照。「原封不动」这句话要成立，
 #      必须拿容器外的真值来对。
 #
@@ -86,21 +86,21 @@ def find_iscc() -> Path | None:
 # 回读。读得到 ⇒ 两边同一份 hive，winreg 可信；读不到 ⇒ 确认被影子化；
 # 逃逸根本起不来 ⇒ 通道未知，相关判据一律记「未测」，不许算通过。
 
-PROBE_KEY = r"Software\FanToolSmokeProbe"
+PROBE_KEY = r"Software\CS2CustomizerSmokeProbe"
 
 _PS_DUMP = """param($OutPath)
 $res = @{}
 try {
-  $res.probe = (Get-ItemProperty -Path 'HKCU:\\Software\\FanToolSmokeProbe' -Name marker -ErrorAction Stop).marker
+  $res.probe = (Get-ItemProperty -Path 'HKCU:\\Software\\CS2CustomizerSmokeProbe' -Name marker -ErrorAction Stop).marker
 } catch { $res.probe = '' }
 try {
-  $res.run = [string](Get-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run' -Name 'FanTool帆派助手' -ErrorAction Stop).'FanTool帆派助手'
+  $res.run = [string](Get-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run' -Name 'CS2Customizer' -ErrorAction Stop).'CS2Customizer'
 } catch { $res.run = $null }
 $un = @{}
 Get-ChildItem 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall' -ErrorAction SilentlyContinue | ForEach-Object {
   $p = Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue
   $d = [string]$p.DisplayName
-  if ($d -like '*帆派*' -or $d -like '*FanTool*') {
+  if ($d -like '*CS2 Customizer*' -or $d -like '*CS2Customizer*') {
     $un[$_.PSChildName] = @($d, [string]$p.DisplayVersion, [string]$p.InstallLocation)
   }
 }
@@ -120,7 +120,7 @@ def _escaped_registry_dump(marker: str, timeout_s: int = 40) -> dict | None:
     import tempfile
     import time
 
-    tmp = Path(tempfile.mkdtemp(prefix="fanpai_regprobe_"))
+    tmp = Path(tempfile.mkdtemp(prefix="cs2customizer_regprobe_"))
     out, ps1, bat = tmp / "out.json", tmp / "dump.ps1", tmp / "run.bat"
     try:
         # BOM：脚本里有中文（Run 值名、DisplayName 过滤），PowerShell 要靠 BOM 认 UTF-8
@@ -179,7 +179,7 @@ def read_run_value() -> str | None:
 
 
 def read_uninstall_entries() -> dict:
-    """返回 {子键名: (DisplayName, DisplayVersion, InstallLocation)}，只取帆派相关的。"""
+    """返回 {子键名: (DisplayName, DisplayVersion, InstallLocation)}，只取 CS2 Customizer 相关的。"""
     out = {}
     try:
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, UNINST_KEY) as root:
@@ -198,7 +198,7 @@ def read_uninstall_entries() -> dict:
                             except OSError:
                                 return ""
                         disp = get("DisplayName")
-                        if "帆派" in str(disp) or "FanTool" in str(disp):
+                        if "CS2 Customizer" in str(disp) or "CS2Customizer" in str(disp):
                             out[name] = (disp, get("DisplayVersion"), get("InstallLocation"))
                 except OSError:
                     continue
@@ -218,7 +218,7 @@ def make_smoke_iss() -> None:
     text = sub1(r"^DefaultDirName=.*$", f"DefaultDirName={SMOKE_DIRNAME}", text)
     text = sub1(r"^DefaultGroupName=.*$", f"DefaultGroupName={SMOKE_GROUP}", text)
     text = sub1(r"^OutputBaseFilename=.*$",
-                "OutputBaseFilename=帆派助手安装包_{#AppVersion}_smoketest", text)
+                "OutputBaseFilename=CS2Customizer-Setup-{#AppVersion}_smoketest", text)
     changed = sum(1 for a, b in zip(orig.splitlines(), text.splitlines()) if a != b)
     if changed != 4:
         raise RuntimeError(f"隔离变体只应改 4 行，实际改了 {changed} 行 —— iss 结构变了，脚本要更新")
@@ -245,7 +245,7 @@ def main() -> int:
             return 1
         version = m.group(1)
 
-    onedir = ROOT / "release" / f"帆派助手{version}"
+    onedir = ROOT / "release" / f"CS2 Customizer{version}"
     if not onedir.is_dir():
         print(f"!! 找不到 onedir 产物: {onedir}")
         return 1
@@ -255,11 +255,11 @@ def main() -> int:
         print("!! 找不到 ISCC.exe（Inno Setup 6）")
         return 1
 
-    install_dir = Path(os.environ["LOCALAPPDATA"]) / "FanToolInstallSmoke" / "帆派助手"
+    install_dir = Path(os.environ["LOCALAPPDATA"]) / "CS2CustomizerInstallSmoke" / "CS2 Customizer"
     group_dir = (Path(os.environ["APPDATA"]) / "Microsoft" / "Windows"
-                 / "Start Menu" / "Programs" / "帆派助手 安装冒烟")
-    user_data = Path(os.environ["LOCALAPPDATA"]) / "FanTool"
-    desktop_lnk = Path.home() / "Desktop" / "帆派助手.lnk"
+                 / "Start Menu" / "Programs" / "CS2 Customizer 安装冒烟")
+    user_data = Path(os.environ["LOCALAPPDATA"]) / "CS2Customizer"
+    desktop_lnk = Path.home() / "Desktop" / "CS2 Customizer.lnk"
 
     print(f"版本      : {version}")
     print(f"ISCC      : {iscc}")
@@ -287,7 +287,7 @@ def main() -> int:
     before_cfg = (user_data / "config.json")
     before_cfg_stat = (before_cfg.stat().st_size, before_cfg.stat().st_mtime) \
         if before_cfg.is_file() else None
-    print(f"快照      : 自启值={before_run!r}｜帆派卸载项 {len(before_uninst)} 个｜"
+    print(f"快照      : 自启值={before_run!r}｜ CS2 Customizer 卸载项 {len(before_uninst)} 个｜"
           f"桌面快捷方式={'有' if before_lnk else '无'}")
 
     ok = True
@@ -300,7 +300,7 @@ def main() -> int:
             print((p.stdout or "")[-1500:])
             print("!! 编译失败")
             return 1
-        setup_exe = ROOT / "release" / "installer" / f"帆派助手安装包_{version}_smoketest.exe"
+        setup_exe = ROOT / "release" / "installer" / f"CS2Customizer-Setup-{version}_smoketest.exe"
         if not setup_exe.is_file():
             print(f"!! 编译成功但找不到产物: {setup_exe}")
             return 1
@@ -312,7 +312,7 @@ def main() -> int:
         print(f"      安装程序退出码 {p.returncode}")
 
         print("\n[3/6] 核对安装结果")
-        exe = install_dir / "帆派助手.exe"
+        exe = install_dir / "CS2 Customizer.exe"
         checks = [
             ("安装目录已建立", install_dir.is_dir()),
             ("主程序 exe 在位", exe.is_file()),

@@ -415,7 +415,7 @@ def test_preset_center_page_status_strip_tracks_dirty_state(qapp, monkeypatch):
         preset_page_module,
         "export_bundle",
         lambda selected: {
-            "schema": "fanpai_preset_bundle",
+            "schema": "cs2customizer_preset_bundle",
             "schema_version": 1,
             "items": [{"type": item, "payload": {"enabled": True}} for item in selected],
         },
@@ -1815,8 +1815,8 @@ class _DummyMusicPlayer:
         self.play_mode = "repeat_all"
         self._playlists = ["默认", "收藏"]
         self._playlist = [
-            {"title": "Inferno Pulse", "artist": "FanPai", "duration": 182, "type": "local", "path": "a.mp3"},
-            {"title": "Dust Loop", "artist": "FanPai", "duration": 201, "type": "local", "path": "b.mp3"},
+            {"title": "Inferno Pulse", "artist": "CS2Customizer", "duration": 182, "type": "local", "path": "a.mp3"},
+            {"title": "Dust Loop", "artist": "CS2Customizer", "duration": 201, "type": "local", "path": "b.mp3"},
             {"title": "Mirage Radio", "artist": "", "duration": 0, "type": "url", "path": "https://example.com/live"},
         ]
 

@@ -4,10 +4,10 @@
 **背景**：审计脚本一直隔离了配置目录和日志目录，于是"隔离"这件事看上去是做到了。
 但 `config.csgo_dir` 不受那两个环境变量管——它是**自动探测**的：隔离配置是空的，
 探测器就去扫用户真机上的 CS2 安装。排版审计构建放大镜页时，
-`_ensure_sensitivity_support_files_if_needed()` 于是往真实游戏目录写了 `fanpai.cfg`，
+`_ensure_sensitivity_support_files_if_needed()` 于是往真实游戏目录写了 `cs2customizer.cfg`，
 内容还是**默认配置**编译出来的，把用户原有的 bind 覆盖掉。
 
-实测证据（R9-A）：`<CS2 安装目录>\\cfg\\fanpai.cfg` 被写成 2007 字节的默认版，
+实测证据（R9-A）：`<CS2 安装目录>\\cfg\\cs2customizer.cfg` 被写成 2007 字节的默认版，
 而用户真实配置应生成 2075 字节。这不是这次才发生的——审计跑过多少轮就发生过多少轮，
 而且**每一轮审计都是绿的**，因为副作用不在任何判据的视野里。
 
@@ -28,7 +28,7 @@ SANDBOX_CALL = "sandbox_external_writes"
 #: 会建页、但**故意**不沙箱化的脚本，必须写明理由。
 #: 空理由 = 不算豁免，测试照样红——豁免要有代价，否则名单会无声地变长。
 EXEMPT = {
-    # 开源裁剪移除了两条豁免（build_fanpai_local_manual.py /
+    # 开源裁剪移除了两条豁免（build_cs2customizer_local_manual.py /
     # capture_desktop_tutorial_screenshots.py）——那两个文档工具脚本本身已不在仓库里。
     # 名单只许减不许增，见 test_exemptions_are_not_stale。
     "bench_startup_path.py":
@@ -212,9 +212,9 @@ def test_sandbox_redirects_csgo_dir_to_an_existing_temp_dir():
 def test_the_test_suite_itself_does_not_point_at_a_real_game_dir():
     """判据的判据：**测试套件自己**也不许指向用户真实的 CS2 目录。
 
-    R9-A 实测：`fanpai_test_config/config.json` 里持久化着
+    R9-A 实测：`cs2customizer_test_config/config.json` 里持久化着
     `csgo_dir=<CS2 安装目录>`，于是每跑一次 pytest，建页的测试就往用户
-    真机的游戏目录写一次 `fanpai.cfg`。全绿了几十轮，因为没人看着这件事。
+    真机的游戏目录写一次 `cs2customizer.cfg`。全绿了几十轮，因为没人看着这件事。
 
     回退验证：把 conftest 里那段按 csgo_dir 的代码删掉、并让隔离配置里
     重新存回一个真实路径，本条立刻变红。
@@ -231,7 +231,7 @@ def test_the_test_suite_itself_does_not_point_at_a_real_game_dir():
     resolved = Path(csgo_dir).resolve()
     assert tmp_root in resolved.parents or resolved == tmp_root, (
         f"测试环境的 csgo_dir 指向了临时目录之外：{csgo_dir}\n"
-        "跑一次 pytest 就会改写那里的 fanpai.cfg。见 tests/conftest.py 的 UP-090 段。"
+        "跑一次 pytest 就会改写那里的 cs2customizer.cfg。见 tests/conftest.py 的 UP-090 段。"
     )
 
 
@@ -302,7 +302,7 @@ def test_live_run_sandboxes_the_game_dir_by_default(tmp_path):
 
     env = live_run._prepare_env(tmp_path)
     written = _json.loads(
-        (Path(env["FANPAI_CONFIG_DIR"]) / "config.json").read_text(encoding="utf-8")
+        (Path(env["CS2C_CONFIG_DIR"]) / "config.json").read_text(encoding="utf-8")
     )
     csgo_dir = str(written.get("csgo_dir") or "")
     assert csgo_dir, "csgo_dir 被置空了——页面会走「未配置 CS2 目录」分支，等于改掉了被测对象"
@@ -311,7 +311,7 @@ def test_live_run_sandboxes_the_game_dir_by_default(tmp_path):
     allowed = (Path(tempfile.gettempdir()).resolve(), Path(tmp_path).resolve())
     assert any(root == resolved or root in resolved.parents for root in allowed), (
         f"真机跑测的 csgo_dir 指向了临时目录之外：{csgo_dir}\n"
-        "跑一次 live_run.py 就会改写那里的 fanpai.cfg（UP-093）"
+        "跑一次 live_run.py 就会改写那里的 cs2customizer.cfg（UP-093）"
     )
     assert (resolved / "game" / "csgo" / "cfg").is_dir(), (
         "沙箱游戏目录的 game/csgo/cfg 没建出来，写 cfg 时会走异常分支"
@@ -333,7 +333,7 @@ def test_live_run_can_still_opt_into_the_real_game_dir(tmp_path):
 
     env = live_run._prepare_env(tmp_path / "real", real_game_dir=True)
     written = _json.loads(
-        (Path(env["FANPAI_CONFIG_DIR"]) / "config.json").read_text(encoding="utf-8")
+        (Path(env["CS2C_CONFIG_DIR"]) / "config.json").read_text(encoding="utf-8")
     )
     sandbox = str((tmp_path / "real" / "game_dir").resolve())
     assert str(written.get("csgo_dir") or "") != sandbox, (

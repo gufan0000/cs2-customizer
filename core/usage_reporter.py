@@ -78,7 +78,7 @@ def send_usage_report(timeout: int = 8) -> Optional[bool]:
             USAGE_REPORT_API_URL,
             json=build_payload(),
             timeout=timeout,
-            headers={"User-Agent": "FanToolDesktop/2.1"},
+            headers={"User-Agent": "CS2CustomizerDesktop/2.1"},
         )
         if resp.status_code == 404:
             return None

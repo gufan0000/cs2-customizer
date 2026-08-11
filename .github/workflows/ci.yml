@@ -89,8 +89,8 @@ jobs:
       # 里不可用(只在 step 级可用)，写了会让**整个 workflow 文件**校验失败——
       # 结果不是"ui-audit 红了"，而是连既有的 test 作业一起不被调度。
       # `github` 上下文在 job 级 env 是可用的，故改用 github.workspace。
-      FANPAI_CONFIG_DIR: ${{ github.workspace }}\_ci_tmp\config
-      FANPAI_LOG_DIR: ${{ github.workspace }}\_ci_tmp\logs
+      CS2C_CONFIG_DIR: ${{ github.workspace }}\_ci_tmp\config
+      CS2C_LOG_DIR: ${{ github.workspace }}\_ci_tmp\logs
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 

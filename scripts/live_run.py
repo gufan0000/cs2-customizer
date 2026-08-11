@@ -6,7 +6,7 @@
 不可复现,而且会把用户真实配置/日志搅乱。本脚本:
 
 - 用**隔离的配置、日志与 CS2 游戏目录**跑(拷贝用户配置,只改 close_action=exit
-  让关窗可自动化),用户真实的 %LOCALAPPDATA%\\FanTool 与真实游戏目录都不受影响;
+  让关窗可自动化),用户真实的 %LOCALAPPDATA%\\CS2Customizer 与真实游戏目录都不受影响;
 - 跑够指定秒数后,枚举该进程的顶层窗口并 PostMessage(WM_CLOSE)——这是唯一能真正
   触发 Qt closeEvent 的方式(实测 taskkill 与 Process.CloseMainWindow 都不行,
   前者不走 Qt 事件循环,后者命中的是控制台窗口);
@@ -24,7 +24,7 @@
 ⚠️ 会真的启动软件:准心覆盖窗会出现在屏幕上、GSI 会占 127.0.0.1:3000、
 音频设备会被初始化。若配置里开了全局热键,它们在这几十秒内是生效的。
 
-⚠️ `--real-game-dir` 会让本次跑测写你**真实的** CS2 游戏目录(fanpai.cfg 等)。
+⚠️ `--real-game-dir` 会让本次跑测写你**真实的** CS2 游戏目录(cs2customizer.cfg 等)。
     只有在专门验证"cfg 是否真的落到游戏目录"时才用它,默认不要开。
 """
 from __future__ import annotations
@@ -108,7 +108,7 @@ def _prepare_env(work: Path, overrides=None, real_game_dir: bool = False) -> dic
 
     ⚠ `csgo_dir` 是隔离的**第三个出口**（UP-090）。上面两个环境变量管不到它：
     它是**存在配置里的一条路径**，而本函数恰恰把用户配置整个拷了过来，
-    于是每跑一次真机测试，软件就往用户真实的 CS2 目录写一次 `fanpai.cfg`。
+    于是每跑一次真机测试，软件就往用户真实的 CS2 目录写一次 `cs2customizer.cfg`。
     R9 修 UP-090 时只堵了「进程内建页」的审计脚本，漏了这里——
     因为判据找的是 `MainWindow(` 构造点，而本脚本是**起子进程**跑整个软件的（UP-093）。
     """
@@ -118,7 +118,7 @@ def _prepare_env(work: Path, overrides=None, real_game_dir: bool = False) -> dic
     log_dir.mkdir(parents=True, exist_ok=True)
 
     real = os.environ.get("LOCALAPPDATA")
-    src = Path(real) / "FanTool" / "config.json" if real else None
+    src = Path(real) / "CS2Customizer" / "config.json" if real else None
     data = {}
     if src and src.is_file():
         try:
@@ -145,8 +145,8 @@ def _prepare_env(work: Path, overrides=None, real_game_dir: bool = False) -> dic
     )
 
     env = dict(os.environ)
-    env["FANPAI_CONFIG_DIR"] = str(cfg_dir)
-    env["FANPAI_LOG_DIR"] = str(log_dir)
+    env["CS2C_CONFIG_DIR"] = str(cfg_dir)
+    env["CS2C_LOG_DIR"] = str(log_dir)
     return env
 
 
@@ -202,10 +202,10 @@ def run_once(env: dict, seconds: int, idx: int) -> bool:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="帆派助手 真机跑测")
+    ap = argparse.ArgumentParser(description="CS2 Customizer 真机跑测")
     ap.add_argument("--runs", type=int, default=1, help="跑几次")
     ap.add_argument("--seconds", type=int, default=45, help="每次观察多少秒")
-    ap.add_argument("--workdir", default="", help="隔离目录（默认临时目录下 fanpai_live）")
+    ap.add_argument("--workdir", default="", help="隔离目录（默认临时目录下 cs2customizer_live）")
     ap.add_argument("--clean", action="store_true", help="开跑前清空隔离目录")
     ap.add_argument("--set", dest="overrides", action="append", default=[],
                     metavar="KEY=VALUE",
@@ -224,18 +224,18 @@ def main() -> int:
 
     import tempfile
 
-    work = Path(args.workdir) if args.workdir else Path(tempfile.gettempdir()) / "fanpai_live"
+    work = Path(args.workdir) if args.workdir else Path(tempfile.gettempdir()) / "cs2customizer_live"
     if args.clean and work.exists():
         shutil.rmtree(work, ignore_errors=True)
 
     env = _prepare_env(work, overrides, real_game_dir=args.real_game_dir)
-    print(f"隔离配置: {env['FANPAI_CONFIG_DIR']}")
-    print(f"隔离日志: {env['FANPAI_LOG_DIR']}")
+    print(f"隔离配置: {env['CS2C_CONFIG_DIR']}")
+    print(f"隔离日志: {env['CS2C_LOG_DIR']}")
     if args.real_game_dir:
-        print("⚠ 游戏目录**未隔离**：本次跑测会写你真实 CS2 目录里的 fanpai.cfg")
+        print("⚠ 游戏目录**未隔离**：本次跑测会写你真实 CS2 目录里的 cs2customizer.cfg")
     else:
         print(f"隔离游戏目录: {work / 'game_dir'}")
-        print("（用户真实的 %LOCALAPPDATA%\\FanTool 与真实 CS2 目录都不受影响）")
+        print("（用户真实的 %LOCALAPPDATA%\\CS2Customizer 与真实 CS2 目录都不受影响）")
 
     ok = 0
     for i in range(1, args.runs + 1):
@@ -246,7 +246,7 @@ def main() -> int:
 
     print(f"\n完成 {ok}/{args.runs} 次干净退出")
     print("\n出数：")
-    print(f'  python scripts/ui_perf_probe.py --logs "{env["FANPAI_LOG_DIR"]}"')
+    print(f'  python scripts/ui_perf_probe.py --logs "{env["CS2C_LOG_DIR"]}"')
     return 0 if ok else 1
 
 

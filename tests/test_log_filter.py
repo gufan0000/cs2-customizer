@@ -61,7 +61,7 @@ class TestRedactText(unittest.TestCase):
 
     # ------ 用户目录 ------
     def test_windows_user_dir(self):
-        out = redact_text("路径: C:\\Users\\gufan\\FanTool\\logs")
+        out = redact_text("路径: C:\\Users\\gufan\\CS2Customizer\\logs")
         self.assertIn("C:\\Users\\***\\", out)
         self.assertNotIn("gufan", out)
 
@@ -71,8 +71,9 @@ class TestRedactText(unittest.TestCase):
 
     # ------ 邮箱 ------
     def test_email(self):
-        out = redact_text("联系 gufan@fantool.local 即可")
-        self.assertEqual(out, "联系 ***@fantool.local 即可")
+        # 用 RFC 2606 保留域名做夹具：既不是任何人的真实邮箱，也不会随品牌改名而失效。
+        out = redact_text("联系 someone@example.com 即可")
+        self.assertEqual(out, "联系 ***@example.com 即可")
 
     # ------ 无敏感数据不动 ------
     def test_plain_message_unchanged(self):

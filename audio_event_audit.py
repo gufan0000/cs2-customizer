@@ -1,4 +1,4 @@
-"""Audit runtime audio events from latest FanTool log file.
+"""Audit runtime audio events from latest CS2Customizer log file.
 
 Usage:
     python audio_event_audit.py
@@ -83,14 +83,14 @@ CATEGORY_KEYWORDS: "OrderedDict[str, tuple[str, ...]]" = OrderedDict(
 def _resolve_log_dir() -> Path:
     local_app_data = os.environ.get("LOCALAPPDATA")
     if local_app_data:
-        return Path(local_app_data) / "FanTool" / "logs"
+        return Path(local_app_data) / "CS2Customizer" / "logs"
     return Path("logs")
 
 
 def _find_latest_log(log_dir: Path) -> Path | None:
     if not log_dir.is_dir():
         return None
-    files = sorted(log_dir.glob("fanpai_*.log"), key=lambda p: p.stat().st_mtime, reverse=True)
+    files = sorted(log_dir.glob("cs2customizer_*.log"), key=lambda p: p.stat().st_mtime, reverse=True)
     return files[0] if files else None
 
 
@@ -169,9 +169,9 @@ def _print_level_warning(level: str | None):
         print("!! 提示：未能确定这份日志的写入级别（可能是 2.2.1 及更早版本）。")
     print("   下面的计数会明显偏低，不能据此判断'音效没触发'。")
     print("   开启方式（任选其一）：")
-    print("     1) 【推荐】设环境变量 FANPAI_DEBUG_LOG=1 后启动软件，复现一次即可")
+    print("     1) 【推荐】设环境变量 CS2C_DEBUG_LOG=1 后启动软件，复现一次即可")
     print("     2) 先【完全退出软件】（否则退出时会把内存里的旧值写回去覆盖掉），")
-    print("        再改 %LOCALAPPDATA%\\FanTool\\config.json 设 \"debug_file_log\": true，然后启动")
+    print("        再改 %LOCALAPPDATA%\\CS2Customizer\\config.json 设 \"debug_file_log\": true，然后启动")
 
 
 def _print_report(log_file: Path, lines: List[str], since: datetime | None, matches: Dict[str, List[str]], show_lines: int):
@@ -201,7 +201,7 @@ def _print_report(log_file: Path, lines: List[str], since: datetime | None, matc
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Audit runtime audio events from FanTool logs.")
+    parser = argparse.ArgumentParser(description="Audit runtime audio events from CS2Customizer logs.")
     parser.add_argument("--log-file", default="", help="Optional explicit log file path.")
     parser.add_argument("--minutes", type=int, default=20, help="Only include logs from last N minutes. Use 0 to disable.")
     parser.add_argument("--max-lines", type=int, default=20000, help="Max tail lines to scan from the log file.")

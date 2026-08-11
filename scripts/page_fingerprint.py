@@ -19,12 +19,12 @@ import sys
 import tempfile
 from pathlib import Path
 
-os.environ.setdefault("FANPAI_SAFE_MODE_ACTIVE", "1")
-_tmp = Path(tempfile.gettempdir()) / "fanpai_fingerprint"
+os.environ.setdefault("CS2C_SAFE_MODE_ACTIVE", "1")
+_tmp = Path(tempfile.gettempdir()) / "cs2customizer_fingerprint"
 (_tmp / "config").mkdir(parents=True, exist_ok=True)
 (_tmp / "logs").mkdir(parents=True, exist_ok=True)
-os.environ.setdefault("FANPAI_CONFIG_DIR", str(_tmp / "config"))
-os.environ.setdefault("FANPAI_LOG_DIR", str(_tmp / "logs"))
+os.environ.setdefault("CS2C_CONFIG_DIR", str(_tmp / "config"))
+os.environ.setdefault("CS2C_LOG_DIR", str(_tmp / "logs"))
 os.environ.pop("QT_QPA_PLATFORM", None)  # 要真实字体,否则文案与几何失真(UP-068)
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))

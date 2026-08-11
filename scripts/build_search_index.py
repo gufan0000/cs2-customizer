@@ -69,12 +69,12 @@ from collections import defaultdict
 from pathlib import Path
 
 # 与 layout_overflow_audit 同款隔离：绝不碰用户真实配置/日志/游戏目录
-os.environ.setdefault("FANPAI_SAFE_MODE_ACTIVE", "1")
-_tmp = Path(tempfile.gettempdir()) / "fanpai_search_index"
+os.environ.setdefault("CS2C_SAFE_MODE_ACTIVE", "1")
+_tmp = Path(tempfile.gettempdir()) / "cs2customizer_search_index"
 (_tmp / "config").mkdir(parents=True, exist_ok=True)
 (_tmp / "logs").mkdir(parents=True, exist_ok=True)
-os.environ.setdefault("FANPAI_CONFIG_DIR", str(_tmp / "config"))
-os.environ.setdefault("FANPAI_LOG_DIR", str(_tmp / "logs"))
+os.environ.setdefault("CS2C_CONFIG_DIR", str(_tmp / "config"))
+os.environ.setdefault("CS2C_LOG_DIR", str(_tmp / "logs"))
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))

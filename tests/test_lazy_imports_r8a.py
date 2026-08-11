@@ -26,12 +26,12 @@ _PROBE = r"""
 import json, os, sys, tempfile
 from pathlib import Path
 
-os.environ["FANPAI_SAFE_MODE_ACTIVE"] = "1"
-_tmp = Path(tempfile.gettempdir()) / "fanpai_lazy_probe"
+os.environ["CS2C_SAFE_MODE_ACTIVE"] = "1"
+_tmp = Path(tempfile.gettempdir()) / "cs2customizer_lazy_probe"
 (_tmp / "config").mkdir(parents=True, exist_ok=True)
 (_tmp / "logs").mkdir(parents=True, exist_ok=True)
-os.environ["FANPAI_CONFIG_DIR"] = str(_tmp / "config")
-os.environ["FANPAI_LOG_DIR"] = str(_tmp / "logs")
+os.environ["CS2C_CONFIG_DIR"] = str(_tmp / "config")
+os.environ["CS2C_LOG_DIR"] = str(_tmp / "logs")
 sys.path.insert(0, r"__ROOT__")
 
 from PySide6.QtCore import Qt

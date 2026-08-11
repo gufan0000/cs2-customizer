@@ -29,13 +29,13 @@ VSVersionInfo(
       [
       StringTable(
         u'080404B0',
-        [StringStruct(u'CompanyName', u'帆派文娱'),
-        StringStruct(u'FileDescription', u'FanTool'),
+        [StringStruct(u'CompanyName', u'孤帆 (gufan)'),
+        StringStruct(u'FileDescription', u'CS2Customizer'),
         StringStruct(u'FileVersion', u'2.2.2.0'),
-        StringStruct(u'InternalName', u'FanTool'),
-        StringStruct(u'LegalCopyright', u'Copyright (C) 2025 帆派文娱'),
-        StringStruct(u'OriginalFilename', u'帆派助手2.2.2.exe'),
-        StringStruct(u'ProductName', u'帆派助手2.2.2'),
+        StringStruct(u'InternalName', u'CS2Customizer'),
+        StringStruct(u'LegalCopyright', u'Copyright (C) 2025-2026 孤帆 (gufan) · GNU GPL v3 or later'),
+        StringStruct(u'OriginalFilename', u'CS2 Customizer 2.2.2.exe'),
+        StringStruct(u'ProductName', u'CS2 Customizer 2.2.2'),
         StringStruct(u'ProductVersion', u'2.2.2.0')])
       ]), 
     VarFileInfo([VarStruct(u'Translation', [2052, 1200])])

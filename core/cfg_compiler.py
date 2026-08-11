@@ -1,8 +1,8 @@
 """
-Unified compiler for fanpai.cfg — single source of truth.
+Unified compiler for cs2customizer.cfg — single source of truth.
 
 All sections are compiled from config state and assembled in a fixed order.
-Only this module should write to fanpai.cfg.
+Only this module should write to cs2customizer.cfg.
 """
 
 from __future__ import annotations
@@ -24,10 +24,10 @@ logger = get_logger("CfgCompiler")
 SECTION_ORDER = ["header", "viewmodel", "magnifier_runtime", "hud_rules", "footer"]
 
 
-def get_fanpai_cfg_path(csgo_dir: str) -> Optional[str]:
+def get_cs2customizer_cfg_path(csgo_dir: str) -> Optional[str]:
     if not csgo_dir:
         return None
-    return os.path.join(csgo_dir, "game", "csgo", "cfg", "fanpai.cfg")
+    return os.path.join(csgo_dir, "game", "csgo", "cfg", "cs2customizer.cfg")
 
 
 # ── Section compilers ──
@@ -37,7 +37,7 @@ def _sanitize_cfg_text(text: str) -> str:
     """移除会破坏 alias/bind 引号结构或注入命令的字符（双引号、分号、换行）。
 
     预设名称是自由文本输入；若用户输入了 `"` 或 `;`，直接拼进 alias 会让
-    生成的 fanpai.cfg 语法错乱甚至执行额外命令。这里统一做保守过滤。
+    生成的 cs2customizer.cfg 语法错乱甚至执行额外命令。这里统一做保守过滤。
     """
     return (
         str(text)
@@ -57,7 +57,7 @@ def _sanitize_bind_key(key: str) -> str:
 def _coerce_number(value, default: float, lo: float, hi: float) -> str:
     """数值字段强制转 float 并钳制范围。
 
-    x/y/z/fov 可能来自云同步或 .fanpai 分享包，若是 `"0; quit"` 这类
+    x/y/z/fov 可能来自云同步或 .cs2customizer 分享包，若是 `"0; quit"` 这类
     字符串会被原样拼进 alias 形成 console 命令注入，必须数值化。
     """
     try:
@@ -71,11 +71,11 @@ def _coerce_number(value, default: float, lo: float, hi: float) -> str:
 
 
 def _compile_header() -> str:
-    return "// 帆派助手CFG配置文件 (auto-generated)"
+    return "// CS2 Customizer CFG配置文件 (auto-generated)"
 
 
 def _compile_footer() -> str:
-    return 'echo "帆派助手CFG配置文件已加载"'
+    return 'echo "CS2 Customizer CFG配置文件已加载"'
 
 
 def compile_mute(_config_obj) -> str:
@@ -83,7 +83,7 @@ def compile_mute(_config_obj) -> str:
 
 
 def compile_viewmodel(config_obj) -> str:
-    parts: List[str] = ["// -- Viewmodel Settings (FanPai) --"]
+    parts: List[str] = ["// -- Viewmodel Settings (CS2 Customizer) --"]
 
     # 准心回正：如果 HUD 运行时刷新已启用，mouse1 由 HUD rules 段合并处理
     crosshair_enabled = getattr(config_obj, "crosshair_reset_enabled", False)
@@ -146,8 +146,8 @@ def compile_magnifier_runtime(config_obj) -> str:
         str(magnifier_settings.get("sync_trigger_key", DEFAULT_SYNC_TRIGGER_KEY) or DEFAULT_SYNC_TRIGGER_KEY)
     ).upper() or DEFAULT_SYNC_TRIGGER_KEY.upper()
     parts: List[str] = [
-        "// -- Magnifier Sensitivity Sync (FanPai) --",
-        f'bind {sync_key} "exec fanpai_magnifier_runtime.cfg"',
+        "// -- Magnifier Sensitivity Sync (CS2 Customizer) --",
+        f'bind {sync_key} "exec cs2customizer_magnifier_runtime.cfg"',
         'echo "Magnifier sensitivity sync enabled"',
     ]
     return "\n".join(parts)
@@ -215,12 +215,12 @@ def compile_all(config_obj) -> Tuple[str, List[str]]:
     return "\n\n".join(parts) + "\n", warnings
 
 
-def write_fanpai_cfg(config_obj) -> List[str]:
-    """Compile and atomically write fanpai.cfg. Returns bind conflict warnings."""
+def write_cs2customizer_cfg(config_obj) -> List[str]:
+    """Compile and atomically write cs2customizer.cfg. Returns bind conflict warnings."""
     csgo_dir = getattr(config_obj, "csgo_dir", "") or ""
-    cfg_path = get_fanpai_cfg_path(csgo_dir.strip())
+    cfg_path = get_cs2customizer_cfg_path(csgo_dir.strip())
     if not cfg_path:
-        logger.warning("csgo_dir 未配置，跳过写入 fanpai.cfg")
+        logger.warning("csgo_dir 未配置，跳过写入 cs2customizer.cfg")
         return []
 
     content, warnings = compile_all(config_obj)
@@ -230,12 +230,12 @@ def write_fanpai_cfg(config_obj) -> List[str]:
     cfg_dir = os.path.dirname(cfg_path)
     os.makedirs(cfg_dir, exist_ok=True)
 
-    fd, tmp_path = tempfile.mkstemp(dir=cfg_dir, prefix="fanpai_", suffix=".tmp")
+    fd, tmp_path = tempfile.mkstemp(dir=cfg_dir, prefix="cs2customizer_", suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(content)
         os.replace(tmp_path, cfg_path)
-        logger.info(f"fanpai.cfg 已写入: {cfg_path}")
+        logger.info(f"cs2customizer.cfg 已写入: {cfg_path}")
     except Exception:
         try:
             os.remove(tmp_path)

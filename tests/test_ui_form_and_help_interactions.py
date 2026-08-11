@@ -57,8 +57,8 @@ class _DummyMusicPlayer:
         self.play_mode = "repeat_all"
         self._playlists = ["默认", "收藏"]
         self._playlist = [
-            {"title": "Inferno Pulse", "artist": "FanPai", "duration": 182, "type": "local", "path": "a.mp3"},
-            {"title": "Dust Loop", "artist": "FanPai", "duration": 201, "type": "local", "path": "b.mp3"},
+            {"title": "Inferno Pulse", "artist": "CS2Customizer", "duration": 182, "type": "local", "path": "a.mp3"},
+            {"title": "Dust Loop", "artist": "CS2Customizer", "duration": 201, "type": "local", "path": "b.mp3"},
         ]
 
     def get_playlist(self):
@@ -103,7 +103,6 @@ def _expand_help_panel(page, qapp, expected_text: str):
 
 def test_advanced_page_help_and_controls_are_usable(qapp, monkeypatch):
     import pages.advanced_page as advanced_page_module
-    from PySide6.QtWidgets import QLineEdit
 
     monkeypatch.setattr(advanced_page_module.AdvancedPage, "_try_auto_detect_cs2", lambda self: None)
     monkeypatch.setattr(config, "save_config", lambda: None, raising=False)
@@ -117,15 +116,22 @@ def test_advanced_page_help_and_controls_are_usable(qapp, monkeypatch):
     page.show()
     qapp.processEvents()
 
-    _expand_help_panel(page, qapp, "gamestate_integration_fanpai.cfg")
+    _expand_help_panel(page, qapp, "gamestate_integration_cs2customizer.cfg")
     assert page.csgo_dir_text.isReadOnly() is True
     assert page.csgo_dir_text.placeholderText()
-    assert page.debug_entry.echoMode() == QLineEdit.Password
+    # 开源版把口令门换成了直接开关：源码公开后口令拦不住任何人，
+    # 而仓库里那个 SHA256 反倒成了维护者口令的离线爆破样本（明文当年就写在本文件里）。
+    # 判据跟着落点改：按一下开、再按一下关，按钮文案要跟着状态走。
+    assert not hasattr(page, "debug_entry"), "开源版不应再有调试口令输入框"
+    assert page.debug_button.text() == "开启调试模式"
 
-    page.debug_entry.setText("8964")
     page._toggle_debug_mode()
     assert config.debug_mode is True
-    assert page.debug_entry.text() == ""
+    assert page.debug_button.text() == "关闭调试模式"
+
+    page._toggle_debug_mode()
+    assert config.debug_mode is False
+    assert page.debug_button.text() == "开启调试模式"
 
     light_index = page.theme_combo.findData("light")
     assert light_index >= 0
@@ -152,7 +158,7 @@ def test_utility_page_help_and_numeric_inputs_are_usable(qapp, monkeypatch):
     page.show()
     qapp.processEvents()
 
-    _expand_help_panel(page, qapp, "AppData/Local/FanTool/resources/utility_guides/")
+    _expand_help_panel(page, qapp, "AppData/Local/CS2Customizer/resources/utility_guides/")
 
     page.x_offset_edit.selectAll()
     QTest.keyClicks(page.x_offset_edit, "12")
@@ -226,7 +232,7 @@ def test_magnifier_page_help_inputs_and_options_are_usable(qapp, monkeypatch):
     page.show()
     qapp.processEvents()
 
-    _expand_help_panel(page, qapp, "fanpai_magnifier_runtime.cfg")
+    _expand_help_panel(page, qapp, "cs2customizer_magnifier_runtime.cfg")
     assert page.zoom_combo.count() >= 3
     assert page.primary_hotkey_combo.count() >= 5
     assert page.trigger_mode_combo.count() == 2
@@ -333,7 +339,7 @@ def test_music_page_help_and_playlist_controls_are_usable(qapp, monkeypatch):
     page.show()
     qapp.processEvents()
 
-    _expand_help_panel(page, qapp, "AppData/Local/FanTool/config.json")
+    _expand_help_panel(page, qapp, "AppData/Local/CS2Customizer/config.json")
     assert page.playlist_combo.count() >= 2
     assert page.playlist_widget.count() >= 2
 

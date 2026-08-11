@@ -97,7 +97,7 @@ python audio_health_check.py
 
 `audio_event_audit.py` 默认行为：
 
-- 自动读取 `%LOCALAPPDATA%\FanTool\logs` 下最新 `fanpai_*.log`
+- 自动读取 `%LOCALAPPDATA%\CS2Customizer\logs` 下最新 `cs2customizer_*.log`
 - 默认只统计最近 20 分钟
 - 默认输出每类最后 6 条命中日志
 

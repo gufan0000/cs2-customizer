@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-帆派助手 2.0 - Widget版本
+CS2 Customizer 2.0 - Widget版本
 主窗口类
 """
 
@@ -159,7 +159,7 @@ class MainWindow(QMainWindow):
         # 注册主题变化回调
         self.theme_manager.register_theme_changed_callback(self._on_theme_changed)
         
-        self.setWindowTitle(f"帆派助手 v{VERSION}")
+        self.setWindowTitle(f"CS2 Customizer v{VERSION}")
         app_icon = QApplication.windowIcon()
         if not app_icon.isNull():
             self.setWindowIcon(app_icon)
@@ -259,7 +259,7 @@ class MainWindow(QMainWindow):
         # 延迟路径是准心的唯一自动显示入口,不能因为"用户可能先切到准心页"就省掉。
         # _auto_show_crosshair_deferred 里做了幂等与"期间用户关掉了准心"的判断。
         if self.config.crosshair_enabled:
-            if os.environ.get("FANPAI_SAFE_MODE_ACTIVE") == "1":
+            if os.environ.get("CS2C_SAFE_MODE_ACTIVE") == "1":
                 self.logger.warning("兼容模式：已跳过 pygame 准心自动显示（规避与主窗渲染并发冲突导致的原生崩溃）")
             else:
                 # UP-079: R8a 把 pygame 移出了 show 前路径，但它没有凭空消失——
@@ -1038,7 +1038,7 @@ class MainWindow(QMainWindow):
         header_layout.setSpacing(2)
 
         # 标题
-        title = QLabel("帆派助手")
+        title = QLabel("CS2 Customizer")
         title.setObjectName("sidebarTitleLabel")
         title.setFont(QFont("Microsoft YaHei", 18, QFont.Bold))
         title.setAlignment(Qt.AlignCenter)
@@ -2512,7 +2512,7 @@ class MainWindow(QMainWindow):
             overlay_nav_layout.setSpacing(5)
 
             # 标题
-            overlay_title = QLabel("帆派助手")
+            overlay_title = QLabel("CS2 Customizer")
             overlay_title.setFont(QFont("Microsoft YaHei", 16, QFont.Bold))
             overlay_title.setAlignment(Qt.AlignCenter)
             overlay_nav_layout.addWidget(overlay_title)
@@ -2598,7 +2598,7 @@ class MainWindow(QMainWindow):
                     # 已开但实际不生效（config/UI/磁盘三态不一致）
                     self.config.crosshair_enabled = False
                     from PySide6.QtWidgets import QMessageBox
-                    QMessageBox.warning(self, "提示", "准心功能需要额外组件(pywin32)才能使用。\n请重新安装帆派助手以获取完整功能。")
+                    QMessageBox.warning(self, "提示", "准心功能需要额外组件(pywin32)才能使用。\n请重新安装 CS2 Customizer 以获取完整功能。")
                     # 恢复复选框状态
                     sender = self.sender()
                     if sender:
@@ -3617,7 +3617,7 @@ class MainWindow(QMainWindow):
             if icon.isNull():
                 icon = QApplication.windowIcon()
             tray = QSystemTrayIcon(icon, self)
-            tray.setToolTip(f"帆派助手 v{VERSION}")
+            tray.setToolTip(f"CS2 Customizer v{VERSION}")
 
             menu = QMenu()
             show_action = menu.addAction("显示主界面")
@@ -3663,7 +3663,7 @@ class MainWindow(QMainWindow):
                 from PySide6.QtWidgets import QSystemTrayIcon
 
                 self._tray_icon.showMessage(
-                    "帆派助手仍在运行",
+                    "CS2 Customizer 仍在运行",
                     "已最小化到系统托盘，游戏内功能照常工作。双击托盘图标可重新打开。",
                     QSystemTrayIcon.Information,
                     3500,
@@ -3677,9 +3677,9 @@ class MainWindow(QMainWindow):
         from PySide6.QtWidgets import QCheckBox, QMessageBox
 
         box = QMessageBox(self)
-        box.setWindowTitle("关闭帆派助手")
+        box.setWindowTitle("关闭 CS2 Customizer")
         box.setIcon(QMessageBox.Question)
-        box.setText("要把帆派助手最小化到系统托盘，还是直接退出？")
+        box.setText("要把 CS2 Customizer 最小化到系统托盘，还是直接退出？")
         box.setInformativeText("最小化到托盘后，击杀音效等游戏内功能会继续工作。")
         remember = QCheckBox("记住我的选择（之后可在高级设置修改）")
         remember.setChecked(True)

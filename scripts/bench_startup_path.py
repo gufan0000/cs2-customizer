@@ -34,12 +34,12 @@ _CHILD = r"""
 import json, os, sys, time, tempfile
 from pathlib import Path
 
-os.environ.setdefault("FANPAI_SAFE_MODE_ACTIVE", "1")
-_tmp = Path(tempfile.gettempdir()) / "fanpai_startup_bench"
+os.environ.setdefault("CS2C_SAFE_MODE_ACTIVE", "1")
+_tmp = Path(tempfile.gettempdir()) / "cs2customizer_startup_bench"
 (_tmp / "config").mkdir(parents=True, exist_ok=True)
 (_tmp / "logs").mkdir(parents=True, exist_ok=True)
-os.environ.setdefault("FANPAI_CONFIG_DIR", str(_tmp / "config"))
-os.environ.setdefault("FANPAI_LOG_DIR", str(_tmp / "logs"))
+os.environ.setdefault("CS2C_CONFIG_DIR", str(_tmp / "config"))
+os.environ.setdefault("CS2C_LOG_DIR", str(_tmp / "logs"))
 sys.path.insert(0, r"__ROOT__")
 sys.path.insert(0, os.path.join(r"__ROOT__", "scripts"))
 
@@ -57,7 +57,7 @@ import gui_widget
 t2 = time.perf_counter()
 
 # UP-090: csgo_dir 是自动探测的，不沙箱化会把用户真实 CS2 目录里的
-# fanpai.cfg 覆盖成默认配置的内容。见 scripts/_audit_sandbox.py。
+# cs2customizer.cfg 覆盖成默认配置的内容。见 scripts/_audit_sandbox.py。
 # 注意这段是**子进程脚本**（整个 _CHILD 是个字符串），所以父进程的 AST 里
 # 看不到这次调用——`tests/test_audit_side_effects_r9a.py` 为此单独解析 _CHILD。
 from _audit_sandbox import sandbox_external_writes

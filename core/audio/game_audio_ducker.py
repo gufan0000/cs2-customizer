@@ -74,7 +74,7 @@ class _SessionAudioBackend:
     def _resolve_state_path(self) -> str:
         appdata_dir = os.environ.get("LOCALAPPDATA")
         if appdata_dir:
-            runtime_dir = os.path.join(appdata_dir, "FanTool", "runtime")
+            runtime_dir = os.path.join(appdata_dir, "CS2Customizer", "runtime")
         else:
             runtime_dir = os.path.join(os.getcwd(), ".runtime")
         os.makedirs(runtime_dir, exist_ok=True)

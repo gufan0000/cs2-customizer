@@ -18,12 +18,12 @@ import sys
 import tempfile
 from pathlib import Path
 
-os.environ.setdefault("FANPAI_SAFE_MODE_ACTIVE", "1")
-_tmp = Path(tempfile.gettempdir()) / "fanpai_search_render"
+os.environ.setdefault("CS2C_SAFE_MODE_ACTIVE", "1")
+_tmp = Path(tempfile.gettempdir()) / "cs2customizer_search_render"
 (_tmp / "config").mkdir(parents=True, exist_ok=True)
 (_tmp / "logs").mkdir(parents=True, exist_ok=True)
-os.environ.setdefault("FANPAI_CONFIG_DIR", str(_tmp / "config"))
-os.environ.setdefault("FANPAI_LOG_DIR", str(_tmp / "logs"))
+os.environ.setdefault("CS2C_CONFIG_DIR", str(_tmp / "config"))
+os.environ.setdefault("CS2C_LOG_DIR", str(_tmp / "logs"))
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -42,7 +42,7 @@ QUERIES = ["准心", "音量", "zx", "观战静音", "asdfghjkl", "",
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--themes", default="dark,light")
-    ap.add_argument("--out", default=str(Path(tempfile.gettempdir()) / "fanpai_search_render"))
+    ap.add_argument("--out", default=str(Path(tempfile.gettempdir()) / "cs2customizer_search_render"))
     args = ap.parse_args()
 
     from PySide6.QtCore import Qt

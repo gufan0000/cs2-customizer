@@ -2,9 +2,6 @@
 
 > 本文采用 [Contributor Covenant](https://www.contributor-covenant.org) 2.1 版。
 > 原文（英文）：<https://www.contributor-covenant.org/version/2/1/code_of_conduct/>
->
-> ⚠️ **维护者注意**：文中的 `<维护者邮箱>` 是占位符，公开发布前**必须**替换成一个真实、
-> 有人查收的邮箱地址。留着占位符等于没有上报通道，这份准则就是废纸。
 
 ## 我们的承诺
 
@@ -49,9 +46,15 @@
 
 ## 执行
 
-如果发生辱骂、骚扰或其他不可接受的行为，可以向负责执行的社区管理者报告，
-联系方式是 `<维护者邮箱>`。**涉及安全漏洞的问题请走 [SECURITY.md](SECURITY.md)
-里的私密上报通道，不要在这里报告。**
+如果发生辱骂、骚扰或其他不可接受的行为，请走**私密**通道报告：
+
+- **本仓库 → Security → [Report a vulnerability](https://github.com/gufan0000/cs2-customizer/security/advisories/new)。**
+  该表单只有维护者可见，本项目**同时**用它接收行为准则相关的举报——请在标题带
+  `[CoC]`。用它而不是公开 issue，是为了不让被举报的行为在处理前再被围观一遍。
+- **如果要举报的对象是维护者本人**，上面那个通道显然不合适。请直接用 GitHub 官方的
+  [举报滥用行为](https://github.com/contact/report-abuse)，它不经过本项目任何人。
+
+**涉及安全漏洞的问题请走 [SECURITY.md](SECURITY.md)，不要在这里报告。**
 
 所有投诉都会得到及时和公正的审查和调查。所有社区管理者都有义务保护事件报告者的
 隐私和安全。

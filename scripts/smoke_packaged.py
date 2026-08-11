@@ -8,13 +8,13 @@ hiddenimports 只扫种子文件一层 AST —— 惰性导入 / 新增模块 / 
 跑什么（口径同 05 §6）：**启动 / GSI / 音频 / 闪光**，外加 R8a 关心的
 「惰性导入的模块在冻结环境里能不能真的加载」。
 
-    python scripts/smoke_packaged.py --exe "release/帆派助手2.2.1/帆派助手.exe"
+    python scripts/smoke_packaged.py --exe "release/CS2 Customizer 2.2.1/CS2 Customizer.exe"
     python scripts/smoke_packaged.py --seconds 60
 
 ⚠️ **会真的启动软件**：主窗口上屏、准心覆盖窗可能出现、GSI 占 127.0.0.1:3000、
 音频设备被初始化、配置里开着的全局热键在这段时间内生效。
 配置与日志走**隔离目录**（拷贝用户配置并把 close_action 改成 exit 以便自动关闭），
-用户真实的 %LOCALAPPDATA%\\FanTool 不受影响。
+用户真实的 %LOCALAPPDATA%\\CS2Customizer 不受影响。
 
 退出码：0=全部判据通过，1=有判据未通过。
 """
@@ -79,7 +79,7 @@ def _prepare_env(work: Path) -> dict:
         d.mkdir(parents=True, exist_ok=True)
 
     real = os.environ.get("LOCALAPPDATA")
-    src = Path(real) / "FanTool" / "config.json" if real else None
+    src = Path(real) / "CS2Customizer" / "config.json" if real else None
     data = {}
     if src and src.is_file():
         try:
@@ -93,8 +93,8 @@ def _prepare_env(work: Path) -> dict:
     )
 
     env = dict(os.environ)
-    env["FANPAI_CONFIG_DIR"] = str(cfg_dir)
-    env["FANPAI_LOG_DIR"] = str(log_dir)
+    env["CS2C_CONFIG_DIR"] = str(cfg_dir)
+    env["CS2C_LOG_DIR"] = str(log_dir)
     return env
 
 
@@ -157,13 +157,13 @@ def main() -> int:
         print(f"!! exe 不存在: {exe}")
         return 1
 
-    work = Path(args.workdir) if args.workdir else Path(os.environ.get("TEMP", "/tmp")) / "fanpai_pkg_smoke"
+    work = Path(args.workdir) if args.workdir else Path(os.environ.get("TEMP", "/tmp")) / "cs2customizer_pkg_smoke"
     env = _prepare_env(work)
-    log_dir = Path(env["FANPAI_LOG_DIR"])
+    log_dir = Path(env["CS2C_LOG_DIR"])
 
     print(f"产物   : {exe}")
-    print(f"隔离配置: {env['FANPAI_CONFIG_DIR']}")
-    print(f"隔离日志: {env['FANPAI_LOG_DIR']}")
+    print(f"隔离配置: {env['CS2C_CONFIG_DIR']}")
+    print(f"隔离日志: {env['CS2C_LOG_DIR']}")
     print(f"观察   : {args.seconds}s\n")
 
     port_before = _port_busy(3000)

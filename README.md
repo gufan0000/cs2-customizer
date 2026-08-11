@@ -3,14 +3,14 @@
 **给 CS2 玩家的本地个性化工具**：自定义准心、击杀音效与图标、HUD 配色、局内视角、道具瞄点——
 全部通过 Valve 官方的 GSI 接口读游戏状态、通过 cfg 文件写游戏设置，不碰游戏进程一根手指。
 
-<!-- 徽章占位：把 OWNER/REPO 替换成本仓库的实际路径后即可生效 -->
-[![CI](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/REPO/actions/workflows/ci.yml)
+[![CI](https://github.com/gufan0000/cs2-customizer/actions/workflows/ci.yml/badge.svg)](https://github.com/gufan0000/cs2-customizer/actions/workflows/ci.yml)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.13-3776AB.svg)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/Platform-Windows-0078D6.svg)](#安装与运行)
 
-本项目是闭源商业软件「帆派助手 / FanTool」的开源版本，是它的**功能子集**：
-去掉了账号、云同步、更新检查与音乐平台抓流，保留全部本地功能。
+本项目由同一作者的闭源商业软件「帆派助手 / FanTool」裁出，是它的**功能子集**：
+去掉了账号、云同步、更新检查与音乐平台抓流，保留全部本地功能。两者相互独立，
+装在同一台机器上互不干扰（各自的安装目录、数据目录与开机自启项都是分开的）。
 
 ---
 
@@ -137,8 +137,8 @@ GSI 在完全默认的官方游戏环境下就能工作：**不需要修改任�
 **从源码运行**
 
 ```bash
-git clone https://github.com/OWNER/REPO.git
-cd REPO
+git clone https://github.com/gufan0000/cs2-customizer.git
+cd cs2-customizer
 pip install -r requirements_qt.txt
 python main_widget.py
 ```
@@ -147,7 +147,7 @@ python main_widget.py
 
 **GSI 是怎么接上的**
 
-程序会在 `CS2/game/csgo/cfg/gamestate_integration_fanpai.cfg` 生成 GSI 配置文件，
+程序会在 `CS2/game/csgo/cfg/gamestate_integration_cs2customizer.cfg` 生成 GSI 配置文件，
 游戏启动后会主动把状态 POST 到本机的 `http://127.0.0.1:3000`（端口被占用时自动改用 3001–3010）。
 如果防火墙弹窗，允许本地回环访问即可。**不需要任何游戏启动参数。**
 
@@ -174,7 +174,7 @@ python main_widget.py
 
 ### 目录结构
 
-素材统一放在 `%LOCALAPPDATA%\FanTool\resources\` 下。导入向导识别的是**目录名**，
+素材统一放在 `%LOCALAPPDATA%\CS2Customizer\resources\` 下。导入向导识别的是**目录名**，
 所以你准备素材时按下面的结构组织，拖进来就能被自动归位：
 
 ```
@@ -239,7 +239,7 @@ Windows 安装包用 [Inno Setup](https://jrsoftware.org/isinfo.php) 编译 `bui
 ```
 main_widget.py          入口：崩溃钩子 / 单实例 / 分阶段启动
 gui_widget.py           主窗口：侧栏导航、页面懒加载、主题与搜索
-config.py               配置模型与持久化（%LOCALAPPDATA%\FanTool\config.json）
+config.py               配置模型与持久化（%LOCALAPPDATA%\CS2Customizer\config.json）
 gsi_server.py           GSI 接收端（Flask），gsi_handler_*.py 为各领域处理器
 core/                   领域逻辑：audio / gsi / hud / presets / hotkeys / net / backup ...
 pages/                  功能页面，一页一文件（侧栏共 26 项）
@@ -336,9 +336,10 @@ CI（GitHub Actions，`windows-latest` + Python 3.13）会跑 ruff、全量测�
 这意味着你可以自由地使用、修改和分发本软件，**包括商业用途**；
 但基于本项目的衍生作品必须同样以 GPL-3.0 开源，并保留原始版权声明。
 
-**商标保留**：「帆派」「帆派助手」「FanTool」及相关标识是原作者保留的商标，
-**不在** GPL-3.0 的授权范围内。你可以 fork 本项目、可以商用，但请**用你自己的名字发布**，
-不要让使用者误以为你的版本来自原作者或与之有关联。
+**商标保留**：「 CS2 Customizer 」以及本项目前身的「帆派」「帆派助手」「FanTool」等名称、
+标识与程序图标，是原作者保留的标识，**不在** GPL-3.0 的授权范围内（GPL 授权的是代码，
+不是商标）。你可以 fork 本项目、可以商用，但请**用你自己的名字和图标发布**，
+不要让使用者误以为你的版本来自原作者或与之有关联。详见 [NOTICE](NOTICE)。
 
 Counter-Strike、CS2 和 Valve 是 Valve Corporation 的商标。本项目与 Valve 无关。
 

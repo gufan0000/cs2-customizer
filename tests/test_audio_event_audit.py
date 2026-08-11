@@ -13,7 +13,7 @@ def _write_log(path: Path, lines: list[str]):
 
 def _line(message: str) -> str:
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    return f"[{ts}] [INFO] [FanPai.Test:1] {message}"
+    return f"[{ts}] [INFO] [CS2Customizer.Test:1] {message}"
 
 
 def _run_audit(cmd: list[str]):
@@ -31,7 +31,7 @@ def _run_audit(cmd: list[str]):
 
 
 def test_audio_event_audit_require_pass(tmp_path):
-    log_file = tmp_path / "fanpai_20990101.log"
+    log_file = tmp_path / "cs2customizer_20990101.log"
     _write_log(
         log_file,
         [
@@ -78,12 +78,12 @@ def test_audio_event_audit_require_pass(tmp_path):
 
 
 def test_audio_event_audit_fail_on_errors(tmp_path):
-    log_file = tmp_path / "fanpai_20990101.log"
+    log_file = tmp_path / "cs2customizer_20990101.log"
     _write_log(
         log_file,
         [
             _line("播放击杀语音: voice-styleA-1"),
-            f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [ERROR] [FanPai.Test:1] Play failed kill-1",
+            f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [ERROR] [CS2Customizer.Test:1] Play failed kill-1",
         ],
     )
 
@@ -105,12 +105,12 @@ def test_audio_event_audit_fail_on_errors(tmp_path):
 
 
 def test_audio_event_audit_warning_does_not_fail_errors(tmp_path):
-    log_file = tmp_path / "fanpai_20990101.log"
+    log_file = tmp_path / "cs2customizer_20990101.log"
     _write_log(
         log_file,
         [
             _line("[AudioHealth] OK"),
-            f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARNING] [FanPai.VoiceOutputManager:127] [初始化] 未找到可用的VB-Cable设备",
+            f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [WARNING] [CS2Customizer.VoiceOutputManager:127] [初始化] 未找到可用的VB-Cable设备",
         ],
     )
 

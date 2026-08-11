@@ -38,7 +38,7 @@ CJK_REGULAR_FONT_CANDIDATES = (
     WINDOWS_FONT_DIR / "simhei.ttf",
 )
 
-SPLASH_TITLE = "帆派助手"
+SPLASH_TITLE = "CS2 Customizer"
 SPLASH_STATUS = "正在启动…"
 SPLASH_SIZE = (600, 360)
 TITLE_SAFE_BOX = (80, 250, 520, 310)
@@ -161,12 +161,12 @@ def make_large():
     d.ellipse([cx - 4, cy - 4, cx + 4, cy + 4], fill=ACCENT)
 
     # 文案
-    _draw_centered(d, (w // 2, 408), "帆派助手", _font(44, bold=True), TEXT)
+    _draw_centered(d, (w // 2, 408), "CS2 Customizer", _font(44, bold=True), TEXT)
     _draw_centered(d, (w // 2, 458), "CS2 游戏体验增强工具", _font(17), SUBTEXT)
 
     # 底部细节线 + 版本占位(安装器不显示具体版本,保持素材可复用)
     d.line([(36, 540), (w - 36, 540)], fill=(58, 52, 86), width=2)
-    _draw_centered(d, (w // 2, 568), "github.com/OWNER/cs2-customizer", _font(15), SUBTEXT)
+    _draw_centered(d, (w // 2, 568), "github.com/gufan0000/cs2-customizer", _font(15), SUBTEXT)
 
     img.save(OUT / "wizard_large.bmp")
     print("wizard_large.bmp", img.size)

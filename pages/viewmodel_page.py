@@ -689,8 +689,8 @@ class ViewmodelPage(QWidget):
                 })
             config.save_config()
 
-            from core.cfg_compiler import write_fanpai_cfg
-            warnings = write_fanpai_cfg(config)
+            from core.cfg_compiler import write_cs2customizer_cfg
+            warnings = write_cs2customizer_cfg(config)
             if warnings:
                 from ui_toast import toast_warning
                 toast_warning("\n".join(warnings), 5000)
@@ -701,14 +701,14 @@ class ViewmodelPage(QWidget):
                 self.logger.warning(f"Setup autoexec failed: {e}")
 
             crosshair_status = "已启用" if self.crosshair_reset_checkbox.isChecked() else "未启用"
-            cfg_path = os.path.join(config.csgo_dir, "game", "csgo", "cfg", "fanpai.cfg")
+            cfg_path = os.path.join(config.csgo_dir, "game", "csgo", "cfg", "cs2customizer.cfg")
             QMessageBox.information(
                 self,
                 "保存成功",
                 f"局内视角设置已保存到:\n{cfg_path}\n\n"
                 f"准心快速回正: {crosshair_status}\n"
                 f"视角预设数量: {len(self.preset_vars)}\n\n"
-                "游戏内输入 exec fanpai.cfg 加载配置"
+                "游戏内输入 exec cs2customizer.cfg 加载配置"
             )
             self.logger.info("局内视角设置已保存")
             self._mark_saved()

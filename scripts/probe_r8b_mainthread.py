@@ -24,10 +24,10 @@ import sys
 import tempfile
 import time
 
-_ISOLATED = tempfile.mkdtemp(prefix="fanpai_probe_r8b2_")
-os.environ["FANPAI_CONFIG_DIR"] = os.path.join(_ISOLATED, "config")
-os.environ["FANPAI_LOG_DIR"] = os.path.join(_ISOLATED, "logs")
-os.environ["FANPAI_SAFE_MODE_ACTIVE"] = "1"
+_ISOLATED = tempfile.mkdtemp(prefix="cs2customizer_probe_r8b2_")
+os.environ["CS2C_CONFIG_DIR"] = os.path.join(_ISOLATED, "config")
+os.environ["CS2C_LOG_DIR"] = os.path.join(_ISOLATED, "logs")
+os.environ["CS2C_SAFE_MODE_ACTIVE"] = "1"
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

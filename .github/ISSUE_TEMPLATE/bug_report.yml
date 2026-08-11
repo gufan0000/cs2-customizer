@@ -110,13 +110,13 @@ body:
     attributes:
       label: 日志片段
       description: |
-        日志目录：`%LOCALAPPDATA%\FanTool\logs`
+        日志目录：`%LOCALAPPDATA%\CS2Customizer\logs`
         （在文件资源管理器地址栏直接粘贴这一行回车即可打开）
 
-        - 一般问题：贴最近一个 `fanpai_*.log` 里**出问题那段时间**的内容，几十行足够，不用整份
+        - 一般问题：贴最近一个 `cs2customizer_*.log` 里**出问题那段时间**的内容，几十行足够，不用整份
         - 程序崩溃：优先贴 `bootstrap_crash_*.log` / `native_crash.log`
         - 需要更详细的日志时，可在配置里把 `debug_file_log` 设为 `true`，
-          或临时设环境变量 `FANPAI_DEBUG_LOG=1` 后复现一次
+          或临时设环境变量 `CS2C_DEBUG_LOG=1` 后复现一次
 
         ⚠️ **贴之前请自己扫一眼**：程序会自动遮蔽 token、密码、邮箱、Steam ID 和 Windows 用户名目录，
         但这是保守策略，**不保证覆盖全部**。请不要粘贴含个人信息的内容

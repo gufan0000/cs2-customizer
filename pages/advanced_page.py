@@ -295,26 +295,24 @@ class AdvancedPage(QWidget):
         self._update_debug_status()
         section_layout.addWidget(self.debug_status_label)
         
-        # 输入框和确定按钮
+        # 开源版：直接开关，不设密码。
+        # 闭源版这里是一道口令验证（源码里存 SHA256），目的是让"开调试"这件事
+        # 走一次客服。源码公开之后这道门失去意义——任何人都能读到校验逻辑并绕过，
+        # 而留在仓库里的哈希反倒是维护者一个口令的离线爆破样本。
         debug_layout = QHBoxLayout()
         debug_layout.setSpacing(12)
-        
-        self.debug_entry = QLineEdit()
-        self.debug_entry.setEchoMode(QLineEdit.Password)
-        self.debug_entry.setPlaceholderText("请输入调试密码...")
-        self.debug_entry.setMinimumHeight(36)
-        self.debug_entry.setFont(QFont("Arial", 12))
-        self.debug_entry.returnPressed.connect(self._toggle_debug_mode)
-        debug_layout.addWidget(self.debug_entry, 1)
-        
-        debug_button = QPushButton("验证密码")
-        debug_button.setFixedSize(108, 36)
+        debug_layout.addStretch(1)
+
+        debug_button = QPushButton()
+        debug_button.setMinimumHeight(36)
         debug_button.setFont(QFont("Arial", 12))
         style_as_secondary_button(debug_button)
         debug_button.clicked.connect(self._toggle_debug_mode)
+        self.debug_button = debug_button
         debug_layout.addWidget(debug_button)
 
         section_layout.addLayout(debug_layout)
+        self._update_debug_status()
         
         parent_layout.addWidget(panel)
     
@@ -500,7 +498,7 @@ class AdvancedPage(QWidget):
         try:
             from ui_osd import notify_osd
 
-            notify_osd("帆派助手:游戏内提示就长这样")
+            notify_osd("CS2 Customizer:游戏内提示就长这样")
         except Exception:
             self.logger.exception("OSD 预览失败")
 
@@ -572,7 +570,7 @@ class AdvancedPage(QWidget):
 
         panel, section_layout = SettingsCard.make(
             "系统集成",
-            "把帆派助手当常驻工具用：关闭按钮可改为收进系统托盘，开机自启免去手动启动，窗口大小位置自动记忆。",
+            "把 CS2 Customizer 当常驻工具用：关闭按钮可改为收进系统托盘，开机自启免去手动启动，窗口大小位置自动记忆。",
         )
 
         # 关闭行为
@@ -593,7 +591,7 @@ class AdvancedPage(QWidget):
         section_layout.addLayout(close_row)
 
         # 开机自启（真实来源 = 注册表，勾选状态启动时读取）
-        self.autostart_checkbox = QCheckBox("开机自动启动帆派助手")
+        self.autostart_checkbox = QCheckBox("开机自动启动 CS2 Customizer")
         try:
             from core.utils.autostart import is_enabled, is_supported
 
@@ -835,46 +833,23 @@ class AdvancedPage(QWidget):
         self._sync_overview_status()
         self.logger.debug(f"更新目录显示: {csgo_dir}")
     
-    # 调试密码只存 SHA256：源码/反编译产物中不再出现明文。
-    # 可用环境变量 FANPAI_DEBUG_PASSWORD 覆盖（便于换口令而不改代码）。
-    _DEBUG_PASSWORD_SHA256 = "3dae35a974004d9515fef8861fab0acb4d8774bfdf5b1fa29e9f0e27c0ed4b23"
-
-    def _check_debug_password(self, password: str) -> bool:
-        import hashlib
-        import os as _os
-        override = _os.environ.get("FANPAI_DEBUG_PASSWORD")
-        if override:
-            return password == override
-        return hashlib.sha256(password.encode("utf-8")).hexdigest() == self._DEBUG_PASSWORD_SHA256
-
     def _toggle_debug_mode(self):
-        """切换调试模式"""
-        password = self.debug_entry.text()
+        """切换调试模式（开源版：无口令，直接开关）。"""
+        self.debug_mode = not self.debug_mode
+        config.debug_mode = self.debug_mode
+        config.save_config()
+        self._update_debug_status()
+        self.logger.info(f"调试模式已{'启用' if self.debug_mode else '关闭'}")
 
-        if self._check_debug_password(password):
-            self.debug_mode = True
-            config.debug_mode = True
-            config.save_config()
-            self._update_debug_status()
-            QMessageBox.information(self, "成功", "调试模式已启用！")
-            self.logger.info("调试模式已启用")
-            self.debug_entry.clear()
-        elif password == "":
-            QMessageBox.warning(self, "提示", "请输入调试密码")
-        else:
-            self.debug_mode = False
-            config.debug_mode = False
-            config.save_config()
-            self._update_debug_status()
-            self.logger.info("调试密码不正确")
-            self.debug_entry.clear()
-    
     def _update_debug_status(self):
         """更新调试状态显示"""
         if self.debug_mode:
             self.debug_status_label.setText("当前状态：已启用调试模式。排查完成后建议关闭。")
         else:
-            self.debug_status_label.setText("当前状态：正常使用状态。如需排查异常或联动问题，再输入密码开启即可。")
+            self.debug_status_label.setText("当前状态：正常使用状态。如需排查异常或联动问题，可临时开启。")
+        button = getattr(self, "debug_button", None)
+        if button is not None:
+            button.setText("关闭调试模式" if self.debug_mode else "开启调试模式")
         self._sync_overview_status()
     
     def _on_theme_changed(self, index):
@@ -976,7 +951,7 @@ class AdvancedPage(QWidget):
             filename, _ = QFileDialog.getSaveFileName(
                 self,
                 "保存设置备份",
-                "fanpai_config_backup.json",
+                "cs2customizer_config_backup.json",
                 "JSON文件 (*.json)"
             )
             

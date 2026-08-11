@@ -39,11 +39,11 @@ except Exception:
 
 # 隔离配置与日志目录，绝不碰用户真实数据
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-_tmp = Path(tempfile.gettempdir()) / "fanpai_flashbench"
+_tmp = Path(tempfile.gettempdir()) / "cs2customizer_flashbench"
 (_tmp / "config").mkdir(parents=True, exist_ok=True)
 (_tmp / "logs").mkdir(parents=True, exist_ok=True)
-os.environ.setdefault("FANPAI_CONFIG_DIR", str(_tmp / "config"))
-os.environ.setdefault("FANPAI_LOG_DIR", str(_tmp / "logs"))
+os.environ.setdefault("CS2C_CONFIG_DIR", str(_tmp / "config"))
+os.environ.setdefault("CS2C_LOG_DIR", str(_tmp / "logs"))
 
 from config import config  # noqa: E402
 from flash_process_manager import FlashProcessManager  # noqa: E402

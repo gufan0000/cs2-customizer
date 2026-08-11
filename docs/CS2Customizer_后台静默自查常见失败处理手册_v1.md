@@ -1,4 +1,4 @@
-# 帆派助手后台静默自查常见失败处理手册 v1
+# CS2 Customizer 后台静默自查常见失败处理手册 v1
 
 ## 1. 文档定位
 
@@ -10,11 +10,11 @@
 
 配套文档：
 
-- [帆派助手_后台静默自查索引_v1.md](./帆派助手_后台静默自查索引_v1.md)
-- [帆派助手_后台静默自查规范_v1.md](./帆派助手_后台静默自查规范_v1.md)
-- [帆派助手_后台静默自查执行模板_v1.md](./帆派助手_后台静默自查执行模板_v1.md)
-- [帆派助手_后台静默自查覆盖矩阵_v1.md](./帆派助手_后台静默自查覆盖矩阵_v1.md)
-- [帆派助手_后台静默自查记录模板_v1.md](./帆派助手_后台静默自查记录模板_v1.md)
+- [CS2Customizer_后台静默自查索引_v1.md](./CS2Customizer_后台静默自查索引_v1.md)
+- [CS2Customizer_后台静默自查规范_v1.md](./CS2Customizer_后台静默自查规范_v1.md)
+- [CS2Customizer_后台静默自查执行模板_v1.md](./CS2Customizer_后台静默自查执行模板_v1.md)
+- [CS2Customizer_后台静默自查覆盖矩阵_v1.md](./CS2Customizer_后台静默自查覆盖矩阵_v1.md)
+- [CS2Customizer_后台静默自查记录模板_v1.md](./CS2Customizer_后台静默自查记录模板_v1.md)
 
 ---
 
@@ -271,7 +271,7 @@
 - 跳出文件夹
 - 弹出真实消息框
 - 真实声音播放
-- 真实 `fanpai.cfg` / `autoexec.cfg` 被写入
+- 真实 `cs2customizer.cfg` / `autoexec.cfg` 被写入
 - 真实配置被改
 
 ### 优先排查
@@ -286,7 +286,7 @@
 - 立刻停止当前检查
 - 清理临时目录
 - 核对真实配置与真实资源目录
-- 核对真实 CS2 目录下的 `fanpai.cfg`、运行期 CFG 和 `autoexec.cfg` 是否被触碰
+- 核对真实 CS2 目录下的 `cs2customizer.cfg`、运行期 CFG 和 `autoexec.cfg` 是否被触碰
 - 修正隔离方式后重来
 
 ### 这是硬阻断

@@ -2673,7 +2673,7 @@
   },
   {
    "page": "advanced",
-   "text": "验证密码",
+   "text": "开启调试模式",
    "card": "内部调试",
    "tab": "",
    "kind": "button",
@@ -2753,7 +2753,7 @@
   },
   {
    "page": "advanced",
-   "text": "开机自动启动帆派助手",
+   "text": "开机自动启动 CS2 Customizer",
    "card": "系统集成",
    "tab": "",
    "kind": "check",

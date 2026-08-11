@@ -55,16 +55,16 @@ def fake_reg(monkeypatch):
 
 def test_refresh_rewrites_stale_path(fake_reg, monkeypatch):
     monkeypatch.setattr(sys, "frozen", True, raising=False)
-    monkeypatch.setattr(sys, "executable", r"C:\app\帆派助手2.3.0.exe", raising=False)
-    fake_reg.store[autostart._VALUE_NAME] = r'"C:\app\帆派助手2.2.0.exe"'  # 旧版本路径
+    monkeypatch.setattr(sys, "executable", r"C:\app\CS2 Customizer 2.3.0.exe", raising=False)
+    fake_reg.store[autostart._VALUE_NAME] = r'"C:\app\CS2 Customizer 2.2.0.exe"'  # 旧版本路径
     assert autostart.refresh_if_enabled() is True
-    assert fake_reg.store[autostart._VALUE_NAME] == r'"C:\app\帆派助手2.3.0.exe"'
+    assert fake_reg.store[autostart._VALUE_NAME] == r'"C:\app\CS2 Customizer 2.3.0.exe"'
 
 
 def test_refresh_noop_when_path_current(fake_reg, monkeypatch):
     monkeypatch.setattr(sys, "frozen", True, raising=False)
-    monkeypatch.setattr(sys, "executable", r"C:\app\帆派助手2.2.0.exe", raising=False)
-    fake_reg.store[autostart._VALUE_NAME] = r'"C:\app\帆派助手2.2.0.exe"'
+    monkeypatch.setattr(sys, "executable", r"C:\app\CS2 Customizer 2.2.0.exe", raising=False)
+    fake_reg.store[autostart._VALUE_NAME] = r'"C:\app\CS2 Customizer 2.2.0.exe"'
     assert autostart.refresh_if_enabled() is False
 
 
@@ -77,6 +77,6 @@ def test_refresh_noop_when_autostart_not_set(fake_reg, monkeypatch):
 def test_refresh_never_runs_from_source(fake_reg, monkeypatch):
     """源码开发运行绝不劫持用户配置的 exe 自启项。"""
     monkeypatch.setattr(sys, "frozen", False, raising=False)
-    fake_reg.store[autostart._VALUE_NAME] = r'"C:\app\帆派助手2.2.0.exe"'
+    fake_reg.store[autostart._VALUE_NAME] = r'"C:\app\CS2 Customizer 2.2.0.exe"'
     assert autostart.refresh_if_enabled() is False
-    assert fake_reg.store[autostart._VALUE_NAME] == r'"C:\app\帆派助手2.2.0.exe"'
+    assert fake_reg.store[autostart._VALUE_NAME] == r'"C:\app\CS2 Customizer 2.2.0.exe"'

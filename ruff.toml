@@ -1,4 +1,4 @@
-# 帆派助手 lint 策略（2026-06-10 引入）
+# CS2 Customizer lint 策略（2026-06-10 引入）
 # 原则：默认规则全开（pycodestyle E + pyflakes F），明确豁免的都写明理由。
 
 # 与项目实际行宽一致（UI 中文文案行较长）

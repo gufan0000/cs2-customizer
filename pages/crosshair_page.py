@@ -1141,7 +1141,7 @@ class CrosshairPage(QWidget):
         # 准备导出数据
         export_data = {
             "crosshair_data": config.crosshair_custom_data,
-            "description": "帆派助手自定义准心"
+            "description": "CS2 Customizer 自定义准心"
         }
         
         # 确保准心目录存在

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""R2-1 .fanpai 分享文件:往返、五条安全红线、schema v1/v2 兼容。"""
+"""R2-1 .cs2customizer 分享文件:往返、五条安全红线、schema v1/v2 兼容。"""
 import json
 import os
 import zipfile
@@ -16,7 +16,7 @@ from core.presets.share_file import (
 )
 
 
-def _make_share(tmp_path, bundle=None, name="t.fanpai"):
+def _make_share(tmp_path, bundle=None, name="t.cs2customizer"):
     p = str(tmp_path / name)
     write_share_file(p, bundle or export_bundle(["crosshair", "flash"]), title="测试包", author="孤帆")
     return p
@@ -48,7 +48,7 @@ def test_v1_file_still_accepted(tmp_path):
         "schema_version": 1,
         "items": [{"type": "screen_effects", "payload": {"screen_effects_enabled": True}}],
     }
-    p = str(tmp_path / "v1.fanpai")
+    p = str(tmp_path / "v1.cs2customizer")
     with zipfile.ZipFile(p, "w") as zf:
         zf.writestr(BUNDLE_NAME, json.dumps(v1))
     r = read_share_file(p)
@@ -56,7 +56,7 @@ def test_v1_file_still_accepted(tmp_path):
 
 
 def test_redline_path_traversal_rejected(tmp_path):
-    p = str(tmp_path / "evil.fanpai")
+    p = str(tmp_path / "evil.cs2customizer")
     with zipfile.ZipFile(p, "w") as zf:
         zf.writestr(BUNDLE_NAME, json.dumps(export_bundle(["crosshair"])))
         zf.writestr("../../evil.json", "{}")
@@ -66,7 +66,7 @@ def test_redline_path_traversal_rejected(tmp_path):
 
 
 def test_redline_executable_rejected(tmp_path):
-    p = str(tmp_path / "exe.fanpai")
+    p = str(tmp_path / "exe.cs2customizer")
     with zipfile.ZipFile(p, "w") as zf:
         zf.writestr(BUNDLE_NAME, json.dumps(export_bundle(["crosshair"])))
         zf.writestr("resources/payload.exe", b"MZ")
@@ -76,7 +76,7 @@ def test_redline_executable_rejected(tmp_path):
 
 
 def test_redline_absolute_path_rejected(tmp_path):
-    p = str(tmp_path / "abs.fanpai")
+    p = str(tmp_path / "abs.cs2customizer")
     with zipfile.ZipFile(p, "w") as zf:
         zf.writestr(BUNDLE_NAME, json.dumps(export_bundle(["crosshair"])))
         zf.writestr("/etc/passwd.json", "{}")
@@ -85,7 +85,7 @@ def test_redline_absolute_path_rejected(tmp_path):
 
 
 def test_redline_entry_count(tmp_path):
-    p = str(tmp_path / "many.fanpai")
+    p = str(tmp_path / "many.cs2customizer")
     with zipfile.ZipFile(p, "w") as zf:
         zf.writestr(BUNDLE_NAME, json.dumps(export_bundle(["crosshair"])))
         for i in range(MAX_ENTRIES + 1):
@@ -96,7 +96,7 @@ def test_redline_entry_count(tmp_path):
 
 
 def test_redline_invalid_bundle_rejected(tmp_path):
-    p = str(tmp_path / "bad.fanpai")
+    p = str(tmp_path / "bad.cs2customizer")
     with zipfile.ZipFile(p, "w") as zf:
         zf.writestr(BUNDLE_NAME, json.dumps({"schema": "evil", "schema_version": 99, "items": []}))
     r = read_share_file(p)
@@ -105,7 +105,7 @@ def test_redline_invalid_bundle_rejected(tmp_path):
 
 
 def test_not_a_zip_rejected(tmp_path):
-    p = str(tmp_path / "junk.fanpai")
+    p = str(tmp_path / "junk.cs2customizer")
     with open(p, "wb") as f:
         f.write(b"this is not a zip at all")
     r = read_share_file(p)
@@ -113,7 +113,7 @@ def test_not_a_zip_rejected(tmp_path):
 
 
 def test_missing_bundle_rejected(tmp_path):
-    p = str(tmp_path / "nobundle.fanpai")
+    p = str(tmp_path / "nobundle.cs2customizer")
     with zipfile.ZipFile(p, "w") as zf:
         zf.writestr(MANIFEST_NAME, "{}")
     r = read_share_file(p)

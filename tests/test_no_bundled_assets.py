@@ -208,13 +208,13 @@ def _build_release_module():
 
 
 def _fake_onedir_tree(tmp_path, *, with_resources: bool) -> Path:
-    folder = tmp_path / "帆派助手9.9.9"
+    folder = tmp_path / "CS2 Customizer 9.9.9"
     internal = folder / "_internal"
     (internal / "PySide6").mkdir(parents=True)
     (internal / "core").mkdir()
     (internal / "core" / "search_index.json").write_text("{}", encoding="utf-8")
     (internal / "python313.dll").write_bytes(b"x")
-    (folder / "帆派助手.exe").write_bytes(b"x")
+    (folder / "CS2 Customizer.exe").write_bytes(b"x")
     if with_resources:
         (internal / "resources").mkdir()
     return folder
@@ -226,7 +226,7 @@ def test_onedir_gate_rejects_missing_resources_by_default(tmp_path):
     folder = _fake_onedir_tree(tmp_path, with_resources=False)
 
     with pytest.raises(RuntimeError, match="resources"):
-        mod.verify_onedir_tree(folder, "帆派助手", require_obfuscation=False)
+        mod.verify_onedir_tree(folder, "CS2 Customizer", require_obfuscation=False)
 
 
 def test_onedir_gate_accepts_missing_resources_when_declared(tmp_path, monkeypatch):
@@ -237,7 +237,7 @@ def test_onedir_gate_accepts_missing_resources_when_declared(tmp_path, monkeypat
     folder = _fake_onedir_tree(tmp_path, with_resources=False)
 
     mod.verify_onedir_tree(
-        folder, "帆派助手", require_obfuscation=False, require_bundled_assets=False
+        folder, "CS2 Customizer", require_obfuscation=False, require_bundled_assets=False
     )
 
 
@@ -257,7 +257,7 @@ def test_onefile_gate_is_symmetric_with_onedir(tmp_path, monkeypatch):
     Python 模块、完全不看资源，于是资源缺失时会安静地产出一个没有任何素材的 exe。
     """
     mod = _build_release_module()
-    exe = tmp_path / "帆派助手.exe"
+    exe = tmp_path / "CS2 Customizer.exe"
     exe.write_bytes(b"x")
 
     _patch_archive_viewer(mod, monkeypatch, list(mod.CRITICAL_ARCHIVE_MODULES))

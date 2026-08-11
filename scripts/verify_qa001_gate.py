@@ -12,7 +12,7 @@
 
 塞进去的是临时副本，无论成败都会删掉，不改动发布产物。
 
-    python scripts/verify_qa001_gate.py --folder "release/帆派助手2.2.2"
+    python scripts/verify_qa001_gate.py --folder "release/CS2 Customizer 2.2.2"
 
 退出码：0=两问都答对；1=有一问答错。
 """
@@ -37,7 +37,7 @@ from build_release import verify_onedir_tree  # noqa: E402
 def main() -> int:
     parser = argparse.ArgumentParser(description="QA-001 门禁真产物回退验证")
     parser.add_argument("--folder", required=True, help="onedir 发布产物目录")
-    parser.add_argument("--app-name", default="帆派助手", help="产物内 exe 主名")
+    parser.add_argument("--app-name", default="CS2 Customizer", help="产物内 exe 主名")
     args = parser.parse_args()
 
     folder = Path(args.folder)

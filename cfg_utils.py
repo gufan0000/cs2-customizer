@@ -65,11 +65,11 @@ def build_cfg_content(port: int = None) -> str:
 # 兼容旧引用：默认端口版本（动态内容请用 build_cfg_content()）
 CFG_CONTENT = CFG_TEMPLATE.format(port=3000)
 
-# fanpai.cfg 文件内容（静音覆盖已改为运行时 Ducking）
-FANPAI_CFG_CONTENT = """
-// 帆派助手CFG配置文件
+# cs2customizer.cfg 文件内容（静音覆盖已改为运行时 Ducking）
+CS2C_CFG_CONTENT = """
+// CS2 Customizer CFG配置文件
 
-echo "帆派助手CFG配置文件已加载"
+echo "CS2 Customizer CFG配置文件已加载"
 """
 
 def get_steam_path_windows():
@@ -192,14 +192,14 @@ def find_cs2_install_dir():
 
     return None
 
-def find_cfg_path(cfg_filename="gamestate_integration_fanpai.cfg"):
+def find_cfg_path(cfg_filename="gamestate_integration_cs2customizer.cfg"):
     cs2_dir = find_cs2_install_dir()
     if not cs2_dir:
         return None
     return os.path.join(cs2_dir, "game", "csgo", "cfg", cfg_filename)
 
 
-def ensure_cfg_exists(csgo_dir, cfg_filename="gamestate_integration_fanpai.cfg"):
+def ensure_cfg_exists(csgo_dir, cfg_filename="gamestate_integration_cs2customizer.cfg"):
     """确保游戏内 GSI cfg 存在且内容为最新。
 
     ⚠ `csgo_dir` 要的是 **CS2 安装根目录**（里面有 `game/csgo/cfg/`），
@@ -245,23 +245,23 @@ def ensure_cfg_exists(csgo_dir, cfg_filename="gamestate_integration_fanpai.cfg")
         logger.error(f"Error creating/checking GSI configuration file: {e}")
         return False
 
-def ensure_fanpai_cfg_exists(csgo_dir):
-    """如果 fanpai.cfg 不存在，通过统一编译器创建"""
+def ensure_cs2customizer_cfg_exists(csgo_dir):
+    """如果 cs2customizer.cfg 不存在，通过统一编译器创建"""
     if not csgo_dir or not os.path.exists(csgo_dir):
         logger.warning(f"CS2 目录无效或不存在: {csgo_dir}")
         return
 
-    fanpai_cfg_path = os.path.join(csgo_dir, "game", "csgo", "cfg", "fanpai.cfg")
-    if not os.path.exists(fanpai_cfg_path):
+    cs2customizer_cfg_path = os.path.join(csgo_dir, "game", "csgo", "cfg", "cs2customizer.cfg")
+    if not os.path.exists(cs2customizer_cfg_path):
         try:
             from config import config
-            from core.cfg_compiler import write_fanpai_cfg
-            write_fanpai_cfg(config)
-            logger.info(f"fanpai.cfg created via compiler at: {fanpai_cfg_path}")
+            from core.cfg_compiler import write_cs2customizer_cfg
+            write_cs2customizer_cfg(config)
+            logger.info(f"cs2customizer.cfg created via compiler at: {cs2customizer_cfg_path}")
         except Exception as e:
-            logger.error(f"Error creating fanpai.cfg via compiler: {e}")
+            logger.error(f"Error creating cs2customizer.cfg via compiler: {e}")
     else:
-        logger.info(f"fanpai.cfg already exists at: {fanpai_cfg_path}")
+        logger.info(f"cs2customizer.cfg already exists at: {cs2customizer_cfg_path}")
 
 def setup_autoexec(csgo_dir):
     """处理 autoexec.cfg 文件"""
@@ -270,7 +270,7 @@ def setup_autoexec(csgo_dir):
         return
 
     autoexec_path = os.path.join(csgo_dir, "game", "csgo", "cfg", "autoexec.cfg")
-    exec_command = "exec fanpai.cfg"
+    exec_command = "exec cs2customizer.cfg"
 
     try:
         # 统一 utf-8：默认走系统区域编码（中文 Windows 为 GBK），
@@ -293,23 +293,23 @@ def setup_autoexec(csgo_dir):
 
 
 def ensure_hud_cfg_exists(csgo_dir):
-    """创建初始 fanpai_hud_runtime.cfg（HUD统一规则运行时）"""
+    """创建初始 cs2customizer_hud_runtime.cfg（HUD统一规则运行时）"""
     if not csgo_dir or not os.path.exists(csgo_dir):
         return
-    hud_cfg_path = os.path.join(csgo_dir, "game", "csgo", "cfg", "fanpai_hud_runtime.cfg")
+    hud_cfg_path = os.path.join(csgo_dir, "game", "csgo", "cfg", "cs2customizer_hud_runtime.cfg")
     try:
         os.makedirs(os.path.dirname(hud_cfg_path), exist_ok=True)
         if not os.path.exists(hud_cfg_path):
             with open(hud_cfg_path, "w", encoding="utf-8") as f:
                 f.write("cl_hud_color 0\n")
-            logger.info(f"fanpai_hud_runtime.cfg created at: {hud_cfg_path}")
+            logger.info(f"cs2customizer_hud_runtime.cfg created at: {hud_cfg_path}")
     except Exception as e:
-        logger.error(f"Error creating fanpai_hud_runtime.cfg: {e}")
+        logger.error(f"Error creating cs2customizer_hud_runtime.cfg: {e}")
 
 
 # 确保所有CFG文件存在
 def ensure_all_cfg(csgo_dir):
     ensure_cfg_exists(csgo_dir)       # 确保 GSI 配置文件存在
-    ensure_fanpai_cfg_exists(csgo_dir) # 确保 fanpai.cfg 存在
-    ensure_hud_cfg_exists(csgo_dir)   # 确保 fanpai_hud.cfg 存在
+    ensure_cs2customizer_cfg_exists(csgo_dir) # 确保 cs2customizer.cfg 存在
+    ensure_hud_cfg_exists(csgo_dir)   # 确保 cs2customizer_hud.cfg 存在
     setup_autoexec(csgo_dir)          # 处理 autoexec.cfg

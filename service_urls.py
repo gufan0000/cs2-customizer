@@ -19,7 +19,7 @@ core/crash_reporter.py 在基址为空时直接不发送。自行部署服务端
 """
 
 # 项目主页。用于「关于」页与错误提示中引导用户反馈问题。
-PROJECT_HOMEPAGE = "https://github.com/OWNER/cs2-customizer"
+PROJECT_HOMEPAGE = "https://github.com/gufan0000/cs2-customizer"
 PROJECT_ISSUES_URL = f"{PROJECT_HOMEPAGE}/issues"
 
 # 遥测基址。**默认为空 = 不发送任何数据。**

@@ -5,4 +5,4 @@
 # 打进 _internal/resources，onedir 产物校验也依赖它存在。
 # 删掉这个占位文件会让整个目录从 git 里消失，onedir 打包随即失败。
 #
-# 素材由用户自行导入（应用内「资源导入」，落到 %LOCALAPPDATA%\FanTool\resources）。
+# 素材由用户自行导入（应用内「资源导入」，落到 %LOCALAPPDATA%\CS2Customizer\resources）。

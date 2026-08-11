@@ -104,7 +104,7 @@ def check_gsi_cfg_match_stats() -> Dict[str, str]:
     csgo_dir = str(getattr(config, "csgo_dir", "") or "").strip()
     if not csgo_dir:
         return {"status": "not_configured", "detail": "未设置 CS2 目录，无法检查 GSI 配置文件"}
-    cfg_path = os.path.join(csgo_dir, "game", "csgo", "cfg", "gamestate_integration_fanpai.cfg")
+    cfg_path = os.path.join(csgo_dir, "game", "csgo", "cfg", "gamestate_integration_cs2customizer.cfg")
     if not os.path.isfile(cfg_path):
         return {"status": "missing", "detail": f"GSI 配置文件不存在: {cfg_path}", "path": cfg_path}
     try:

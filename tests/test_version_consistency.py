@@ -79,8 +79,8 @@ def test_version_info_strings_match(version):
     expected = {
         "FileVersion": f"{version}.0",
         "ProductVersion": f"{version}.0",
-        "OriginalFilename": f"帆派助手{version}.exe",
-        "ProductName": f"帆派助手{version}",
+        "OriginalFilename": f"CS2 Customizer {version}.exe",
+        "ProductName": f"CS2 Customizer {version}",
     }
     for key, want in expected.items():
         m = re.search(rf"StringStruct\(u'{key}',\s*u'([^']*)'\)", text)
@@ -95,7 +95,10 @@ def test_version_info_has_no_stray_version(version):
     这条不枚举，直接扫全文——只要有一处没跟着抬，立刻红。
 
     该文件已实测确认只含版本号一种点分数字（无浮点常量、无其他版本引用），
-    所以全文扫零误报。config.py 不能这么扫（满篇浮点数），
+    所以全文扫零误报。**代价是往这个文件里写任何别的点分数字都会误报**——
+    LegalCopyright 里的许可证因此写成「GNU GPL v3 or later」而不是「GPL-3.0」。
+    要改成后者的话，得先把这条判据从"全文扫"改成"按字段扫"，那就弱了一档。
+config.py 不能这么扫（满篇浮点数），
     installer.iss 也不能（第 7 行"与 2.1.3 降权方向一致"是正当的历史引用）。
     """
     allowed = {version, f"{version}.0"}
@@ -111,7 +114,7 @@ def test_version_info_has_no_stray_version(version):
 def test_installer_iss_appversion_matches(version):
     """#define AppVersion 是安装包文件名与安装目录名的来源，必须与 VERSION 一致。
 
-    漏改的后果最重：装到 `帆派助手<旧版本>` 目录，升级变成并存两份。
+    漏改的后果最重：装到 `CS2 Customizer<旧版本>` 目录，升级变成并存两份。
     """
     m = re.search(r'#define\s+AppVersion\s+"([^"]+)"', _read(INSTALLER_ISS))
     assert m, "installer.iss 里找不到 #define AppVersion"
@@ -144,7 +147,7 @@ def test_installer_iss_header_comments_match(version):
 def test_readme_title_matches():
     """README 首行标题必须是项目名。
 
-    开源化时这条判据换了落点：闭源版把版本号写在 README 标题里（`# 帆派助手 2.2.2`），
+    开源化时这条判据换了落点：闭源版把版本号写在 README 标题里（`# CS2 Customizer 2.2.2`），
     开源项目的 README 是落地页，标题该是项目名；版本号归 CHANGELOG.md 管
     （见下一条）。判据要防的东西没变——只是"当前版本写在哪"变了。
     """

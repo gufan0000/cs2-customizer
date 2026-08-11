@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-帆派助手 — GSI 全对局信号模拟器 (full-match simulation harness)
+CS2 Customizer — GSI 全对局信号模拟器 (full-match simulation harness)
 
 不依赖 CS2 / 真实音频设备 / Windows。直接构造一整局 CS2 的 GSI 状态帧序列,
 喂给全部 8 个 gsi_handler_* 处理器, 用 spy 组件捕获每个处理器的真实响应,
@@ -258,7 +258,7 @@ SCRIPT = [
 
 # ---------------- 逐帧分发 ----------------
 print("=" * 72)
-print("  帆派助手 — GSI 全对局信号模拟  (24 帧 / 8 处理器)")
+print("  CS2 Customizer — GSI 全对局信号模拟  (24 帧 / 8 处理器)")
 print("=" * 72)
 print(f"  处理器实例化: {len(handlers)}/8 成功", f"  失败: {init_errors}" if init_errors else "")
 print("-" * 72)

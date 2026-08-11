@@ -104,12 +104,12 @@ def test_qa001_build_gate_rejects_a_leaked_config(tmp_path):
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
 
-    folder = tmp_path / "帆派助手9.9.9"
+    folder = tmp_path / "CS2 Customizer 9.9.9"
     internal = folder / "_internal"
     (internal / "resources").mkdir(parents=True)
     (internal / "PySide6").mkdir()
     (internal / "python313.dll").write_bytes(b"x")
-    (folder / "帆派助手.exe").write_bytes(b"x")
+    (folder / "CS2 Customizer.exe").write_bytes(b"x")
     # R13/QA-020: 项级搜索索引也进了正向清单，而正向清单跑在反向断言之前。
     # 假产物树里不摆上它，这个用例会先因为"缺索引"炸掉，
     # 于是 match="config.json" 对不上 —— 量的就不是它要量的东西了。
@@ -118,7 +118,7 @@ def test_qa001_build_gate_rejects_a_leaked_config(tmp_path):
     (internal / "config.json").write_text("{}", encoding="utf-8")
 
     with pytest.raises(RuntimeError, match="config.json"):
-        mod.verify_onedir_tree(folder, "帆派助手", require_obfuscation=False)
+        mod.verify_onedir_tree(folder, "CS2 Customizer", require_obfuscation=False)
 
 
 def test_qa001_frozen_build_never_migrates_the_bundled_config():
@@ -140,8 +140,8 @@ def test_qa001_frozen_build_never_migrates_the_bundled_config():
 
 
 def _load_config_module(tmp_path, monkeypatch):
-    monkeypatch.setenv("FANPAI_CONFIG_DIR", str(tmp_path / "cfg"))
-    monkeypatch.setenv("FANPAI_LOG_DIR", str(tmp_path / "log"))
+    monkeypatch.setenv("CS2C_CONFIG_DIR", str(tmp_path / "cfg"))
+    monkeypatch.setenv("CS2C_LOG_DIR", str(tmp_path / "log"))
     import importlib
 
     import config as config_mod
@@ -261,8 +261,8 @@ def test_qa003_ensure_cfg_exists_reports_success_honestly(tmp_path, monkeypatch)
 
     它以前**恒返回 None**、且把写盘异常吞在内部只记 error。
     """
-    monkeypatch.setenv("FANPAI_CONFIG_DIR", str(tmp_path / "cfg"))
-    monkeypatch.setenv("FANPAI_LOG_DIR", str(tmp_path / "log"))
+    monkeypatch.setenv("CS2C_CONFIG_DIR", str(tmp_path / "cfg"))
+    monkeypatch.setenv("CS2C_LOG_DIR", str(tmp_path / "log"))
     import cfg_utils
 
     assert cfg_utils.ensure_cfg_exists("") is False, "空目录该返回 False"
@@ -279,7 +279,7 @@ def test_qa003_ensure_cfg_exists_reports_success_honestly(tmp_path, monkeypatch)
     root = tmp_path / "cs2"
     (root / "game" / "csgo" / "cfg").mkdir(parents=True)
     assert cfg_utils.ensure_cfg_exists(str(root)) is True, "正常根目录该返回 True"
-    assert (root / "game" / "csgo" / "cfg" / "gamestate_integration_fanpai.cfg").exists()
+    assert (root / "game" / "csgo" / "cfg" / "gamestate_integration_cs2customizer.cfg").exists()
 
 
 # ═══════════════════════════════════ QA-004 HUD 效果线程空转
@@ -345,8 +345,8 @@ def test_qa005_marker_is_not_written_when_a_directory_failed(tmp_path, monkeypat
     在某个 `if` 里）被一句 `failures = []` 轻松骗过 —— 结构还在，语义没了。
     **结构判据挡不住"把条件恒置为假"这种改法，只有行为判据能。**
     """
-    monkeypatch.setenv("FANPAI_CONFIG_DIR", str(tmp_path / "cfg"))
-    monkeypatch.setenv("FANPAI_LOG_DIR", str(tmp_path / "log"))
+    monkeypatch.setenv("CS2C_CONFIG_DIR", str(tmp_path / "cfg"))
+    monkeypatch.setenv("CS2C_LOG_DIR", str(tmp_path / "log"))
     import resource_manager as rm
 
     written = []
@@ -458,7 +458,7 @@ def test_qa010_dirty_snapshot_keep_does_not_brick_startup(tmp_path, monkeypatch,
     (FileNotFoundError, JSONDecodeError, KeyError) —— `int("abc")` 抛的
     ValueError、`int({...})` 抛的 TypeError 都会一路冒泡到 `import config`。
     结果是**没界面、没提示、没自愈**，用户只能自己去
-    %LOCALAPPDATA%\\FanTool\\config.json 手改或删掉。
+    %LOCALAPPDATA%\\CS2Customizer\\config.json 手改或删掉。
 
     行为判据：真造一份脏配置，真构造一次 Config，断言不抛且回落到默认值。
     把 config.py 里那个 try 去掉，这条必红。
@@ -471,8 +471,8 @@ def test_qa010_dirty_snapshot_keep_does_not_brick_startup(tmp_path, monkeypatch,
         json.dumps({"config_snapshot_max_keep": dirty}, ensure_ascii=False),
         encoding="utf-8",
     )
-    monkeypatch.setenv("FANPAI_CONFIG_DIR", str(cfg_dir))
-    monkeypatch.setenv("FANPAI_LOG_DIR", str(tmp_path / "logs"))
+    monkeypatch.setenv("CS2C_CONFIG_DIR", str(cfg_dir))
+    monkeypatch.setenv("CS2C_LOG_DIR", str(tmp_path / "logs"))
 
     config_mod = importlib.import_module("config")
     obj = config_mod.Config()          # 不抛异常，就是"软件起得来"
@@ -493,8 +493,8 @@ def test_qa010_snapshot_keep_range_is_clamped(tmp_path, monkeypatch, value, expe
     (cfg_dir / "config.json").write_text(
         json.dumps({"config_snapshot_max_keep": value}), encoding="utf-8"
     )
-    monkeypatch.setenv("FANPAI_CONFIG_DIR", str(cfg_dir))
-    monkeypatch.setenv("FANPAI_LOG_DIR", str(tmp_path / "logs"))
+    monkeypatch.setenv("CS2C_CONFIG_DIR", str(cfg_dir))
+    monkeypatch.setenv("CS2C_LOG_DIR", str(tmp_path / "logs"))
 
     config_mod = importlib.import_module("config")
     assert config_mod.Config().config_snapshot_max_keep == expected

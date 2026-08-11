@@ -10,7 +10,7 @@ from core.utils.logger import get_logger
 
 _logger = get_logger("PresetCenter")
 
-SCHEMA_NAME = "fanpai_preset_bundle"
+SCHEMA_NAME = "cs2customizer_preset_bundle"
 # v2(2026-06-12,R2-1):新增 crosshair / flash / viewmodel / magnifier 四个纯配置类型。
 # 兼容性:v1 文件可被 v2 正常校验与应用(类型子集);v2 文件在旧版会被拒(版本号不符),符合预期。
 SCHEMA_VERSION = 2

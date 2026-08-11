@@ -12,7 +12,7 @@ from core.utils.logger import get_logger
 
 
 class GSIHandlerHudColor:
-    """统一HUD规则运行时处理器：根据GSI状态写入 fanpai_hud_runtime.cfg"""
+    """统一HUD规则运行时处理器：根据GSI状态写入 cs2customizer_hud_runtime.cfg"""
 
     def __init__(self):
         self.logger = get_logger("GSIHandlerHudColor")
