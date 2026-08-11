@@ -8,4 +8,4 @@ contact_links:
     about: 不确定是不是缺陷、想问怎么用、想先聊聊某个想法，都请到讨论区。
   - name: 📖 贡献指南（提 PR 前必读）
     url: https://github.com/gufan0000/cs2-customizer/blob/main/CONTRIBUTING.md
-    about: 测试要逐文件跑、新增判据要做回退验证、提交要 git commit -s，都写在这里。
+    about: 提 PR 前必须先接受 CLA（它允许维护者把你的贡献用在闭源商业版里）；测试要逐文件跑、新增判据要做回退验证。

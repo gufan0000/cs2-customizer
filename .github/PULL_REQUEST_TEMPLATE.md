@@ -34,7 +34,7 @@
 - [ ] **改布局跑过两档排版审计**（完整 + 紧凑，缺一档等于放生一半用户）：
       - `python scripts/layout_overflow_audit.py --width 1200 --height 800 --themes dark,light --scales 1.0,1.1,1.25 --require-fonts`
       - `python scripts/layout_overflow_audit.py --compact --themes dark,light --scales 1.0,1.1,1.25 --require-fonts`
-- [ ] **已 `git commit -s`（DCO）**：每个提交都带 `Signed-off-by:`，且署名与 git 配置一致
+- [ ] **已接受 CLA**：在下面「CLA 声明」一节逐字写下声明并署名（**没有它不会合并**）
 - [ ] 改了页面控件文案 / 卡片标题 / 增删设置项的，重跑了 `python scripts/build_search_index.py`
       并提交了生成的索引
 - [ ] 注释写的是「为什么」，不是「做了什么」
@@ -55,3 +55,18 @@
 
 - [ ] 无
 - [ ] 有（请在下方说明：影响谁、怎么迁移、老配置/老预设怎么办）
+
+## CLA 声明
+
+<!--
+提 PR 之前请先读 CLA.md。它允许维护者把你的贡献用在**闭源商业版本**里——
+你保留著作权，但代码可能出现在收费软件中，且你不会因此获得报酬。
+不接受是完全合理的选择：开 issue、报缺陷、提文档反馈都不需要 CLA。
+
+接受的话，把下面两行**逐字**复制到这条注释外面，并填上你的 GitHub 用户名。
+没有这两行的 PR 不会被合并，无论代码质量如何。
+
+我已阅读并接受 CLA.md，包括其中第三节第 3 项（维护者可在闭源商业产品中使用我的贡献）。
+署名：<你的 GitHub 用户名>
+-->
+
