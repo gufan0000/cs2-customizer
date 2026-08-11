@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """量四个武器音效页的方法重复度（UP-057 第二阶段用）。
 
 为什么要脚本：登记册里"四个音效页 90% 雷同"是**估计值**，实测下来是 35%。

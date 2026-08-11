@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """诊断日志尾部 + 脱敏单测(P2③)。"""
 import os
 import time

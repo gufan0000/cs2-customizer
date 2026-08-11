@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Manual audio resource health check entry point."""
 
 from core.audio.audio_resource_health import (

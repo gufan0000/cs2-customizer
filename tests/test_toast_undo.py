@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """R1-7 toast 撤销:按钮显隐、回调只触发一次、toast_undo 快捷入口。"""
 import os
 

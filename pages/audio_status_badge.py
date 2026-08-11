@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Shared status badge helpers for audio setting pages."""
 
 from __future__ import annotations

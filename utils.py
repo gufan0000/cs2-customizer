@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 from resource_manager import ResourceManager
 
 # 资源路径 (用于PyInstaller打包)

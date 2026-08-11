@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """音效页共用脚手架（UP-057）。
 
 **范围是量出来的，不是照计划书抄的。** 05 计划写「四个音效页 90% 雷同」，

@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """R4 · 主题对比度审计（UP-021 / UP-022 / UP-023 / UP-050）。
 
 **纯 token 数学**：只读 `ThemeColors` 的色值算 WCAG 比值，不建任何控件、

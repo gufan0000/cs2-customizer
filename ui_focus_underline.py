@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """
 输入框焦点下划线动效
 获得焦点时从中心向两侧展开 accent 色线条

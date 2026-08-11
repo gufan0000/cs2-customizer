@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """
 v5 测试基线 — 按文件单独 subprocess 跑全 322 测试
 

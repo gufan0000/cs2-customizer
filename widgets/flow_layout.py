@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """FlowLayout —— 一行放不下就换行的横向布局（UP-017）。
 
 为什么需要它：`QHBoxLayout` 的最小宽度是**所有子项最小宽度之和**。一排 chip

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """
 v5 视觉基线工具 — 截全 27 页 × 2 分辨率
 

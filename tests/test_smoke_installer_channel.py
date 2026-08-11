@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """QA-018 修复的判据：安装态冒烟必须先定性注册表通道，测不了就说测不了。
 
 这条守的是**判据自己的诚实性**，不是产品行为：

@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """QA-016：上一段回合音效的淡出定时器，不许把下一段已经在播的音效掐掉。
 
 五个回合音效（start/action/win/lose/mvp）共用同一个 round_sound 通道。

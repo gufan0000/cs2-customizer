@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """主线程卡顿探测器(2.2.0 起常驻)。
 
 原理:50ms 心跳定时器,实际间隔超过阈值=主线程被同步任务卡住。

@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """QA-010 探针：config.json 里一个脏值会不会让整个软件起不来。
 
 `config.py` 的 `load_config` 里 `int(config_data.get("config_snapshot_max_keep") or 20)`

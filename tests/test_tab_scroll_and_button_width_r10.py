@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """R10（UP-095 / UP-094 / UP-081）：页签要能滚，按钮宽度不许写死。
 
 **这两类缺陷的共同点是"不报错"**：

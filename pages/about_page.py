@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """
 关于页面 - PySide6 Widgets版本
 功能：项目信息、版本、开源许可、诊断信息

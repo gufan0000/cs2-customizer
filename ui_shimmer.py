@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """
 微光动画效果（Shimmer Effect）
 为UI元素添加高光扫过的动画效果

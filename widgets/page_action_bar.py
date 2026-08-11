@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Reusable fixed bottom action bar for settings pages."""
 
 from __future__ import annotations

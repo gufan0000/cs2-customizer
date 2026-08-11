@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """v5 Phase 3 迁移脚本 — 把 16 个 page 的 _create_section_card 替换为 SettingsCard.make().
 
 每个 page 改 3 处:

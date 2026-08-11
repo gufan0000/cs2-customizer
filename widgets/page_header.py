@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """PageHeader — 27 个 page 顶部"标题 + 副标题"的统一组件.
 
 替代散在每个 page 顶部的样板代码:

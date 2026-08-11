@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """`.cs2customizer` 配置分享文件(R2-1,2026-06-12)。
 
 容器 = zip(manifest.json + bundle.json [+ 未来的 resources/])。

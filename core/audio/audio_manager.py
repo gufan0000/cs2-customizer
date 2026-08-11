@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Single runtime audio kernel with 2.x compatibility."""
 
 from __future__ import annotations

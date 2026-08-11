@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """配置 schema 迁移框架测试（P4.2）。"""
 from __future__ import annotations
 

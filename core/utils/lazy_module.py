@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """惰性模块代理（UP-055）。
 
 用途：把某个**很贵但很少用**的第三方模块从 import 期挪到首次真正使用时。

@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """2.2.0 空闲预构建:按频次排队、专家页门控、同步驱动全部建成、幂等。"""
 import os
 

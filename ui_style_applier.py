@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """
 UI样式自动应用系统
 自动识别组件类型并应用统一的设计规范

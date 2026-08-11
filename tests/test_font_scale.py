@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """R1-1 界面字号缩放:token 缩放幂等性、档位收敛、QSS 穿透。"""
 import pytest
 

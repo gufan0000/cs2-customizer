@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """崩溃日志自愿上报（P3.2，2026-06-10）。
 
 原则：

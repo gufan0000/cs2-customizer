@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """诊断信息汇总(P2③,2026-06-13)。
 
 把"复制诊断信息"从只有版本/系统,扩成正规软件级支持包的可复用部件:

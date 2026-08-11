@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """R8a 惰性导入回归（UP-055 / UP-056 / UP-061）。
 
 守的是一件很容易悄悄退化的事：**show 前的关键路径上不能出现 pygame / requests**。

@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """键盘焦点巡检（R1-4 建立 2026-06-12，R8d/UP-077 重写判据）。
 
 对指定页面离屏实例化，沿 `nextInFocusChain` 走焦点链，与**阅读序**对比。

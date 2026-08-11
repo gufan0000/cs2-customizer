@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """击杀图标设置页面"""
 
 from PySide6.QtWidgets import (

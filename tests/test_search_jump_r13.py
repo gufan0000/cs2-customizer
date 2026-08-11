@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """R13 搜索跳转链路的**端到端**判据（离屏真窗口，2026-08-10）。
 
 `test_settings_search_r13.py` 量的是搜索引擎本身（纯函数）。这一份量的是

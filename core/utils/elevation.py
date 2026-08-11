@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """权限工具：检测管理员身份 / 以管理员身份重启。
 
 背景（2.1.3 强制管理员重构）：

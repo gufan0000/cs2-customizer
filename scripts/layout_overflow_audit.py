@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """R1-9/R1-10 排版溢出审计(2026-06-12)，R4/R5 加固，R8a 补纵向判据。
 
 全页 × 主题 × 字号 离屏构建，比人眼扫 160 张截图快且可回归；

@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """真机启动-观察-优雅退出 自动化跑测（R2 起使用）。
 
 为什么需要它:启动时序与退出耗时只能在真实运行里观察,但手工开关软件既慢又

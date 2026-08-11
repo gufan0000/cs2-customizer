@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """R1-6 页面使用追踪:计数、衰减排序、排除名单、损坏文件自愈、常用分组装配。"""
 import json
 import os

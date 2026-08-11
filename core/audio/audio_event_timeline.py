@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """In-memory audio event timeline for diagnostics and replay."""
 
 from __future__ import annotations

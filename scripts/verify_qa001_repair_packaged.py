@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """QA-001 存量纠正在**打包产物**上的端到端验证。
 
 单测证明的是 `Config._repair_seeded_config` 这个方法的逻辑；它证明不了

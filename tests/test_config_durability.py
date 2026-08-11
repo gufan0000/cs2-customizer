@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """配置耐久性单测：损坏隔离 + 原子保存(P3⑤)。"""
 import json
 

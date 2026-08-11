@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """配置重载广播（UP-035）。
 
 **这修的是数据安全洞，不是刷新体验。**

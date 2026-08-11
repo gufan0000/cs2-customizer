@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """分类音量(#3) + 响度归一(#6) 的回归测试。
 
 覆盖：

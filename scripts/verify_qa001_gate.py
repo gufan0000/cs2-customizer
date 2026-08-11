@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """QA-001 门禁的**真产物**回退验证。
 
 `verify_onedir_tree()` 里那条「产物里不许出现 config.json」的反向断言，此前只在

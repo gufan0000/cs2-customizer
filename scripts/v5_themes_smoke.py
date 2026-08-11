@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """v5 Phase 10 — 9 套主题 smoke 测试.
 
 切换每套主题,截图 basic 页,确认无破坏.

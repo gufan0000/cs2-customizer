@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 import threading
 import time
 from core.audio.runtime_audio import get_runtime_audio_manager

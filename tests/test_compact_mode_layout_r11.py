@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """R11 / UP-100 / UP-102：紧凑模式下修好的三处，判据钉住结构。
 
 排版审计（`scripts/layout_overflow_audit.py --compact`）已经能量出这三处缺陷，

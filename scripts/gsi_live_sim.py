@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """
 CS2 Customizer — 活体 GSI 模拟器 (live HTTP simulation)
 

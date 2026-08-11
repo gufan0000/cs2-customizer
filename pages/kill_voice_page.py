@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """击杀语音页面。"""
 
 from __future__ import annotations

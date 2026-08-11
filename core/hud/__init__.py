@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 from core.hud.rule_model import (
     HUD_COLORS,
     HUD_EFFECTS,

@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """审计脚本的外部写入沙箱（UP-090）。
 
 **为什么需要它**：审计脚本已经隔离了配置目录和日志目录（`CS2C_CONFIG_DIR` /

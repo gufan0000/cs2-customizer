@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """widget showcase — 一窗口展示 v5 Phase 2 抽出的 5 个核心组件.
 
 用法:

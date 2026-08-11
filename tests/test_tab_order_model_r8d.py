@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """R8d · 焦点巡检判据自身的回归（UP-077）。
 
 **为什么判据需要自己的测试**：改完之后 `tab_order_audit.py` 在 11 个页面上

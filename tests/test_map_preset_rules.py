@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """R2-4 按地图自动切预设:规则存取、GSI 去重触发、总开关门控、坏数据安全。"""
 import os
 

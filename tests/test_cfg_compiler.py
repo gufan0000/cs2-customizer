@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 from core.cfg_compiler import (
     check_bind_conflicts,
     compile_all,

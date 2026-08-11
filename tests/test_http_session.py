@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """make_session 重试配置单测(无需联网)。"""
 from core.net.http_session import make_session
 

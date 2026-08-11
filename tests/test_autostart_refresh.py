@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """2.2.0 自启升级自愈:旧路径自动重写、一致时不动、源码运行不劫持。
 
 全程用假 winreg(sys.modules 注入),不碰真实注册表。

@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """R9-C（UP-047 / UP-092）：页头统一走 `PageHeader`，且别再写死字号。
 
 **为什么值得盯**：这类样板不会报错，只会悄悄长回来——写新页的人照着隔壁页

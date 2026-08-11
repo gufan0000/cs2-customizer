@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """
 响应式网格容器 - 根据宽度自动决定列数
 

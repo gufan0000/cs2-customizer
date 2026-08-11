@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """
 UI动画管理器
 提供统一的动画API，确保所有动画流畅、专业、稳定

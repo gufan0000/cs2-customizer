@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Release-grade project backup with manifest and verification."""
 
 from __future__ import annotations

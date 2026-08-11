@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """v5 完整 smoke — 启动 + 9 主题 × 27 页面切换 + 关闭,捕捉所有运行时错误."""
 
 from __future__ import annotations

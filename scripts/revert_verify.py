@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """判据回退验证台：逐条把产品代码改坏，确认对应判据**真的会变红**。
 
 ⚠ 这个文件**跨轮次长期使用**，每轮新增判据都往 `REVERTS` 里添一条。

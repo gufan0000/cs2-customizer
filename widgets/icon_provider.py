@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """IconProvider — 封装 qtawesome,做主题色注入和 fallback.
 
 v5 Phase 5 引入,提供统一的 icon 接口,让 Phase 5/6/9 的所有 icon 用法都统一.

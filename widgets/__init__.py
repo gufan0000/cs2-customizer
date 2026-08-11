@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """自定义 Widget 组件."""
 
 from widgets.dirty_page_mixin import DirtyPageMixin

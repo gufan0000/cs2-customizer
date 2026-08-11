@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Audit runtime audio events from latest CS2Customizer log file.
 
 Usage:

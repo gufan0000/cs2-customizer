@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """
 Unified compiler for cs2customizer.cfg — single source of truth.
 

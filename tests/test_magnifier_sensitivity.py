@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 from core.magnifier_sensitivity import (
     compute_zoom_sensitivity,
     format_sensitivity_value,

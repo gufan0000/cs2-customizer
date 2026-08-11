@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 from core.hud.rule_model import (
     get_default_hud_rules,
     has_runtime_enabled_rules,

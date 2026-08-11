@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """进程内存采样器(2.2.2,常驻,UP-003)。
 
 为什么要有它:"用久了变卡 / 内存一直涨"是本专项唯一无法回归的指标——

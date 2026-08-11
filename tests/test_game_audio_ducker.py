@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 from __future__ import annotations
 
 from core.audio.game_audio_ducker import GameAudioDucker, _SessionAudioBackend

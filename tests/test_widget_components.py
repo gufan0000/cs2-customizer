@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """v5 Phase 2: 7 个核心 widget 组件的单元测试.
 
 实际写了 5 个组件(SettingsCard/PageHeader/SettingsRow/AppButton/StatusChip),

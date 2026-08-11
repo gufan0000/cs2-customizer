@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """R2-1 .cs2customizer 分享文件:往返、五条安全红线、schema v1/v2 兼容。"""
 import json
 import os

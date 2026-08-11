@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """闪光子进程关闭路径回归测试（UP-007）。
 
 固化两件事，防止有人把根因改回去：

@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """卡顿探测器回归测试（UP-002）。
 
 锁住两件事:

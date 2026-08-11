@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """旧品牌不得回流（2026-08-12 开源改名时建立）。
 
 **为什么需要它**：本项目是从闭源版「帆派助手 / FanTool」裁出来的，改名那一轮

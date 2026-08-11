@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """IconLabel — icon + 文字的紧凑组合 widget.
 
 v5 Phase 5 起替代页面里散在的 "QLabel + 不带 icon" 标题/badge 组合.

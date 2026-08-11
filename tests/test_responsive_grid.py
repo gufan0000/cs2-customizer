@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """ResponsiveGrid 单元测试 — 验证断点计算、addItem、首次 reflow"""
 
 from __future__ import annotations

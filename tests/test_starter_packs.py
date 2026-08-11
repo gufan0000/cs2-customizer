@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """R2-2 内置精选包:三包全部通过 schema 校验且可应用;页面装配。"""
 import os
 

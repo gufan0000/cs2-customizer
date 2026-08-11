@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """「我的预设」UI 区块（UP-040）。
 
 单独成文件而不是塞进 `preset_center_page.py`：那个文件已经 900 多行，

@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """试听失败的统一反馈（UP-037）。
 
 原状：点「试听」没声音时，大多数失败分支只写一行日志就 `return`。

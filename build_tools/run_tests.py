@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """CS2 Customizer 全量测试驱动（正式工具，2026-06-10 固化）。
 
 为什么逐文件子进程隔离：pygame/Qt 等原生库在同一进程跑满全部测试文件会

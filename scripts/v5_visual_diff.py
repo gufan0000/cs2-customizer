@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """
 v5 视觉差异工具 — 对比两个 baseline 目录
 

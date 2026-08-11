@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Shared dirty-state protocol for editable pages."""
 
 from __future__ import annotations

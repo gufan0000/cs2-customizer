@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Compatibility tests for legacy audio.py shell."""
 
 import audio

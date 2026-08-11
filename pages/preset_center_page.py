@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Preset center page (HUD + Screen Effects + Special Sounds)."""
 
 from __future__ import annotations

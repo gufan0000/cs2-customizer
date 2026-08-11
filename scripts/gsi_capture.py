@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """真机 GSI 采集器(2026-06-13)。
 
 把 CS2 真实发出的 GSI 状态帧录成 .jsonl,供回归回放(喂 gsi_handler_* 管线)。

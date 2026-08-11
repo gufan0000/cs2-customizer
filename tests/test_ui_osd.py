@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """R2-3 OSD:单例、开关门控、跨线程 notify 不炸、角落定位合法。"""
 import os
 import threading

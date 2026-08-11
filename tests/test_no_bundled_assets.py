@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """「包内不带任何素材」这条前提下的判据。
 
 来历：开源版把 resources/ 整个删掉了（第三方游戏素材有版权），但仓库里 133 个

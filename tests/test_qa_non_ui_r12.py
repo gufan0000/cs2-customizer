@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """QA-001~008：UI 专项之外的八条缺陷的判据。
 
 来历：UI/性能专项结项后做了一轮**非 UI 维度**的排查（数据安全 / 音频 / 子进程 /

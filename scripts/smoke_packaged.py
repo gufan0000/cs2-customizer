@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """打包产物冒烟（R8a 起使用，计划书 §6「打包冒烟」的自动化实现）。
 
 **为什么必须在打包产物上跑**：PyArmor 只混淆根目录 `.py`，PyInstaller 的

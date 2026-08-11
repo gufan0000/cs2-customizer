@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """R11 / UP-006：`UtilityDisplay` 构造不得阻塞 GUI 线程。
 
 原实现在 `_start_worker` 里 `Process.start()` 之后就地轮询 `status_queue`：

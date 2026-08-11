@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """R7 · 设计系统收敛回归（D-01/D-02/D-03/D-06 + 禁用态补漏）。
 
 源码级断言走 AST；能实建控件的一律实建——R7 已经证明过一次：

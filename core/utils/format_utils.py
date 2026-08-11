@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """UI 数值格式化工具。
 
 背景（Phase1-1.1，2026-06-10）：此前各页面用 ``f"{int(value*100)}%"`` 直接渲染

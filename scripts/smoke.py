@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """一键冒烟测试：验证优化重构后的关键模块仍工作。
 
 目的：

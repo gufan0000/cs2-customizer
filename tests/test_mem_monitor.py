@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """内存采样器回归测试（UP-003）。
 
 锁住三件事:

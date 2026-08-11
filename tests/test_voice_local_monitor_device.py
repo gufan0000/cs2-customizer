@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """QA-017：音板的"本地监听"必须跟随当前的 Windows 默认输出。
 
 PortAudio 在进程内只枚举一次设备（全仓也没有 `_terminate()/_initialize()`），

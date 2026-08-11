@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Verify the packaged Windows splash-to-main-window transition."""
 
 from __future__ import annotations

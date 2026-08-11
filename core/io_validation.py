@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """用户导入文件的校验(2026-06-13)。
 
 对标 .cs2customizer 分享文件已有的"安全红线"，把同一套严谨度推广到其它导入：

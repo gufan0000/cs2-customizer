@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 from core.audio.runtime_audio import get_legacy_audio_manager, get_runtime_audio_manager
 
 

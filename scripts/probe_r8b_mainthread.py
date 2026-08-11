@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """R8b 前置度量之二：24FPS 主线程重绘会不会卡住界面。
 
 **为什么必须单独量这个**：`probe_r8b_crosshair.py` 量的是「画一帧几微秒」，

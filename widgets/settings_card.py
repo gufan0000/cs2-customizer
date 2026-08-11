@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """SettingsCard — 统一替代散在 18 page 的 _create_section_card.
 
 设计原则(Phase 2):

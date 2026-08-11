@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """
 UI设计系统 - 统一组件规范
 定义所有UI组件的标准尺寸、间距、圆角、阴影等设计规范

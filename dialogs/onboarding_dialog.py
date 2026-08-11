@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """首次使用三步引导（P4.1，2026-06-10）。
 
 只对全新安装用户弹出一次（老用户由 config.onboarding_completed 豁免）。

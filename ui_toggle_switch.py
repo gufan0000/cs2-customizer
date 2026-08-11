@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """
 iOS 风格开关组件
 滑块滑动 + 背景色渐变，与 QCheckBox API 兼容

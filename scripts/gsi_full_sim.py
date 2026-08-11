@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """
 CS2 Customizer — GSI 全对局信号模拟器 (full-match simulation harness)
 

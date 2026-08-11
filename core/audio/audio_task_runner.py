@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Async audio maintenance task queue with Qt signals."""
 
 from __future__ import annotations

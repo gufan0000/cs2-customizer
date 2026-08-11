@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """v5 demo run — 跳过 main_widget.py 的 admin 提权,直接启动 MainWindow.
 
 仅用于 v5 视觉演示 / computer-use 控制.

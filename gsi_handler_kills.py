@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 import time
 import os
 from core.audio.audio_file_utils import DEFAULT_AUDIO_EXTENSIONS, find_audio_by_stem

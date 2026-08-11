@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """QA-013：应用预设前的"自动快照"失败，不能既不记日志也不告诉用户。
 
 原实现是 `except Exception: pass`，而且整个 `preset_center.py` 连 logger 都没 import。

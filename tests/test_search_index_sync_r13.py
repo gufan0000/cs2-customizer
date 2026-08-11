@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """R13 索引与代码的同步判据（快档，2026-08-10）。
 
 `core/search_index.json` 是**离线生成**的。页面上的控件文案改了而没重跑生成器，

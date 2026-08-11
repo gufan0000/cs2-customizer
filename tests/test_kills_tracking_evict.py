@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """kills handler per-steamid 跟踪字典无界增长防护(P3⑥)。"""
 import gsi_handler_kills
 

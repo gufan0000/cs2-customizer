@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """QA-015：音效转发必须发生在「按需加载」之后。
 
 原顺序是先转发、后加载：预载有预算上限（`_max_sounds=50`，而重度配置有 171 项），

@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """页面结构指纹：给重构当安全网（UP-057）。
 
 抽基类这类重构的危险在于**它不该改变任何用户可见的东西**，而单元测试

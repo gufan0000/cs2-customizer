@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """v2.2.1 系统排查修复的回归测试（击杀音效之外的同类丢失/逻辑bug）。
 
 覆盖：

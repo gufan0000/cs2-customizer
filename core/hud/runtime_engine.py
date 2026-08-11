@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """
 Runtime HUD rule evaluator driven by GSI data.
 """

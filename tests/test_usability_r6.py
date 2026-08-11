@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """R6 · 便利性回归（UP-034/035/036/037/038/039/040）。
 
 源码级断言一律走 **AST**：本轮注释里就写着 `save_config`、`show_page` 这些字样，

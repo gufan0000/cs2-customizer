@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """通用文件拖拽导入(R1-8,2026-06-12)。
 
 为什么用 eventFilter 而不是 mixin 覆写 dragEnterEvent:页面类继承链各异,

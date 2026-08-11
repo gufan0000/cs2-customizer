@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """锁定发版依赖(2026-06-13)。
 
 为什么:requirements_qt.txt / requirements-ci.txt 用 `>=` 只锁下限——能自动拿

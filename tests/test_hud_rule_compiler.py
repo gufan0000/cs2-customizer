@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 from core.hud.rule_compiler import (
     compile_cfg_rules,
     get_cfg_paths,

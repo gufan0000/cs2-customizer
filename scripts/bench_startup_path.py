@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """R8a 度量：show 前关键路径耗时（import + MainWindow 构造 + 首次 show）。
 
 为什么不用 `scripts/live_run.py`：那个会**真的**启动软件——准心覆盖窗上屏、

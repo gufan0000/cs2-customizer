@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """R4 · 对比度与禁用态回归（UP-021 / UP-022 / UP-023 / UP-050）。
 
 这批缺陷的共同点是：**在某一个主题下才暴露**。人眼在 9 个主题里来回切换是

@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """闪光子进程 start→stop 耗时基准（UP-007 的验收工具）。
 
 为什么单独做一个:退出冻结在完整 App 里表现不稳定(受页面构建时序影响,有时

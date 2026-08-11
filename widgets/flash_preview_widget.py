@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """闪光效果实时预览组件 — 在闪光页基础设置 tab 下方实时显示当前参数效果。"""
 
 from __future__ import annotations

@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """D2：单实例互斥锁。
 
 目的：防止同一台机器同时运行两份 CS2 Customizer——双开会导致：

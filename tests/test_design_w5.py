@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """W5 设计决策收口回归（UP-045 / UP-049 / UP-053 / UP-076 / UP-047）。
 
 这批断言里最值钱的是 `test_qss_uses_no_css_only_keywords`——

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """v2.2.1 击杀音效丢失修复的回归测试。
 
 覆盖三条真实丢音路径的修复：

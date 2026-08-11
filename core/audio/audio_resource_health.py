@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Audio resource health checks for diagnostics and support."""
 
 from __future__ import annotations

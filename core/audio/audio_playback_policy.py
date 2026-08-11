@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Audio playback policy: priority and preemption decisions."""
 
 from __future__ import annotations

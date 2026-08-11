@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """游戏内 OSD 提示(R2-3,2026-06-12)。
 
 无边框/置顶/鼠标穿透的小药丸窗,角落滑入 1.6s 自动淡出。

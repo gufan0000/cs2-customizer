@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """QA-014：VB-Cable 驱动包下载必须有超时，且不能把慢链路误杀。
 
 原实现 `urllib.request.urlretrieve(url, path)` —— 这个 API 不接受 timeout，

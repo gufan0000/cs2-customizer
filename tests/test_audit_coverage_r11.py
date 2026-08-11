@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """R11 / UP-100 / UP-101：**审计的覆盖面只许增不许减**。
 
 这个专项被同一种病咬过三次，一次比一次贵：

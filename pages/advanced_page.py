@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """
 高级设置页面 - PySide6 Widgets版本
 功能：CS:GO目录设置、调试模式、配置管理

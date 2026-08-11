@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Preset center exports."""
 
 from core.presets.preset_center import (

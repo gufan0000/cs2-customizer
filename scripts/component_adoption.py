@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """量 `widgets/` 组件的真实采用率（UP-047 用）。
 
 为什么要专门写个脚本：R7 与 R8 各有一次把这件事量错了——

@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """R8b-A · 准心 Qt 叠加层的门禁（UP-054）。
 
 判据编号对应 [docs/ui-perf/06_R8b_准心Qt化_设计文档.md] §9-2。

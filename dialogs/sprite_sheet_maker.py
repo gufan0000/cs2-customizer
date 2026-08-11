@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """
 击杀图标制作工具 (Sprite Sheet Maker)
 将PNG图片序列合并为Sprite Sheet，提高加载性能

@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """R1-5 首次切页骨架屏:单例复用、切页路径不破、重入保护。"""
 import os
 

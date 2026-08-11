@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """R9-A（UP-086）：`t_shape` 补进 UI 当第五个样式。
 
 本文件盯三件事，每一件都对应一种「不报错的错」：

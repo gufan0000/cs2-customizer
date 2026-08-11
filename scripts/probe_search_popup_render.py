@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """把搜索结果面板真渲染出来看一眼（R13/S4）。
 
 自绘 delegate 的排版对不对，逻辑判据一条都证明不了：两行会不会重叠、

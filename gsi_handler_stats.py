@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 from core.utils.logger import get_logger
 
 logger = get_logger("GSIHandlerStats")

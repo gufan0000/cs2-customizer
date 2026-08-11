@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """空闲侦测器回归测试（UP-005 / D-12）。
 
 静默预载靠它判断"现在能不能干后台活"。它出错的后果是两极的：

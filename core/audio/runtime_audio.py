@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Unified runtime audio entrypoint.
 
 UP-055：本模块此前在顶层 `from core.audio.audio_manager import ...`，

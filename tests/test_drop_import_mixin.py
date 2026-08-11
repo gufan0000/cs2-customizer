@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """R1-8 通用拖拽导入:扩展名过滤、回调、防 GC 强引用。
 
 用 duck-type 假事件而非手工构造 QDropEvent:PySide6 事件构造器跨版本签名不稳,

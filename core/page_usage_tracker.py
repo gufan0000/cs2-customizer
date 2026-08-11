@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """页面使用频次追踪(R1-6,2026-06-12)。
 
 给侧栏「常用」分组供数:本地 JSON 记录每页打开次数与最近使用时间,

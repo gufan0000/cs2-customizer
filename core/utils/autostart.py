@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """开机自启（对标主流系统集成，2026-06-10）。
 
 实现方式：HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run 写入启动项。

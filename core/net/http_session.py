@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """共用 HTTP Session 工厂：给请求挂重试/退避(2026-06-13)。
 
 正规软件对网络请求应能容忍瞬时抖动(超时/连接重置/502/503/504)而非一次失败

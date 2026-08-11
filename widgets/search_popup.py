@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """顶栏搜索结果面板（S4/S5，2026-08-10）。
 
 **改造前是什么样**：搜索框挂一个 `QCompleter`，喂给它 396 条固定字符串

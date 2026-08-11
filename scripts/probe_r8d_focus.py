@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """R8d 前置度量：焦点错位到底是页面的错，还是判据的错（UP-077）。
 
 `scripts/tab_order_audit.py` 报 crosshair 7 / gun_sound 12 / music 16 /

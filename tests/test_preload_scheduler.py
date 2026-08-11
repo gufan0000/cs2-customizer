@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """预载调度与 ensure_page_loaded 语义回归测试（R2 复核发现的真回归）。
 
 R2 让 ensure_page_loaded 可以返回 False（"用户正在切页，后台让路"）。

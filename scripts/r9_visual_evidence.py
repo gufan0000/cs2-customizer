@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """R9 回归：把「只能靠肉眼判断」的部分拍下来。
 
 R9 收工时有两处明确没有像素级证据：

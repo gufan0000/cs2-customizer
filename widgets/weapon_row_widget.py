@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """
 武器行组件 - 用于击杀音效和切枪音效页面
 """

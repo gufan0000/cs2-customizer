@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """StatusChip — 状态徽章,替代散在 page 里的 audioStatusChip / badgeLabel.
 
 视觉(由 theme_manager QSS 控制 objectName="audioStatusChip" + level property):

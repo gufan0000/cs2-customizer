@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """
 滑块数值气泡
 拖动 QSlider 时在手柄上方显示当前数值

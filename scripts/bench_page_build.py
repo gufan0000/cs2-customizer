@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """离屏建页基准（R2 靶点度量）。
 
 为什么要有它:UP-005 的根因是"单页构建本身要 200-600ms,主线程不可切"。

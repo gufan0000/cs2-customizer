@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Collect lightweight runtime status for UI/system diagnostics."""
 
 from __future__ import annotations

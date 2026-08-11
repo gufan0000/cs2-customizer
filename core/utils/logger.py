@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """
 统一日志管理器
 用于记录应用程序运行日志，方便调试和问题追踪

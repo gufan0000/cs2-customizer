@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """显示层加固 / 首次渲染崩溃自愈逻辑回归测试。
 
 覆盖 main_widget 中的哨兵 + 兼容模式自愈：

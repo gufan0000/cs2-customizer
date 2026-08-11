@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                                QSlider, QRadioButton, QComboBox, QPushButton,
                                QFrame, QScrollArea, QButtonGroup, QDialog,

@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """用户空闲侦测器（2.2.2，UP-005/D-12）。
 
 为什么要有它:启动后的静默预载会在主线程上一页一页地建,每页 200~640ms 不可打断

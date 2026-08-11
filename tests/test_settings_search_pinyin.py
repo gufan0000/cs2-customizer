@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """R1-2 设置搜索拼音层:全拼/首字母命中、降级安全、通用匹配器。"""
 import pytest
 

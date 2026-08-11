@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Audio subsystem exports（惰性）。
 
 UP-055：这里原本是**饥饿式**导入——顶层 `from core.audio.audio_manager import ...`

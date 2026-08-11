@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """生成 Inno 安装向导品牌图(2.2.0)。
 
 产物(BMP,Inno 要求):

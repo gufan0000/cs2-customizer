@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """
 统一帮助面板组件
 每个页面标题旁的 "?" 按钮 + 可折叠帮助卡片

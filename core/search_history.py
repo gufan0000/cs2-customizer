@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """最近搜索记录（S5，2026-08-10）。
 
 搜索框空着的时候不该是一片空白 —— 用户上次搜过什么、常去哪几页，

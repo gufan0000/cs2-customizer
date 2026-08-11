@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """SettingsRow — label + 控件 + 可选 hint 的统一横排.
 
 最常见的设置项布局:

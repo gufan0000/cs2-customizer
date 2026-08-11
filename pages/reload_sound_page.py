@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """换弹音效页面。"""
 
 from __future__ import annotations

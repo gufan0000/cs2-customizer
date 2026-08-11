@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """按地图自动切换预设(R2-4,2026-06-12)。
 
 规则存储在 config.map_preset_rules: {map_name: {"bundle": <bundle>, "saved_at": ts}}。

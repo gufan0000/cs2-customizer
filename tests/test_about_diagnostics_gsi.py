@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """QA-011：「关于」页诊断信息里的 GSI 状态必须是真的。
 
 原实现 `from gsi_server import get_gsi_server` —— 那个名字在 `gsi_server.py` 里

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """
 v5 性能基线工具 — 启动时间 + 内存 + 切页时间
 

@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """R1-3 应用内快捷键:注册数量与目标绑定(离屏,不真实弹窗)。"""
 import os
 

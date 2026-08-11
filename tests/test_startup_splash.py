@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 import ast
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path

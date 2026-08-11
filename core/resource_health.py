@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """System resource health helpers for audio + visual assets."""
 
 from __future__ import annotations

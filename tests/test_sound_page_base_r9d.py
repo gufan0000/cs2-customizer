@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """R9-D（UP-057 第二阶段）：四个武器音效页的建页骨架上提到基类。
 
 **这一轮最该防的错，我自己先犯了一次**：把 `kill_voice` 的 `TEST_LEVELS`

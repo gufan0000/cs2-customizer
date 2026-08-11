@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """R8b-E 前置：Qt 准心的**真窗口**验收（UP-054）。
 
 设计文档 §9-3 把「置顶 / 点击穿透 / 缩放屏居中」列为"只能在真屏幕上看"，

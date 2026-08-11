@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """R8b 前置度量：准心一帧到底要花多少钱（QPainter vs pygame.draw）。
 
 **为什么要量**：R8b 的计划书写着「pygame+threading → Qt 透明置顶窗 + QPainter」，

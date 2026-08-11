@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """R5 · 页面级布局缺陷回归（UP-017 / 027 / 028 / 029 / 031 / 033）。
 
 源码级断言一律走 **AST**：本轮注释里就写着 `setFixedWidth`、`QHBoxLayout`

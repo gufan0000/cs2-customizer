@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """内置精选预设包(R2-2,2026-06-12)。
 
 给新用户"一分钟获得完整体验"的开箱包。三个包全部只引用随软件分发的

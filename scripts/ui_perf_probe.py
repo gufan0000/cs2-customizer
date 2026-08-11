@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """UI 性能优化专项 —— 基线探针。
 
 从运行日志里把「启动相位 / 主线程卡顿 / 页面构建 / 退出耗时」四类客观指标捞出来，

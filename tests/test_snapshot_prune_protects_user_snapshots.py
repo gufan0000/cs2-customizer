@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """QA-012：后台自动快照不许把用户手建的快照和"恢复后悔药"挤掉。
 
 链路：开了「按地图自动切预设」的用户，每换一张图就走

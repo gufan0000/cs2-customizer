@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """日志级别与保留策略回归测试（UP-004）。
 
 锁住四件事:

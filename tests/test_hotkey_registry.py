@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """热键注册中心契约测试（P2.1）。
 
 不依赖 keyboard/mouse 真实库——测的是注册表/冲突检测/注销的逻辑层。

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Release backup helpers."""
 
 from core.backup.release_backup import (

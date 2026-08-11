@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """R3-3 匿名使用统计:默认关、payload 白名单、24h 节流、安装ID 稳定。"""
 import os
 import time

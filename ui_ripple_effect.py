@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """
 涟漪效果组件（Material Design Ripple Effect）
 为按钮和交互元素提供现代化的点击反馈

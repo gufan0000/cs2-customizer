@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """WCAG 2.1 对比度计算（纯数学，不依赖 Qt / 不需要 QApplication）。
 
 为什么不用 `QColor`：本模块要被 `scripts/ui_contrast_audit.py` 在 CI 里跑，

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """
 开镜放大页面 - PySide6 Widget实现
 """

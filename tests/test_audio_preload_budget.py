@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """UP-060 回归：启动预载必须受 LRU 上限约束，且高频类不能被低频类挤掉。
 
 改之前实测（171 个灌入 / 上限 50）：

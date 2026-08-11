@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Preset bundle export/import/apply (schema v1)."""
 
 from __future__ import annotations

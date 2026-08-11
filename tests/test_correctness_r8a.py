@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """R8a 正确性与数据安全回归（UP-070/072/073/074/075 + UP-071 的 about 页）。
 
 这批用例的共同点：被修的缺陷**此前都在"绿灯"下存活了很久**——

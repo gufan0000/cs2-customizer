@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """匿名使用统计客户端(R3-3,2026-06-12)。
 
 原则(与崩溃上报同一套价值观):

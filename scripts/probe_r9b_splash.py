@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """UP-088 最小复现器：`QSplashScreen.show()` 会不会触发首次机会异常 0x8001010d。
 
 **为什么要单独做一个**：整软件启动一次要十几秒，而这个问题要试好几种窗口标志组合。

@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """
 Flash 闪光效果页面 - 完全参照原版CustomTkinter布局
 """

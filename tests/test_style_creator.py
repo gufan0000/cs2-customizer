@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """v2.2.1: 新建音效风格核心逻辑（core/audio/style_creator.py）测试。"""
 from __future__ import annotations
 

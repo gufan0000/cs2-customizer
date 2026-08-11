@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """R9-B（UP-088）：`native_crash.log` 的压缩不许弄丢证据。
 
 **这个改动的风险方向是反的**——它的目的是让真崩溃更容易被看见，

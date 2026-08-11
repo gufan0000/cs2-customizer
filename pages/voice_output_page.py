@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """
 语音输出页面 - PySide6 Widgets版本
 功能：音板、语音输出、音效转发

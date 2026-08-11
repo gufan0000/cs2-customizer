@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
 """UP-057 · SoundPageBase 契约回归。
 
 抽基类这类重构最怕的不是"跑不起来"，而是**悄悄改掉了某一页的行为**——

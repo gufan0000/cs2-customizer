@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Unified resource catalog for audio/visual asset roots."""
 
 from __future__ import annotations

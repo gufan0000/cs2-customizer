@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Audio import wizard helpers (scan + conservative copy)."""
 
 from __future__ import annotations
