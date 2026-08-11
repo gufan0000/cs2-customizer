@@ -1,0 +1,18 @@
+# CI 专用依赖(GitHub Actions windows-latest)。
+# 口径:tests/ 全量回归所需的最小集 = requirements_qt.txt + 运行时实际 import 的包。
+# 来源取证:.build/_probe_imports.py 全库 import 扫描(2026-06-12)。
+-r requirements_qt.txt
+
+pytest>=8.0
+flask>=3.0
+pygame>=2.6
+keyboard>=0.13
+pynput>=1.7
+pywin32>=306
+# 设置搜索拼音层(R1-2 新增)
+pypinyin>=0.53
+# 音量归一化测试链路(CI #6 实锤缺失)
+numpy>=1.26
+# 语音输出页 import 链(voice_output_manager 顶层:sounddevice/soundfile/numpy/pygame/keyboard)
+sounddevice>=0.4
+soundfile>=0.12

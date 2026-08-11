@@ -1,0 +1,153 @@
+name: 缺陷报告 / Bug report
+description: 程序崩溃、功能不生效、界面错乱等
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈。请尽量填全下面的信息——**版本 + 复现步骤 + 日志**这三样齐了，
+        问题通常一轮就能定位；缺一样往往要来回问三四次。
+
+        🔒 **安全漏洞请不要开公开 issue**：请走仓库 Security 标签页的
+        「Report a vulnerability」私密通道（详见仓库根目录的 `SECURITY.md`）。
+
+  - type: checkboxes
+    id: prechecks
+    attributes:
+      label: 开始之前
+      options:
+        - label: 我已经搜索过已有 issue，没有找到相同的问题
+          required: true
+        - label: 我用的是最新版本（或已确认最新版仍有此问题）
+          required: true
+
+  - type: input
+    id: app_version
+    attributes:
+      label: 软件版本
+      description: 在「帮助 / 关于」页面可以看到，例如 2.2.2
+      placeholder: "2.2.2"
+    validations:
+      required: true
+
+  - type: input
+    id: os_version
+    attributes:
+      label: 系统版本
+      description: Win + R 输入 `winver` 可以看到完整版本号
+      placeholder: "Windows 11 专业版 23H2（内部版本 22631.4460）"
+    validations:
+      required: true
+
+  - type: input
+    id: cs2_version
+    attributes:
+      label: CS2 版本
+      description: 游戏内「设置 → 关于」或主菜单右下角的版本号/构建日期；与游戏无关的问题填「不涉及」
+      placeholder: "1.40.5.6 (2026-07-30) / 不涉及"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: module
+    attributes:
+      label: 出问题的模块
+      options:
+        - 准心（含叠加层 / 击杀联动）
+        - 击杀音效 / 语音
+        - 击杀图标动画
+        - HUD 配色
+        - 自定闪光
+        - 开镜放大
+        - 局内视角 viewmodel
+        - 道具瞄点
+        - 语音输出 / 音板
+        - 音乐播放器
+        - 预设中心 / 配置快照
+        - 资源体检 / 素材导入
+        - 设置搜索
+        - GSI 连接 / cfg 写入
+        - 启动 / 崩溃
+        - 界面排版 / 主题 / 字号
+        - 其他 / 不确定
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 请写成「第几步做了什么」，越具体越好
+      placeholder: |
+        1. 打开程序，进入「准心」页
+        2. 把样式切成 T 形，大小调到 12
+        3. 启动 CS2，进入创意工坊地图
+        4. 开一枪
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected_actual
+    attributes:
+      label: 期望结果 / 实际结果
+      placeholder: |
+        期望：准心保持 T 形，击杀后播放破碎动画
+        实际：准心变成完整十字，破碎动画碎成圆点
+    validations:
+      required: true
+
+  - type: input
+    id: frequency
+    attributes:
+      label: 复现概率
+      description: 必现 / 偶发（大概几次里出现一次）/ 只出现过一次
+      placeholder: "必现"
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志片段
+      description: |
+        日志目录：`%LOCALAPPDATA%\FanTool\logs`
+        （在文件资源管理器地址栏直接粘贴这一行回车即可打开）
+
+        - 一般问题：贴最近一个 `fanpai_*.log` 里**出问题那段时间**的内容，几十行足够，不用整份
+        - 程序崩溃：优先贴 `bootstrap_crash_*.log` / `native_crash.log`
+        - 需要更详细的日志时，可在配置里把 `debug_file_log` 设为 `true`，
+          或临时设环境变量 `FANPAI_DEBUG_LOG=1` 后复现一次
+
+        ⚠️ **贴之前请自己扫一眼**：程序会自动遮蔽 token、密码、邮箱、Steam ID 和 Windows 用户名目录，
+        但这是保守策略，**不保证覆盖全部**。请不要粘贴含个人信息的内容
+        （完整文件路径、账号、聊天记录、好友昵称等），必要时手工打码。
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: 截图 / 录屏
+      description: 界面排版、准心显示、动画类问题请尽量附图，截图前请遮住个人信息
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: environment
+    attributes:
+      label: 环境情况（勾选适用项）
+      options:
+        - label: 以管理员身份运行
+        - label: 使用的是安装包安装的版本（否则为源码运行 / 绿色版）
+        - label: 导入过自己的素材（音效、图标、图片等）
+        - label: 装有杀毒软件 / 游戏加速器 / 其他会拦截本地端口的软件
+        - label: 同时装了其他 CS2 辅助/美化工具
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: 补充信息
+      description: 什么时候开始出现的？改过哪些设置？换个电脑还有吗？任何你觉得相关的线索
+    validations:
+      required: false

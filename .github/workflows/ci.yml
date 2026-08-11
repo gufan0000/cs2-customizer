@@ -1,0 +1,145 @@
+# CS2 Customizer CI
+# 全量回归:ruff + 测试矩阵(run_tests.py 逐文件子进程隔离,退出码即结果)。
+#
+# ui-audit 作业:把 UI 三把尺子(对比度 / 排版 / 焦点)接进门禁。
+# 修完没有回归守门的话,下一轮很容易把上一轮的修复悄悄改回去——
+# 本项目已经出现过"某维度全绿其实是根本没有判据"的情况。
+#
+# ⚠ 公开仓库的算力面(本文件挡不住的那一半)
+# 两个作业都是 windows-latest × 30 分钟,而 Windows runner 的计费权重是
+# Linux 的 2 倍。`on: pull_request` 只要没有门槛,任何陌生人开一个 PR 就能
+# 在仓库主人的额度下起两台 Windows 机器——这是公开仓库最常见的算力滥用形态。
+# 下面的分支/路径限制只能减少"顺手触发",**真正的闸门在仓库设置里**:
+#   Settings → Actions → General → Fork pull request workflows
+#   → 勾选 "Require approval for all outside collaborators"(建议)
+#      或 "Require approval for all external contributors"(更严)
+# 这一条 workflow 文件里表达不了、CI 也审计不到——它是**仓库设置**,
+# 只能靠人在仓库公开之前手工确认一次。
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+    # 纯文档改动不值得起两台 Windows runner。
+    # ⚠ 如果把 ci 设成 master 的 required status check,这里的 paths-ignore
+    # 会让"只改文档"的 PR 永远等不到那个检查而卡住合并——真要设必选检查时,
+    # 要么删掉 paths-ignore,要么另配一个总是成功的同名占位作业。
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "LICENSE"
+      - ".gitignore"
+      - ".gitattributes"
+  # 文档 PR 被 paths-ignore 跳过后,仍可手工补跑一次全量。
+  workflow_dispatch:
+
+# GITHUB_TOKEN 显式收敛为只读:本 workflow 只跑测试,不写回任何仓库状态。
+# 不写这一块的话取的是仓库默认值(可能是读写),而公开仓库里"默认值"这种
+# 说不清的东西正是供应链事故的起点——一个被投毒的 action 拿到的就是它。
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      QT_QPA_PLATFORM: offscreen
+      SDL_AUDIODRIVER: dummy
+      SDL_VIDEODRIVER: dummy
+      PYTHONIOENCODING: utf-8
+    steps:
+      # ⚠ 第三方 action 一律按 commit SHA 固定,不按 tag。
+      # tag 是可移动的引用,上游(或拿到上游写权限的人)重打一次 tag,
+      # 我们这边下一次 CI 就会静默跑到不同的代码上。升级时改 SHA,
+      # 并同步更新后面注释里的版本号。
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements-ci.txt
+
+      - name: Install deps
+        run: pip install -r requirements-ci.txt ruff
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Full test matrix
+        run: python build_tools/run_tests.py
+
+  ui-audit:
+    # UI 三把尺子。与 test 并行,失败不掩盖测试结果。
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      SDL_AUDIODRIVER: dummy
+      SDL_VIDEODRIVER: dummy
+      PYTHONIOENCODING: utf-8
+      # 隔离配置/日志,别让审计脚本往 runner 的用户目录里写。
+      # ⚠ 这里**不能**用 ${{ runner.temp }}：`runner` 上下文在 `jobs.<id>.env`
+      # 里不可用(只在 step 级可用)，写了会让**整个 workflow 文件**校验失败——
+      # 结果不是"ui-audit 红了"，而是连既有的 test 作业一起不被调度。
+      # `github` 上下文在 job 级 env 是可用的，故改用 github.workspace。
+      FANPAI_CONFIG_DIR: ${{ github.workspace }}\_ci_tmp\config
+      FANPAI_LOG_DIR: ${{ github.workspace }}\_ci_tmp\logs
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements-ci.txt
+
+      - name: Install deps
+        run: pip install -r requirements-ci.txt
+
+      # 纯色彩数学,不依赖字体,offscreen 完全可信
+      - name: 对比度审计(9 主题 × 11 判据)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python scripts/ui_contrast_audit.py
+
+      # ⚠ 这一步**故意不设** QT_QPA_PLATFORM=offscreen。
+      # offscreen 平台在无桌面会话下可能一个真实字体都没有,那样文字度量全失真,
+      # "零截断"是假绿(这个坑误导过一个多月)。
+      # --require-fonts 让无字体环境直接失败(退出码 2)而不是给出假结论。
+      # 窗口靠 WA_DontShowOnScreen 不映射到屏幕,不需要真实显示。
+      # 字号档必须跑满 1.0/1.1/1.25 三档。原先只跑 1.0/1.25,
+      # 而某类缺陷恰恰只在**走满三档**时才显形——页面建出来后要连续
+      # 两次重排才累积到位。少测中间档不是"少覆盖一档",是整类缺陷都看不见。
+      - name: 排版审计(横向溢出 + 文案截断 + 纵向裁切)
+        run: python scripts/layout_overflow_audit.py --width 1200 --height 800 --themes dark,light --scales 1.0,1.1,1.25 --require-fonts
+
+      # 紧凑模式是**另一套外壳**,不是"再跑一个尺寸"——窗口固定 860×640、
+      # 顶部多一条 50px 顶栏、侧边栏改浮层,内容可视区只有 590px
+      # (完整模式是 750px,少 160px)。它是持久化配置 `config.compact_mode`,
+      # 切换入口就是界面上那颗「切换紧凑/完整模式」按钮,**用户点一下就进去了**。
+      #
+      # 早期十一轮排版审计跑的都是完整模式。一开这一档立刻抓出三类真缺陷:
+      # `preset_center` 横向溢出 58~61px(8 主题 × 3 字号 **24 个组合全中**)、
+      # `audio_import_wizard` 三个按钮文案被打省略号、
+      # `special_sound` 的「回合」「投掷物」两个页签被压扁成 62px 舷窗。
+      # 又一次"全绿要先问分母",只是这次错在**尺寸轴**上。
+      - name: 排版审计·紧凑模式(860×640)
+        run: python scripts/layout_overflow_audit.py --compact --themes dark,light --scales 1.0,1.1,1.25 --require-fonts
+
+      # 焦点巡检从警告级改成了**阻断级**。原先警告级的理由是"4/5 页有错位、
+      # 开局就红的门等于没有门";实测那 52 处报告里 50 处是判据自己的假阳性
+      # (并排卡片被拆开 / 滚动区内外坐标硬比 / 一处错位逐位放大成一片),
+      # 真缺陷只有 music 的 2 个控件,已修。判据换成递归块模型 + 重叠行判据
+      # 之后,11 个页面全部为 0,所以现在可以阻断了。
+      # 判据自身的正反两面回归在 tests/test_tab_order_model_r8d.py。
+      - name: 焦点巡检(阻断级)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python scripts/tab_order_audit.py --verbose

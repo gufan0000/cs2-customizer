@@ -1,0 +1,31 @@
+# 帆派助手 lint 策略（2026-06-10 引入）
+# 原则：默认规则全开（pycodestyle E + pyflakes F），明确豁免的都写明理由。
+
+# 与项目实际行宽一致（UI 中文文案行较长）
+line-length = 140
+
+exclude = [
+    ".build",
+    ".git",
+    "docs",
+    "release",
+    "scripts",   # 辅助脚本（含 2 个历史损坏文件），不参与产品 lint
+]
+
+[lint]
+select = ["E", "F"]
+ignore = [
+    "E501",  # 行宽由 line-length 控制，超长行多为中文日志/文案，不强制折行
+]
+
+[lint.per-file-ignores]
+# 入口文件：bootstrap 崩溃钩子/权限策略必须先于其余 import 执行（有序副作用）
+"main_widget.py" = ["E402"]
+# 实时音频路径的密集单行守卫（`if x: return` 风格），重排零收益且改动有回归风险
+"voice_output_manager.py" = ["E701", "E702"]
+# 历史遗留检查器（仅 scripts/smoke.py 引用，不进发布包；待整体退役）
+"update_checker.py" = ["E722"]
+# 包级 re-export 是公开 API 面
+"core/hud/__init__.py" = ["F401"]
+"core/hotkeys/__init__.py" = ["F401"]
+# 测试经模块命名空间访问的 re-export 已逐行 noqa，此处不需要包级豁免

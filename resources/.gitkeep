@@ -1,0 +1,8 @@
+# 本目录在仓库里刻意保持为空。
+#
+# 开源版不分发第三方游戏素材（击杀音效/图标/枪声等均涉及第三方版权），
+# 但打包脚本 build_tools/build_release.py 会把本目录作为 PyInstaller datas
+# 打进 _internal/resources，onedir 产物校验也依赖它存在。
+# 删掉这个占位文件会让整个目录从 git 里消失，onedir 打包随即失败。
+#
+# 素材由用户自行导入（应用内「资源导入」，落到 %LOCALAPPDATA%\FanTool\resources）。

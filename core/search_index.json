@@ -1,0 +1,3403 @@
+{
+ "schema": 1,
+ "generated_by": "scripts/build_search_index.py",
+ "pages": {
+  "basic": "基础设置",
+  "kill_sound": "击杀音效",
+  "kill_voice": "击杀语音",
+  "death_sound": "被击杀音效",
+  "gun_sound": "枪声设置",
+  "switch_weapon": "切枪音效",
+  "reload_sound": "换弹音效",
+  "special_sound": "特殊音效",
+  "crosshair": "准心设置",
+  "kill_icon": "击杀图标",
+  "viewmodel": "局内视角",
+  "magnifier": "开镜放大",
+  "flash": "自定闪光",
+  "hud_color": "HUD颜色",
+  "screen_effects": "屏幕特效",
+  "music": "音乐播放",
+  "voice_output": "语音输出",
+  "utility": "道具瞄点",
+  "advanced": "高级设置",
+  "audio_health": "音频体检",
+  "audio_import_wizard": "资源导入向导",
+  "audio_task_panel": "音频任务面板",
+  "audio_replay": "音频事件回放",
+  "config_snapshot": "配置快照",
+  "preset_center": "预设中心",
+  "about": "关于软件"
+ },
+ "coverage": {
+  "runtime_pages": [
+   "about",
+   "advanced",
+   "audio_health",
+   "audio_import_wizard",
+   "audio_replay",
+   "audio_task_panel",
+   "basic",
+   "config_snapshot",
+   "crosshair",
+   "death_sound",
+   "gun_sound",
+   "hud_color",
+   "kill_sound",
+   "kill_voice",
+   "magnifier",
+   "preset_center",
+   "reload_sound",
+   "screen_effects",
+   "special_sound",
+   "switch_weapon",
+   "utility"
+  ],
+  "static_pages": [
+   "about",
+   "advanced",
+   "audio_health",
+   "audio_import_wizard",
+   "audio_replay",
+   "audio_task_panel",
+   "config_snapshot",
+   "crosshair",
+   "death_sound",
+   "flash",
+   "gun_sound",
+   "hud_color",
+   "kill_icon",
+   "magnifier",
+   "music",
+   "preset_center",
+   "screen_effects",
+   "special_sound",
+   "utility",
+   "viewmodel",
+   "voice_output"
+  ],
+  "runtime_skipped": [
+   "flash",
+   "kill_icon",
+   "music",
+   "viewmodel",
+   "voice_output"
+  ],
+  "total_pages": 26
+ },
+ "generic_dropped": [
+  "AK-47",
+  "AUG",
+  "AWP",
+  "CZ75-Auto",
+  "Desert Eagle",
+  "Dual Berettas",
+  "FAMAS",
+  "Five-SeveN",
+  "G3SG1",
+  "Galil AR",
+  "Glock-18",
+  "MAC-10",
+  "MAG-7",
+  "MP5-SD",
+  "MP7",
+  "MP9",
+  "Negev",
+  "Nova",
+  "PP-Bizon",
+  "R8 Revolver",
+  "SCAR-20",
+  "SG 553",
+  "SSG 08",
+  "Sawed-Off",
+  "Tec-9",
+  "UMP-45",
+  "USP-S",
+  "XM1014",
+  "冲锋枪",
+  "刷新风格列表",
+  "当前状态",
+  "手枪",
+  "打开音频资源",
+  "机枪",
+  "步枪",
+  "燃烧弹",
+  "燃烧瓶",
+  "狙击枪",
+  "霰弹枪"
+ ],
+ "items": [
+  {
+   "page": "basic",
+   "text": "主题",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "分类音量",
+   "card": "分类音量",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "特殊音效",
+   "card": "分类音量",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "被击杀音效",
+   "card": "分类音量",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "准心",
+   "card": "功能开关",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "击杀图标",
+   "card": "功能开关",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "击杀语音",
+   "card": "功能开关",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "击杀音效",
+   "card": "功能开关",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "切枪音效",
+   "card": "功能开关",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "功能开关",
+   "card": "功能开关",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "动态HUD",
+   "card": "功能开关",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "屏幕特效",
+   "card": "功能开关",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "开镜放大",
+   "card": "功能开关",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "换弹音效",
+   "card": "功能开关",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "枪声替换",
+   "card": "功能开关",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "自定闪光",
+   "card": "功能开关",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "被击杀修改",
+   "card": "功能开关",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "观战静音",
+   "card": "功能开关",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "语音播放",
+   "card": "功能开关",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "道具瞄点",
+   "card": "功能开关",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "音乐联动",
+   "card": "功能开关",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "模式",
+   "card": "游戏模式",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "游戏模式",
+   "card": "游戏模式",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "界面",
+   "card": "游戏模式",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "玩家信息",
+   "card": "玩家信息",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "重置ID",
+   "card": "玩家信息",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "任务面板",
+   "card": "运行面板",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "体检页面",
+   "card": "运行面板",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "刷新状态",
+   "card": "运行面板",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "日志目录",
+   "card": "运行面板",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "立即体检",
+   "card": "运行面板",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "自定义目录",
+   "card": "运行面板",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "载入音频",
+   "card": "运行面板",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "运行面板",
+   "card": "运行面板",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "音量",
+   "card": "音量控制",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "音量控制",
+   "card": "音量控制",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "kill_sound",
+   "text": "HE手雷",
+   "card": "",
+   "tab": "手雷/道具",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "kill_sound",
+   "text": "手雷/道具",
+   "card": "",
+   "tab": "手雷/道具",
+   "kind": "tab",
+   "src": "runtime"
+  },
+  {
+   "page": "kill_sound",
+   "text": "电击枪",
+   "card": "",
+   "tab": "近战",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "kill_sound",
+   "text": "近战",
+   "card": "",
+   "tab": "近战",
+   "kind": "tab",
+   "src": "runtime"
+  },
+  {
+   "page": "kill_sound",
+   "text": "风格工具",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "kill_voice",
+   "text": "HE手雷",
+   "card": "",
+   "tab": "手雷/道具",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "kill_voice",
+   "text": "手雷/道具",
+   "card": "",
+   "tab": "手雷/道具",
+   "kind": "tab",
+   "src": "runtime"
+  },
+  {
+   "page": "kill_voice",
+   "text": "风格工具",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "death_sound",
+   "text": "新建风格",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "death_sound",
+   "text": "当前方案概况",
+   "card": "当前方案概况",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "death_sound",
+   "text": "样式选择",
+   "card": "样式选择",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "death_sound",
+   "text": "音效风格",
+   "card": "样式选择",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "death_sound",
+   "text": "资源匹配策略",
+   "card": "资源匹配策略",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "gun_sound",
+   "text": "Zeus x27",
+   "card": "",
+   "tab": "特殊",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "gun_sound",
+   "text": "原声保留",
+   "card": "",
+   "tab": "特殊",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "gun_sound",
+   "text": "枪声风格",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "gun_sound",
+   "text": "特殊",
+   "card": "",
+   "tab": "特殊",
+   "kind": "tab",
+   "src": "runtime"
+  },
+  {
+   "page": "gun_sound",
+   "text": "镜声风格",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "gun_sound",
+   "text": "静音覆盖",
+   "card": "",
+   "tab": "特殊",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "gun_sound",
+   "text": "静音覆盖时长",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "gun_sound",
+   "text": "风格",
+   "card": "",
+   "tab": "特殊",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "switch_weapon",
+   "text": "M4A1消音版",
+   "card": "",
+   "tab": "步枪",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "switch_weapon",
+   "text": "PP-野牛",
+   "card": "",
+   "tab": "冲锋枪",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "switch_weapon",
+   "text": "R8左轮",
+   "card": "",
+   "tab": "手枪",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "switch_weapon",
+   "text": "USP消音版",
+   "card": "",
+   "tab": "手枪",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "switch_weapon",
+   "text": "内格夫",
+   "card": "",
+   "tab": "机枪",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "switch_weapon",
+   "text": "加利尔AR",
+   "card": "",
+   "tab": "步枪",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "switch_weapon",
+   "text": "双持贝瑞塔",
+   "card": "",
+   "tab": "手枪",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "switch_weapon",
+   "text": "宙斯 x27",
+   "card": "",
+   "tab": "近战",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "switch_weapon",
+   "text": "截短霰弹枪",
+   "card": "",
+   "tab": "霰弹枪",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "switch_weapon",
+   "text": "投掷物",
+   "card": "",
+   "tab": "投掷物",
+   "kind": "tab",
+   "src": "runtime"
+  },
+  {
+   "page": "switch_weapon",
+   "text": "新建风格",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "switch_weapon",
+   "text": "格洛克-18",
+   "card": "",
+   "tab": "手枪",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "switch_weapon",
+   "text": "沙漠之鹰",
+   "card": "",
+   "tab": "手枪",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "switch_weapon",
+   "text": "近战",
+   "card": "",
+   "tab": "近战",
+   "kind": "tab",
+   "src": "runtime"
+  },
+  {
+   "page": "switch_weapon",
+   "text": "高爆手雷",
+   "card": "",
+   "tab": "投掷物",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "reload_sound",
+   "text": "新建风格",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "special_sound",
+   "text": "C4 安放音效",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "special_sound",
+   "text": "回合",
+   "card": "",
+   "tab": "回合",
+   "kind": "tab",
+   "src": "runtime"
+  },
+  {
+   "page": "special_sound",
+   "text": "回合音效音量",
+   "card": "",
+   "tab": "回合",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "special_sound",
+   "text": "打开当前资源",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "special_sound",
+   "text": "投掷物",
+   "card": "",
+   "tab": "投掷物",
+   "kind": "tab",
+   "src": "runtime"
+  },
+  {
+   "page": "special_sound",
+   "text": "血量警告",
+   "card": "",
+   "tab": "血量警告",
+   "kind": "tab",
+   "src": "runtime"
+  },
+  {
+   "page": "special_sound",
+   "text": "触发阈值",
+   "card": "",
+   "tab": "血量警告",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "special_sound",
+   "text": "警告音效",
+   "card": "",
+   "tab": "血量警告",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "special_sound",
+   "text": "C4 音效",
+   "card": "C4 音效",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "special_sound",
+   "text": "启用 C4 音效",
+   "card": "C4 音效",
+   "tab": "",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "special_sound",
+   "text": "启用回合音效",
+   "card": "回合音效",
+   "tab": "回合",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "special_sound",
+   "text": "回合音效",
+   "card": "回合音效",
+   "tab": "回合",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "special_sound",
+   "text": "启用投掷物音效",
+   "card": "投掷物音效",
+   "tab": "投掷物",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "special_sound",
+   "text": "投掷物音效",
+   "card": "投掷物音效",
+   "tab": "投掷物",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "special_sound",
+   "text": "启用低血量警告",
+   "card": "血量警告",
+   "tab": "血量警告",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "crosshair",
+   "text": "导入准心",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "crosshair",
+   "text": "显示开关由基础设置统一控制",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "crosshair",
+   "text": "绘制自定义准心",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "crosshair",
+   "text": "T 型",
+   "card": "准心样式",
+   "tab": "",
+   "kind": "radio",
+   "src": "runtime"
+  },
+  {
+   "page": "crosshair",
+   "text": "准心样式",
+   "card": "准心样式",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "crosshair",
+   "text": "十字",
+   "card": "准心样式",
+   "tab": "",
+   "kind": "radio",
+   "src": "runtime"
+  },
+  {
+   "page": "crosshair",
+   "text": "圆圈",
+   "card": "准心样式",
+   "tab": "",
+   "kind": "radio",
+   "src": "runtime"
+  },
+  {
+   "page": "crosshair",
+   "text": "自定义",
+   "card": "准心样式",
+   "tab": "",
+   "kind": "radio",
+   "src": "runtime"
+  },
+  {
+   "page": "crosshair",
+   "text": "准心预览",
+   "card": "准心预览",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "crosshair",
+   "text": "准心颜色",
+   "card": "准心颜色",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "crosshair",
+   "text": "白色",
+   "card": "准心颜色",
+   "tab": "",
+   "kind": "radio",
+   "src": "runtime"
+  },
+  {
+   "page": "crosshair",
+   "text": "红色",
+   "card": "准心颜色",
+   "tab": "",
+   "kind": "radio",
+   "src": "runtime"
+  },
+  {
+   "page": "crosshair",
+   "text": "绿色",
+   "card": "准心颜色",
+   "tab": "",
+   "kind": "radio",
+   "src": "runtime"
+  },
+  {
+   "page": "crosshair",
+   "text": "蓝色",
+   "card": "准心颜色",
+   "tab": "",
+   "kind": "radio",
+   "src": "runtime"
+  },
+  {
+   "page": "crosshair",
+   "text": "青色",
+   "card": "准心颜色",
+   "tab": "",
+   "kind": "radio",
+   "src": "runtime"
+  },
+  {
+   "page": "crosshair",
+   "text": "黄色",
+   "card": "准心颜色",
+   "tab": "",
+   "kind": "radio",
+   "src": "runtime"
+  },
+  {
+   "page": "crosshair",
+   "text": "击杀联动",
+   "card": "击杀联动",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "crosshair",
+   "text": "联动",
+   "card": "击杀联动",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "crosshair",
+   "text": "动画",
+   "card": "动画效果",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "crosshair",
+   "text": "动画效果",
+   "card": "动画效果",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "crosshair",
+   "text": "准心大小",
+   "card": "大小与粗细",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "crosshair",
+   "text": "准心粗细",
+   "card": "大小与粗细",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "crosshair",
+   "text": "大小与粗细",
+   "card": "大小与粗细",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "crosshair",
+   "text": "绘制准心",
+   "card": "自定义准心",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "crosshair",
+   "text": "自定义准心",
+   "card": "自定义准心",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "kill_icon",
+   "text": "保存FPS设置",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "static"
+  },
+  {
+   "page": "kill_icon",
+   "text": "图标大小",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "kill_icon",
+   "text": "垂直位置",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "kill_icon",
+   "text": "当前风格",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "kill_icon",
+   "text": "快速测试",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "kill_icon",
+   "text": "打开 Sprite Sheet 制作工具",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "static"
+  },
+  {
+   "page": "kill_icon",
+   "text": "水平位置",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "kill_icon",
+   "text": "重置位置和大小",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "static"
+  },
+  {
+   "page": "kill_icon",
+   "text": "预览当前设置",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "static"
+  },
+  {
+   "page": "kill_icon",
+   "text": "位置与缩放",
+   "card": "位置与缩放",
+   "tab": "",
+   "kind": "card",
+   "src": "static"
+  },
+  {
+   "page": "kill_icon",
+   "text": "图标风格",
+   "card": "图标风格",
+   "tab": "",
+   "kind": "card",
+   "src": "static"
+  },
+  {
+   "page": "kill_icon",
+   "text": "播放速度 (FPS)",
+   "card": "播放速度 (FPS)",
+   "tab": "",
+   "kind": "card",
+   "src": "static"
+  },
+  {
+   "page": "kill_icon",
+   "text": "资源工具",
+   "card": "资源工具",
+   "tab": "",
+   "kind": "card",
+   "src": "static"
+  },
+  {
+   "page": "viewmodel",
+   "text": "保存设置到CFG",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "static"
+  },
+  {
+   "page": "viewmodel",
+   "text": "切换间隔(秒)",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "viewmodel",
+   "text": "启用准心快速回正",
+   "card": "",
+   "tab": "",
+   "kind": "check",
+   "src": "static"
+  },
+  {
+   "page": "viewmodel",
+   "text": "启用自动循环切换",
+   "card": "",
+   "tab": "",
+   "kind": "check",
+   "src": "static"
+  },
+  {
+   "page": "viewmodel",
+   "text": "循环按键",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "viewmodel",
+   "text": "快捷键",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "viewmodel",
+   "text": "激活按键",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "viewmodel",
+   "text": "CFG 同步",
+   "card": "CFG 同步",
+   "tab": "",
+   "kind": "card",
+   "src": "static"
+  },
+  {
+   "page": "viewmodel",
+   "text": "准心快速回正",
+   "card": "准心快速回正",
+   "tab": "",
+   "kind": "card",
+   "src": "static"
+  },
+  {
+   "page": "viewmodel",
+   "text": "持枪切换",
+   "card": "持枪切换",
+   "tab": "",
+   "kind": "card",
+   "src": "static"
+  },
+  {
+   "page": "viewmodel",
+   "text": "视角预设",
+   "card": "视角预设",
+   "tab": "",
+   "kind": "card",
+   "src": "static"
+  },
+  {
+   "page": "magnifier",
+   "text": "主武器热键",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "magnifier",
+   "text": "倍率",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "magnifier",
+   "text": "偏移",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "magnifier",
+   "text": "全不选武器",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "magnifier",
+   "text": "启用开镜灵敏度联动",
+   "card": "",
+   "tab": "",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "magnifier",
+   "text": "基础",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "magnifier",
+   "text": "基础灵敏度",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "magnifier",
+   "text": "大幅",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "magnifier",
+   "text": "应用偏移",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "magnifier",
+   "text": "开镜放大已禁用",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "magnifier",
+   "text": "当前偏移",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "magnifier",
+   "text": "微调",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "magnifier",
+   "text": "手枪热键",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "magnifier",
+   "text": "投掷物",
+   "card": "",
+   "tab": "投掷物",
+   "kind": "tab",
+   "src": "runtime"
+  },
+  {
+   "page": "magnifier",
+   "text": "放大倍率",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "magnifier",
+   "text": "未识别",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "magnifier",
+   "text": "武器范围",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "magnifier",
+   "text": "热键",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "magnifier",
+   "text": "联动倍率",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "magnifier",
+   "text": "触发方式",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "magnifier",
+   "text": "近战",
+   "card": "",
+   "tab": "近战",
+   "kind": "tab",
+   "src": "runtime"
+  },
+  {
+   "page": "magnifier",
+   "text": "道具",
+   "card": "",
+   "tab": "道具",
+   "kind": "tab",
+   "src": "runtime"
+  },
+  {
+   "page": "magnifier",
+   "text": "防抖延迟(ms)",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "magnifier",
+   "text": "基础控制",
+   "card": "基础控制",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "magnifier",
+   "text": "全不选",
+   "card": "武器开镜范围",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "magnifier",
+   "text": "小刀",
+   "card": "武器开镜范围",
+   "tab": "近战",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "magnifier",
+   "text": "平板",
+   "card": "武器开镜范围",
+   "tab": "道具",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "magnifier",
+   "text": "战术手雷",
+   "card": "武器开镜范围",
+   "tab": "投掷物",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "magnifier",
+   "text": "扳手",
+   "card": "武器开镜范围",
+   "tab": "近战",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "magnifier",
+   "text": "拳套",
+   "card": "武器开镜范围",
+   "tab": "近战",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "magnifier",
+   "text": "斧头",
+   "card": "武器开镜范围",
+   "tab": "近战",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "magnifier",
+   "text": "武器开镜范围",
+   "card": "武器开镜范围",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "magnifier",
+   "text": "治疗针",
+   "card": "武器开镜范围",
+   "tab": "道具",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "magnifier",
+   "text": "烟雾弹",
+   "card": "武器开镜范围",
+   "tab": "投掷物",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "magnifier",
+   "text": "爆破装置",
+   "card": "武器开镜范围",
+   "tab": "道具",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "magnifier",
+   "text": "电击枪",
+   "card": "武器开镜范围",
+   "tab": "近战",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "magnifier",
+   "text": "盾牌",
+   "card": "武器开镜范围",
+   "tab": "道具",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "magnifier",
+   "text": "诱饵弹",
+   "card": "武器开镜范围",
+   "tab": "投掷物",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "magnifier",
+   "text": "跳雷",
+   "card": "武器开镜范围",
+   "tab": "道具",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "magnifier",
+   "text": "锤子",
+   "card": "武器开镜范围",
+   "tab": "近战",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "magnifier",
+   "text": "闪光弹",
+   "card": "武器开镜范围",
+   "tab": "投掷物",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "magnifier",
+   "text": "雪球",
+   "card": "武器开镜范围",
+   "tab": "投掷物",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "magnifier",
+   "text": "高爆手雷",
+   "card": "武器开镜范围",
+   "tab": "投掷物",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "flash",
+   "text": "刷新样式列表",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "static"
+  },
+  {
+   "page": "flash",
+   "text": "刷新音频列表",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "static"
+  },
+  {
+   "page": "flash",
+   "text": "启用淡入",
+   "card": "",
+   "tab": "",
+   "kind": "check",
+   "src": "static"
+  },
+  {
+   "page": "flash",
+   "text": "启用淡出",
+   "card": "",
+   "tab": "",
+   "kind": "check",
+   "src": "static"
+  },
+  {
+   "page": "flash",
+   "text": "启用闪光音频",
+   "card": "",
+   "tab": "",
+   "kind": "check",
+   "src": "static"
+  },
+  {
+   "page": "flash",
+   "text": "图片样式",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "flash",
+   "text": "图片轮换",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "flash",
+   "text": "就绪",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "flash",
+   "text": "打开图片文件夹",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "static"
+  },
+  {
+   "page": "flash",
+   "text": "打开音频文件夹",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "static"
+  },
+  {
+   "page": "flash",
+   "text": "背景不透明度",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "flash",
+   "text": "背景颜色",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "flash",
+   "text": "自定义强度预览",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "static"
+  },
+  {
+   "page": "flash",
+   "text": "过渡方式",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "flash",
+   "text": "重置设置",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "static"
+  },
+  {
+   "page": "flash",
+   "text": "闪光样式",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "flash",
+   "text": "闪光结束时自动停止音频",
+   "card": "",
+   "tab": "",
+   "kind": "check",
+   "src": "static"
+  },
+  {
+   "page": "flash",
+   "text": "音频样式",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "flash",
+   "text": "音频轮换",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "flash",
+   "text": "预览",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "static"
+  },
+  {
+   "page": "flash",
+   "text": "预览持续时间",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "flash",
+   "text": "呈现方式",
+   "card": "呈现方式",
+   "tab": "",
+   "kind": "card",
+   "src": "static"
+  },
+  {
+   "page": "flash",
+   "text": "图片位置",
+   "card": "图片位置",
+   "tab": "",
+   "kind": "card",
+   "src": "static"
+  },
+  {
+   "page": "flash",
+   "text": "图片大小",
+   "card": "图片大小",
+   "tab": "",
+   "kind": "card",
+   "src": "static"
+  },
+  {
+   "page": "flash",
+   "text": "图片来源",
+   "card": "图片来源",
+   "tab": "",
+   "kind": "card",
+   "src": "static"
+  },
+  {
+   "page": "flash",
+   "text": "基础参数",
+   "card": "基础参数",
+   "tab": "",
+   "kind": "card",
+   "src": "static"
+  },
+  {
+   "page": "flash",
+   "text": "实时预览",
+   "card": "实时预览",
+   "tab": "",
+   "kind": "card",
+   "src": "static"
+  },
+  {
+   "page": "flash",
+   "text": "当前组合",
+   "card": "当前组合",
+   "tab": "",
+   "kind": "card",
+   "src": "static"
+  },
+  {
+   "page": "flash",
+   "text": "快速触发",
+   "card": "快速触发",
+   "tab": "",
+   "kind": "card",
+   "src": "static"
+  },
+  {
+   "page": "flash",
+   "text": "播放行为",
+   "card": "播放行为",
+   "tab": "",
+   "kind": "card",
+   "src": "static"
+  },
+  {
+   "page": "flash",
+   "text": "音频来源",
+   "card": "音频来源",
+   "tab": "",
+   "kind": "card",
+   "src": "static"
+  },
+  {
+   "page": "flash",
+   "text": "预览控制",
+   "card": "预览控制",
+   "tab": "",
+   "kind": "card",
+   "src": "static"
+  },
+  {
+   "page": "hud_color",
+   "text": "保存 HUD 规则",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "hud_color",
+   "text": "效果预设",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "hud_color",
+   "text": "默认 HUD 色",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "hud_color",
+   "text": "事件响应",
+   "card": "事件响应",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "hud_color",
+   "text": "击杀变色",
+   "card": "事件响应",
+   "tab": "",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "hud_color",
+   "text": "效果",
+   "card": "事件响应",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "hud_color",
+   "text": "被击杀变色",
+   "card": "事件响应",
+   "tab": "",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "hud_color",
+   "text": "颜色",
+   "card": "事件响应",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "hud_color",
+   "text": "数字键颜色映射",
+   "card": "数字键颜色映射",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "hud_color",
+   "text": "键 1",
+   "card": "数字键颜色映射",
+   "tab": "",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "hud_color",
+   "text": "键 2",
+   "card": "数字键颜色映射",
+   "tab": "",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "hud_color",
+   "text": "键 3",
+   "card": "数字键颜色映射",
+   "tab": "",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "hud_color",
+   "text": "键 4",
+   "card": "数字键颜色映射",
+   "tab": "",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "hud_color",
+   "text": "键 5",
+   "card": "数字键颜色映射",
+   "tab": "",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "hud_color",
+   "text": "键 6",
+   "card": "数字键颜色映射",
+   "tab": "",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "hud_color",
+   "text": "键 7",
+   "card": "数字键颜色映射",
+   "tab": "",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "hud_color",
+   "text": "键 8",
+   "card": "数字键颜色映射",
+   "tab": "",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "hud_color",
+   "text": "键 9",
+   "card": "数字键颜色映射",
+   "tab": "",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "hud_color",
+   "text": "应用预设",
+   "card": "预设工作台",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "hud_color",
+   "text": "预设工作台",
+   "card": "预设工作台",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "screen_effects",
+   "text": "当前方案概况",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "screen_effects",
+   "text": "触发开关",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "screen_effects",
+   "text": "预览击杀",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "screen_effects",
+   "text": "预览爆头",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "screen_effects",
+   "text": "击杀触发屏幕边缘特效",
+   "card": "快速控制台",
+   "tab": "",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "screen_effects",
+   "text": "快速控制台",
+   "card": "快速控制台",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "screen_effects",
+   "text": "演出模式",
+   "card": "预设与演出",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "screen_effects",
+   "text": "特效预设",
+   "card": "预设与演出",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "screen_effects",
+   "text": "预设与演出",
+   "card": "预设与演出",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "music",
+   "text": "不自动改动",
+   "card": "",
+   "tab": "",
+   "kind": "radio",
+   "src": "static"
+  },
+  {
+   "page": "music",
+   "text": "允许游戏状态自动控制音乐",
+   "card": "",
+   "tab": "",
+   "kind": "check",
+   "src": "static"
+  },
+  {
+   "page": "music",
+   "text": "列表循环",
+   "card": "",
+   "tab": "",
+   "kind": "radio",
+   "src": "static"
+  },
+  {
+   "page": "music",
+   "text": "删除选中",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "static"
+  },
+  {
+   "page": "music",
+   "text": "单曲循环",
+   "card": "",
+   "tab": "",
+   "kind": "radio",
+   "src": "static"
+  },
+  {
+   "page": "music",
+   "text": "当前列表",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "music",
+   "text": "播放控制",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "music",
+   "text": "播放模式",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "music",
+   "text": "正常音量 (100%)",
+   "card": "",
+   "tab": "",
+   "kind": "radio",
+   "src": "static"
+  },
+  {
+   "page": "music",
+   "text": "淡出效果",
+   "card": "",
+   "tab": "",
+   "kind": "check",
+   "src": "static"
+  },
+  {
+   "page": "music",
+   "text": "清空列表",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "static"
+  },
+  {
+   "page": "music",
+   "text": "自动开始/继续播放",
+   "card": "",
+   "tab": "",
+   "kind": "radio",
+   "src": "static"
+  },
+  {
+   "page": "music",
+   "text": "自动暂停播放",
+   "card": "",
+   "tab": "",
+   "kind": "radio",
+   "src": "static"
+  },
+  {
+   "page": "music",
+   "text": "自动降低音量",
+   "card": "",
+   "tab": "",
+   "kind": "radio",
+   "src": "static"
+  },
+  {
+   "page": "music",
+   "text": "自定义音量",
+   "card": "",
+   "tab": "",
+   "kind": "radio",
+   "src": "static"
+  },
+  {
+   "page": "music",
+   "text": "重命名",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "static"
+  },
+  {
+   "page": "music",
+   "text": "降低至",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "music",
+   "text": "随机播放",
+   "card": "",
+   "tab": "",
+   "kind": "radio",
+   "src": "static"
+  },
+  {
+   "page": "music",
+   "text": "音量设置",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "music",
+   "text": "顺序播放",
+   "card": "",
+   "tab": "",
+   "kind": "radio",
+   "src": "static"
+  },
+  {
+   "page": "voice_output",
+   "text": "中断键",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "voice_output",
+   "text": "主音量",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "voice_output",
+   "text": "启用PTT",
+   "card": "",
+   "tab": "",
+   "kind": "check",
+   "src": "static"
+  },
+  {
+   "page": "voice_output",
+   "text": "启用音效转发",
+   "card": "",
+   "tab": "",
+   "kind": "check",
+   "src": "static"
+  },
+  {
+   "page": "voice_output",
+   "text": "安装驱动",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "static"
+  },
+  {
+   "page": "voice_output",
+   "text": "导入",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "static"
+  },
+  {
+   "page": "voice_output",
+   "text": "导出",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "static"
+  },
+  {
+   "page": "voice_output",
+   "text": "就绪",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "voice_output",
+   "text": "开麦键",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "voice_output",
+   "text": "快捷控制",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "voice_output",
+   "text": "未选择",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "voice_output",
+   "text": "本地监听",
+   "card": "",
+   "tab": "",
+   "kind": "check",
+   "src": "static"
+  },
+  {
+   "page": "voice_output",
+   "text": "模式",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "voice_output",
+   "text": "添加槽位",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "static"
+  },
+  {
+   "page": "voice_output",
+   "text": "选择",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "static"
+  },
+  {
+   "page": "voice_output",
+   "text": "音效选项",
+   "card": "",
+   "tab": "",
+   "kind": "group",
+   "src": "static"
+  },
+  {
+   "page": "voice_output",
+   "text": "麦克风",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "utility",
+   "text": "切换显示",
+   "card": "",
+   "tab": "基础设置",
+   "kind": "radio",
+   "src": "runtime"
+  },
+  {
+   "page": "utility",
+   "text": "刷新道具列表",
+   "card": "",
+   "tab": "基础设置",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "utility",
+   "text": "图片大小",
+   "card": "",
+   "tab": "显示设置",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "utility",
+   "text": "图片显示",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "utility",
+   "text": "图片显示时长",
+   "card": "",
+   "tab": "显示设置",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "utility",
+   "text": "图片透明度",
+   "card": "",
+   "tab": "显示设置",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "utility",
+   "text": "基础设置",
+   "card": "",
+   "tab": "基础设置",
+   "kind": "tab",
+   "src": "runtime"
+  },
+  {
+   "page": "utility",
+   "text": "定位与预览",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "utility",
+   "text": "已加载道具",
+   "card": "",
+   "tab": "道具管理",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "utility",
+   "text": "当前上下文",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "utility",
+   "text": "快捷与模式",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "utility",
+   "text": "快捷键",
+   "card": "",
+   "tab": "基础设置",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "utility",
+   "text": "快速操作",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "utility",
+   "text": "打开当前地图文件夹",
+   "card": "",
+   "tab": "基础设置",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "utility",
+   "text": "打开当前阵营文件夹",
+   "card": "",
+   "tab": "基础设置",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "utility",
+   "text": "打开道具文件夹",
+   "card": "",
+   "tab": "基础设置",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "utility",
+   "text": "显示模式",
+   "card": "",
+   "tab": "基础设置",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "utility",
+   "text": "显示设置",
+   "card": "",
+   "tab": "显示设置",
+   "kind": "tab",
+   "src": "runtime"
+  },
+  {
+   "page": "utility",
+   "text": "未检测到",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "utility",
+   "text": "点击设置)",
+   "card": "",
+   "tab": "基础设置",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "utility",
+   "text": "等待进入对局",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "utility",
+   "text": "自动刷新",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "utility",
+   "text": "菜单显示",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "utility",
+   "text": "菜单透明度",
+   "card": "",
+   "tab": "显示设置",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "utility",
+   "text": "道具管理",
+   "card": "",
+   "tab": "道具管理",
+   "kind": "tab",
+   "src": "runtime"
+  },
+  {
+   "page": "utility",
+   "text": "长按显示",
+   "card": "",
+   "tab": "基础设置",
+   "kind": "radio",
+   "src": "runtime"
+  },
+  {
+   "page": "utility",
+   "text": "预览",
+   "card": "",
+   "tab": "显示设置",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "advanced",
+   "text": "OSD",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "advanced",
+   "text": "外观",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "advanced",
+   "text": "权限",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "advanced",
+   "text": "点击「刷新」查看当前绑定）",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "advanced",
+   "text": "热键",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "advanced",
+   "text": "目录",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "advanced",
+   "text": "系统",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "advanced",
+   "text": "统计",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "advanced",
+   "text": "调试",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "advanced",
+   "text": "配置",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "advanced",
+   "text": "CS2 配置目录",
+   "card": "CS2 配置目录",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "advanced",
+   "text": "全局热键总览",
+   "card": "全局热键总览",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "advanced",
+   "text": "内部调试",
+   "card": "内部调试",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "advanced",
+   "text": "验证密码",
+   "card": "内部调试",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "advanced",
+   "text": "匿名使用统计",
+   "card": "匿名使用统计",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "advanced",
+   "text": "查看将上报的内容",
+   "card": "匿名使用统计",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "advanced",
+   "text": "启用游戏内提示",
+   "card": "游戏内提示(OSD)",
+   "tab": "",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "advanced",
+   "text": "显示位置",
+   "card": "游戏内提示(OSD)",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "advanced",
+   "text": "游戏内提示(OSD)",
+   "card": "游戏内提示(OSD)",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "advanced",
+   "text": "预览一下",
+   "card": "游戏内提示(OSD)",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "advanced",
+   "text": "界面主题",
+   "card": "界面主题",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "advanced",
+   "text": "界面字号",
+   "card": "界面主题",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "advanced",
+   "text": "选择主题",
+   "card": "界面主题",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "advanced",
+   "text": "开机自动启动帆派助手",
+   "card": "系统集成",
+   "tab": "",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "advanced",
+   "text": "点击关闭按钮时",
+   "card": "系统集成",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "advanced",
+   "text": "系统集成",
+   "card": "系统集成",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "advanced",
+   "text": "记住窗口大小和位置",
+   "card": "系统集成",
+   "tab": "",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "advanced",
+   "text": "以管理员身份重启",
+   "card": "运行权限",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "advanced",
+   "text": "运行权限",
+   "card": "运行权限",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "advanced",
+   "text": "备份设置",
+   "card": "配置文件管理",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "advanced",
+   "text": "配置文件管理",
+   "card": "配置文件管理",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "advanced",
+   "text": "重置所有设置",
+   "card": "配置文件管理",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "audio_health",
+   "text": "一键修复（保守）",
+   "card": "体检与修复",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "audio_health",
+   "text": "体检与修复",
+   "card": "体检与修复",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "audio_health",
+   "text": "导出报告",
+   "card": "体检与修复",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "audio_health",
+   "text": "打开资源目录",
+   "card": "体检与修复",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "audio_health",
+   "text": "立即体检",
+   "card": "体检与修复",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "audio_health",
+   "text": "体检报告",
+   "card": "体检报告",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "audio_import_wizard",
+   "text": "一键导入（保守）",
+   "card": "导入设置",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "audio_import_wizard",
+   "text": "仅生成建议（不复制文件）",
+   "card": "导入设置",
+   "tab": "",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "audio_import_wizard",
+   "text": "导入模式",
+   "card": "导入设置",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "audio_import_wizard",
+   "text": "导入设置",
+   "card": "导入设置",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "audio_import_wizard",
+   "text": "打开源目录",
+   "card": "导入设置",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "audio_import_wizard",
+   "text": "打开资源目录",
+   "card": "导入设置",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "audio_import_wizard",
+   "text": "扫描目录",
+   "card": "导入设置",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "audio_import_wizard",
+   "text": "源目录",
+   "card": "导入设置",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "audio_import_wizard",
+   "text": "扫描与导入结果",
+   "card": "扫描与导入结果",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "audio_task_panel",
+   "text": "刷新历史",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "audio_task_panel",
+   "text": "暂无任务",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "audio_task_panel",
+   "text": "任务历史",
+   "card": "任务历史",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "audio_task_panel",
+   "text": "前往资源导入向导",
+   "card": "任务历史",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "audio_replay",
+   "text": "刷新事件",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "audio_replay",
+   "text": "暂无事件",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "audio_replay",
+   "text": "事件列表",
+   "card": "事件列表",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "audio_replay",
+   "text": "立即刷新事件",
+   "card": "事件列表",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "audio_replay",
+   "text": "事件",
+   "card": "筛选与操作",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "audio_replay",
+   "text": "关键字",
+   "card": "筛选与操作",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "audio_replay",
+   "text": "动作",
+   "card": "筛选与操作",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "audio_replay",
+   "text": "导出 JSON",
+   "card": "筛选与操作",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "audio_replay",
+   "text": "筛选与操作",
+   "card": "筛选与操作",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "audio_replay",
+   "text": "重放选中",
+   "card": "筛选与操作",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "config_snapshot",
+   "text": "刷新快照",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "config_snapshot",
+   "text": "暂无快照",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "config_snapshot",
+   "text": "快照列表",
+   "card": "快照列表",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "config_snapshot",
+   "text": "创建快照",
+   "card": "快照操作",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "config_snapshot",
+   "text": "快照操作",
+   "card": "快照操作",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "config_snapshot",
+   "text": "恢复选中",
+   "card": "快照操作",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "preset_center",
+   "text": "导入策略",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "preset_center",
+   "text": "快速操作",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "preset_center",
+   "text": "打包范围",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "static"
+  },
+  {
+   "page": "preset_center",
+   "text": "重新预览",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "preset_center",
+   "text": "一键应用",
+   "card": "内置精选",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "preset_center",
+   "text": "内置精选",
+   "card": "内置精选",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "preset_center",
+   "text": "存为新预设",
+   "card": "我的预设",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "preset_center",
+   "text": "我的预设",
+   "card": "我的预设",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "preset_center",
+   "text": "改名",
+   "card": "我的预设",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "preset_center",
+   "text": "覆盖",
+   "card": "我的预设",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "preset_center",
+   "text": "保存当前范围为该图预设",
+   "card": "按地图自动切换",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "preset_center",
+   "text": "删除该图预设",
+   "card": "按地图自动切换",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "preset_center",
+   "text": "启用按地图自动切换",
+   "card": "按地图自动切换",
+   "tab": "",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "preset_center",
+   "text": "按地图自动切换",
+   "card": "按地图自动切换",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "preset_center",
+   "text": "HUD 规则",
+   "card": "预设工作台",
+   "tab": "",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "preset_center",
+   "text": "准心",
+   "card": "预设工作台",
+   "tab": "",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "preset_center",
+   "text": "导入分享文件",
+   "card": "预设工作台",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "preset_center",
+   "text": "导入模式",
+   "card": "预设工作台",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "preset_center",
+   "text": "导入预设包",
+   "card": "预设工作台",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "preset_center",
+   "text": "导出分享文件",
+   "card": "预设工作台",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "preset_center",
+   "text": "导出预设包",
+   "card": "预设工作台",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "preset_center",
+   "text": "局内视角",
+   "card": "预设工作台",
+   "tab": "",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "preset_center",
+   "text": "屏幕特效",
+   "card": "预设工作台",
+   "tab": "",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "preset_center",
+   "text": "应用当前预设",
+   "card": "预设工作台",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "preset_center",
+   "text": "开镜放大",
+   "card": "预设工作台",
+   "tab": "",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "preset_center",
+   "text": "特殊音效",
+   "card": "预设工作台",
+   "tab": "",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "preset_center",
+   "text": "自定闪光",
+   "card": "预设工作台",
+   "tab": "",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "preset_center",
+   "text": "预设工作台",
+   "card": "预设工作台",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "preset_center",
+   "text": "预设预览",
+   "card": "预设预览",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "about",
+   "text": "CS2 Customizer",
+   "card": "产品信息",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "about",
+   "text": "产品信息",
+   "card": "产品信息",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "about",
+   "text": "反馈与求助",
+   "card": "反馈与求助",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "about",
+   "text": "复制诊断信息",
+   "card": "反馈与求助",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "about",
+   "text": "打开项目仓库",
+   "card": "反馈与求助",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "about",
+   "text": "提交 Issue",
+   "card": "反馈与求助",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "about",
+   "text": "开源与发布",
+   "card": "开源与发布",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "about",
+   "text": "查看发布记录",
+   "card": "开源与发布",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  }
+ ]
+}

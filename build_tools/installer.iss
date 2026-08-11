@@ -1,0 +1,139 @@
+; 帆派助手 Inno Setup 安装脚本(2.2.2,onedir 形态)
+; 编译: iscc build_tools\installer.iss /DAppVersion=2.2.2
+; 前置: ① python build_tools\build_release.py --mode onedir
+;       ② python build_tools\make_installer_assets.py(品牌向导图,已入库可不重跑)
+; 设计要点:
+;  - WizardStyle=modern + 深紫品牌向导图,与应用深色主题同视觉语言
+;  - 普通权限安装到 {localappdata}\FanTool(与 2.1.3 降权方向一致,零 UAC)
+;  - 升级时自动请求关闭运行中的帆派助手(CloseApplications)
+;  - 卸载清开机自启注册表,保留用户配置(%LOCALAPPDATA%\FanTool 数据)
+
+#ifndef AppVersion
+  #define AppVersion "2.2.2"
+#endif
+#define AppName "帆派助手"
+#define AppDirName AppName + AppVersion
+#define AppExeName AppName + ".exe"
+#define AppPublisher "FanTool"
+#define AppURL "https://github.com/OWNER/cs2-customizer"
+
+[Setup]
+AppId={{8D2A6B6E-4F2B-4E2C-9C61-FANPAI2026}}
+AppName={#AppName}
+AppVersion={#AppVersion}
+AppVerName={#AppName} {#AppVersion}
+AppPublisher={#AppPublisher}
+AppPublisherURL={#AppURL}
+AppSupportURL={#AppURL}
+AppUpdatesURL={#AppURL}
+DefaultDirName={localappdata}\FanTool\{#AppName}
+DefaultGroupName={#AppName}
+DisableProgramGroupPage=yes
+PrivilegesRequired=lowest
+OutputDir=..\release\installer
+OutputBaseFilename=帆派助手安装包_{#AppVersion}
+; 注:项目根 icon.ico 含 Inno 不接受的编码帧,用 PIL 重铸版(make_installer_assets 同目录)
+SetupIconFile=installer_assets\setup_icon.ico
+Compression=lzma2/max
+SolidCompression=yes
+WizardStyle=modern
+; modern 风格默认跳过欢迎页;品牌大图就在欢迎/完成页,必须显式打开
+DisableWelcomePage=no
+; 升级体验:检测到旧安装(同 AppId)时自动沿用原目录并跳过选目录页——
+; 用户下载新安装包双击,一路"下一步"即完成覆盖升级,无需找原文件夹
+DisableDirPage=auto
+UsePreviousAppDir=yes
+WizardImageFile=installer_assets\wizard_large.bmp
+WizardSmallImageFile=installer_assets\wizard_small.bmp
+WizardImageStretch=yes
+ShowLanguageDialog=no
+UninstallDisplayName={#AppName}
+UninstallDisplayIcon={app}\{#AppExeName}
+CloseApplications=yes
+RestartApplications=no
+VersionInfoVersion={#AppVersion}.0
+VersionInfoDescription={#AppName} 安装程序
+VersionInfoProductName={#AppName}
+
+[Languages]
+Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
+
+[Messages]
+chinesesimplified.WelcomeLabel1=欢迎安装 [name]
+chinesesimplified.WelcomeLabel2=即将在你的电脑上安装 [name/ver]。%n%nCS2 游戏体验增强:准心、击杀音效、自定闪光、开镜放大、音乐联动,一站搞定。%n%n建议先关闭正在运行的帆派助手再继续。
+chinesesimplified.FinishedHeadingLabel=安装完成!
+chinesesimplified.FinishedLabel=[name] 已经装好。开始享受更带感的对局吧——记得在软件里把 CS2 目录配置好。
+
+[Tasks]
+Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "附加任务:"
+
+[InstallDelete]
+; 覆盖升级时清掉旧版本遗留:exe 名带版本号,不清会双 exe 并存
+; (_internal 整目录重铺,顺带清陈旧库文件)
+Type: files; Name: "{app}\帆派助手*.exe"
+Type: filesandordirs; Name: "{app}\_internal"
+
+[Files]
+; onedir 整目录(exe + _internal),递归收取
+Source: "..\release\{#AppDirName}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+[Icons]
+Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"
+Name: "{group}\卸载 {#AppName}"; Filename: "{uninstallexe}"
+Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: desktopicon
+
+[Run]
+Filename: "{app}\{#AppExeName}"; Description: "立即运行 {#AppName}"; Flags: nowait postinstall skipifsilent
+
+[Registry]
+; 卸载时移除开机自启(若用户开过;键名必须与 core/utils/autostart.py 的 _VALUE_NAME 一致)
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueName: "FanTool帆派助手"; Flags: dontcreatekey uninsdeletevalue
+
+[UninstallDelete]
+; 程序目录内运行期残留(日志/缓存不在此处,用户配置在 %LOCALAPPDATA%\FanTool,保留)
+Type: filesandordirs; Name: "{app}\_internal"
+
+
+[Code]
+{ 安装收尾:把"开机自启"注册表项迁移指向新版固定名 exe。
+  - 仅当用户此前开过自启(值已存在)才改,绝不主动新增自启;
+  - 这会清掉指向旧版/早期单 exe 路径的陈旧自启项,装完即生效(无需等 app 首次启动自愈)。 }
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  RunKey, ValueName, OldCmd, NewCmd: String;
+begin
+  if CurStep = ssPostInstall then
+  begin
+    RunKey := 'Software\Microsoft\Windows\CurrentVersion\Run';
+    ValueName := 'FanTool帆派助手';
+    if RegQueryStringValue(HKEY_CURRENT_USER, RunKey, ValueName, OldCmd) then
+    begin
+      NewCmd := '"' + ExpandConstant('{app}\{#AppExeName}') + '"';
+      if CompareText(Trim(OldCmd), NewCmd) <> 0 then
+        RegWriteStringValue(HKEY_CURRENT_USER, RunKey, ValueName, NewCmd);
+    end;
+  end;
+end;
+
+{ 卸载时询问是否一并删除用户数据(配置/导入资源)。
+  - 默认选"否"(MB_DEFBUTTON2):保留数据,方便重装后继续用;
+  - 静默卸载(UninstallSilent)不弹窗、保持原行为=保留数据,不破坏既有 /VERYSILENT 验收。 }
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  DataDir: String;
+begin
+  if (CurUninstallStep = usPostUninstall) and (not UninstallSilent()) then
+  begin
+    DataDir := ExpandConstant('{localappdata}\FanTool');
+    if DirExists(DataDir) then
+    begin
+      if MsgBox('是否同时删除帆派助手的配置和导入的资源？' + #13#10 +
+                '位置：' + DataDir + #13#10 + #13#10 +
+                '选择“否”将保留你的设置，方便以后重装后继续使用。',
+                mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES then
+      begin
+        DelTree(DataDir, True, True, True);
+      end;
+    end;
+  end;
+end;

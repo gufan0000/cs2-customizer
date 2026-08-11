@@ -1,0 +1,156 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Logs
+logs/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Config (keep template)
+config.json
+
+# Temporary files
+*.tmp
+*.temp
+
+# --- 2026-04-19: 扩展，配合重构 baseline ---
+# 构建产物（大目录，不入库）
+.build/
+release/
+output/
+artifacts/
+
+# PyInstaller / PyArmor 测试产物
+tmp_pyarmor_test_*/
+tmp_desktop_shot_test/
+pyarmor.bug.log
+*.pyarmor.bug.log
+
+# 历史基线快照
+.tmp_baseline_*/
+
+# pytest / 临时
+.pytest_cache/
+.ruff_cache/
+.tmp_pytest_cache/
+.tmp_*.png
+.tmp_*.jpg
+
+# 旧配置备份文件
+config.py.backup
+*.py.backup
+
+# 重构期间的工作快照（本地保留，不入仓库）
+docs/_refactor_snapshots/
+
+# --- 2026-05-29: 安全 —— 绝不入库的密钥/证书/凭据 ---
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+id_rsa*
+*secret*
+.env
+.env.*
+
+# 评估用临时脚本（非项目代码）
+_eval_*.py
+
+
+
+# FUSE 挂载删除残影（沙箱产物）
+.fuse_hidden*
+_manual_backup_20260610_154957/
+
+# 审计/复核脚本的隔离目录（R8a：一次 `git add -A` 误提交过 tmpup072_cfg）
+tmp*_cfg/
+tmp*_logs/
+_ci_tmp/
+
+# --- 开源版新增：挡住这次裁剪掉的所有类别 ---
+#
+# 为什么写这一段：开源裁剪把第三方游戏素材、构建产物、凭据全部移出了仓库，
+# 但**移出去不等于回不来** —— 一次 `git add -A` 就能把它们原样加回去，
+# 而素材那类文件涉及第三方版权，一旦推上公开仓库就再也撤不干净
+# （force push 也删不掉别人已经 fork/clone 的那份）。
+# 判据侧另有 tests/test_no_bundled_assets.py 守着「resources/ 必须是空骨架」，
+# 两道一起：这里挡住手滑，判据挡住绕过。
+
+# 1) 素材：resources/ 下只留空骨架，除 .gitkeep 外一律不入库。
+#    ⚠ 不能写成全局 `*.png` —— 仓库根的 splash.png / icon.ico 和
+#    build_tools/installer_assets/ 是打包必需品，被挡住会直接打不出包。
+#    所以所有素材后缀**只在 resources/ 路径下**生效。
+resources/**
+!resources/
+!resources/**/
+!resources/**/.gitkeep
+
+# 2) 素材后缀（万一有人把素材放到 resources/ 之外的子目录里）
+#    同样只对素材目录生效，别误伤根目录的图标与启动图。
+**/assets/**/*.mp3
+**/assets/**/*.wav
+**/assets/**/*.ogg
+**/assets/**/*.flac
+**/assets/**/*.m4a
+**/assets/**/*.aac
+**/assets/**/*.mp4
+**/assets/**/*.webm
+
+# 3) 构建产物与第三方二进制（UPX、安装包、发布压缩包都属这一类）
+*.exe
+*.msi
+*.zip
+*.7z
+*.rar
+*.tar.gz
+*.tgz
+*.dll
+*.pyd
+!build_tools/installer_assets/**
+
+# 4) 打包/混淆的中间目录
+.build/
+build_tools/upx/
+pyarmor_runtime*/
+*.spec.bak
+
+# 5) 凭据（上面已有 *.pem / *.key / .env，这里补齐同族）
+*.jks
+*.keystore
+*.der
+credentials.json
+service_account*.json
+*.token

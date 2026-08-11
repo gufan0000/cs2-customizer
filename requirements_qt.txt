@@ -1,0 +1,26 @@
+# 帆派助手 2.0 - Qt版本依赖
+# 现代化UI所需的额外依赖
+
+# Qt框架
+PySide6>=6.6.0
+
+# v5 Phase 5: 矢量 icon 系统(Material Design Icons)
+qtawesome>=1.4.0
+
+# Windows 进程级音量 Ducking（枪声替换增强，可选）
+pycaw; platform_system == "Windows"
+comtypes; platform_system == "Windows"
+
+# --- 2026-06-10 安全下限（pip-audit 体检后确定，详见 帆派助手_深度体检报告_20260610.md）---
+# pillow 12.1.x 含 6 个图片解析 CVE（本软件处理用户导入图片，属真实攻击面）
+pillow>=12.2.0
+# requests/urllib3 升级修复已知 CVE（更新检测/账号登录链路使用）
+requests>=2.33.0
+urllib3>=2.7.0
+
+# 注意：以下依赖已在 requirements.txt 中，这里仅列出Qt专用的
+# - customtkinter (经典版本需要)
+# - pygame (音频系统)
+# - flask (GSI服务器)
+# - 等等...
+
