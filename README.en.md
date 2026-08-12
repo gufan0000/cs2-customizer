@@ -17,18 +17,32 @@ It never touches the game process.
 
 ![CS2 Customizer main window](docs/images/home.png)
 
+### 🎮 Just want to use the app → **[fantool.online](https://fantool.online)** (installer, registration required)
+
+### 🛠️ Want to read, modify or build the code → you are in the right place
+
 </div>
+
+> **Those two links do not give you the same thing. To be explicit:**
+>
+> The website distributes the installer for the **closed-source commercial** product
+> 「帆派助手 / FanTool」, and requires an account. It shares this repository's core code but is a
+> **superset** — it adds accounts, cloud config sync, online update checks and online music
+> platform resolving. Its interface is Simplified Chinese only.
+>
+> This repository is the **open-source functional subset** carved out of it, licensed under
+> **GPL-3.0**, with every local feature intact. The two are independent and coexist on one
+> machine (separate install directories, data directories and autostart entries).
+>
+> **This repository publishes no Release binaries.** For a binary, use the website; for a
+> **GPL-3.0-licensed** binary, [build one yourself](#building-a-release). The download on the
+> website is **not** a build of this repository's code — please do not redistribute it as
+> though it were the GPL version.
 
 > **The user interface is in Simplified Chinese only.** There is no i18n layer yet — the app
 > ships Chinese strings throughout. This README is translated so you can evaluate the project,
 > its licensing and its engineering practices, but be aware of the UI language before installing.
 > i18n infrastructure is an explicitly welcome contribution (see [CONTRIBUTING.md](CONTRIBUTING.md)).
-
-This project is carved out of the same author's closed-source commercial product
-「帆派助手 / FanTool」 and is a **functional subset** of it: account handling, cloud sync,
-update checks and music-platform stream ripping are removed; everything local is kept.
-The two are independent and coexist on one machine — separate install directories,
-separate data directories, separate autostart entries.
 
 ---
 
@@ -239,9 +253,16 @@ python build_tools/build_release.py --mode onedir --no-obfuscate --without-bundl
 The Windows installer is built from `build_tools/installer.iss` with
 [Inno Setup](https://jrsoftware.org/isinfo.php).
 
-Pushing a `v*` tag triggers [`.github/workflows/release.yml`](.github/workflows/release.yml),
-which runs the command above plus the installer compile on a GitHub Windows runner and attaches
-the artifacts to the Release with SHA256 sums — considerably more reproducible than building locally.
+Pushing a `v*` tag (or a manual dispatch) runs
+[`.github/workflows/build-installer.yml`](.github/workflows/build-installer.yml), which performs
+the full build plus the Inno Setup compile on a Windows runner.
+
+It is a **gate on the packaging chain, not a distribution channel** — artifacts are retained for
+90 days for debugging and **never become a Release**. It exists because the packaging chain is
+itself a source of defects that `ci.yml` never touches: the onedir and onefile branches used to
+behave asymmetrically (onedir failed loudly while onefile silently produced an asset-less
+package), a release once carried the build machine's live config into the artifact, and a wrong
+AppId in the Inno script only surfaces after installation. Only a real build reveals these.
 
 ---
 

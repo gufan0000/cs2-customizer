@@ -973,6 +973,16 @@ REVERTS = [
         '单向链接是双语化最常见的半成品：读者跳到英文版就出不来了',
     ),
     Revert(
+        'DOC', '官网地址漏进了会发网络请求的模块',
+        'service_urls.py',
+        'TELEMETRY_BASE_URL = ""',
+        'TELEMETRY_BASE_URL = "https://fantool.online"',
+        'tests/test_no_legacy_brand.py::test_official_site_url_only_in_readme',
+        '这正是「默认不连任何服务器」被破坏的样子：每个 fork 出去的客户端都开始'
+        '打原作者的服务器，带宽是他的、崩溃堆栈里的用户数据责任也是他的，'
+        '而那些用户已经不是他的用户了',
+    ),
+    Revert(
         'DOC', '中文 README 的一级标题被改掉',
         'README.md',
         '# CS2 Customizer\n',

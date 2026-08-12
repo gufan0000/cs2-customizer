@@ -142,6 +142,48 @@ def test_single_instance_and_autostart_keys_are_not_legacy():
         )
 
 
+#: 官网地址。2026-08-12 起允许写进 README（运营决定：开源代码给开发者，
+#: 终端用户去官网注册下载闭源版），但**只允许出现在这两份 README 里**。
+OFFICIAL_SITE = "fantool.online"
+OFFICIAL_SITE_ALLOWED = {
+    "README.md",
+    "README.en.md",
+    # 判据自身与它的回退断点必须逐字写出要找的东西，否则没法验证
+    # 「漏进代码时会不会变红」。与 ALLOWLIST 里同两条豁免同一个理由。
+    "tests/test_no_legacy_brand.py",
+    "scripts/revert_verify.py",
+}
+
+
+def test_official_site_url_only_in_readme():
+    """官网地址只允许出现在两份 README 里。
+
+    **它防的是"默认不连任何服务器"那条硬前提被悄悄破坏。**
+    一旦这个域名出现在 `service_urls.py`、上报器、更新检查这类会发请求的地方，
+    每个 fork 出去的客户端都会开始打原作者的服务器——带宽是他的，
+    崩溃堆栈里的用户数据责任也是他的，而那些用户已经不是他的用户了。
+
+    README 里写它是**展示**，代码里写它是**连接**。这条判据分的就是这两件事。
+    （出现在文档/注释里也一律拦下：想在别处提官网，先在这里放行，
+    顺手就会被迫想一遍"我到底是要展示还是要连接"。）
+    """
+    offenders = []
+    for rel in _tracked_files():
+        if rel in OFFICIAL_SITE_ALLOWED or Path(rel).suffix.lower() in BINARY_EXT:
+            continue
+        try:
+            text = (ROOT / rel).read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        if OFFICIAL_SITE in text.lower():
+            offenders.append(rel)
+    assert not offenders, (
+        f"官网地址 {OFFICIAL_SITE!r} 只允许出现在 {sorted(OFFICIAL_SITE_ALLOWED)}，"
+        f"但这些文件里也有: {offenders}\n"
+        "如果是要发网络请求——别这么做，见 service_urls.py 里 TELEMETRY_BASE_URL 的说明。"
+    )
+
+
 @pytest.mark.parametrize("func_name", ["get_cs2customizer_cfg_path"])
 def test_generated_game_cfg_names_are_not_legacy(func_name, tmp_path):
     """写进用户 CS2 目录的 cfg 文件名不得是旧名。

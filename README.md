@@ -16,11 +16,24 @@
 
 ![CS2 Customizer 主界面](docs/images/home.png)
 
+### 🎮 只想用这个软件 → **[fantool.online](https://fantool.online)** 下载安装版（需注册）
+
+### 🛠️ 想读代码 / 改代码 / 自己构建 → 你已经在正确的地方了
+
 </div>
 
-本项目由同一作者的闭源商业软件「帆派助手 / FanTool」裁出，是它的**功能子集**：
-去掉了账号、云同步、更新检查与音乐平台抓流，保留全部本地功能。两者相互独立，
-装在同一台机器上互不干扰（各自的安装目录、数据目录与开机自启项都是分开的）。
+> **这两条路给的不是同一个东西，先说清楚免得误会：**
+>
+> 官网提供的是**闭源商业版**「帆派助手 / FanTool」的安装包，需要注册账号。
+> 它和本仓库共用同一份核心代码，但是个**超集**——多了账号、云端配置同步、
+> 在线更新检查、音乐平台在线解析等联网功能。
+>
+> 本仓库是它裁出来的**开源功能子集**，以 **GPL-3.0** 授权，保留全部本地功能。
+> 两者相互独立，装在同一台机器上互不干扰（安装目录、数据目录、开机自启项都是分开的）。
+>
+> **本仓库不发布 Release 安装包。** 想要二进制就去官网；想要 **GPL-3.0 授权的**
+> 二进制，请按 [构建发布包](#构建发布包) 自己编译一份——
+> 官网那个包**不是**本仓库这份代码的构建产物，别把它当成 GPL 版本再分发。
 
 ---
 
@@ -227,9 +240,15 @@ python build_tools/build_release.py --mode onedir --no-obfuscate --without-bundl
 
 Windows 安装包用 [Inno Setup](https://jrsoftware.org/isinfo.php) 编译 `build_tools/installer.iss`。
 
-打 `v*` 标签会触发 [`.github/workflows/release.yml`](.github/workflows/release.yml)：
-在 GitHub 的 Windows runner 上跑上面这条构建命令 + 编译安装包，产物自动挂到 Release
-并附带 SHA256。可复现性比本地手工构建强得多。
+打 `v*` 标签（或手工触发）会跑
+[`.github/workflows/build-installer.yml`](.github/workflows/build-installer.yml)：
+在 Windows runner 上完整走一遍上面的构建 + Inno Setup 编译。
+
+它是**打包链路的门禁，不是分发渠道**——产物只作为 artifact 留 90 天供排查，
+**不进 Release**。留着它是因为打包链路自己就是一类缺陷的产地，而 `ci.yml` 不碰它：
+onedir / onefile 两条分支的行为曾经不对称（onedir 会炸而 onefile 静默产出空包）、
+发布包曾经把打包机的活配置带进产物、Inno 脚本的 AppId 写错要装完才发现。
+这些只有真的构建一次才会暴露。
 
 ---
 

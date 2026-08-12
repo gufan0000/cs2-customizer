@@ -1,27 +1,32 @@
-# 打 tag 自动出安装包。
+# 打包链路的门禁。**它不发布 Release。**
 #
-# 为什么要有这条流水线：受众是 Windows 上打 CS2 的玩家，而在此之前唯一的安装路径是
-# `git clone` + `pip install` + Python 3.13 —— 这把绝大多数目标用户挡在门外了。
+# 面向终端用户的安装包走官网（闭源商业版，需注册；地址见 README 顶部）。
+# 本仓库不做二进制分发渠道——想要 GPL-3.0 授权的二进制，自己按 README 编译。
 #
-# 为什么在 runner 上构建而不是本地传：本地构建的产物没人能复现，
-# 也无法证明它就是某个 commit 的编译结果。这里每个产物都能追到 tag 与 commit，
-# 日志公开可查。
+# 那为什么还留这条流水线？因为**打包链路自己就是一类缺陷的产地**，而 ci.yml 不碰它：
+#   - PyInstaller 的 onedir / onefile 两条分支行为不对称（历史上 onedir 会炸而
+#     onefile 静默产出空包）；
+#   - 发布包曾经把打包机的活 config.json 带进产物，导致每台新机器首启都继承
+#     打包机的 CS2 路径（QA-001）；
+#   - Inno 脚本的 AppId / 目录名 / InstallDelete 三处任一写错，都是"装完才发现"。
+# 这些只有真的走一遍构建 + 编译安装包才会暴露。产物作为 artifact 留 90 天供排查，
+# **不进 Release、不构成分发**。
 #
-# ⚠️ **产物没有代码签名**，Windows SmartScreen 会对新下载的 exe 报"未知发布者"。
-#    这是没有代码签名证书的必然结果（证书要年费且需要主体资质），不是构建问题。
-#    Release 说明里会如实写这一条，并给出 SHA256 让用户自己核对。
-name: release
+# ⚠️ 产物没有代码签名，Windows SmartScreen 会对下载的 exe 报"未知发布者"。
+#    这是没有代码签名证书的必然结果，不是构建问题。
+name: build-installer
 
 on:
   push:
     tags:
       - "v*"
-  # 允许手工试跑（不建 Release，只看能不能构建成功）
+  # 平时想验一次打包链路就手工触发
   workflow_dispatch:
 
-# 建 Release 需要写权限。**只给这一个作业**，ci.yml 那边仍是只读。
+# 只读就够——本流水线不写回任何仓库状态（不建 Release、不推 tag）。
+# artifact 上传不需要 contents:write。
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -89,32 +94,3 @@ jobs:
             release/installer/*.exe
             release/installer/*.sha256
           if-no-files-found: error
-
-      - name: 建 Release 并挂产物
-        if: startsWith(github.ref, 'refs/tags/v')
-        # 用 GitHub 自带的 gh CLI，不引第三方 release action —— 同样是为了少一个供应链面。
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          ver="${GITHUB_REF#refs/tags/v}"
-          notes=$(cat <<EOF
-          安装包由 GitHub Actions 从 tag \`${GITHUB_REF#refs/tags/}\`（commit \`${GITHUB_SHA:0:7}\`）自动构建，
-          构建日志公开可查。变更内容见 [CHANGELOG.md](CHANGELOG.md)。
-
-          **关于 SmartScreen 警告**：产物**没有代码签名**，Windows 首次运行会提示"未知发布者"。
-          这是没有代码签名证书的必然结果，不代表文件有问题。请用附件里的 \`.sha256\`
-          自行核对下载完整性：
-
-          \`\`\`powershell
-          Get-FileHash .\CS2Customizer-Setup-${ver}.exe -Algorithm SHA256
-          \`\`\`
-
-          **本安装包不含任何素材**（音效、图标、点位图）。程序在零素材下可正常启动，
-          素材请自行准备后用软件内的「资源导入向导」导入。详见 README 的「素材说明」。
-          EOF
-          )
-          gh release create "${GITHUB_REF#refs/tags/}" \
-            --title "CS2 Customizer $ver" \
-            --notes "$notes" \
-            release/installer/*.exe release/installer/*.sha256
