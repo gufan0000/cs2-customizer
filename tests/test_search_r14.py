@@ -310,20 +310,55 @@ def test_locator_agrees_with_the_engine(query, text):
         f"下拉能搜到「{query}」，但页内定位器认不出「{text}」")
 
 
+BUDGET_QUERIES = ("准星", "准心快速回正", "zx", "音量 大小", "开机自启动怎么关")
+
+#: 每条查询量 BUDGET_ROUNDS 批、每批 BUDGET_REPEATS 次，**取最好的一批**。
+#:
+#: 为什么不取均值：原来这条判据取的是一批 30 次的均值，本机实测 1~3ms、
+#: 阈值 12ms，看着余量很大。2026-08-12 它在 GitHub 的共享 runner 上量到
+#: **31.5ms 把 CI 打红**，而那次提交一行搜索代码都没碰（改的是图标和品牌图）。
+#:
+#: 均值对**偶发调度停顿**极其敏感：共享 runner 上别人的作业抢一次 CPU，
+#: 30 次里有一次卡住，均值就能翻十倍。最小值不受这个影响 ——
+#: "最快能跑多快"才是这台机器的真实算力，而真的性能回归会把最小值一起抬上去。
+#: ⇒ **墙钟预算类判据一律取多批的最小值，不要取均值。**
+BUDGET_ROUNDS = 5
+BUDGET_REPEATS = 30
+
+#: 单次搜索的上限（毫秒）。沿用原值，这次只改统计口径、不动松紧。
+#:
+#: ⚠ 已知它偏松：实测把 `_grams` 和 `_query_variants` 两个热路径缓存全拆掉，
+#: 最坏查询也只到 10.05ms，仍在 12ms 以内 —— 也就是说 **2.7 倍的回归它抓不住**，
+#: 它守的确实只是"别再涨一个量级"。要收紧得先拿到 runner 上的干净基线，
+#: 否则容易换成另一种抖。
+SEARCH_BUDGET_MS = 12.0
+
+
+def _search_batch_ms(query: str) -> float:
+    t0 = time.perf_counter()
+    for _ in range(BUDGET_REPEATS):
+        search_detailed(query)
+    return (time.perf_counter() - t0) / BUDGET_REPEATS * 1000
+
+
 def test_search_stays_within_frame_budget():
     """每按一次键跑一次。同义词层是拿时间换召回的，得有个上限盯着。
 
     基线（无同义词/无覆盖层）0.25ms，现在 1~3ms，换来 22 条常见说法
     从 13 条召回全变成 22 条全召回。这里守的是"别再涨一个量级"。
+
+    统计口径为什么是"多批取最小"，见 `BUDGET_ROUNDS` 的说明。
     """
     worst = 0.0
-    for q in ("准星", "准心快速回正", "zx", "音量 大小", "开机自启动怎么关"):
-        search_detailed(q)                       # 预热 lru_cache
-        t0 = time.perf_counter()
-        for _ in range(30):
-            search_detailed(q)
-        worst = max(worst, (time.perf_counter() - t0) / 30 * 1000)
-    assert worst < 12.0, f"最慢的查询要 {worst:.1f}ms，一帧都放不下了"
+    slowest_query = ""
+    for query in BUDGET_QUERIES:
+        search_detailed(query)                   # 预热 lru_cache
+        best = min(_search_batch_ms(query) for _ in range(BUDGET_ROUNDS))
+        if best > worst:
+            worst, slowest_query = best, query
+    assert worst < SEARCH_BUDGET_MS, (
+        f"最慢的查询「{slowest_query}」要 {worst:.1f}ms，一帧都放不下了"
+    )
 
 
 def test_legacy_search_signature_still_works():
