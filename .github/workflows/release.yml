@@ -1,0 +1,120 @@
+# 打 tag 自动出安装包。
+#
+# 为什么要有这条流水线：受众是 Windows 上打 CS2 的玩家，而在此之前唯一的安装路径是
+# `git clone` + `pip install` + Python 3.13 —— 这把绝大多数目标用户挡在门外了。
+#
+# 为什么在 runner 上构建而不是本地传：本地构建的产物没人能复现，
+# 也无法证明它就是某个 commit 的编译结果。这里每个产物都能追到 tag 与 commit，
+# 日志公开可查。
+#
+# ⚠️ **产物没有代码签名**，Windows SmartScreen 会对新下载的 exe 报"未知发布者"。
+#    这是没有代码签名证书的必然结果（证书要年费且需要主体资质），不是构建问题。
+#    Release 说明里会如实写这一条，并给出 SHA256 让用户自己核对。
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  # 允许手工试跑（不建 Release，只看能不能构建成功）
+  workflow_dispatch:
+
+# 建 Release 需要写权限。**只给这一个作业**，ci.yml 那边仍是只读。
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      # 第三方 action 一律按 commit SHA 固定，理由见 ci.yml。
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            requirements_qt.txt
+            requirements-build.txt
+
+      - name: 校验 tag 与 config.py 的 VERSION 一致
+        # 不一致就早停。否则会产出一个"tag 说 v2.2.3、exe 属性写 2.2.2"的包，
+        # 那种包发出去之后排障时会把所有人绕进去。
+        # 仓库里已有 tests/test_version_consistency.py 守着四处同源，
+        # 这里补的是"tag 也算第五处"。
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          tag="${GITHUB_REF#refs/tags/v}"
+          ver=$(python -c "import re,io;print(re.search(r'^VERSION\s*=\s*\"([^\"]+)\"',io.open('config.py',encoding='utf-8').read(),re.M).group(1))")
+          echo "tag=$tag  config.VERSION=$ver"
+          if [ "$tag" != "$ver" ]; then
+            echo "::error::tag v$tag 与 config.py 的 VERSION=$ver 不一致"
+            exit 1
+          fi
+
+      - name: 安装依赖
+        run: pip install -r requirements_qt.txt -r requirements-build.txt
+
+      - name: 构建 onedir 产物
+        # --without-bundled-assets 是开源版构建的必需开关：构建链路默认断言
+        # 产物里带着素材（那是闭源版的前提），不加这个开关校验会直接拦下来。
+        run: python build_tools/build_release.py --mode onedir --no-obfuscate --without-bundled-assets
+
+      - name: 安装 Inno Setup
+        # 用 choco（windows runner 自带）而不是第三方 action：少一个供应链面。
+        run: choco install innosetup --no-progress -y
+
+      - name: 编译安装包
+        shell: bash
+        run: |
+          ver=$(python -c "import re,io;print(re.search(r'^VERSION\s*=\s*\"([^\"]+)\"',io.open('config.py',encoding='utf-8').read(),re.M).group(1))")
+          iscc "build_tools/installer.iss" "/DAppVersion=$ver"
+
+      - name: 算 SHA256
+        shell: bash
+        run: |
+          cd release/installer
+          for f in *.exe; do
+            sha256sum "$f" | tee "$f.sha256"
+          done
+
+      - name: 上传构建产物（无论是否建 Release 都留一份）
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: installer
+          path: |
+            release/installer/*.exe
+            release/installer/*.sha256
+          if-no-files-found: error
+
+      - name: 建 Release 并挂产物
+        if: startsWith(github.ref, 'refs/tags/v')
+        # 用 GitHub 自带的 gh CLI，不引第三方 release action —— 同样是为了少一个供应链面。
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          ver="${GITHUB_REF#refs/tags/v}"
+          notes=$(cat <<EOF
+          安装包由 GitHub Actions 从 tag \`${GITHUB_REF#refs/tags/}\`（commit \`${GITHUB_SHA:0:7}\`）自动构建，
+          构建日志公开可查。变更内容见 [CHANGELOG.md](CHANGELOG.md)。
+
+          **关于 SmartScreen 警告**：产物**没有代码签名**，Windows 首次运行会提示"未知发布者"。
+          这是没有代码签名证书的必然结果，不代表文件有问题。请用附件里的 \`.sha256\`
+          自行核对下载完整性：
+
+          \`\`\`powershell
+          Get-FileHash .\CS2Customizer-Setup-${ver}.exe -Algorithm SHA256
+          \`\`\`
+
+          **本安装包不含任何素材**（音效、图标、点位图）。程序在零素材下可正常启动，
+          素材请自行准备后用软件内的「资源导入向导」导入。详见 README 的「素材说明」。
+          EOF
+          )
+          gh release create "${GITHUB_REF#refs/tags/}" \
+            --title "CS2 Customizer $ver" \
+            --notes "$notes" \
+            release/installer/*.exe release/installer/*.sha256

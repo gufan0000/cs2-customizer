@@ -1,12 +1,22 @@
+<div align="center">
+
 # CS2 Customizer
 
-**给 CS2 玩家的本地个性化工具**：自定义准心、击杀音效与图标、HUD 配色、局内视角、道具瞄点——
+**简体中文** · [English](README.en.md)
+
+**给 CS2 玩家的本地个性化工具**<br>
+自定义准心、击杀音效与图标、HUD 配色、局内视角、道具瞄点——<br>
 全部通过 Valve 官方的 GSI 接口读游戏状态、通过 cfg 文件写游戏设置，不碰游戏进程一根手指。
 
 [![CI](https://github.com/gufan0000/cs2-customizer/actions/workflows/ci.yml/badge.svg)](https://github.com/gufan0000/cs2-customizer/actions/workflows/ci.yml)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.13-3776AB.svg)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/Platform-Windows-0078D6.svg)](#安装与运行)
+[![Tests](https://img.shields.io/badge/tests-1393%20cases-brightgreen.svg)](#开发与测试)
+
+![CS2 Customizer 主界面](docs/images/home.png)
+
+</div>
 
 本项目由同一作者的闭源商业软件「帆派助手 / FanTool」裁出，是它的**功能子集**：
 去掉了账号、云同步、更新检查与音乐平台抓流，保留全部本地功能。两者相互独立，
@@ -14,12 +24,10 @@
 
 ---
 
-## 它是什么 / 它不是什么 · What it is, what it is not
+## 它是什么 / 它不是什么
 
 > 这一段放在最前面，因为它比功能列表更重要。
-> This section comes first because it matters more than the feature list.
-
-**中文**
+> The same statement in English: [README.en.md](README.en.md#what-it-is-what-it-is-not)
 
 - ✅ 只做两件事：通过 **Valve 官方的 Game State Integration (GSI)** 接口**只读**游戏状态
   （回合阶段、击杀事件、存活/血量、当前武器、地图等），以及**读写 CS2 的 cfg 配置文件**。
@@ -34,23 +42,29 @@
   Counter-Strike、CS2、Valve 是 Valve Corporation 的商标，本项目仅作**描述性使用**
   （nominative fair use），用于说明本工具适用于哪款游戏。
 
-**English**
-
-- ✅ This tool does exactly two things: it **reads** game state through Valve's official
-  **Game State Integration (GSI)** endpoint, and it **reads/writes CS2 `.cfg` files**.
-  Both are public, documented integration points that Valve provides for third-party tools.
-- ❌ It does **not** read or write game memory, does **not** inject into the game process,
-  does **not** hook any API, and does **not** modify any game file.
-- ❌ It grants **no competitive advantage**. Crosshairs are drawn in a separate overlay window,
-  sounds play locally, HUD colors and viewmodel are set via official cfg variables.
-  Nothing here reveals information you would not otherwise have, aims for you,
-  or alters any in-game value.
-- ⚠️ This project is **not affiliated with, authorized by, or endorsed by Valve Corporation**.
-  Counter-Strike and CS2 are trademarks of Valve Corporation; they are used here
-  descriptively (nominative fair use) only to identify the game this tool works with.
-
 GSI 在完全默认的官方游戏环境下就能工作：**不需要修改任何游戏启动参数**，
 也不需要改动游戏本体的任何文件。安装后照常打开游戏即可。
+
+---
+
+## 界面预览
+
+| 准心设置 | HUD 配色 |
+| --- | --- |
+| [![准心设置](docs/images/crosshair.png)](docs/images/crosshair.png) | [![HUD 配色](docs/images/hud_color.png)](docs/images/hud_color.png) |
+| **特殊音效** | **高级设置** |
+| [![特殊音效](docs/images/special_sound.png)](docs/images/special_sound.png) | [![高级设置](docs/images/advanced.png)](docs/images/advanced.png) |
+
+9 套主题任选，下面是其中 4 套（深色 / 浅色 / 深海 / 玫瑰）：
+
+![主题对比](docs/images/themes.png)
+
+> 截图由 `python scripts/capture_readme_shots.py` 离屏生成（`WA_DontShowOnScreen`，
+> 不会弹窗打扰前台），改了界面重跑一次即可。
+>
+> 动图还没做，欢迎 PR 补到 `docs/images/`——最值得录的三段是「准心跟随」、
+> 「击杀音效触发」（可用 `scripts/gsi_live_sim.py` 造数据，不用真开游戏）、
+> 「`Ctrl+F` 搜索定位高亮」。
 
 ---
 
@@ -104,23 +118,6 @@ GSI 在完全默认的官方游戏环境下就能工作：**不需要修改任�
 
 - 9 套主题、3 档字号缩放（1.0 / 1.1 / 1.25）、完整 / 紧凑两种窗口形态
 - 侧栏「常用」分组按你的实际使用频次自动排
-
----
-
-## 界面预览
-
-> 📷 **截图与录屏尚未补齐**，这一节暂时只有文字说明。
-> 不放占位图片是有意的——指向不存在文件的 `![]()` 只会在首页渲染成三个破图标，
-> 比没有图更糟。补齐后这段会换成真实画面。
-
-欢迎 PR 补充到 `docs/images/`，建议录这三段（各 5–8 秒，GIF 或 WebM）：
-
-1. **准心跟随** —— 切到准心页改样式/颜色/粗细，叠加层实时跟着变；再切窗口/切分辨率，
-   证明它稳稳贴在游戏画面上。
-2. **击杀音效触发** —— 用 `scripts/gsi_live_sim.py` 或真实对局打出一次连杀，
-   同时展示音效播放 + 击杀图标动画 + 准心动画。
-3. **搜索定位高亮** —— 按 `Ctrl+F` 输入 `zx` 或 `声音太大`，展示下拉结果，
-   回车后自动切页并高亮到具体那一行开关。
 
 ---
 
@@ -230,6 +227,10 @@ python build_tools/build_release.py --mode onedir --no-obfuscate --without-bundl
 
 Windows 安装包用 [Inno Setup](https://jrsoftware.org/isinfo.php) 编译 `build_tools/installer.iss`。
 
+打 `v*` 标签会触发 [`.github/workflows/release.yml`](.github/workflows/release.yml)：
+在 GitHub 的 Windows runner 上跑上面这条构建命令 + 编译安装包，产物自动挂到 Release
+并附带 SHA256。可复现性比本地手工构建强得多。
+
 ---
 
 ## 项目结构
@@ -249,6 +250,7 @@ resource_manager.py     素材目录与迁移
 build_tools/            打包、安装包、测试驱动
 scripts/                审计与验证脚本（不进发布包）
 tests/                  单元与集成测试
+docs/                   工程文档与内部审计档案（见 docs/README.md）
 ```
 
 页面是**懒加载**的：首次进入才构建，启动时只走关键路径。
@@ -261,7 +263,7 @@ tests/                  单元与集成测试
 所以测试驱动用子进程逐文件隔离：
 
 ```bash
-python build_tools/run_tests.py            # 全量（约 45 秒）
+python build_tools/run_tests.py            # 全量（125 个文件 / 1393 条用例，约 45 秒）
 python build_tools/run_tests.py config hud # 只跑文件名含关键词的
 ```
 

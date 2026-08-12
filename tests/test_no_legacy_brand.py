@@ -37,6 +37,7 @@ LEGACY_TOKENS = ("帆派", "FanTool", "FanPai")
 ALLOWLIST = {
     "NOTICE": "商标声明必须逐字点名它保留的是哪些标识，否则那段声明没有对象",
     "README.md": "出处声明（本项目由哪个闭源产品裁出）与商标保留段落",
+    "README.en.md": "同上，英文版",
     "CHANGELOG.md": "开源之前的版本历史，说明这份代码的来历",
     "tests/test_no_legacy_brand.py": "判据自身要写出它在找什么",
     "scripts/revert_verify.py": (

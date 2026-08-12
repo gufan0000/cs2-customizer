@@ -145,16 +145,64 @@ def test_installer_iss_header_comments_match(version):
 
 # ---------------------------------------------------------------- README.md / CHANGELOG.md
 
-def test_readme_title_matches():
-    """README 首行标题必须是项目名。
+README_EN = ROOT / "README.en.md"
 
-    开源化时这条判据换了落点：闭源版把版本号写在 README 标题里（`# CS2 Customizer 2.2.2`），
-    开源项目的 README 是落地页，标题该是项目名；版本号归 CHANGELOG.md 管
-    （见下一条）。判据要防的东西没变——只是"当前版本写在哪"变了。
+PROJECT_NAME = "CS2 Customizer"
+
+
+def test_readme_title_matches():
+    """两份 README 的开头都必须有项目名的一级标题。
+
+    这条判据换过两次落点，记一下免得下次又以为它"松了"：
+    - 闭源版把版本号写在标题里（`# CS2 Customizer 2.2.2`）；
+    - 开源化后 README 是落地页，标题该是项目名，版本号归 CHANGELOG；
+    - 加双语切换后首行变成了 `<div align="center">`（居中排版需要），
+      所以不能再只看第一行——改成在开头若干行里找 `# 项目名`。
+
+    要防的东西一直没变：**落地页第一眼看到的名字不能是错的**。
     """
-    first_line = _read(README).splitlines()[0]
-    assert "CS2 Customizer" in first_line, (
-        f"README.md 首行 {first_line!r} 不是项目名标题"
+    for path in (README, README_EN):
+        head = _read(path).splitlines()[:10]
+        assert any(line.strip() == f"# {PROJECT_NAME}" for line in head), (
+            f"{path.name} 开头 10 行里找不到 `# {PROJECT_NAME}` 一级标题，实际是:\n"
+            + "\n".join(f"  {line!r}" for line in head)
+        )
+
+
+def test_readme_language_switch_is_bidirectional():
+    """双语切换必须**两边都能跳回去**。
+
+    单向链接是这类改动最常见的半成品：中文 README 指向英文版，英文版却没有回链，
+    读者跳过去就出不来了。而"文件存在"和"链接指向它"是两件事——
+    这里两件都查。
+    """
+    assert README_EN.is_file(), "README.en.md 不存在，中文 README 里的语言切换是死链"
+    zh, en = _read(README), _read(README_EN)
+    assert "README.en.md" in zh, "README.md 里没有指向英文版的链接"
+    assert "(README.md)" in en, "README.en.md 里没有回到中文版的链接"
+
+
+def test_readme_images_all_exist():
+    """README 引用的每张图片都必须真的在仓库里。
+
+    **这条是补上来的，因为它防的事真的发生过**：开源化时 README 的「界面预览」
+    引用了 `docs/images/` 下三个 gif，而那个目录压根不存在——GitHub 首页
+    渲染出三个破图标。对一个 UI 工具来说，破图比没图更伤。
+    而 ruff、全量测试、CI 三道门**一道都看不见它**：Markdown 里的图片引用
+    不在任何判据的通道上。
+    """
+    pattern = re.compile(r"!\[[^\]]*\]\(([^)]+)\)")
+    missing = []
+    for path in (README, README_EN):
+        for ref in pattern.findall(_read(path)):
+            if ref.startswith(("http://", "https://")):
+                continue                      # 外链徽章不在本条判据范围内
+            if not (ROOT / ref.split("#")[0]).is_file():
+                missing.append(f"{path.name} → {ref}")
+    assert not missing, (
+        "README 引用了不存在的图片，首页会渲染成破图标:\n"
+        + "\n".join(f"  {m}" for m in missing)
+        + "\n（截图用 `python scripts/capture_readme_shots.py` 生成）"
     )
 
 

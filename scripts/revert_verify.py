@@ -950,6 +950,37 @@ REVERTS = [
         'tests/test_no_legacy_brand.py::test_no_legacy_brand_outside_allowlist',
         '前面几条行为判据只看那几个常量；旧名从文档、注释、界面文案回流时得靠这条兜底',
     ),
+
+    # ==================================== DOC：落地页完整性（2026-08-12 建立）
+    # README 是绝大多数人对这个项目的**唯一一次接触**，而它恰好是判据盲区最大的地方：
+    # ruff 不看 Markdown、测试不看图片引用、CI 也不渲染页面。
+    # 开源化时就实际发生过"首页三个破图标"，三道门一道都没拦住。
+    Revert(
+        'DOC', 'README 引用了不存在的图片（首页渲染成破图标）',
+        'README.md',
+        '![CS2 Customizer 主界面](docs/images/home.png)',
+        '![CS2 Customizer 主界面](docs/images/does-not-exist.png)',
+        'tests/test_version_consistency.py::test_readme_images_all_exist',
+        '真实发生过：开源化时「界面预览」引用了 docs/images/ 下三个 gif，'
+        '而那个目录压根不存在，GitHub 首页就是三个破图标',
+    ),
+    Revert(
+        'DOC', '英文 README 丢了回中文版的链接（语言切换变单向）',
+        'README.en.md',
+        '[简体中文](README.md) · **English**',
+        '**English**',
+        'tests/test_version_consistency.py::test_readme_language_switch_is_bidirectional',
+        '单向链接是双语化最常见的半成品：读者跳到英文版就出不来了',
+    ),
+    Revert(
+        'DOC', '中文 README 的一级标题被改掉',
+        'README.md',
+        '# CS2 Customizer\n',
+        '# Some Other Project\n',
+        'tests/test_version_consistency.py::test_readme_title_matches',
+        '落地页第一眼看到的名字错了。这条判据的落点随排版改过两次'
+        '（首行 → 开头 10 行内找一级标题），断点跟着落在标题行本身',
+    ),
 ]
 
 
