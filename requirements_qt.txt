@@ -2,7 +2,7 @@
 # 现代化UI所需的额外依赖
 
 # Qt框架
-PySide6>=6.6.0
+PySide6>=6.11.1
 
 # v5 Phase 5: 矢量 icon 系统(Material Design Icons)
 qtawesome>=1.4.0
