@@ -16,3 +16,8 @@ numpy>=1.26
 # 语音输出页 import 链(voice_output_manager 顶层:sounddevice/soundfile/numpy/pygame/keyboard)
 sounddevice>=0.4
 soundfile>=0.12
+# CI 工作流自校验（tests/test_lazy_imports_r8a.py 解析 .github/workflows/ci.yml）。
+# 2026-08-12 由 CI 第一次真实运行逮到：本机一直有 PyYAML（教程流水线的依赖，
+# 开源裁剪时那份 requirements 被排除了），于是这条测试在本地恒绿、在 CI 恒红。
+# 教训："本地全绿"不等于"依赖声明完整"，只有干净环境能证明这件事。
+PyYAML>=6.0
