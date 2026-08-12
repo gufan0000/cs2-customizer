@@ -1,0 +1,101 @@
+# -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""回退验证台自身的登记册体检（2026-08-12 建立）。
+
+**为什么需要它**：`scripts/revert_verify.py` 是本项目验证"判据不是假绿"的工具，
+但它自己没人验。它的每条断点由三部分组成——目标文件、要替换的锚点文本、
+要跑的判据 selector——**三者任何一个失效都不会有人知道**：
+
+- 锚点文本对不上：脚本报"跳过"，一条断点静默退出验证。
+- selector 指向不存在的测试：pytest 返回"not found"，脚本把它当成**基线不绿**，
+  于是**整个分组在跑第一条之前就中止**。
+
+第二种真的发生了。开源裁剪把在线更新下载器连同它的判据一起移除了
+（那是闭源版功能），但 `revert_verify.py` 里那条 QA-007 断点留了下来，
+指着一个本仓库不存在的测试。结果：**`--only QA` 这一整组在开源仓库里从来没跑通过**，
+而输出写的是"基线就不绿"——看起来像产品有问题，其实是登记册过期。
+
+这个文件就两条判据，都很便宜，但它们盯的是"工具本身还能不能用"。
+"""
+from __future__ import annotations
+
+import importlib.util
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parent.parent
+SCRIPT = ROOT / "scripts" / "revert_verify.py"
+
+
+def _load_reverts():
+    spec = importlib.util.spec_from_file_location("_revert_verify_under_test", SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module.REVERTS
+
+
+REVERTS = _load_reverts()
+
+
+def test_registry_is_not_empty():
+    assert REVERTS, "回退验证台一条断点都没有，这个文件的两条判据会变成空跑"
+
+
+@pytest.mark.parametrize(
+    "revert",
+    REVERTS,
+    ids=[f"{r.group}:{r.name}" for r in REVERTS],
+)
+def test_every_breakpoint_anchor_still_exists(revert):
+    """每条断点要替换的锚点文本，必须还在目标文件里。
+
+    锚点对不上时脚本只会打一行"跳过"，那条断点就静默失效了——
+    而它存在的意义正是"确认某条判据不是假绿"。
+    """
+    assert revert.path.is_file(), f"目标文件不存在：{revert.path}"
+    text = revert.path.read_text(encoding="utf-8")
+    assert revert.old in text, (
+        f"锚点文本已不在 {revert.path.name} 里（产品代码变了）。"
+        "请更新这条断点的 old/new，而不是留着它静默跳过。"
+    )
+
+
+def test_every_selector_resolves_to_a_real_test():
+    """每条断点的 selector 必须真能收集到用例。
+
+    这条是那次真实事故的直接补丁：selector 指向不存在的测试时，脚本会把
+    "not found" 当成基线不绿，**整组在第一条之前就中止**，
+    而报错文字让人以为是产品坏了。
+
+    用 `--collect-only` 一次性收集全部 selector，比逐条起 pytest 快得多。
+    """
+    selectors = sorted({r.selector for r in REVERTS})
+    proc = subprocess.run(
+        [sys.executable, "-m", "pytest", "--collect-only", "-q", *selectors],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    # ⚠ pytest 打的是**绝对路径**：`ERROR: not found: H:\...\tests\x.py::name`。
+    # 本条判据的第一版写成 `f"not found: {selector}" in output`（selector 是仓库
+    # 相对路径），中间隔着绝对路径前缀，于是永远匹配不上——判据自己假绿，
+    # 而它要防的恰恰是假绿。所以这里改成：先把"not found"的目标解析出来，
+    # 再用后缀匹配。
+    normalized = ((proc.stdout or "") + (proc.stderr or "")).replace("\\", "/")
+    marker = "not found: "
+    reported = {
+        line.split(marker, 1)[1].strip()
+        for line in normalized.splitlines()
+        if marker in line
+    }
+    missing = [s for s in selectors if any(t.endswith(s) for t in reported)]
+    assert not missing, (
+        "这些断点的 selector 指向不存在的用例：\n  " + "\n  ".join(missing) + "\n"
+        "开源裁剪移除某个功能时，要连同它在本登记册里的断点一起删掉。"
+    )

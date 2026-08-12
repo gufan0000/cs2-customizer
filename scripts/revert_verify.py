@@ -305,7 +305,9 @@ REVERTS = [
     Revert(
         "R11", "焦点巡检的分母写错",
         "scripts/tab_order_audit.py",
-        "TOTAL_PAGES = 27",
+        # ⚠ 开源版是 26 页（闭源版 27，多一个账号页）。这个数字随页面集合变，
+        # 改页面时锚点要跟着改，否则这条断点会静默"跳过"。
+        "TOTAL_PAGES = 26",
         "TOTAL_PAGES = 11",
         "tests/test_audit_coverage_r11.py::test_focus_audit_total_pages_matches_the_app",
         "UP-101：分母一改，11/11 就成了「全覆盖」——覆盖率造假最省事的办法",
@@ -495,14 +497,11 @@ REVERTS = [
         "test_qa006_signature_is_recorded_only_after_a_successful_write",
         "QA-006：写失败后本次会话永不重试，用户改回来也没用",
     ),
-    Revert(
-        "QA", "下载文件名又不做净化",
-        "main_widget.py",
-        "            raw = os.path.basename(parts.path.replace(\"\\\\\", \"/\"))",
-        "            raw = self.url.split(\"/\")[-1].split(\"?\")[0] or \"\"",
-        "tests/test_qa_non_ui_r12.py::test_qa007_download_filename_is_sanitized",
-        "QA-007：服务端下发含反斜杠/盘符的地址时，安装包被写到下载目录之外",
-    ),
+    # QA-007（下载文件名净化）**在本仓库没有断点**：开源版不带在线更新下载器，
+    # 那段代码和它的判据一起被裁掉了。断点却随文件同步过来，指着一个不存在的
+    # 测试——于是 `--only QA` 这一整组在跑第一条之前就以"基线不绿"中止，
+    # 而报错文字让人以为是产品坏了。
+    # 现在 `tests/test_revert_verify_registry.py` 会拦下这类过期条目。
     Revert(
         "QA", "混淆失败清单又被丢弃",
         "build_tools/build_release.py",
@@ -990,6 +989,96 @@ REVERTS = [
         'tests/test_version_consistency.py::test_readme_title_matches',
         '落地页第一眼看到的名字错了。这条判据的落点随排版改过两次'
         '（首行 → 开头 10 行内找一级标题），断点跟着落在标题行本身',
+    ),
+
+    # ==================================== QA-024：Windows 瞬时占用（2026-08-12 建立）
+    Revert(
+        'QA', '写快照索引不走重试（撞上 Defender 就丢那份"后悔药"）',
+        'core/config_snapshot_manager.py',
+        '    _replace_with_retry(tmp_path, path)',
+        '    os.replace(tmp_path, path)',
+        'tests/test_config_snapshot_manager.py::test_index_write_and_restore_both_go_through_the_retry',
+        '实测：快照判据在同一台机器上连跑 25 遍红 2 遍（8%），失败点全在这一句。'
+        '用户点「恢复设置」时产品先建的那份后悔药，会因为扫描器占住文件而静默丢失',
+    ),
+    Revert(
+        'QA', '重试只认错了异常类型（PermissionError 照旧穿出去）',
+        'core/config_snapshot_manager.py',
+        '        except PermissionError:\n            time.sleep(delay)',
+        '        except FileNotFoundError:\n            time.sleep(delay)',
+        'tests/test_config_snapshot_manager.py::test_replace_with_retry_survives_transient_permission_error',
+        '重试逻辑在，但捕的不是实际抛出来的那个异常——这是"看着有防护其实没有"的典型',
+    ),
+
+    # ==================================== ASSET：品牌图不得与生成器脱钩（2026-08-12 建立）
+    # 这一组补的是 BRAND 组的结构性盲区：文本判据明确跳过二进制文件（不跳不行，
+    # 你没法对 PNG 做字符串替换），代价是**印在图里的字判据一个字也看不见**。
+    # 真实发生过：改名那轮改了 107 个文本文件 507 处、二进制一处没动，公开前的
+    # 仓库里只剩启动闪屏和安装向导大图还印着旧产品名（向导图上连旧官网域名都在），
+    # 而全部判据 + ruff + CI 一路全绿。
+    Revert(
+        'ASSET', '生成器与已入库的闪屏图脱钩（图上还是旧产品名）',
+        'build_tools/make_installer_assets.py',
+        'SPLASH_TITLE = "CS2 Customizer"',
+        'SPLASH_TITLE = "帆派助手"',
+        'tests/test_brand_assets.py::test_committed_brand_images_are_not_stale',
+        '真实发生过：入库的 splash.png 与闭源版 md5 完全相同，图上印着旧产品名，'
+        '而代码/文档/注册表键全已改名——用户第一眼看到的就是那张图',
+    ),
+    Revert(
+        'ASSET', '社交预览图与生成器脱钩（那一腿是不是真的在比）',
+        'scripts/make_social_preview.py',
+        '"给 CS2 玩家的本地个性化工具"',
+        '"给 CS2 玩家的本地个性化助手"',
+        'tests/test_brand_assets.py::test_committed_brand_images_are_not_stale',
+        '上一条断点只动了 make_installer_assets。这条专门证明社交预览图那一腿'
+        '也在真比——一张图加进清单却没真比对，比不加更糟',
+    ),
+    Revert(
+        'ASSET', '向导大图标题字号写死（改名后左右各裁掉一个字母）',
+        'build_tools/make_installer_assets.py',
+        '_fit_font(WIZARD_TITLE, WIZARD_TITLE_BOX, WIZARD_TITLE_SIZE, bold=True)',
+        '_font(WIZARD_TITLE_SIZE, bold=True)',
+        'tests/test_brand_assets.py::test_wizard_large_text_fits_inside_safe_boxes',
+        '真实发生过：字号是照 4 个汉字的旧名调的，换成 14 个拉丁字符后同字号'
+        '宽了一倍多，标题两端被裁，生成脚本照样退出码 0',
+    ),
+    Revert(
+        'ASSET', '安全框自己越出画布（量具没校准）',
+        'build_tools/make_installer_assets.py',
+        'WIZARD_URL_BOX = (36, 554, WIZARD_SIZE[0] - 36, 582)',
+        'WIZARD_URL_BOX = (36, 554, WIZARD_SIZE[0] + 200, 582)',
+        'tests/test_brand_assets.py::test_wizard_large_safe_boxes_are_inside_the_canvas',
+        '"文字在框内"这条判据的量具是框本身。框越出画布时，文字明明被裁掉了'
+        '那条判据还会照样通过——假绿',
+    ),
+    Revert(
+        'ASSET', '标题安全框挪到没有字的位置（空文案也能骗过包围盒判据）',
+        'build_tools/make_installer_assets.py',
+        'WIZARD_TITLE_BOX = (18, 380, WIZARD_SIZE[0] - 18, 436)',
+        'WIZARD_TITLE_BOX = (18, 120, WIZARD_SIZE[0] - 18, 176)',
+        'tests/test_brand_assets.py::test_wizard_large_actually_has_ink_where_the_text_should_be',
+        '只验"包围盒落在框内"的话，空字符串的包围盒必然在框内——这条要求图上'
+        '真的有亮色像素，堵的是"判据绿了但图是空的"',
+    ),
+    Revert(
+        'ASSET', '截图前那道"沙箱路径不含用户名"的门被拿掉',
+        'scripts/capture_readme_shots.py',
+        'hits = [t for t in personal_tokens() if t.lower() in text.lower()]',
+        'hits = []',
+        'tests/test_brand_assets.py::test_screenshot_guard_rejects_username_in_sandbox_path',
+        '真实发生过：沙箱默认落在 %TEMP%（=C:\\Users\\<用户名>\\...），高级设置页把'
+        'CS2 目录原样显示出来，advanced.png 里印着真实用户名并推上了公开仓库——'
+        '而本项目的日志脱敏器专门干掉的就是这个串',
+    ),
+    Revert(
+        'ASSET', '旧品牌 AI 美术底图被提交进仓库',
+        'build_tools/make_installer_assets.py',
+        'SPLASH_ART_SOURCE = OUT / "splash_art_ai.png"',
+        'SPLASH_ART_SOURCE = OUT / "setup_icon.ico"',
+        'tests/test_brand_assets.py::test_legacy_splash_art_is_not_tracked',
+        '把常量指向一个确实已入库的文件，等价于"那张美术底图被 git add 了"。'
+        '它既是旧品牌残留，又是来源不清的 AI 素材，公开仓库两头都不该有',
     ),
 ]
 

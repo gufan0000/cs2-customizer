@@ -122,7 +122,10 @@ def main() -> int:
         d.text((76, y), line, font=_font(29), fill=SUBTEXT)
         y += 46
 
-    chips = ["GPL-3.0", "Python 3.13", "PySide6", "Windows", "1393 tests"]
+    # ⚠ 这一行**不放会变的数字**。原先最后一枚是「1393 tests」，用例一加就过期，
+    # 而它印在图里——文本判据扫不到，改名审计也扫不到，只能靠人某天正好点开图片
+    # 才发现。图上的字必须是**长期为真**的事实。
+    chips = ["GPL-3.0", "Python 3.13", "PySide6", "Windows", "GSI 只读"]
     x = 76
     chip_font = _font(24)
     for text in chips:

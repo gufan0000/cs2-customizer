@@ -31,6 +31,13 @@ import tempfile
 import time
 from pathlib import Path
 
+try:
+    # Windows 控制台默认 GBK，脚本里的 ✅ 会让 print 抛 UnicodeEncodeError ——
+    # 图都截完了却死在打印上，看起来像截图失败。
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -63,6 +70,40 @@ THEME_STRIP = ["dark", "light", "ocean", "rose"]
 UNSAFE_PAGES = {"viewmodel", "magnifier", "flash", "voice_output", "kill_icon", "music"}
 
 
+def personal_tokens() -> list[str]:
+    """当前环境里"不该出现在公开截图上"的字串。
+
+    只取用户名——它是唯一一个**必然**出现在默认沙箱路径里的个人信息
+    （`%TEMP%` = `C:\\Users\\<用户名>\\AppData\\Local\\Temp`）。
+    """
+    return [v for v in (os.environ.get("USERNAME"), os.environ.get("USER")) if v]
+
+
+def assert_sandbox_is_publishable(sandbox) -> None:
+    """截图前拦一道：沙箱路径里不许含当前用户名。
+
+    **这条防的事真的发生过。** 高级设置页把 CS2 目录原样显示出来，而沙箱默认落在
+    `%TEMP%` 下，于是 `docs/images/advanced.png` 里明晃晃印着
+    `C:\\Users\\<用户名>\\AppData\\Local\\Temp\\...`，并且随 README 推到了公开仓库——
+    而这个项目自己的日志脱敏器专门干掉的就是这个串，PRIVACY.md 里还写着会脱敏。
+
+    为什么拦在这里而不是事后扫图片：图片里的字任何判据都读不到（BRAND 组的文本
+    判据明确跳过二进制）。唯一能拦住的时机就是**按下快门之前**。
+    """
+    from _audit_sandbox import SANDBOX_DIR_ENV
+
+    text = str(sandbox)
+    hits = [t for t in personal_tokens() if t.lower() in text.lower()]
+    if hits:
+        raise SystemExit(
+            f"拒绝截图：沙箱路径 {text} 含个人信息 {hits}，"
+            "而高级设置页会把它原样显示出来、截进公开 README。\n"
+            f"请把 {SANDBOX_DIR_ENV} 指到不含用户名的目录后重跑，例如：\n"
+            f'  {SANDBOX_DIR_ENV}="D:/shots/SteamLibrary/steamapps/common/'
+            'Counter-Strike Global Offensive"'
+        )
+
+
 def _settle(app, rounds: int = 10, pause: float = 0.05) -> None:
     """让布局、主题、动画都落定再取图。
 
@@ -82,8 +123,9 @@ def build_window(app, theme: str = "dark"):
     # 产品代码里已有"托盘不可用"的优雅降级分支。
     QSystemTrayIcon.isSystemTrayAvailable = staticmethod(lambda: False)
 
-    from _audit_sandbox import sandbox_external_writes
+    from _audit_sandbox import sandbox_dir, sandbox_external_writes
 
+    assert_sandbox_is_publishable(sandbox_dir())
     sandbox_external_writes()
 
     # 必须先把资源目录骨架建好，否则截出来的首页开局就是黄灯「音频 · 需检查12」。

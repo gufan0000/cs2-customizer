@@ -50,6 +50,27 @@ SPLASH_ART_SOURCE = OUT / "splash_art_ai.png"
 SPLASH_TITLE_POSITION = (SPLASH_SIZE[0] // 2, 278)
 SPLASH_STATUS_POSITION = (SPLASH_SIZE[0] // 2, 326)
 
+# ---------------------------------------------------------------- 向导大图的排版
+# 每条文案配一个**安全框**，字号按框自动收缩（见 _fit_font）。
+#
+# 为什么不能只钉死字号：这些字号原本是照 4 个汉字的旧产品名调的。改名成
+# 「CS2 Customizer」——14 个拉丁字符，同字号下宽了一倍多——标题左右两端
+# 直接被裁掉，而生成脚本照样退出码 0。**文案换了，字宽就换了，字号得跟着重算。**
+WIZARD_SIZE = (328, 628)
+WIZARD_TITLE = "CS2 Customizer"
+WIZARD_TAGLINE = "CS2 游戏体验增强工具"
+WIZARD_URL = "github.com/gufan0000/cs2-customizer"
+# URL 那条要落在分隔线（x=36 .. w-36）之内，否则视觉上会顶到图边
+WIZARD_TITLE_BOX = (18, 380, WIZARD_SIZE[0] - 18, 436)
+WIZARD_TAGLINE_BOX = (18, 442, WIZARD_SIZE[0] - 18, 474)
+WIZARD_URL_BOX = (36, 554, WIZARD_SIZE[0] - 36, 582)
+WIZARD_TITLE_POSITION = (WIZARD_SIZE[0] // 2, 408)
+WIZARD_TAGLINE_POSITION = (WIZARD_SIZE[0] // 2, 458)
+WIZARD_URL_POSITION = (WIZARD_SIZE[0] // 2, 568)
+WIZARD_TITLE_SIZE = 44
+WIZARD_TAGLINE_SIZE = 17
+WIZARD_URL_SIZE = 15
+
 REPLACE_RETRY_DELAYS = (0.02, 0.04, 0.08, 0.12)
 
 # 允许无中文字体时降级为 PIL 内置字体。**默认关闭，必须显式打开。**
@@ -97,8 +118,52 @@ def _font(size: int, bold: bool = False):
         return ImageFont.load_default()
 
 
+#: 收缩到这个字号还塞不进安全框，就不是"排版紧一点"而是"文案根本不该这么长"，
+#: 直接炸掉——一张标题小到看不清的品牌图，和一张被裁掉两端的品牌图同样不能发。
+MIN_FIT_FONT_SIZE = 11
+
+_MEASURE_DRAW = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+
+
+def _text_width(text: str, font) -> float:
+    return _MEASURE_DRAW.textlength(text, font=font)
+
+
+def _fit_font(text: str, box, start_size: int, bold: bool = False):
+    """返回能让 `text` 横向塞进 `box` 的最大字号字体。
+
+    从 start_size 起逐号往下试。**收缩会打印出来**：品牌图变样了得让人在构建
+    输出里看见，而不是等装机时才觉得"标题怎么小了一号"。
+    """
+    max_width = box[2] - box[0]
+    size = start_size
+    while size >= MIN_FIT_FONT_SIZE:
+        font = _font(size, bold=bold)
+        if _text_width(text, font) <= max_width:
+            if size != start_size:
+                print(f"[fit] {text!r} 字号 {start_size} -> {size}（安全框宽 {max_width}px）")
+            return font
+        size -= 1
+    raise RuntimeError(
+        f"文案 {text!r} 在字号 {MIN_FIT_FONT_SIZE} 下仍宽于安全框 {max_width}px。"
+        "请缩短文案或放大安全框——不要靠继续缩小字号糊过去。"
+    )
+
+
 def _splash_fonts():
-    return _font(34, bold=True), _font(17)
+    return (
+        _fit_font(SPLASH_TITLE, TITLE_SAFE_BOX, 34, bold=True),
+        _fit_font(SPLASH_STATUS, STATUS_SAFE_BOX, 17),
+    )
+
+
+def wizard_fonts():
+    """向导大图三条文案各自适配后的字体。测试与生成走同一条计算，不许各算一遍。"""
+    return (
+        _fit_font(WIZARD_TITLE, WIZARD_TITLE_BOX, WIZARD_TITLE_SIZE, bold=True),
+        _fit_font(WIZARD_TAGLINE, WIZARD_TAGLINE_BOX, WIZARD_TAGLINE_SIZE),
+        _fit_font(WIZARD_URL, WIZARD_URL_BOX, WIZARD_URL_SIZE),
+    )
 
 
 def _draw_centered(draw, position, text, font, fill) -> None:
@@ -142,7 +207,7 @@ def _vgradient(w: int, h: int) -> Image.Image:
 
 
 def make_large():
-    w, h = 328, 628
+    w, h = WIZARD_SIZE
     img = _vgradient(w, h)
     d = ImageDraw.Draw(img)
 
@@ -161,13 +226,14 @@ def make_large():
         d.line([x1, x2], fill=ACCENT, width=5)
     d.ellipse([cx - 4, cy - 4, cx + 4, cy + 4], fill=ACCENT)
 
-    # 文案
-    _draw_centered(d, (w // 2, 408), "CS2 Customizer", _font(44, bold=True), TEXT)
-    _draw_centered(d, (w // 2, 458), "CS2 游戏体验增强工具", _font(17), SUBTEXT)
+    # 文案。字号按安全框自动适配，别在这里写死。
+    title_font, tagline_font, url_font = wizard_fonts()
+    _draw_centered(d, WIZARD_TITLE_POSITION, WIZARD_TITLE, title_font, TEXT)
+    _draw_centered(d, WIZARD_TAGLINE_POSITION, WIZARD_TAGLINE, tagline_font, SUBTEXT)
 
     # 底部细节线 + 版本占位(安装器不显示具体版本,保持素材可复用)
     d.line([(36, 540), (w - 36, 540)], fill=(58, 52, 86), width=2)
-    _draw_centered(d, (w // 2, 568), "github.com/gufan0000/cs2-customizer", _font(15), SUBTEXT)
+    _draw_centered(d, WIZARD_URL_POSITION, WIZARD_URL, url_font, SUBTEXT)
 
     img.save(OUT / "wizard_large.bmp")
     print("wizard_large.bmp", img.size)
@@ -270,13 +336,20 @@ def compose_splash_from_image(base: Image.Image, output_path: Path) -> None:
             temporary_path.unlink(missing_ok=True)
 
 
-def make_splash():
+def default_splash_path() -> Path:
+    return Path(__file__).resolve().parent.parent / "splash.png"
+
+
+def make_splash(dst: Path | None = None):
     """生成项目根目录的 PyInstaller 启动闪屏。
 
     美术源图是**可选**的：本仓库不分发它。缺失时用渐变占位图顶上，
     别让"没有那张 png"变成整条打包链的硬阻断。
+
+    `dst` 可指到别处，供判据把产物生成到临时目录再和已入库的那份比对——
+    否则"验证入库的图是不是最新的"这件事本身会覆盖掉入库的图。
     """
-    dst = Path(__file__).resolve().parent.parent / "splash.png"
+    dst = default_splash_path() if dst is None else Path(dst)
     if SPLASH_ART_SOURCE.is_file():
         compose_splash(SPLASH_ART_SOURCE, dst)
         print("splash.png", SPLASH_SIZE, "->", dst)

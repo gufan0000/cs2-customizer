@@ -29,10 +29,28 @@ R9-A 实测抓到：`G:\\SteamLibrary\\...\\cfg\\cs2customizer.cfg` 被写成默
 """
 from __future__ import annotations
 
+import os
 import tempfile
 from pathlib import Path
 
+#: 沙箱目录的完整路径覆盖。默认 `%TEMP%/cs2customizer_audit_game_sandbox`。
+#:
+#: 之所以要能覆盖：`%TEMP%` 在 Windows 上是 `C:\Users\<用户名>\AppData\Local\Temp`,
+#: **路径里带着当前用户名**。平时无所谓，但高级设置页会把 CS2 目录**原样显示出来**，
+#: 于是任何截了那一页的图都会把用户名一起印进去。开源版的 README 截图就这么把它
+#: 发出去过一次——而本产品的日志脱敏器（`core/utils/log_filter.py`）专门就是
+#: 干掉 `C:\Users\<用户名>\` 的。要出对外的截图时把这个变量指到不含用户名的目录。
+SANDBOX_DIR_ENV = "CS2C_AUDIT_SANDBOX_DIR"
+
 _SANDBOX_DIR: Path | None = None
+
+
+def sandbox_dir() -> Path:
+    """沙箱目录的路径（不建目录、不改配置），供调用方在动手之前先检查它。"""
+    override = os.environ.get(SANDBOX_DIR_ENV)
+    if override:
+        return Path(override)
+    return Path(tempfile.gettempdir()) / "cs2customizer_audit_game_sandbox"
 
 
 def sandbox_external_writes(verbose: bool = True) -> Path:
@@ -46,7 +64,7 @@ def sandbox_external_writes(verbose: bool = True) -> Path:
     # 路径必须**固定**，不能用 mkdtemp：`page_fingerprint.py` 要求同一份代码跑两次
     # 得出同一个指纹，而高级设置页会把 CS2 目录原样显示出来。随机目录名会让
     # 指纹每次都不同，于是"页面变了"这个信号彻底失效。
-    sandbox = Path(tempfile.gettempdir()) / "cs2customizer_audit_game_sandbox"
+    sandbox = sandbox_dir()
     # 建出 CS2 的目录形状，写入方 os.makedirs 也能自己建，但先建好更接近真实布局
     (sandbox / "game" / "csgo" / "cfg").mkdir(parents=True, exist_ok=True)
 
