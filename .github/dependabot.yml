@@ -4,6 +4,22 @@
 # **它们不会自己更新**，没有 dependabot 就会一直烂在那儿，包括安全修复。
 #
 # dependabot 认识 SHA 固定这种写法：它会同时更新 SHA 和后面那条 `# vX.Y.Z` 注释。
+#
+# ⚠️ 两条实测更正（2026-08-12，第一次真跑之后）：
+#
+# ① **不要写 `labels:`**。第一版写了 `labels: [dependencies]`，而仓库里并没有这个标签，
+#    于是每个 PR 都挂一条报错：「The following labels could not be found: dependencies.
+#    Please create it before Dependabot can add it to a pull request.」
+#    dependabot 不会替你建标签。要用自定义标签就得先在仓库里手工建好；
+#    不值得为此加一道手工前置，删掉即可（它自己会打默认标签）。
+#
+# ② **`version-update:semver-major` 挡不住 `>=` 形式的需求**。第一版在 pip 那节写了
+#    忽略大版本，实测 `numpy>=1.26 → >=2.5.1` 照样开了 PR ——
+#    对"只写下界"的需求，dependabot 走的是"抬高下界"这条路径，
+#    并不映射到 semver-update-types。所以这里不再声称能挡住大版本。
+#    **真正的闸门是「PR 不会自己合」**：大版本升级由人看着办。
+#    PySide6 / pygame 这类带原生库的升级会牵动打包链路与 UI 度量，
+#    必须本地跑一遍两档排版审计再决定，不能只看 CI 绿。
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -13,23 +29,14 @@ updates:
     open-pull-requests-limit: 3
     commit-message:
       prefix: "chore(ci)"
-    labels:
-      - dependencies
 
   - package-ecosystem: pip
     directory: /
     schedule:
       interval: monthly
-    open-pull-requests-limit: 3
+    # pip 这边噪音更大（requirements 全是 `>=` 下界，抬下界的 PR 会一直有），
+    # 所以限额压到 2，避免把 PR 列表淹掉。抬下界本身是有价值的：
+    # 它防的是"新环境装到一个已知有漏洞的旧版本"。
+    open-pull-requests-limit: 2
     commit-message:
       prefix: "chore(deps)"
-    labels:
-      - dependencies
-    # 本项目有一条明确的产品约束：**不新增第三方依赖**（见 CONTRIBUTING）。
-    # 所以这里只要"升级现有依赖"，把大版本跳跃留给人工判断——
-    # PySide6 / pygame 这种带原生库的大版本升级会牵动打包链路与 UI 度量，
-    # 不该由机器人自动开 PR 就合。
-    ignore:
-      - dependency-name: "*"
-        update-types:
-          - version-update:semver-major
