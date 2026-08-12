@@ -63,7 +63,7 @@ jobs:
       # tag 是可移动的引用,上游(或拿到上游写权限的人)重打一次 tag,
       # 我们这边下一次 CI 就会静默跑到不同的代码上。升级时改 SHA,
       # 并同步更新后面注释里的版本号。
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
@@ -96,7 +96,7 @@ jobs:
       CS2C_CONFIG_DIR: ${{ github.workspace }}\_ci_tmp\config
       CS2C_LOG_DIR: ${{ github.workspace }}\_ci_tmp\logs
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
