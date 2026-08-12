@@ -24,8 +24,20 @@
   「资源导入向导」（`core/resource_import_wizard.py`）从本地导入。
 - 用户自行导入的素材，其合法性与授权由用户自己负责，与本项目无关。
 
-唯一随仓库分发的图形文件是程序自身的图标（`icon.ico` / `myicon.ico`）。
-图标属于项目标识，**不在 GPL 授权范围内**，详见 `NOTICE`。
+仓库里的图形文件（程序图标 `icon.ico` / `myicon.ico`、安装向导图、启动闪屏、
+社交预览图）**全部由本仓库的代码生成**，不含任何第三方素材：
+
+| 文件 | 生成器 |
+| --- | --- |
+| `icon.ico` · `myicon.ico` · `build_tools/installer_assets/setup_icon.ico` | `build_tools/make_app_icon.py` |
+| `splash.png` · `installer_assets/wizard_*.bmp` | `build_tools/make_installer_assets.py` |
+| `docs/images/social-preview.png` | `scripts/make_social_preview.py` |
+| `docs/images/*.png`（界面截图） | `scripts/capture_readme_shots.py` |
+
+它们和其余代码一样依 GPL 授权。`tests/test_brand_assets.py` 会验证入库的这几份
+与生成器的产物逐字节一致——**位图一旦入库就会和生成器脱钩，而脱钩是静默的**。
+
+不在 GPL 范围内的只有**文字标识**（项目名称），详见 `NOTICE`。
 
 ---
 

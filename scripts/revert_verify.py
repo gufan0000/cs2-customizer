@@ -1071,6 +1071,43 @@ REVERTS = [
         'CS2 目录原样显示出来，advanced.png 里印着真实用户名并推上了公开仓库——'
         '而本项目的日志脱敏器专门干掉的就是这个串',
     ),
+    # ---- 图标：2026-08-12 从"一张来源不清的 AI 位图"改成代码生成 ----
+    Revert(
+        'ASSET', '图标与生成器脱钩',
+        'build_tools/make_app_icon.py',
+        'ring_r = big * 0.31',
+        'ring_r = big * 0.26',
+        'tests/test_brand_assets.py::test_committed_icons_are_not_stale',
+        '位图一旦入库就会和生成器脱钩，而脱钩是静默的——这正是启动闪屏印着'
+        '旧产品名一路全绿到公开前的原因',
+    ),
+    Revert(
+        'ASSET', '图标退回单一尺寸帧',
+        'build_tools/make_app_icon.py',
+        'SIZES = (16, 24, 32, 48, 64, 128, 256)',
+        'SIZES = (64,)',
+        'tests/test_brand_assets.py::test_icon_has_every_size_windows_asks_for',
+        '原来那张图标就是**单帧 64×64**：16px 的资源管理器列表和任务栏全靠系统'
+        '缩放，发虚。少一档不报错，只在那个场景里难看',
+    ),
+    Revert(
+        'ASSET', '图标帧写成 PNG（Inno Setup 吃不下）',
+        'build_tools/make_app_icon.py',
+        '        bitmap_format="bmp",\n',
+        '',
+        'tests/test_brand_assets.py::test_icon_frames_are_bmp_not_png',
+        '真实发生过：项目根 icon.ico 是 PNG 帧，Inno 不接受，于是有人手工重铸了'
+        '一份 setup_icon.ico——一个没人记得的手工步骤，下一个改图标的人会踩回去',
+    ),
+    Revert(
+        'ASSET', '小尺寸不再单独画（16px 糊成一团）',
+        'build_tools/make_app_icon.py',
+        'SIMPLIFY_BELOW = 40',
+        'SIMPLIFY_BELOW = 0',
+        'tests/test_brand_assets.py::test_smallest_icon_frame_is_actually_legible',
+        '实测过：把大图几何原样缩到 16px，准星刻线正好顶到外环，三者糊成一个'
+        '实心疙瘩——文件正常、尺寸齐全、肉眼认不出是什么',
+    ),
     Revert(
         'ASSET', '旧品牌 AI 美术底图被提交进仓库',
         'build_tools/make_installer_assets.py',

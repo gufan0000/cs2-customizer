@@ -146,6 +146,143 @@ def test_legacy_splash_art_is_not_tracked():
     assert rel not in tracked, f"{rel} 被加进了版本库"
 
 
+# ------------------------------------------------------------------ 程序图标
+
+#: 三个路径内容必须完全相同，见 make_app_icon.OUTPUTS 的说明。
+ICON_PATHS = (
+    "icon.ico",
+    "myicon.ico",
+    "build_tools/installer_assets/setup_icon.ico",
+)
+
+
+@pytest.fixture(scope="module")
+def fresh_icon(tmp_path_factory) -> Path:
+    """现跑一遍生成器产出的图标。
+
+    下面几条"图标该长什么样"的判据**必须看这一份，不能看已入库的那份**。
+    第一版看的是入库的文件，结果回退验证当场判它们假绿：断点改的是生成器，
+    而入库的文件一个字节都没动，判据自然还是绿的。
+
+    入库的那份由 `test_committed_icons_are_not_stale` 单独钉在这一份上——
+    链条就闭合了：生成器的产物满足这些性质 + 入库的就是生成器的产物。
+    """
+    from build_tools import make_app_icon
+
+    path = tmp_path_factory.mktemp("icon") / "icon.ico"
+    make_app_icon.build_ico(path)
+    return path
+
+
+def test_committed_icons_are_not_stale(fresh_icon):
+    """三个已入库的图标必须与生成器的产物逐字节一致，且三份彼此相同。
+
+    图标不含文字，所以这条**不受 CJK 字体门限制**——它在任何环境都该跑。
+    """
+    expected = fresh_icon.read_bytes()
+    stale = [rel for rel in ICON_PATHS if (ROOT / rel).read_bytes() != expected]
+    assert not stale, (
+        "这些图标和生成器脱钩了：" + ", ".join(stale) + "\n"
+        "重跑 `python build_tools/make_app_icon.py` 并提交产物。"
+    )
+
+
+def test_icon_has_every_size_windows_asks_for(fresh_icon):
+    """图标必须自带全部尺寸帧。
+
+    原来那张是**单帧 64×64**：16px 的资源管理器列表和任务栏全靠系统缩放，发虚。
+    少一档不会报错，只会在那个场景里难看。
+    """
+    with Image.open(fresh_icon) as img:
+        have = {s[0] for s in img.ico.sizes()}
+    # 16 是最吃紧的一档（资源管理器列表 / 任务栏），单独点名，
+    # 免得有人把 SIZES 缩到只剩大尺寸还能过。
+    assert 16 in have, f"没有 16×16 帧，小图标场景只能靠系统缩放（现有 {sorted(have)}）"
+    assert len(have) >= 5, f"尺寸档位只有 {len(have)} 档，太少：{sorted(have)}"
+
+
+def test_icon_frames_are_bmp_not_png(fresh_icon):
+    """所有帧必须是 BMP/DIB 编码，不能是 PNG。
+
+    **Inno Setup 不接受 PNG 帧的 ICO。** 历史上正因为项目根的 icon.ico 是 PNG 帧，
+    才有人手工重铸了一份 setup_icon.ico 给安装器；那种手工步骤没人记得，
+    下一个改图标的人会原地踩回去。这条判据把"能不能被安装器吃下"变成可验证的。
+    """
+    import struct
+
+    raw = fresh_icon.read_bytes()
+    count = struct.unpack_from("<H", raw, 4)[0]
+    png_frames = []
+    for i in range(count):
+        offset = struct.unpack_from("<I", raw, 6 + i * 16 + 12)[0]
+        if raw[offset:offset + 8] == b"\x89PNG\r\n\x1a\n":
+            size = struct.unpack_from("<BB", raw, 6 + i * 16)
+            png_frames.append(size[0] or 256)
+    assert not png_frames, (
+        f"这些尺寸的帧是 PNG 编码：{png_frames}。Inno Setup 不接受，"
+        "生成器要带 bitmap_format=\"bmp\"。"
+    )
+
+
+def test_smallest_icon_frame_is_actually_legible(fresh_icon):
+    """16×16 那一帧的**中心点必须还在**。
+
+    这条防的是"小尺寸没单独画"。判据落在中心点上，是**量出来的**，不是猜的：
+
+        单独画（SIMPLIFY_BELOW=40）  accent 36/256   中心 4×4 的 accent = 4/16
+        原样缩小（=0）              accent 30/256   中心 4×4 的 accent = 0/16
+
+    第一版判据写的是"accent 像素总数 >= 24"——两种情况都过，假绿，
+    回退验证当场逮住。**总墨量根本不是会坏的那个量**：原样缩小时中心点半径
+    只有 0.045×16 ≈ 0.7px，直接消失，而细线糊成中间调后也不再是纯 accent，
+    所以坏的那版墨量反而更少。会坏的量是"中心还有没有东西"。
+    （又一次量错通道，这已经是这轮的第三次。）
+    """
+    from build_tools.make_installer_assets import ACCENT
+
+    def is_accent(pixel) -> bool:
+        return all(abs(c - e) <= 60 for c, e in zip(pixel, ACCENT))
+
+    with Image.open(fresh_icon) as img:
+        frame = img.ico.getimage((16, 16)).convert("RGB")
+
+    core = sum(
+        1
+        for y in range(6, 10)
+        for x in range(6, 10)
+        if is_accent(frame.getpixel((x, y)))
+    )
+    total = sum(
+        1
+        for y in range(frame.height)
+        for x in range(frame.width)
+        if is_accent(frame.getpixel((x, y)))
+    )
+    assert core >= 2, (
+        f"16×16 帧中心 4×4 只有 {core} 个 accent 像素，中心点没画出来——"
+        "小尺寸没有单独简化几何（见 make_app_icon.SIMPLIFY_BELOW）"
+    )
+    assert total >= 20, f"16×16 帧总共只有 {total} 个 accent 像素，图基本是空的"
+
+
+def test_qt_can_actually_load_the_committed_icon(qapp):
+    """Qt 必须能从入库的 icon.ico 取出非空图像。
+
+    上面几条判据都在验"文件长得对不对"，这条验的是**产品真的用得上**：
+    任务栏/窗口图标走的是 `QIcon`，而这次换了帧编码（PNG → 32bpp BMP）。
+    格式判据全绿但 Qt 读不出来，是完全可能的一种失败——那时用户看到的是
+    一个空白图标，而所有测试还是绿的。
+    """
+    from PySide6.QtGui import QIcon
+
+    icon = QIcon(str(ROOT / "icon.ico"))
+    assert not icon.isNull(), "QIcon 读不出 icon.ico"
+    for edge in (16, 32, 256):
+        pixmap = icon.pixmap(edge, edge)
+        assert not pixmap.isNull(), f"{edge}px 取不到图像"
+        assert pixmap.width() == edge, f"{edge}px 请求拿到的是 {pixmap.width()}px"
+
+
 # ------------------------------------------------------------------ 截图不许带个人信息
 
 def test_screenshot_guard_rejects_username_in_sandbox_path(monkeypatch):

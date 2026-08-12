@@ -37,7 +37,10 @@ OutputDir=..\release\installer
 ; 产物名走纯 ASCII 无空格:GitHub Release 附件会把空格替成点,中文名在部分
 ; 下载器/浏览器上会被 URL 编码成乱码。
 OutputBaseFilename=CS2Customizer-Setup-{#AppVersion}
-; 注:项目根 icon.ico 含 Inno 不接受的编码帧,用 PIL 重铸版(make_installer_assets 同目录)
+; 与项目根 icon.ico **字节相同**,同由 build_tools/make_app_icon.py 一次出齐。
+; 历史:原 icon.ico 是伪装成 .ico 的单帧 PNG,Inno 不接受 PNG 帧,于是有人手工
+; "重铸"了这一份——一个没人记得的手工步骤。现在生成器统一写 32bpp BMP 帧,
+; 三个路径一次出齐,这里保留独立文件名只为不动 Inno 的既有引用。
 SetupIconFile=installer_assets\setup_icon.ico
 Compression=lzma2/max
 SolidCompression=yes
