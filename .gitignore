@@ -48,7 +48,9 @@ config.json
 # --- 2026-04-19: 扩展，配合重构 baseline ---
 # 构建产物（大目录，不入库）
 .build/
-release/
+# 锚定到根：不加斜杠时 git 会把**任意层级**叫 release 的目录都忽略掉。
+# 上游就被这条静默吞过一个要入库的 scripts/release/ 目录。
+/release/
 output/
 artifacts/
 
