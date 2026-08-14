@@ -791,6 +791,7 @@ def main():
     from gsi_handler_music import GSIHandlerMusic
     from gsi_handler_utility import GSIHandlerUtility
     from gsi_handler_hud_color import GSIHandlerHudColor
+    from gsi_handler_fun import GSIHandlerFun
     from resource_manager import ResourceManager  # noqa: F401  (后续阶段使用)
 
     _boot_phase("GSI组件import")
@@ -803,6 +804,18 @@ def main():
     gsi_handler_music = GSIHandlerMusic()
     gsi_handler_utility = GSIHandlerUtility()
     gsi_handler_hud_color = GSIHandlerHudColor()
+    gsi_handler_fun = GSIHandlerFun()
+
+    # 整活「死亡刷短视频」编排器：窗口操作必须在主线程，
+    # handler 只在 GSI 线程发信号，由 controller 转过来执行
+    try:
+        from core.fun.afterlife import AfterlifeController
+
+        window.afterlife_controller = AfterlifeController(config, parent=window)
+        window.afterlife_controller.attach_handler(gsi_handler_fun)
+    except Exception:
+        logger.exception("死亡刷短视频编排器初始化失败（功能不可用，不影响其他功能）")
+        window.afterlife_controller = None
     
     # 保存GSI服务器引用
     window.gsi_server = gsi_server
@@ -819,6 +832,7 @@ def main():
             'music': gsi_handler_music,
             'utility': gsi_handler_utility,
             'hud_color': gsi_handler_hud_color,
+            'fun': gsi_handler_fun,
         }
     }
     window.gsi_handlers = gsi_components['handlers']
@@ -927,6 +941,13 @@ def main():
 
             QTimer.singleShot(250, _connect_utility_later)
             
+            # 整活功能已开启时提前把贴屏窗口备好：冷启动 3-5 秒，
+            # 等到死亡那一刻再开就完全跟不上节奏了
+            if bool(getattr(config, "fun_afterlife_enabled", False)):
+                controller = getattr(window, "afterlife_controller", None)
+                if controller is not None:
+                    QTimer.singleShot(3000, controller.preheat)
+
             # R2-4: 按地图自动切预设(默认关,预设中心开)
             try:
                 from core.presets.map_rules import MapPresetHandler

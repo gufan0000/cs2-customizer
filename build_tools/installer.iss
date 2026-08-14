@@ -1,5 +1,5 @@
-; CS2 Customizer Inno Setup 安装脚本(2.2.2,onedir 形态)
-; 编译: iscc build_tools\installer.iss /DAppVersion=2.2.2
+; CS2 Customizer Inno Setup 安装脚本(2.2.3,onedir 形态)
+; 编译: iscc build_tools\installer.iss /DAppVersion=2.2.3
 ; 前置: ① python build_tools\build_release.py --mode onedir
 ;       ② python build_tools\make_installer_assets.py(品牌向导图,已入库可不重跑)
 ; 设计要点:
@@ -9,7 +9,7 @@
 ;  - 卸载清开机自启注册表,保留用户配置(%LOCALAPPDATA%\CS2Customizer 数据)
 
 #ifndef AppVersion
-  #define AppVersion "2.2.2"
+  #define AppVersion "2.2.3"
 #endif
 #define AppName "CS2 Customizer"
 #define AppDirName AppName + " " + AppVersion

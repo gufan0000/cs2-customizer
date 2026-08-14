@@ -19,6 +19,7 @@
   "screen_effects": "屏幕特效",
   "music": "音乐播放",
   "voice_output": "语音输出",
+  "fun_afterlife": "死亡刷短视频",
   "utility": "道具瞄点",
   "advanced": "高级设置",
   "audio_health": "音频体检",
@@ -41,6 +42,7 @@
    "config_snapshot",
    "crosshair",
    "death_sound",
+   "fun_afterlife",
    "gun_sound",
    "hud_color",
    "kill_sound",
@@ -83,7 +85,7 @@
    "viewmodel",
    "voice_output"
   ],
-  "total_pages": 26
+  "total_pages": 27
  },
  "generic_dropped": [
   "AK-47",
@@ -242,6 +244,14 @@
   {
    "page": "basic",
    "text": "枪声替换",
+   "card": "功能开关",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "死亡刷短视频",
    "card": "功能开关",
    "tab": "",
    "kind": "label",
@@ -2350,6 +2360,206 @@
    "tab": "",
    "kind": "label",
    "src": "static"
+  },
+  {
+   "page": "fun_afterlife",
+   "text": "启用死亡刷短视频",
+   "card": "总开关",
+   "tab": "",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "fun_afterlife",
+   "text": "总开关",
+   "card": "总开关",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "fun_afterlife",
+   "text": "打开并登录抖音",
+   "card": "总开关",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "fun_afterlife",
+   "text": "收回窗口",
+   "card": "总开关",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "fun_afterlife",
+   "text": "预览效果",
+   "card": "总开关",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "fun_afterlife",
+   "text": "以手机模式打开（推荐）",
+   "card": "看什么",
+   "tab": "",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "fun_afterlife",
+   "text": "平台",
+   "card": "看什么",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "fun_afterlife",
+   "text": "看什么",
+   "card": "看什么",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "fun_afterlife",
+   "text": "网址",
+   "card": "看什么",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "fun_afterlife",
+   "text": "窗口",
+   "card": "窗口",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "fun_afterlife",
+   "text": "窗口高度",
+   "card": "窗口",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "fun_afterlife",
+   "text": "贴在哪边",
+   "card": "窗口",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "fun_afterlife",
+   "text": "休闲",
+   "card": "触发条件",
+   "tab": "",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "fun_afterlife",
+   "text": "军备竞赛",
+   "card": "触发条件",
+   "tab": "",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "fun_afterlife",
+   "text": "危险区",
+   "card": "触发条件",
+   "tab": "",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "fun_afterlife",
+   "text": "拆弹突击",
+   "card": "触发条件",
+   "tab": "",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "fun_afterlife",
+   "text": "搭档",
+   "card": "触发条件",
+   "tab": "",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "fun_afterlife",
+   "text": "死亡竞赛",
+   "card": "触发条件",
+   "tab": "",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "fun_afterlife",
+   "text": "每局最多触发",
+   "card": "触发条件",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "fun_afterlife",
+   "text": "竞技",
+   "card": "触发条件",
+   "tab": "",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "fun_afterlife",
+   "text": "自定义/社区服",
+   "card": "触发条件",
+   "tab": "",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "fun_afterlife",
+   "text": "触发条件",
+   "card": "触发条件",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "fun_afterlife",
+   "text": "阵亡后延迟弹出",
+   "card": "触发条件",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "fun_afterlife",
+   "text": "最长停留",
+   "card": "高级",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "fun_afterlife",
+   "text": "高级",
+   "card": "高级",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
   },
   {
    "page": "utility",

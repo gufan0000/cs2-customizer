@@ -307,7 +307,7 @@ REVERTS = [
         "scripts/tab_order_audit.py",
         # ⚠ 开源版是 26 页（闭源版 27，多一个账号页）。这个数字随页面集合变，
         # 改页面时锚点要跟着改，否则这条断点会静默"跳过"。
-        "TOTAL_PAGES = 26",
+        "TOTAL_PAGES = 27",
         "TOTAL_PAGES = 11",
         "tests/test_audit_coverage_r11.py::test_focus_audit_total_pages_matches_the_app",
         "UP-101：分母一改，11/11 就成了「全覆盖」——覆盖率造假最省事的办法",
@@ -828,7 +828,7 @@ REVERTS = [
     Revert(
         'VER', 'version_info.txt 的 filevers 忘了跟着抬',
         'version_info.txt',
-        'filevers=(2, 2, 2, 0)',
+        'filevers=(2, 2, 3, 0)',
         'filevers=(2, 2, 1, 0)',
         'tests/test_version_consistency.py::test_version_info_tuples_match',
         'exe 文件属性里的版本号停在上一版，排障时对着用户截图会认错版本',
@@ -836,7 +836,7 @@ REVERTS = [
     Revert(
         'VER', 'version_info.txt 的 ProductName 忘了跟着抬',
         'version_info.txt',
-        "StringStruct(u'ProductName', u'CS2 Customizer 2.2.2')",
+        "StringStruct(u'ProductName', u'CS2 Customizer 2.2.3')",
         "StringStruct(u'ProductName', u'CS2 Customizer 2.2.1')",
         'tests/test_version_consistency.py::test_version_info_strings_match',
         '任务管理器/属性页显示的产品名还是旧版本号',
@@ -844,7 +844,7 @@ REVERTS = [
     Revert(
         'VER', '只漏了 ProductVersion 一个字段（考验"游离版本号"全文扫）',
         'version_info.txt',
-        "StringStruct(u'ProductVersion', u'2.2.2.0')",
+        "StringStruct(u'ProductVersion', u'2.2.3.0')",
         "StringStruct(u'ProductVersion', u'2.2.1.0')",
         'tests/test_version_consistency.py::test_version_info_has_no_stray_version',
         '逐字段枚举的判据可能漏枚举某个字段；这条不枚举、直接全文扫，是兜底',
@@ -852,7 +852,7 @@ REVERTS = [
     Revert(
         'VER', 'installer.iss 的 AppVersion 忘了跟着抬',
         'build_tools/installer.iss',
-        '#define AppVersion "2.2.2"',
+        '#define AppVersion "2.2.3"',
         '#define AppVersion "2.2.1"',
         'tests/test_version_consistency.py::test_installer_iss_appversion_matches',
         '后果最重：装进 CS2 Customizer<旧版本> 目录，升级变成两份并存',
@@ -860,7 +860,7 @@ REVERTS = [
     Revert(
         'VER', 'installer.iss 头部注释停在旧版本',
         'build_tools/installer.iss',
-        '安装脚本(2.2.2,onedir 形态)',
+        '安装脚本(2.2.3,onedir 形态)',
         '安装脚本(2.1.4,onedir 形态)',
         'tests/test_version_consistency.py::test_installer_iss_header_comments_match',
         '注释腐烂：下次照着这行去理解脚本适用版本会被误导',
@@ -876,8 +876,10 @@ REVERTS = [
     Revert(
         'VER', 'CHANGELOG 缺当前版本的小节',
         'CHANGELOG.md',
-        '## [2.2.2] - ',
+        # old 必须是**当前版本**的小节：把它改掉，判据才会发现"当前版本没有对应小节"。
+        # 反过来写（改历史小节）在当前版本小节仍然存在时判据照样通过，断点会静默失效。
         '## [2.2.3] - ',
+        '## [2.1.4] - ',
         'tests/test_version_consistency.py::test_changelog_has_section_for_current_version',
         '抬了版本号却忘了写 changelog，发布时没有可抄的内容（闭源版发 2.2.0/2.2.1 时踩过）',
     ),

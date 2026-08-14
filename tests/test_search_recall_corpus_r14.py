@@ -23,6 +23,9 @@ from core.settings_search import search_detailed
 
 # (查询, 期望出现在结果里的页)。按页面分组，方便看覆盖面。
 CORPUS = [
+    # 死亡刷短视频（整活）
+    ("刷抖音", "fun_afterlife"), ("死了刷视频", "fun_afterlife"),
+    ("短视频", "fun_afterlife"), ("摸鱼", "fun_afterlife"),
     # 基础设置
     ("全部静音", "basic"), ("关掉声音", "basic"), ("一键关闭", "basic"),
     ("玩家id", "basic"), ("看别人视角", "basic"), ("观战", "basic"),

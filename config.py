@@ -24,7 +24,7 @@ from core.gun_sound_profiles import (
 # 应用程序信息
 APP_NAME = "CS2Customizer"
 CONFIG_FILENAME = "config.json"
-VERSION = "2.2.2"
+VERSION = "2.2.3"
 
 # P4.2: 配置 schema 版本。与软件 VERSION 解耦——只在"配置结构/语义发生需要
 # 迁移的变化"时 +1，并在 CONFIG_MIGRATIONS 注册对应迁移函数。
@@ -138,6 +138,26 @@ def normalize_gun_sound_hold_duration(value, fallback):
     except Exception:
         return fallback
     return max(0.0, min(5.0, numeric))
+
+def normalize_ranged_float(value, minimum, maximum, fallback):
+    """把配置值钳到 [minimum, maximum]；非数值一律回落 fallback。"""
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return fallback
+    if numeric != numeric:  # NaN：任何比较都为假，钳不住，必须单独挡
+        return fallback
+    return max(minimum, min(maximum, numeric))
+
+
+def normalize_ranged_int(value, minimum, maximum, fallback):
+    """整数版本。bool 是 int 的子类，这里按数值处理即可，不需要特判。"""
+    try:
+        numeric = int(value)
+    except (TypeError, ValueError):
+        return fallback
+    return max(minimum, min(maximum, numeric))
+
 
 def get_config_dir():
     """获取配置文件目录"""
@@ -269,7 +289,20 @@ class Config:
         # 死亡音效设置
         self.death_sound_enabled = False
         self.death_sound_style = "0"
-        
+
+        # 整活：死亡后贴屏刷短视频（默认关，纯娱乐功能）
+        self.fun_afterlife_enabled = False
+        self.fun_afterlife_modes = ["deathmatch", "casual"]  # 允许触发的 GSI 对局模式
+        self.fun_afterlife_platform = "douyin"  # 平台预设 key，见 core/fun/platforms.py
+        self.fun_afterlife_url = "https://www.douyin.com/"  # 仅 platform=custom 时使用
+        self.fun_afterlife_mobile_ua = True   # 移动端 UA 才会进「刷短视频」竖屏沉浸态
+        self.fun_afterlife_side = "right"     # 贴屏边：right / left
+        self.fun_afterlife_height_ratio = 0.82
+        self.fun_afterlife_delay_ms = 800     # 死亡到弹出的缓冲
+        self.fun_afterlife_max_per_match = 0  # 每局触发上限，0=不限
+        self.fun_afterlife_max_stay_sec = 180  # 兜底收回，防 GSI 断流后收不回来
+        self.fun_afterlife_browser_path = ""  # 留空则自动探测 Edge/Chrome
+
         # 观战和玩家ID设置
         self.spectator_mode_mute = True  # 默认开启观战模式静音
         self.player_steamid = ""  # 玩家的steamid
@@ -1064,6 +1097,33 @@ class Config:
                 # 死亡音效设置
                 self.death_sound_enabled = config_data.get("death_sound_enabled", self.death_sound_enabled)
                 self.death_sound_style = config_data.get("death_sound_style", self.death_sound_style)
+
+                # 整活：死亡后贴屏刷短视频
+                self.fun_afterlife_enabled = config_data.get("fun_afterlife_enabled", self.fun_afterlife_enabled)
+                loaded_modes = config_data.get("fun_afterlife_modes", self.fun_afterlife_modes)
+                # 只认字符串列表：配置文件被手改成字符串/字典时，
+                # `mode in allowed` 会退化成子串匹配或抛错，宁可回落默认值
+                if isinstance(loaded_modes, list):
+                    self.fun_afterlife_modes = [str(m) for m in loaded_modes if str(m).strip()]
+                self.fun_afterlife_platform = config_data.get("fun_afterlife_platform", self.fun_afterlife_platform)
+                self.fun_afterlife_url = config_data.get("fun_afterlife_url", self.fun_afterlife_url)
+                self.fun_afterlife_mobile_ua = config_data.get("fun_afterlife_mobile_ua", self.fun_afterlife_mobile_ua)
+                self.fun_afterlife_side = config_data.get("fun_afterlife_side", self.fun_afterlife_side)
+                self.fun_afterlife_height_ratio = normalize_ranged_float(
+                    config_data.get("fun_afterlife_height_ratio", self.fun_afterlife_height_ratio), 0.3, 1.0, 0.82
+                )
+                self.fun_afterlife_delay_ms = normalize_ranged_int(
+                    config_data.get("fun_afterlife_delay_ms", self.fun_afterlife_delay_ms), 0, 10000, 800
+                )
+                self.fun_afterlife_max_per_match = normalize_ranged_int(
+                    config_data.get("fun_afterlife_max_per_match", self.fun_afterlife_max_per_match), 0, 999, 0
+                )
+                self.fun_afterlife_max_stay_sec = normalize_ranged_int(
+                    config_data.get("fun_afterlife_max_stay_sec", self.fun_afterlife_max_stay_sec), 0, 3600, 180
+                )
+                self.fun_afterlife_browser_path = config_data.get(
+                    "fun_afterlife_browser_path", self.fun_afterlife_browser_path
+                )
                 
                 # 观战模式和玩家ID设置
                 self.spectator_mode_mute = config_data.get("spectator_mode_mute", self.spectator_mode_mute)
@@ -1614,6 +1674,19 @@ class Config:
                     # 死亡音效设置
                     "death_sound_enabled": self.death_sound_enabled,
                     "death_sound_style": self.death_sound_style,
+
+                    # 整活：死亡后贴屏刷短视频
+                    "fun_afterlife_enabled": self.fun_afterlife_enabled,
+                    "fun_afterlife_modes": self.fun_afterlife_modes,
+                    "fun_afterlife_platform": self.fun_afterlife_platform,
+                    "fun_afterlife_url": self.fun_afterlife_url,
+                    "fun_afterlife_mobile_ua": self.fun_afterlife_mobile_ua,
+                    "fun_afterlife_side": self.fun_afterlife_side,
+                    "fun_afterlife_height_ratio": self.fun_afterlife_height_ratio,
+                    "fun_afterlife_delay_ms": self.fun_afterlife_delay_ms,
+                    "fun_afterlife_max_per_match": self.fun_afterlife_max_per_match,
+                    "fun_afterlife_max_stay_sec": self.fun_afterlife_max_stay_sec,
+                    "fun_afterlife_browser_path": self.fun_afterlife_browser_path,
                     
                     # 观战模式和玩家ID设置
                     "spectator_mode_mute": self.spectator_mode_mute,

@@ -33,19 +33,19 @@ FOCUS_AUDIT = ROOT / "scripts" / "tab_order_audit.py"
 CI = ROOT / ".github" / "workflows" / "ci.yml"
 
 #: 应用的页面总数。分母，也是所有覆盖率的基准。
-#: 开源裁剪把账号页整页移除，27 → 26；下面几个门槛跟着**同步下调 1**。
+#: 开源裁剪把账号页整页移除，28 → 27；下面几个门槛跟着**同步下调 1**。
 #: ⚠ 这不是把棘轮松掉：页面被物理删除时分母本来就该变小，
 #: 松的是分母、不是覆盖率。改这几个数之前先确认页面是真没了。
-TOTAL_PAGES = 26
+TOTAL_PAGES = 27
 
 #: 焦点巡检当前的默认覆盖面。`basic` 在 `gui_widget` 里内联建、没有独立类，
 #: 进不了工厂表；另外 3 个构造即 spawn 子进程，默认档跳过。
 #: **这个数只许增不许减。**
 FOCUS_MIN_DEFAULT_PAGES = 21
-#: `--include-unsafe` 时能覆盖到的页面数（25 = 26 − basic）。
-FOCUS_MIN_ALL_PAGES = 25
+#: `--include-unsafe` 时能覆盖到的页面数（26 = 27 − basic）。
+FOCUS_MIN_ALL_PAGES = 26
 
-#: 排版审计默认档的覆盖面（26 − 5 个构造即起设备的页面）。
+#: 排版审计默认档的覆盖面（27 − 5 个构造即起设备的页面）。
 LAYOUT_MIN_DEFAULT_PAGES = 21
 
 

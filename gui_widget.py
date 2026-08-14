@@ -1093,6 +1093,7 @@ class MainWindow(QMainWindow):
             ("媒体功能", [
                 ("music", "音乐播放"),
                 ("voice_output", "语音输出"),
+                ("fun_afterlife", "死亡刷短视频"),
             ]),
             ("工具与系统", [
                 ("utility", "道具瞄点"),
@@ -1326,6 +1327,9 @@ class MainWindow(QMainWindow):
         elif page_id == "screen_effects":
             from pages.screen_effects_page import ScreenEffectsPage
             page = ScreenEffectsPage(self.screen_effect_overlay)
+        elif page_id == "fun_afterlife":
+            from pages.fun_page import FunPage
+            page = FunPage(getattr(self, "afterlife_controller", None))
         elif page_id == "advanced":
             from pages.advanced_page import AdvancedPage
             page = AdvancedPage()
@@ -1386,7 +1390,7 @@ class MainWindow(QMainWindow):
             "kill_sound", "kill_voice", "death_sound", "gun_sound",
             "switch_weapon", "reload_sound", "special_sound",
             "crosshair", "kill_icon", "magnifier", "flash", "viewmodel", "hud_color", "screen_effects",
-            "music", "voice_output",
+            "music", "voice_output", "fun_afterlife",
             "utility", "advanced", "audio_health", "audio_import_wizard",
             "audio_task_panel", "audio_replay", "config_snapshot", "preset_center",
             "about",
@@ -1884,6 +1888,7 @@ class MainWindow(QMainWindow):
             ("music", "音乐联动", "music_enabled"),
             ("utility", "道具瞄点", "utility_guide_enabled"),
             ("voice_output", "语音播放", "voice_output_enabled"),
+            ("fun_afterlife", "死亡刷短视频", "fun_afterlife_enabled"),
             ("spectator", "观战静音", "spectator_mode_mute"),
         ]
 
@@ -2115,6 +2120,7 @@ class MainWindow(QMainWindow):
             "music": "music",
             "utility": "utility",
             "voice_output": "voice_output",
+            "fun_afterlife": "fun_afterlife",
         }
         return page_map.get(switch_id)
 
@@ -2626,6 +2632,18 @@ class MainWindow(QMainWindow):
 
         # （Phase1-1.4：hud_color_enabled 已是 hud_rules_enabled 的 property 别名，
         #   原"兼容旧字段"手工镜像不再需要）
+
+        # 特殊处理：死亡刷短视频总开关（开了就预热备好窗口，关了立刻收掉浏览器进程）
+        if config_key == "fun_afterlife_enabled":
+            controller = getattr(self, "afterlife_controller", None)
+            if controller is not None:
+                if checked:
+                    controller.preheat()
+                else:
+                    controller.shutdown()
+            page = self.pages.get("fun_afterlife") if hasattr(self, "pages") else None
+            if page and hasattr(page, "_load_settings"):
+                page._load_settings()
 
         # 特殊处理：屏幕特效总开关（实时同步到叠加层）
         if config_key == "screen_effects_enabled":
@@ -3872,6 +3890,9 @@ class MainWindow(QMainWindow):
                 and getattr(self.crosshair_animation, 'overlay_win', None) is not None else None),
             ("清理屏幕特效", lambda: self.screen_effect_overlay.cleanup()
                 if getattr(self, 'screen_effect_overlay', None) else None),
+            # 贴屏浏览器是独立进程，不在这里收掉就会在软件退出后残留在后台
+            ("关闭贴屏浏览器", lambda: self.afterlife_controller.shutdown()
+                if getattr(self, 'afterlife_controller', None) else None),
             ("清理放大镜", lambda: self._cleanup_page_on_close('magnifier')),
             ("清理视角自动切换", lambda: self._cleanup_page_on_close('viewmodel')),
             ("注销语音输出热键", lambda: self._cleanup_page_on_close('voice_output')),

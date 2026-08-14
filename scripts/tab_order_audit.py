@@ -70,7 +70,7 @@ from PySide6.QtWidgets import QApplication, QLayout, QWidget  # noqa: E402
 
 # 应用一共有多少个页面。这是**覆盖面的分母**，必须和 `gui_widget._page_names`
 # 对得上——`tests/test_audit_coverage_r11.py` 会盯着它，对不上就红。
-TOTAL_PAGES = 26
+TOTAL_PAGES = 27
 
 # 全部有独立模块、能单独构造的页面（`basic` 是在 `gui_widget` 里内联建的，没有独立类，
 # 所以分母 27 里它永远进不来——这一条要写出来，否则 26/27 会被当成 bug 反复查）。
@@ -87,6 +87,7 @@ PAGE_FACTORY = {
     "viewmodel": ("pages.viewmodel_page", "ViewmodelPage"),
     "music": ("pages.music_page", "MusicPage"),
     "voice_output": ("pages.voice_output_page", "VoiceOutputPage"),
+    "fun_afterlife": ("pages.fun_page", "FunPage"),
     "utility": ("pages.utility_page", "UtilityPage"),
     "magnifier": ("pages.magnifier_page", "MagnifierPage"),
     "flash": ("pages.flash_page", "FlashPage"),

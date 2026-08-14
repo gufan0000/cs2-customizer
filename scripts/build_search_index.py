@@ -56,6 +56,14 @@
     python scripts/build_search_index.py --cross-check  # 打印两通道差异
     python scripts/build_search_index.py --stats      # 打印收割统计
 退出码: 0=成功/已同步, 1=--check 下不同步, 2=环境不满足。
+
+⚠ 退出码是这个脚本**唯一**的门禁信号，所以它的交付路径本身也要当判据看待。
+2026-08-14 实测过一次"该报 1 却报 0"：`--check` 把不同步一字不差地打印出来了，
+进程却按 0 退出——门禁静默放行。原因不在 `_emit` 的 return，而在它后面的收尾：
+`teardown()` 走的是**产品自己的**窗口关闭链路，那条路上有两处会替脚本决定退出码
+（15s 退出看门狗的 `os._exit(0)`、信号处理器兜底的 `sys.exit(0)`）。
+详见 `_teardown_guarded` / `_hard_exit`。回归判据在
+`tests/test_search_index_check_exit_code.py`（含进程级的真退出码断言）。
 """
 from __future__ import annotations
 
@@ -66,6 +74,7 @@ import os
 import re
 import sys
 import tempfile
+import threading
 from collections import defaultdict
 from pathlib import Path
 
@@ -86,6 +95,27 @@ except Exception:
     pass
 
 OUT_PATH = ROOT / "core" / "search_index.json"
+
+# 退出码。数字散在代码里读不出意图，尤其是 1 和 2 的分工——
+# 1 = "索引真的漂了，去重跑生成器"，2 = "这台机器根本没法给结论"。
+# CI 把它们混成"非 0 即失败"也不会错，但排障时区别很大。
+EXIT_OK = 0
+EXIT_DRIFT = 1
+EXIT_ENV = 2
+
+# 收尾清理的兜底超时（秒）。产品自己那条退出看门狗是 15s，这条要明显宽于它，
+# 否则正常清理会被我们误杀，看起来就像"清理总是超时"。
+TEARDOWN_TIMEOUT_SEC = 60.0
+
+
+class EnvironmentUnavailable(RuntimeError):
+    """环境不满足（→ 退出码 2）。
+
+    与"索引不同步"（退出码 1）**必须**分开：没装 PySide6 / 起不来 QApplication
+    时，脚本对"索引同不同步"是**没有结论**的。原先这两种情况都以 traceback
+    退出码 1 收场，CI 上看起来就跟真漂移一个样，会把人往"去重跑生成器"上引。
+    """
+
 
 # 与 layout_overflow_audit.UNSAFE_PAGES / bench_page_build.UNSAFE_PAGES 同一份名单。
 # 改这里请几处一起改。
@@ -191,9 +221,17 @@ def keep_raw(text: str) -> bool:
 
 def harvest_runtime(include_unsafe: bool = False, verbose: bool = True):
     """真把页面建出来遍历控件树。返回 (items, covered_pages, skipped_pages, page_names)。"""
-    from PySide6.QtWidgets import QApplication
+    # 环境类失败在这里就归口成 EnvironmentUnavailable（退出码 2）。
+    # 让它以裸 ImportError 冒出去的话，进程按 1 退出，与"索引不同步"撞码。
+    try:
+        from PySide6.QtWidgets import QApplication
+    except ImportError as exc:
+        raise EnvironmentUnavailable(f"PySide6 不可用：{exc}") from exc
 
-    app = QApplication.instance() or QApplication(sys.argv[:1])
+    try:
+        app = QApplication.instance() or QApplication(sys.argv[:1])
+    except Exception as exc:
+        raise EnvironmentUnavailable(f"QApplication 建不起来（无显示环境？）：{exc}") from exc
 
     from config import config
 
@@ -488,6 +526,17 @@ def build(include_unsafe=False, verbose=True):
 
 def teardown(handles):
     win, app = handles
+    # ⚠ 不能直接 win.close()：产品的 closeEvent 会按 `config.close_action` 走
+    # "问一下"分支，在脚本里那就是**真的弹一个模态对话框然后无限等人点**。
+    # 2026-08-14 现场抓到过：`--check` 的结论都打印完了，进程停在一个标题
+    # 「关闭 CS2 Customizer 」的可见窗口上不退。CI 上这就是超时（连退出码都没有），
+    # 本地则要人手点一下——两种都比"退出码错了"更难看出是脚本的问题。
+    # 走不走这条分支取决于托盘图标建没建好，所以它是**间歇**的。
+    # `_force_exit` 是产品自己给托盘菜单"退出程序"用的旁路，正好也是这里要的语义。
+    try:
+        win._force_exit = True
+    except Exception:
+        pass
     try:
         win.close()
         win.deleteLater()
@@ -543,6 +592,74 @@ def cross_check(rt_items, st_items, payload):
     print("⇒ 两边都有独占项 ⇒ 任何一条通道单干都会静默漏。这就是要两条的原因。")
 
 
+def _flush_streams():
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.flush()
+        except Exception:
+            pass
+
+
+def _hard_exit(code: int):
+    """带着 code 立刻结束进程。
+
+    ⚠ 这里是 `os._exit` 而不是 `sys.exit`，理由和 `_teardown_guarded` 是同一个：
+    解释器收尾阶段还要跑 Qt/pygame 的析构和残留的 daemon 线程，那里面就有会
+    **改写退出码**的东西。退出码是本脚本唯一的门禁信号，不能交给收尾阶段投票。
+    输出在 `_flush_streams` 里已经落干净，`os._exit` 不跑 atexit 也不会丢字。
+    """
+    _flush_streams()
+    os._exit(code)
+
+
+def _teardown_guarded(handles, code: int):
+    """跑收尾清理，但**不让清理链路改写退出码**。
+
+    `teardown()` 里那句 `win.close()` 走的是产品自己的退出链路，那条路上有两处
+    会替脚本决定退出码，而且都赢 —— 它们比 `sys.exit(main())` 更晚或更硬：
+
+    * `gui_widget._run_shutdown_steps` 装了 15s 硬超时看门狗，超时直接
+      `os._exit(0)`（v2.2.1 为"关不掉挂死"加的，产品侧是对的）。它跑在 Timer
+      线程里，一旦触发，`--check` 刚打印出来的不同步就被洗成 0。
+    * `core/shutdown` 的信号处理器兜底是 `sys.exit(0)`。SystemExit **不是**
+      Exception，`teardown()` 里的 `except Exception` 兜不住，它会一路穿出
+      `main()`，于是 `sys.exit(main())` 压根没机会执行，进程按 0 退出。
+
+    两处都是产品代码里正确的东西，不该为了一个构建脚本去动。所以在这里就地接管：
+    清理期间把 `os._exit` 换成"带着我们的 code 退出"，SystemExit 单独吃掉。
+
+    第三种走法是**根本不退出**——清理卡在某一步上（见 `teardown` 里那条模态
+    对话框的注释）。对门禁来说"没有退出码"和"退出码错了"一样坏，所以这里再压
+    一条自己的超时线：到点就带着 code 硬退。它比产品那条 15s 看门狗宽，
+    正常清理轮不到它。
+    """
+    real_os_exit = os._exit
+
+    def _exit_with_our_code(_status, _code=code, _real=real_os_exit):
+        _flush_streams()
+        _real(_code)
+
+    def _timed_out():
+        print(f"!! 收尾清理超过 {TEARDOWN_TIMEOUT_SEC:.0f}s 未结束，按既得结论退出（code={code}）")
+        _flush_streams()
+        real_os_exit(code)
+
+    timer = threading.Timer(TEARDOWN_TIMEOUT_SEC, _timed_out)
+    timer.daemon = True
+    timer.start()
+
+    os._exit = _exit_with_our_code
+    try:
+        teardown(handles)
+    except SystemExit:
+        pass          # 清理链路想退出可以，但退出码由我们说了算
+    except Exception:
+        pass
+    finally:
+        timer.cancel()
+        os._exit = real_os_exit
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", action="store_true", help="只校验磁盘上的 JSON 是否与代码同步")
@@ -552,10 +669,14 @@ def main():
     args = ap.parse_args()
 
     quiet = args.check and not (args.stats or args.cross_check)
-    payload, rt_items, st_items, generic, handles = build(args.include_unsafe, verbose=not quiet)
+    try:
+        payload, rt_items, st_items, generic, handles = build(args.include_unsafe, verbose=not quiet)
+    except EnvironmentUnavailable as exc:
+        print(f"!! 环境不满足，本次不给结论（这不是「索引不同步」）：{exc}")
+        return EXIT_ENV
     code = _emit(args, payload, rt_items, st_items, generic)
-    sys.stdout.flush()
-    teardown(handles)
+    _flush_streams()
+    _teardown_guarded(handles, code)
     return code
 
 
@@ -570,7 +691,7 @@ def _emit(args, payload, rt_items, st_items, generic):
     if args.check:
         if not OUT_PATH.exists():
             print(f"!! 索引文件不存在: {OUT_PATH}")
-            return 1
+            return EXIT_DRIFT
         current = OUT_PATH.read_text(encoding="utf-8")
         if current != text:
             print("!! 索引与代码不同步：页面控件文案变了但没重新生成索引。")
@@ -584,15 +705,17 @@ def _emit(args, payload, rt_items, st_items, generic):
                 print(f"     + {p}: {t}")
             for p, t in removed[:8]:
                 print(f"     - {p}: {t}")
-            return 1
+            return EXIT_DRIFT
         print("索引与代码同步。")
-        return 0
+        return EXIT_OK
 
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUT_PATH.write_text(text, encoding="utf-8")
     print(f"\n已写入 {OUT_PATH.relative_to(ROOT)}（{len(text.encode('utf-8')) / 1024:.1f} KB）")
-    return 0
+    return EXIT_OK
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    # 不用 `sys.exit(main())`：SystemExit 之后还有一整段解释器收尾，
+    # 那段里有能把退出码改掉的东西（见 _hard_exit）。
+    _hard_exit(main())
