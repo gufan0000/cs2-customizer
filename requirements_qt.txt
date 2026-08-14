@@ -15,7 +15,7 @@ comtypes; platform_system == "Windows"
 # pillow 12.1.x 含 6 个图片解析 CVE（本软件处理用户导入图片，属真实攻击面）
 pillow>=12.2.0
 # requests/urllib3 升级修复已知 CVE（更新检测/账号登录链路使用）
-requests>=2.33.0
+requests>=2.34.2
 urllib3>=2.7.0
 
 # 注意：以下依赖已在 requirements.txt 中，这里仅列出Qt专用的
