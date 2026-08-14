@@ -849,21 +849,24 @@ REVERTS = [
         'tests/test_version_consistency.py::test_version_info_has_no_stray_version',
         '逐字段枚举的判据可能漏枚举某个字段；这条不枚举、直接全文扫，是兜底',
     ),
+    # 2026-08-15：installer.iss 不再自带版本号（改由 /DAppVersion 从 config.VERSION 传入），
+    # 原先"AppVersion 忘了抬 / 头部注释停在旧版本"两个断点所对应的判据已随架构撤销。
+    # 换成守新机制的两条——它们要防的是同一个后果：打出一个装的却是上一版的安装包。
     Revert(
-        'VER', 'installer.iss 的 AppVersion 忘了跟着抬',
+        'VER', 'installer.iss 又长回写死的版本兜底常量',
         'build_tools/installer.iss',
-        '#define AppVersion "2.2.3"',
+        '#error 未指定版本号',
         '#define AppVersion "2.2.1"',
-        'tests/test_version_consistency.py::test_installer_iss_appversion_matches',
-        '后果最重：装进 CS2 Customizer<旧版本> 目录，升级变成两份并存',
+        'tests/test_version_consistency.py::test_installer_iss_declares_no_version_of_its_own',
+        '后果最重且**静默**：漏传 /DAppVersion 时照旧版号去打包同名旧目录，零报错',
     ),
     Revert(
-        'VER', 'installer.iss 头部注释停在旧版本',
-        'build_tools/installer.iss',
-        '安装脚本(2.2.3,onedir 形态)',
-        '安装脚本(2.1.4,onedir 形态)',
-        'tests/test_version_consistency.py::test_installer_iss_header_comments_match',
-        '注释腐烂：下次照着这行去理解脚本适用版本会被误导',
+        'VER', '打安装包时把版本号写死而不是取 config.VERSION',
+        'build_tools/build_release.py',
+        'f"/DAppVersion={version}"',
+        '"/DAppVersion=2.2.1"',
+        'tests/test_build_installer_step.py::test_installer_passes_version_from_caller',
+        '版本号与真源脱钩，抬版本后打出来的安装包仍标着上一版',
     ),
     Revert(
         'VER', 'README 首行标题被改成别的项目名',

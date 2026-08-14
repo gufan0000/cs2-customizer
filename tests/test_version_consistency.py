@@ -1,19 +1,21 @@
 # -*- coding: utf-8 -*-
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""版本号四处同步的判据。
+"""版本号三处同步的判据。
 
-**为什么需要它**：抬版本号要手工改四个文件，而在此之前**没有任何判据看着这件事**——
+**为什么需要它**：抬版本号要手工改几个文件，而在此之前**没有任何判据看着这件事**——
 漏改任何一处，1450 条用例全都不会红，构建也照常通过。发现的时候通常已经在用户机器上了。
 
     config.py                  VERSION —— 真源，build_release.py 正则读它定产物目录名
     version_info.txt           exe 文件属性（右键→详细信息）
-    build_tools/installer.iss  安装包文件名与安装目录名
     README.md                  标题 + 更新日志小节
 
-四处漏改的后果不同，但都不会被现有测试逮到：
+漏改的后果不同，但都不会被现有测试逮到：
 - 漏 version_info.txt → 装上去右键看属性还是旧版本号，排障时会误导人
-- 漏 installer.iss    → 安装包名字和安装目录还是旧版本，升级会装进另一个目录
 - 漏 README.md        → 发布文案的原始素材失真
+
+`build_tools/installer.iss` 原本是第四处，2026-08-15 起**改成从 config.VERSION 派生**
+（编译时经 /DAppVersion 传入），不再需要同步、也就不再会漏改；本文件末尾那条改为
+守住"它确实没有自带版本号"这个前提。
 
 2026-08-11 建立（发布 2.2.2 时补的空缺，见 docs/发布流程.md）。
 
@@ -112,35 +114,27 @@ config.py 不能这么扫（满篇浮点数），
 
 # ---------------------------------------------------------------- installer.iss
 
-def test_installer_iss_appversion_matches(version):
-    """#define AppVersion 是安装包文件名与安装目录名的来源，必须与 VERSION 一致。
+def test_installer_iss_declares_no_version_of_its_own():
+    """installer.iss **不得自带版本号**——它只能在编译时从外部接。
 
-    漏改的后果最重：装到 `CS2 Customizer<旧版本>` 目录，升级变成并存两份。
-    """
-    m = re.search(r'#define\s+AppVersion\s+"([^"]+)"', _read(INSTALLER_ISS))
-    assert m, "installer.iss 里找不到 #define AppVersion"
-    assert m.group(1) == version, (
-        f"installer.iss 的 AppVersion = {m.group(1)!r}，config.py VERSION = {version!r}"
-    )
+    2026-08-15 改的架构：原先这里有 `#ifndef AppVersion / #define AppVersion "X"`
+    兜底常量，加上文件头两行注释里的版本号，共三处字面量，靠上面那两条判据盯着同步。
+    问题是兜底常量的失效方式是**静默**的：漏传 /DAppVersion 时 Inno 不报错，直接拿
+    过期版本去打包磁盘上同名的旧 release 目录，产出一个内部自洽、装的却是上一版的
+    安装包（质量登记册第 13 条记过一次真实漂移：2.2.0 的字面量配 6 月的旧目录）。
 
-
-def test_installer_iss_header_comments_match(version):
-    """文件头两行注释里的版本号也要跟着抬。
-
-    只挑"声明本脚本版本"的那两处（首行的括号、次行的 /DAppVersion=），
-    不碰正文里引用其他版本的说明文字——那些是正当的历史引用。
+    现在版本号一律由 `build_release.py --installer-only` 从 config.VERSION 读出后
+    经 `/DAppVersion` 传入，漏传则 `#error` 当场中止。**同步问题因此不复存在**——
+    但前提是这里真的没有字面量，所以改由本条守住。
     """
     text = _read(INSTALLER_ISS)
-    checks = [
-        (r"安装脚本\((\d+\.\d+\.\d+)", "首行标题注释"),
-        (r"/DAppVersion=(\d+\.\d+\.\d+)", "编译命令注释"),
-    ]
-    for pattern, label in checks:
-        m = re.search(pattern, text)
-        assert m, f"installer.iss 的{label}里找不到版本号（格式变了？）"
-        assert m.group(1) == version, (
-            f"installer.iss {label}写着 {m.group(1)}，应为 {version}"
-        )
+    assert "#define AppVersion" not in text, (
+        "installer.iss 又出现了写死的 AppVersion 兜底常量。它会随版本腐烂，"
+        "且漏传 /DAppVersion 时会静默打出上一版的安装包。"
+    )
+    assert "#error" in text, (
+        "installer.iss 缺少 #ifndef AppVersion 的 #error 保护——漏传版本号会变成静默失败"
+    )
 
 
 # ---------------------------------------------------------------- README.md / CHANGELOG.md

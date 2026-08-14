@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import ast
 import codecs
+import os
 import re
 import shutil
 import subprocess
@@ -241,6 +242,16 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Enable PyInstaller windowed traceback popup (off by default in release builds)",
     )
+    parser.add_argument(
+        "--installer",
+        action="store_true",
+        help="Build the Inno Setup installer after a successful onedir build",
+    )
+    parser.add_argument(
+        "--installer-only",
+        action="store_true",
+        help="Skip building; only compile the installer from the existing release/ onedir folder",
+    )
     return parser.parse_args()
 
 
@@ -350,17 +361,53 @@ def read_version(config_file: Path) -> str:
     return match.group(1).strip()
 
 
+def inno_setup_roots() -> List[Path]:
+    """ISCC.exe 可能所在的安装根目录（不含版本子目录）。
+
+    Inno Setup 默认装到 Program Files，但**选"仅为我安装"时会落到
+    `%LOCALAPPDATA%\\Programs`**，那里既不在 PATH 上也不在 Program Files 里。
+    本机就是后者：2.2.3 发版时只查了系统目录，误判成"没装 Inno Setup"、
+    报告说安装包做不了，实际它一直都在。
+    """
+    roots: List[Path] = []
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if local_app_data:
+        roots.append(Path(local_app_data) / "Programs")
+    for var in ("ProgramFiles", "ProgramFiles(x86)"):
+        value = os.environ.get(var)
+        if value:
+            roots.append(Path(value))
+    return roots
+
+
+def find_iscc_candidates() -> List[Path]:
+    # 目录名带主版本号（Inno Setup 6）——用通配匹配，出 7 时不用改代码；
+    # 逆序让高版本排前面。
+    found: List[Path] = []
+    for root in inno_setup_roots():
+        try:
+            found.extend(sorted(root.glob("Inno Setup*/ISCC.exe"), reverse=True))
+        except OSError:
+            continue
+    return found
+
+
 def find_tool(name: str) -> str | None:
     path = shutil.which(name)
     if path:
         return path
-    if name.lower() == "upx":
+    lowered = name.lower()
+    if lowered == "upx":
         script_dir = Path(__file__).resolve().parent
         candidates = [
             script_dir / "upx" / "upx.exe",
             script_dir.parent / ".tools" / "upx" / "upx.exe",
         ]
         for candidate in candidates:
+            if candidate.exists():
+                return str(candidate)
+    if lowered == "iscc":
+        for candidate in find_iscc_candidates():
             if candidate.exists():
                 return str(candidate)
     return None
@@ -810,6 +857,68 @@ def verify_onedir_tree(
     print("[INFO] onedir tree verification passed:", folder)
 
 
+def read_iss_setting(text: str, key: str) -> str | None:
+    match = re.search(rf"^{re.escape(key)}\s*=\s*(.+)$", text, re.MULTILINE)
+    return match.group(1).strip() if match else None
+
+
+def expected_installer_path(iss_path: Path, version: str) -> Path:
+    """从 .iss 自己声明的 OutputDir / OutputBaseFilename 推产物路径。
+
+    不写死文件名：产物叫什么是 installer.iss 说了算，这里再写一份就又造出一处
+    会漂移的重复定义（而且下游开源版换了品牌名，写死的那份会直接对不上）。
+    """
+    text = iss_path.read_text(encoding="utf-8")
+    out_dir_raw = read_iss_setting(text, "OutputDir") or r"..\release\installer"
+    base = read_iss_setting(text, "OutputBaseFilename")
+    if not base:
+        raise RuntimeError(f"installer.iss 里没有 OutputBaseFilename，无法确定产物名: {iss_path}")
+    out_dir = (iss_path.parent / out_dir_raw.replace("\\", "/")).resolve()
+    return out_dir / f"{base.replace('{#AppVersion}', version)}.exe"
+
+
+def build_installer(project_root: Path, version: str, app_name: str) -> Path:
+    """用 Inno Setup 把 onedir 产物打成安装包。
+
+    版本号一律取自 config.VERSION 再传给 `/DAppVersion`。installer.iss 那边已经
+    去掉了 `#define AppVersion` 兜底常量、改成漏传即 `#error`，所以这里不传就是
+    当场失败，不会再出现"拿过期版本号去打包同名旧目录、产出一个装的却是上一版的
+    安装包"那种零报错的静默事故。
+    """
+    iss_path = project_root / "build_tools" / "installer.iss"
+    if not iss_path.exists():
+        raise RuntimeError(f"Inno Setup 脚本缺失: {iss_path}")
+
+    # installer.iss 的 [Files] 段按 `release\<AppDirName>\*` 取源；这里先自己查一遍，
+    # 好过让 Inno 报一句路径不存在。
+    source_dir = project_root / "release" / app_name
+    if not source_dir.is_dir():
+        raise RuntimeError(
+            f"onedir 产物不存在: {source_dir}\n"
+            f"       安装包只能从 onedir 形态打；先跑 --mode onedir 构建。"
+        )
+
+    iscc = find_tool("iscc")
+    if not iscc:
+        searched = "\n".join(f"         - {root}\\Inno Setup*\\ISCC.exe" for root in inno_setup_roots())
+        raise RuntimeError(
+            "找不到 Inno Setup 编译器 ISCC.exe。\n"
+            "       PATH 上没有，以下位置也没有：\n"
+            f"{searched}\n"
+            "       装了但不在上面的路径？把 ISCC.exe 所在目录加进 PATH 即可。"
+        )
+    print(f"[INFO] ISCC detected: {iscc}")
+
+    run([iscc, str(iss_path), f"/DAppVersion={version}"], cwd=project_root)
+
+    installer = expected_installer_path(iss_path, version)
+    if not installer.exists():
+        raise RuntimeError(f"ISCC 报成功但产物不在: {installer}")
+    size_mb = installer.stat().st_size / (1024 * 1024)
+    print(f"[DONE] Installer: {installer} ({size_mb:.0f} MB)")
+    return installer
+
+
 def main() -> int:
     args = parse_args()
 
@@ -820,6 +929,16 @@ def main() -> int:
     version = read_version(config_file)
     app_name = f"CS2 Customizer {version}"  # 发布产物目录名:带版本号,保留历史（须与 installer.iss 的 AppDirName 逐字一致）
     exe_name = "CS2 Customizer"  # C4 修复:打包出的 exe 固定名(不带版本),使开机自启/快捷方式路径跨版本稳定
+
+    # 安装包只吃 onedir 形态([Files] 段递归收 release\<AppDirName>\)。
+    # 这个判断必须在开打之前——否则要等十几分钟构建完才告诉用户形态不对。
+    if (args.installer or args.installer_only) and args.mode != "onedir":
+        print(f"[FAIL] --installer 需要 --mode onedir，当前是 {args.mode}")
+        return 1
+    if args.installer_only:
+        print(f"[INFO] Installer-only mode, version {version}")
+        build_installer(project_root, version, app_name)
+        return 0
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     work_root = project_root / ".build" / f"release-{stamp}"
     stage_dir = work_root / "stage"
@@ -962,16 +1081,20 @@ def main() -> int:
         if args.allow_plaintext_fallback:
             print("       --allow-plaintext-fallback 已开启，按你的要求继续发布。")
             print("=" * 70)
-            return 0
-        print("       构建判定为失败。")
-        print("       ⚠ 别急着重跑：2.2.2 实测过，PyArmor trial 的 'out of license' 对**大文件是确定性的**，")
-        print("          重试 N 次也是同一个结果（main_widget.py 连打 4 次全败；截到 42KB 连打 3 次全成）。")
-        print("          只有小文件的偶发抖动才值得重跑。")
-        print("       出路：① 买 PyArmor 正式授权（一劳永逸）；")
-        print("             ② 把超限文件拆小到限额以下；")
-        print("             ③ 确认这次可以带明文发 → 加 --allow-plaintext-fallback 重来。")
-        print("=" * 70)
-        return 1
+        else:
+            print("       构建判定为失败。")
+            print("       ⚠ 别急着重跑：2.2.2 实测过，PyArmor trial 的 'out of license' 对**大文件是确定性的**，")
+            print("          重试 N 次也是同一个结果（main_widget.py 连打 4 次全败；截到 42KB 连打 3 次全成）。")
+            print("          只有小文件的偶发抖动才值得重跑。")
+            print("       出路：① 买 PyArmor 正式授权（一劳永逸）；")
+            print("             ② 把超限文件拆小到限额以下；")
+            print("             ③ 确认这次可以带明文发 → 加 --allow-plaintext-fallback 重来。")
+            print("=" * 70)
+            # 门禁没过就**不打安装包**：2.2.1 就是把明文 main_widget.py 随安装包发出去的。
+            return 1
+
+    if args.installer:
+        build_installer(project_root, version, app_name)
     return 0
 
 

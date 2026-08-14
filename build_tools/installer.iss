@@ -1,5 +1,6 @@
-; CS2 Customizer Inno Setup 安装脚本(2.2.3,onedir 形态)
-; 编译: iscc build_tools\installer.iss /DAppVersion=2.2.3
+; CS2 Customizer Inno Setup 安装脚本(onedir 形态)
+; 编译(推荐,版本号自动取自 config.VERSION、ISCC.exe 自动定位):
+;     python build_tools\build_release.py --mode onedir --installer-only
 ; 前置: ① python build_tools\build_release.py --mode onedir
 ;       ② python build_tools\make_installer_assets.py(品牌向导图,已入库可不重跑)
 ; 设计要点:
@@ -8,8 +9,12 @@
 ;  - 升级时自动请求关闭运行中的 CS2 Customizer(CloseApplications)
 ;  - 卸载清开机自启注册表,保留用户配置(%LOCALAPPDATA%\CS2Customizer 数据)
 
+; 版本号只能由外部传入,这里**故意不设兜底常量**。
+; 原先是 #ifndef 回落到一个写死的字面量,那会造成静默事故:漏传 /DAppVersion 时
+; Inno 会拿这个过期版本去打包磁盘上同名的旧 release 目录,产出一个内部完全自洽、
+; 装出来却是上一版的安装包,而且零报错。宁可在这里响亮地失败。
 #ifndef AppVersion
-  #define AppVersion "2.2.3"
+  #error 未指定版本号。请用 python build_tools\build_release.py --mode onedir --installer-only(自动带版本号),或手工加 /DAppVersion=<版本>
 #endif
 #define AppName "CS2 Customizer"
 #define AppDirName AppName + " " + AppVersion
