@@ -295,7 +295,7 @@ class FlashPage(QWidget):
         # 这次重构不动一个像素，四种并存的字号是另一回事（UP-092）。
         header = PageHeader(
             "闪光效果设置",
-            description="把背景、样式、媒体和预览入口拆成清晰卡片，调节时能更快定位关键参数。",
+            description="被闪的时候，用你自己的颜色、图片和音效替换游戏默认的闪白。先去「基础设置」打开总开关。",
             title_font_size=None,
             spacing=12,
         )

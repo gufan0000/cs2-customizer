@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Dict, List
 
 from config import config
+from core.audio.special_events import SOUND_EVENTS, style_dir_parts
 from resource_manager import ResourceManager
 from core.audio.audio_file_utils import (
     DEFAULT_AUDIO_EXTENSIONS,
@@ -181,53 +182,24 @@ def collect_audio_resource_health() -> Dict[str, object]:
                 )
             )
 
-    # c4 / health
-    for key, rel_dir in (
-        ("c4_sound_style", "c4_sounds"),
-        ("health_warning_style", "health_warning"),
-    ):
-        style = getattr(config, key, "0")
+    # 特殊音效（回合 / C4 / 血量）——目录与字段名全部来自事件表。
+    # 这里原来是两段手写的元组清单，加事件漏改这里的表现是"资源体检查不到"，
+    # 用户看到的是"一切正常"而音效其实响不了。见 core/audio/special_events。
+    for event in SOUND_EVENTS:
+        style = getattr(config, event.config_attr, "0")
         if style in ("0", "", None):
             continue
-        style_dir = os.path.join(audio_root, rel_dir, str(style))
+        style_dir = os.path.join(audio_root, *style_dir_parts(event, str(style)))
         if not os.path.isdir(style_dir):
             invalid_config_refs.append(
-                _make_issue(key, str(style), style_dir, "style directory missing")
+                _make_issue(event.config_attr, str(style), style_dir, "style directory missing")
             )
             continue
         if not _style_dir_has_audio(style_dir):
             empty_style_dirs.append(style_dir)
             invalid_config_refs.append(
                 _make_issue(
-                    key,
-                    str(style),
-                    style_dir,
-                    "style directory has no supported audio files",
-                )
-            )
-
-    # round styles
-    for round_type, key in (
-        ("start", "round_start_style"),
-        ("action", "round_action_style"),
-        ("win", "round_win_style"),
-        ("lose", "round_lose_style"),
-        ("mvp", "round_mvp_style"),
-    ):
-        style = getattr(config, key, "0")
-        if style in ("0", "", None):
-            continue
-        style_dir = os.path.join(audio_root, "round_sounds", round_type, str(style))
-        if not os.path.isdir(style_dir):
-            invalid_config_refs.append(
-                _make_issue(key, str(style), style_dir, "style directory missing")
-            )
-            continue
-        if not _style_dir_has_audio(style_dir):
-            empty_style_dirs.append(style_dir)
-            invalid_config_refs.append(
-                _make_issue(
-                    key,
+                    event.config_attr,
                     str(style),
                     style_dir,
                     "style directory has no supported audio files",

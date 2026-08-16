@@ -18,22 +18,36 @@ from PySide6.QtCore import QEvent, QObject
 
 
 class _FileDropFilter(QObject):
-    def __init__(self, widget, extensions: Iterable[str], handler: Callable[[List[str]], None]):
+    def __init__(self, widget, extensions: Iterable[str], handler: Callable[[List[str]], None],
+                 accept_directories: bool = False):
         super().__init__(widget)
         self._extensions = tuple(e.lower() for e in extensions)
         self._handler = handler
+        self._accept_directories = bool(accept_directories)
         widget.setAcceptDrops(True)
         widget.installEventFilter(self)
 
     def _matched_paths(self, event) -> List[str]:
+        import os
+
         mime = event.mimeData()
-        if mime is None or not mime.hasUrls():
+        # `hasUrls` 用 getattr 取：拿到的不一定是个像样的 QMimeData(Qt 侧对象被
+        # 提前回收时 PySide 会还给你一个光秃秃的 QObject)。直接点属性会在
+        # **事件过滤器内部**抛 AttributeError——那是 Qt 的 notify 循环里,
+        # 抛上去既难查也不该发生。拿不到就当"没匹配上"。
+        if mime is None or not callable(getattr(mime, "hasUrls", None)) or not mime.hasUrls():
             return []
         paths = []
         for url in mime.urls():
             if not url.isLocalFile():
                 continue
             p = url.toLocalFile()
+            # KI-6：目录路径永远不会以扩展名结尾，所以按后缀过滤时**文件夹恒不匹配**
+            # ——DragEnter 都不接受，鼠标是禁止图标，什么提示都没有。而帧序列
+            # 的唯一形态就是文件夹，等于最主流的社区素材根本拖不进来。
+            if self._accept_directories and os.path.isdir(p):
+                paths.append(p)
+                continue
             if p.lower().endswith(self._extensions):
                 paths.append(p)
         return paths
@@ -62,9 +76,15 @@ class _FileDropFilter(QObject):
         return False
 
 
-def enable_file_drop(widget, extensions: Iterable[str], handler: Callable[[List[str]], None]) -> _FileDropFilter:
-    """给任意 widget 开启文件拖拽导入,返回 filter(强引用挂在 widget 上)。"""
-    filt = _FileDropFilter(widget, extensions, handler)
+def enable_file_drop(widget, extensions: Iterable[str], handler: Callable[[List[str]], None],
+                     accept_directories: bool = False) -> _FileDropFilter:
+    """给任意 widget 开启文件拖拽导入,返回 filter(强引用挂在 widget 上)。
+
+    `accept_directories=True` 时文件夹也能拖进来(击杀图标的帧序列)。
+    默认关着——别的页面(如准心 .xchr)拖进一个文件夹只会让 handler 收到
+    一个它处理不了的路径。
+    """
+    filt = _FileDropFilter(widget, extensions, handler, accept_directories)
     # 防 GC:挂到 widget 属性
     existing = getattr(widget, "_file_drop_filters", None)
     if existing is None:

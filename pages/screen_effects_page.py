@@ -117,7 +117,7 @@ class ScreenEffectsPage(QWidget):
 
         overview_card, overview_layout = SettingsCard.make(
             "快速控制台",
-            "把边缘触发和当前方案概况收进同一块工作台，首屏判断会更直接，也更省空间。",
+            "在这儿开关边缘特效，并确认当前用的是哪套方案。",
         )
 
         self.top_overview_layout = QBoxLayout(QBoxLayout.LeftToRight)

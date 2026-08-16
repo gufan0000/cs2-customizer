@@ -51,6 +51,51 @@ UI 专项结项后跑了一轮**非 UI 维度排查**：八个维度并行只读
 | **QA-018** | ✅ 已修复 | low | 安装态冒烟里所有读卸载注册表的判据，走的是**会被容器影子化的通道**，可能假绿（详见下节） | `scripts/smoke_installer.py:72` |
 | **QA-019** | ✅ 已修复 | medium | 顶栏搜索的**下拉候选和回车跳转是两个不同的引擎**：下拉走 QCompleter 纯子串，拼音/容错/口语在下拉里全部不可见（实测 19 条查询 11 条不一致，`zx` 下拉 0 条） | `gui_widget.py:3438` `core/settings_search.py` |
 | **QA-020** | ✅ 已修复 | low | 搜索只有页级索引，**词表里没写过的具体开关搜不到也跳不过去**；跳转还定位不到非当前页签里的项 | `core/settings_search.py` · `core/search_index.json`（新增） |
+| **QA-025** | ✅ 已修复 | medium | 跑一次排版审计，**用户真实配置里的 CS2 目录就被改写成 `%TEMP%` 沙箱路径**；软件此后把 cfg 写进临时目录，游戏里的 cs2customizer.cfg 停更 | `scripts/_audit_sandbox.py` |
+
+---
+
+### QA-025 · 审计把沙箱路径写进了用户真实配置（UP-090 只做了上半截）
+
+**怎么冒出来的**：跑回退验证台时有两条判据被判为假绿，其中
+`test_live_run_sandboxes_the_game_dir_by_default` 只要求 `csgo_dir`
+「落在某个临时目录下面」。去查为什么删掉赋值它还是绿，才发现
+**用户真实配置里的 `csgo_dir` 本身就已经是一个临时路径**：
+
+```
+csgo_dir = C:\Users\<用户名>\AppData\Local\Temp\cs2customizer_audit_game_sandbox
+```
+
+**UP-090 修了一半**。那次把 `config.csgo_dir` 重定向到临时目录，但改的**只是
+内存里的值**；没有人管这个值会不会被写回磁盘。审计跑起来之后有三条路会
+把**整份配置**落盘（用 `sitecustomize` 注入探针在真实子进程里抓到的调用栈）：
+
+| # | 触发点 | 调用链 |
+|---|---|---|
+| 1 | 建准心页时信号连带触发 | `crosshair_page._on_style_changed` / `_on_color_changed` → `config.save_config()`（防抖 500ms） |
+| 2 | 收尾清理 | `gui_widget._cleanup_page_on_close` → `magnifier_page.cleanup()` → `save_settings()` → `save_config()` |
+| 3 | 关窗退出步骤 | `gui_widget.closeEvent` → `config.save_config_now()` → `_do_save_config()` |
+
+**用户侧后果**（实测取证）：真实游戏目录里的 `cs2customizer.cfg` 停在 **2026-08-11 03:43**、
+2179 字节；而沙箱目录里那份是 **08-16 01:57**、2320 字节。也就是说 08-11 之后
+用户在软件里改的所有设置，编译出来的 cfg 全进了临时目录，**游戏里一直用的是旧的**。
+更糟的是 `%TEMP%` 会被系统清理，清掉之后软件会对着一个不存在的目录写。
+
+**最阴的一点**：症状被看见过。`_audit_sandbox.py` 原来的日志分支里写着
+「隔离配置一旦被保存过，csgo_dir 里存的就已经是沙箱路径了」——
+**有人观察到了这个现象，并把它当成正常行为解释掉了。**
+
+**修法**：`sandbox_external_writes()` 里加 `block_config_persistence()`，
+把 `save_config` / `save_config_now` / `_do_save_config` 三个入口全部换成 no-op，
+并先掐掉可能已经排队的防抖 timer（`_atexit_flush` 只在有 pending timer 时才 flush）。
+三个都要掐：防抖 timer 和 atexit 兜底**直接调 `_do_save_config`**，不经过前两个。
+
+**判据**：`test_audit_never_persists_config` —— 在隔离子进程里沙箱化，
+然后把上述四个落盘入口挨个调一遍，要求配置文件的 sha256 不变。
+基线取在 `import config` **之后**（schema 迁移固化新版本号是设计好的行为，
+不该算在这条头上）；隔离配置里的 `csgo_dir` 必须指向**真实存在**的目录，
+否则会被加载时的路径校验直接置空，判据就红得没有意义了。
+回退验证两条：删掉 `block_config_persistence` 调用、以及只掐两个公开入口。
 
 ---
 

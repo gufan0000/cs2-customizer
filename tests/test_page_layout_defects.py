@@ -277,7 +277,13 @@ def test_crosshair_preview_honors_device_pixel_ratio():
     names = {name for _recv, name in _attr_calls(fn)}
     assert "devicePixelRatioF" in names, "没有读取设备像素比"
     assert "setDevicePixelRatio" in names, "画完没把 DPR 标回去，Qt 仍会按逻辑像素拉伸"
-    assert "scale" in names, "painter 没按 DPR 缩放，画布放大了但内容还是小的"
+    # 这里原来还有一条 `assert "scale" in names`。它卡的是**旧策略的实现形状**：
+    # 当年预览按逻辑坐标画，所以画布放大 dpr 倍之后 painter 必须跟着 scale(dpr)。
+    # 2026-08-15 预览改成直接调渲染层，而渲染层的坐标本来就是**物理像素**，
+    # 画布按 CANVAS_PX 个物理像素建、1:1 画完再把 dpr 标回去即可，没有 scale
+    # 也不该有。两种做法都对，所以判据不能卡在"调没调 scale"上。
+    # 真正要守的性质（DPR 变化时屏幕占位不变、不被拉伸）由下面那条行为判据，
+    # 以及 tests/test_crosshair_geometry_parity.py 的 dpr 用例负责。
 
 
 def test_crosshair_preview_renders_sharp_on_high_dpi(qapp):

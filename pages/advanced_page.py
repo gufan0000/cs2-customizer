@@ -64,7 +64,7 @@ class AdvancedPage(QWidget):
         # 这次重构不动一个像素，四种并存的字号是另一回事（UP-092）。
         header = PageHeader(
             "高级设置",
-            description="这里集中管理 CS2 目录、主题和维护操作，尽量把高频调整压缩在首屏完成。",
+            description="CS2 目录、界面主题、GSI 服务状态和维护操作。首次使用必须先在这儿设好 CS2 安装目录，其余一般用不着动。",
             title_font_size=None,
             spacing=10,
         )

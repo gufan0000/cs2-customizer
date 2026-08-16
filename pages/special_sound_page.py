@@ -25,6 +25,12 @@ from PySide6.QtWidgets import (
 
 from config import config, get_app_data_dir
 from core.audio.runtime_audio import get_runtime_audio_manager
+from core.audio.special_events import (
+    config_defaults,
+    events_in_group,
+    sound_key,
+    styles_attr,
+)
 from core.utils.logger import get_logger
 from pages.audio_status_badge import (
     build_health_detail_tooltip,
@@ -58,13 +64,13 @@ class SpecialSoundPage(QWidget):
         "decoy": "诱饵弹",
     }
 
+    # 从事件表派生。这里原来是手写的第 N 份清单，加事件漏改这里的表现是
+    # "下拉框里根本没有它"。见 core/audio/special_events。
     ROUND_TYPE_META = {
-        "start": ("回合开始", "round_start_styles", "round_start_style"),
-        "action": ("行动开始", "round_action_styles", "round_action_style"),
-        "win": ("回合胜利", "round_win_styles", "round_win_style"),
-        "lose": ("回合失败", "round_lose_styles", "round_lose_style"),
-        "mvp": ("MVP", "round_mvp_styles", "round_mvp_style"),
+        event.key: (event.label, styles_attr(event), event.config_attr)
+        for event in events_in_group("round")
     }
+    C4_EVENTS = events_in_group("c4")
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -73,6 +79,7 @@ class SpecialSoundPage(QWidget):
 
         self.grenade_combos = {}
         self.round_combos = {}
+        self.c4_combos = {}
         self.grenade_cards = []
         self.round_cards = []
 
@@ -92,17 +99,13 @@ class SpecialSoundPage(QWidget):
         defaults = {
             "grenade_sound_enabled": False,
             "c4_sound_enabled": False,
-            "c4_sound_style": "0",
             "health_warning_enabled": False,
             "health_warning_threshold": 20,
-            "health_warning_style": "0",
+            "health_warning_cooldown": 5.0,
             "round_sound_enabled": False,
-            "round_start_style": "0",
-            "round_action_style": "0",
-            "round_win_style": "0",
-            "round_lose_style": "0",
-            "round_mvp_style": "0",
             "round_sound_volume": 1.0,
+            # 各事件的样式字段来自事件表，不再逐个写
+            **config_defaults(),
         }
         for key, value in defaults.items():
             if not hasattr(config, key):
@@ -114,12 +117,9 @@ class SpecialSoundPage(QWidget):
             self.audio_manager.grenade_sound_styles = self.audio_manager.scan_grenade_sound_styles() or {}
             self.audio_manager.c4_sound_styles = self.audio_manager.scan_c4_sound_styles() or []
             self.audio_manager.health_warning_styles = self.audio_manager.scan_health_warning_styles() or []
-            round_styles = self.audio_manager.scan_round_sound_styles() or {}
-            self.audio_manager.round_start_styles = round_styles.get("start", [])
-            self.audio_manager.round_action_styles = round_styles.get("action", [])
-            self.audio_manager.round_win_styles = round_styles.get("win", [])
-            self.audio_manager.round_lose_styles = round_styles.get("lose", [])
-            self.audio_manager.round_mvp_styles = round_styles.get("mvp", [])
+            # scan_round_sound_styles 内部已经按事件表把每个 round_*_styles
+            # 属性 setattr 回去了，这里再抄一遍就又成了一份要同步的清单。
+            self.audio_manager.scan_round_sound_styles()
         except Exception as exc:
             self.logger.error(f"刷新特殊音效风格失败: {exc}")
 
@@ -159,21 +159,29 @@ class SpecialSoundPage(QWidget):
         )
 
     def _collect_style_values(self):
-        style_values = []
-        style_values.extend((config.grenade_sound_styles or {}).values())
-        style_values.append(getattr(config, "c4_sound_style", "0"))
-        style_values.append(getattr(config, "health_warning_style", "0"))
-        style_values.extend(
-            [
-                getattr(config, "round_start_style", "0"),
-                getattr(config, "round_action_style", "0"),
-                getattr(config, "round_win_style", "0"),
-                getattr(config, "round_lose_style", "0"),
-                getattr(config, "round_mvp_style", "0"),
-            ]
-        )
+        style_values = list((config.grenade_sound_styles or {}).values())
+        style_values.extend(getattr(config, attr, "0") for attr in config_defaults())
         return style_values
 
+
+    @staticmethod
+    def _row_card(horizontal=True):
+        """卡片**内部**的一行小卡（`QFrame#card`）。
+
+        本页原来有 8 处逐字重复的「建 QFrame、setObjectName("card")、配一个
+        Layout」，R11 的手搓卡片棘轮（tests/test_closed_items_ratchet_r11）正是
+        冲着这类重复来的。
+
+        ⚠ 这里不能用 `SettingsCard.make()` 顶替：那个产出的是**带标题的整张
+        卡片**，而这些是嵌在卡片里的行，换过去观感会变。所以正确的收敛方向是
+        "本页只留一处手搓"，而不是"改用现成卡片"。
+        """
+        frame = QFrame()
+        frame.setObjectName("card")
+        layout = (QHBoxLayout if horizontal else QVBoxLayout)(frame)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(8)
+        return frame, layout
 
     @staticmethod
     def _create_summary_label():
@@ -249,11 +257,14 @@ class SpecialSoundPage(QWidget):
             styles = getattr(self.audio_manager, "grenade_sound_styles", {}).get(grenade_type, [])
             self._reset_combo_items(combo, styles, config.grenade_sound_styles.get(grenade_type, "0"))
 
-        self._reset_combo_items(
-            self.c4_style_combo,
-            getattr(self.audio_manager, "c4_sound_styles", []),
-            getattr(config, "c4_sound_style", "0"),
-        )
+        for event in self.C4_EVENTS:
+            combo = self.c4_combos.get(event.key)
+            if combo is not None:
+                self._reset_combo_items(
+                    combo,
+                    getattr(self.audio_manager, "c4_sound_styles", []),
+                    getattr(config, event.config_attr, "0"),
+                )
         self._reset_combo_items(
             self.health_style_combo,
             getattr(self.audio_manager, "health_warning_styles", []),
@@ -284,7 +295,7 @@ class SpecialSoundPage(QWidget):
         # 这次重构不动一个像素，四种并存的字号是另一回事（UP-092）。
         header = PageHeader(
             "特殊音效设置",
-            description="把投掷物、C4、血量警告和回合音效集中到一个页面里，优先保留高频测试与快速切换。",
+            description="投掷物、C4、血量警告、回合结果四类音效都在这儿配，一类一个选项卡，随时试听。",
             title_font_size=None,
             spacing=12,
         )
@@ -441,7 +452,7 @@ class SpecialSoundPage(QWidget):
 
         card, card_layout = SettingsCard.make(
             "C4 音效",
-            "适合单独确认安放提示是否足够醒目，保留一个样式入口和快速试听按钮。",
+            "安放、拆除、爆炸各配一个音效；三者共用同一个风格目录，靠文件名区分。",
         )
         self.c4_enabled_checkbox = QCheckBox("启用 C4 音效")
         self.c4_enabled_checkbox.setChecked(bool(config.c4_sound_enabled))
@@ -450,33 +461,44 @@ class SpecialSoundPage(QWidget):
         self.c4_summary_label = self._create_summary_label()
         card_layout.addWidget(self.c4_summary_label)
 
-        row = QFrame()
-        row.setObjectName("card")
-        row_layout = QHBoxLayout(row)
-        row_layout.setContentsMargins(10, 8, 10, 8)
-        row_layout.setSpacing(8)
+        naming_hint = QLabel(
+            "拆除和爆炸靠文件名认素材：文件名里带「拆除 / defuse」「爆炸 / explode」才会被选中，"
+            "认不出来就保持安静——不会拿安放的音效顶替。"
+        )
+        naming_hint.setObjectName("hintLabel")
+        naming_hint.setWordWrap(True)
+        card_layout.addWidget(naming_hint)
 
-        name_label = QLabel("C4 安放音效")
-        name_label.setFont(QFont("Microsoft YaHei", 12))
-        name_label.setMinimumWidth(120)
-        row_layout.addWidget(name_label)
+        for event in self.C4_EVENTS:
+            row, row_layout = self._row_card()
 
-        self.c4_style_combo = QComboBox()
-        self.c4_style_combo.addItem("不启用", "0")
-        for style in getattr(self.audio_manager, "c4_sound_styles", []):
-            self.c4_style_combo.addItem(style, style)
-        self.c4_style_combo.setMinimumWidth(220)
-        self._set_compact_heights(self.c4_style_combo)
-        self.c4_style_combo.currentIndexChanged.connect(self._on_c4_style_changed)
-        row_layout.addWidget(self.c4_style_combo, 1)
+            name_label = QLabel(event.label)
+            name_label.setFont(QFont("Microsoft YaHei", 12))
+            name_label.setMinimumWidth(120)
+            row_layout.addWidget(name_label)
 
-        test_btn = QPushButton("测试")
-        test_btn.setObjectName("secondaryButton")
-        test_btn.setFixedWidth(80)
-        self._set_compact_heights(test_btn)
-        test_btn.clicked.connect(self._test_c4_sound)
-        row_layout.addWidget(test_btn)
-        card_layout.addWidget(row)
+            combo = QComboBox()
+            combo.addItem("不启用", "0")
+            for style in getattr(self.audio_manager, "c4_sound_styles", []):
+                combo.addItem(style, style)
+            combo.setMinimumWidth(220)
+            self._set_compact_heights(combo)
+            combo.currentIndexChanged.connect(
+                lambda _idx, e=event: self._on_c4_style_changed(e)
+            )
+            row_layout.addWidget(combo, 1)
+
+            test_btn = QPushButton("测试")
+            test_btn.setObjectName("secondaryButton")
+            test_btn.setFixedWidth(80)
+            self._set_compact_heights(test_btn)
+            test_btn.clicked.connect(lambda _checked=False, e=event: self._test_c4_sound(e))
+            row_layout.addWidget(test_btn)
+            card_layout.addWidget(row)
+            self.c4_combos[event.key] = combo
+
+        # 老属性名保留：放大镜页等处按名字读它
+        self.c4_style_combo = self.c4_combos["planted"]
         layout.addWidget(card)
         layout.addStretch()
 
@@ -514,11 +536,7 @@ class SpecialSoundPage(QWidget):
         self.health_summary_label = self._create_summary_label()
         card_layout.addWidget(self.health_summary_label)
 
-        threshold_row = QFrame()
-        threshold_row.setObjectName("card")
-        threshold_layout = QHBoxLayout(threshold_row)
-        threshold_layout.setContentsMargins(10, 8, 10, 8)
-        threshold_layout.setSpacing(8)
+        threshold_row, threshold_layout = self._row_card()
 
         threshold_label = QLabel("触发阈值")
         threshold_label.setFont(QFont("Microsoft YaHei", 12))
@@ -536,11 +554,7 @@ class SpecialSoundPage(QWidget):
         self.threshold_value_label.setFont(QFont("Microsoft YaHei", 12, QFont.Bold))
         threshold_layout.addWidget(self.threshold_value_label)
 
-        style_row = QFrame()
-        style_row.setObjectName("card")
-        style_layout = QHBoxLayout(style_row)
-        style_layout.setContentsMargins(10, 8, 10, 8)
-        style_layout.setSpacing(8)
+        style_row, style_layout = self._row_card()
 
         name_label = QLabel("警告音效")
         name_label.setFont(QFont("Microsoft YaHei", 12))
@@ -563,12 +577,33 @@ class SpecialSoundPage(QWidget):
         test_btn.clicked.connect(self._test_health_warning)
         style_layout.addWidget(test_btn)
 
+        cooldown_row, cooldown_layout = self._row_card()
+
+        cooldown_label = QLabel("再次提醒间隔")
+        cooldown_label.setFont(QFont("Microsoft YaHei", 12))
+        cooldown_label.setMinimumWidth(100)
+        cooldown_layout.addWidget(cooldown_label)
+
+        # 以前这个值写死在 gsi_handler_special 里（5 秒），嫌吵和嫌少的都改不了
+        self.cooldown_slider = QSlider(Qt.Horizontal)
+        self.cooldown_slider.setRange(1, 30)
+        self.cooldown_slider.setValue(int(float(getattr(config, "health_warning_cooldown", 5.0))))
+        self.cooldown_slider.setToolTip("触发一次低血量警告后，至少隔这么久才会再响一次")
+        self.cooldown_slider.valueChanged.connect(self._on_cooldown_changed)
+        cooldown_layout.addWidget(self.cooldown_slider)
+
+        self.cooldown_value_label = QLabel(f"{self.cooldown_slider.value()} 秒")
+        self.cooldown_value_label.setMinimumWidth(50)
+        self.cooldown_value_label.setFont(QFont("Microsoft YaHei", 12, QFont.Bold))
+        cooldown_layout.addWidget(self.cooldown_value_label)
+
         content_row = QHBoxLayout()
         content_row.setContentsMargins(0, 0, 0, 0)
         content_row.setSpacing(10)
         content_row.addWidget(threshold_row, 1)
         content_row.addWidget(style_row, 1)
         card_layout.addLayout(content_row)
+        card_layout.addWidget(cooldown_row)
         layout.addWidget(card)
         layout.addStretch()
 
@@ -593,11 +628,7 @@ class SpecialSoundPage(QWidget):
         self.round_summary_label = self._create_summary_label()
         header_layout.addWidget(self.round_summary_label)
 
-        volume_row = QFrame()
-        volume_row.setObjectName("card")
-        volume_layout = QHBoxLayout(volume_row)
-        volume_layout.setContentsMargins(10, 8, 10, 8)
-        volume_layout.setSpacing(8)
+        volume_row, volume_layout = self._row_card()
 
         volume_label = QLabel("回合音效音量")
         volume_label.setFont(QFont("Microsoft YaHei", 12, QFont.Bold))
@@ -722,22 +753,31 @@ class SpecialSoundPage(QWidget):
         self._refresh_status_badge()
         self.logger.info(f"C4 音效: {'启用' if checked else '禁用'}")
 
-    def _on_c4_style_changed(self, _index):
-        style = self.c4_style_combo.currentData()
-        config.c4_sound_style = style
+    def _on_c4_style_changed(self, event):
+        combo = self.c4_combos.get(event.key)
+        if combo is None:
+            return
+        style = combo.currentData()
+        setattr(config, event.config_attr, style)
         self._save_config()
         self._refresh_status_badge()
-        self.logger.info(f"C4 音效样式已更新: {style}")
+        self.logger.info(f"{event.label}样式已更新: {style}")
 
-    def _test_c4_sound(self):
-        style = getattr(config, "c4_sound_style", "0")
+    def _test_c4_sound(self, event=None):
+        event = event or self.C4_EVENTS[0]
+        style = getattr(config, event.config_attr, "0")
         if style == "0":
-            self.logger.info("C4 当前未启用音效")
+            self.logger.info(f"{event.label}当前未启用音效")
             return
 
-        sound_key = f"c4-planted-{style}"
-        self.logger.info(f"测试 C4 音效: {sound_key}")
-        self.audio_manager.play_sound(sound_key, channel_type="c4_sound")
+        key = sound_key(event, style)
+        self.logger.info(f"测试 {event.label}: {key}")
+        # 拆除/爆炸可能在这个风格目录里找不到对应文件——那时 play_sound 会返回
+        # False 并记一条 drop。这正是设计：宁可不响也不拿安放的音效顶替。
+        if not self.audio_manager.play_sound(key, channel_type="c4_sound"):
+            self.logger.info(
+                f"{event.label}没有匹配的素材（文件名需含 {' / '.join(event.filename_tokens[:2])}）"
+            )
 
     def _on_health_enabled_toggled(self, checked):
         config.health_warning_enabled = bool(checked)
@@ -751,6 +791,13 @@ class SpecialSoundPage(QWidget):
         self._save_config()
         self._refresh_status_badge()
         self.logger.info(f"血量阈值已更新: {value}")
+
+    def _on_cooldown_changed(self, value):
+        config.health_warning_cooldown = float(value)
+        self.cooldown_value_label.setText(f"{value} 秒")
+        self._save_config()
+        self._refresh_status_badge()
+        self.logger.info(f"血量警告冷却已更新: {value}s")
 
     def _on_health_style_changed(self, _index):
         style = self.health_style_combo.currentData()
@@ -813,7 +860,10 @@ class SpecialSoundPage(QWidget):
             style = config.grenade_sound_styles.get(grenade_type, "0")
             self._set_combo_data(combo, style)
 
-        self._set_combo_data(self.c4_style_combo, getattr(config, "c4_sound_style", "0"))
+        for event in self.C4_EVENTS:
+            combo = self.c4_combos.get(event.key)
+            if combo is not None:
+                self._set_combo_data(combo, getattr(config, event.config_attr, "0"))
         self._set_combo_data(self.health_style_combo, getattr(config, "health_warning_style", "0"))
 
         for round_type, (_display_name, _manager_attr, config_attr) in self.ROUND_TYPE_META.items():

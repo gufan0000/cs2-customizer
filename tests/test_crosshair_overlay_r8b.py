@@ -41,9 +41,11 @@ REPO = Path(__file__).resolve().parent.parent
 
 #: 这三个模块整体跑在 `multiprocessing` 子进程里，SDL 与 Qt 天然隔离。
 #: 名单是**白名单不是豁免**：新增任何一个都必须先说明它为什么不在主进程。
+#: KI-1（2026-08-15）把 `kill_icon_player.py` 从这张名单里划掉了——它不再
+#: 有 SDL 视频调用（改成主进程 Qt 叠加层）。**划掉是收紧不是放松**：名单越短，
+#: 这条棘轮盯住的范围越大。
 SUBPROCESS_SDL_MODULES = {
     "flash_process.py",
-    "kill_icon_player.py",
     "utility_display.py",
 }
 

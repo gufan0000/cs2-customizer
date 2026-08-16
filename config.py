@@ -221,7 +221,11 @@ class Config:
         self.kill_icon_scale = 1.0       # 缩放比例（0.5-2.0）
         self.kill_icon_base_width = 350  # 基准宽度
         self.kill_icon_base_height = 250 # 基准高度
-        
+
+        # 击杀图标显示效果（KI-1 起，Qt 叠加层才做得到；pygame 版是纯黑抠图，没有真 alpha）
+        self.kill_icon_fade_enabled = True       # 入场淡入 / 收尾渐隐
+        self.kill_icon_headshot_enabled = True   # 有 <等级>hs 素材时爆头用专属图标
+
         # 击杀图标FPS设置
         self.kill_icon_fps_1 = 30  # 1杀FPS
         self.kill_icon_fps_2 = 30  # 2杀FPS
@@ -335,21 +339,25 @@ class Config:
             "incgrenade": "0",
             "decoy": "0"
         }
-        self.c4_sound_style = "0"
-        
+        # 特殊音效（回合 / C4 / 血量）的**样式字段全部从事件表派生**。
+        # 以前这里是十几行手写赋值，和 load/save 两处、页面、扫描、体检合计
+        # 6 份清单要同步；漏一份的表现各不相同且都不报错。
+        # 事件表见 core/audio/special_events。
+        from core.audio.special_events import config_defaults as _sound_style_defaults
+
+        for _attr, _default in _sound_style_defaults().items():
+            setattr(self, _attr, _default)
+
         # 回合音效设置
         self.round_sound_enabled = False  # 默认不启用回合音效
-        self.round_start_style = "0"      # 回合开始音效风格
-        self.round_action_style = "0"     # 行动开始音效风格
-        self.round_win_style = "0"        # 回合胜利音效风格
-        self.round_lose_style = "0"       # 回合失败音效风格
-        self.round_mvp_style = "0"        # MVP音效风格
         self.round_sound_volume = 1.0     # 回合音效独立音量设置
-        
+
         # 血量警告功能
         self.health_warning_enabled = False  # 默认不启用血量警告
         self.health_warning_threshold = 20   # 默认血量阈值20
-        self.health_warning_style = "0"      # 默认音效风格
+        # 触发一次后的静默时长。以前写死在 gsi_handler_special 里，
+        # 用户嫌吵/嫌少都改不了。
+        self.health_warning_cooldown = 5.0
         
         # 准心设置
         self.crosshair_enabled = False    # 默认不启用准心
@@ -360,7 +368,18 @@ class Config:
         self.crosshair_custom_data = []   # 存储自定义准心的像素数据
         self.crosshair_animation = "none" # 准心动画设置
         self.crosshair_kill_effect = "none" # 准心击杀联动设置
+        # 2.2.4 补齐的样式参数。全部默认关/0，存量用户的观感一像素不变。
+        self.crosshair_gap = 0            # 中心间隙：0 时两条线穿过圆心，会糊住准星点
+        self.crosshair_outline = 0        # 描边宽度（单边像素），亮地板上的可见性主要靠它
+        self.crosshair_dot = False        # 中心点（可与十字叠加）
+        self.crosshair_alpha = 255        # 透明度 0-255
+        self.crosshair_color_custom = ""  # 形如 #RRGGBB；非空时覆盖 crosshair_color
         self.crosshair_reset_enabled = False  # 准心快速回正开关
+        # 开火键可配置：以前写死 mouse1，改过开火键的人直接失效。
+        # 副开火（R8 左轮右键是真开火）默认关，原因见 core/crosshair_reset。
+        self.crosshair_reset_attack_key = "mouse1"
+        self.crosshair_reset_secondary_enabled = False
+        self.crosshair_reset_secondary_key = "mouse2"
         # 准心渲染器（R8b / UP-054）："qt" 透明置顶窗 ｜ "pygame" 老实现（保留一个发布周期）。
         # 换成 Qt 是为了消掉老实现「主线程建窗、工作线程刷新」这个违反 Win32
         # 窗口线程亲和性的根因——那是「原生崩溃只能靠兼容模式跳过准心」的来源。
@@ -1015,7 +1034,9 @@ class Config:
                 self.kill_icon_scale = config_data.get("kill_icon_scale", self.kill_icon_scale)
                 self.kill_icon_base_width = config_data.get("kill_icon_base_width", self.kill_icon_base_width)
                 self.kill_icon_base_height = config_data.get("kill_icon_base_height", self.kill_icon_base_height)
-                
+                self.kill_icon_fade_enabled = config_data.get("kill_icon_fade_enabled", self.kill_icon_fade_enabled)
+                self.kill_icon_headshot_enabled = config_data.get("kill_icon_headshot_enabled", self.kill_icon_headshot_enabled)
+
                 # 击杀图标FPS设置
                 self.kill_icon_fps_1 = config_data.get("kill_icon_fps_1", self.kill_icon_fps_1)
                 self.kill_icon_fps_2 = config_data.get("kill_icon_fps_2", self.kill_icon_fps_2)
@@ -1145,21 +1166,20 @@ class Config:
                         for grenade_type, style in grenade_styles.items():
                             if grenade_type in self.grenade_sound_styles:
                                 self.grenade_sound_styles[grenade_type] = style
-                self.c4_sound_style = config_data.get("c4_sound_style", self.c4_sound_style)
-                
+                # 特殊音效样式：按事件表遍历，不再逐个手写
+                from core.audio.special_events import config_defaults as _sound_style_defaults
+
+                for _attr in _sound_style_defaults():
+                    setattr(self, _attr, config_data.get(_attr, getattr(self, _attr)))
+
                 # 回合音效设置
                 self.round_sound_enabled = config_data.get("round_sound_enabled", self.round_sound_enabled)
-                self.round_start_style = config_data.get("round_start_style", self.round_start_style)
-                self.round_action_style = config_data.get("round_action_style", self.round_action_style)
-                self.round_win_style = config_data.get("round_win_style", self.round_win_style)
-                self.round_lose_style = config_data.get("round_lose_style", self.round_lose_style)
-                self.round_mvp_style = config_data.get("round_mvp_style", self.round_mvp_style)
                 self.round_sound_volume = config_data.get("round_sound_volume", self.round_sound_volume)
-                
+
                 # 血量警告设置
                 self.health_warning_enabled = config_data.get("health_warning_enabled", self.health_warning_enabled)
                 self.health_warning_threshold = config_data.get("health_warning_threshold", self.health_warning_threshold)
-                self.health_warning_style = config_data.get("health_warning_style", self.health_warning_style)
+                self.health_warning_cooldown = config_data.get("health_warning_cooldown", self.health_warning_cooldown)
                 
                 # 切枪音效设置
                 self.switch_weapon_sound_enabled = config_data.get("switch_weapon_sound_enabled", self.switch_weapon_sound_enabled)
@@ -1267,7 +1287,15 @@ class Config:
                 self.crosshair_custom_data = config_data.get("crosshair_custom_data", self.crosshair_custom_data)
                 self.crosshair_animation = config_data.get("crosshair_animation", self.crosshair_animation)
                 self.crosshair_kill_effect = config_data.get("crosshair_kill_effect", self.crosshair_kill_effect)
+                self.crosshair_gap = config_data.get("crosshair_gap", self.crosshair_gap)
+                self.crosshair_outline = config_data.get("crosshair_outline", self.crosshair_outline)
+                self.crosshair_dot = config_data.get("crosshair_dot", self.crosshair_dot)
+                self.crosshair_alpha = config_data.get("crosshair_alpha", self.crosshair_alpha)
+                self.crosshair_color_custom = config_data.get("crosshair_color_custom", self.crosshair_color_custom)
                 self.crosshair_reset_enabled = config_data.get("crosshair_reset_enabled", self.crosshair_reset_enabled)
+                self.crosshair_reset_attack_key = config_data.get("crosshair_reset_attack_key", self.crosshair_reset_attack_key)
+                self.crosshair_reset_secondary_enabled = config_data.get("crosshair_reset_secondary_enabled", self.crosshair_reset_secondary_enabled)
+                self.crosshair_reset_secondary_key = config_data.get("crosshair_reset_secondary_key", self.crosshair_reset_secondary_key)
                 self.crosshair_renderer = config_data.get("crosshair_renderer", self.crosshair_renderer)
                 
                 # 闪光效果设置
@@ -1577,6 +1605,8 @@ class Config:
         tmp_path = config_path + ".tmp"
 
         # 持有锁进行序列化，防止并发修改导致数据不一致
+        from core.audio.special_events import config_defaults as _sound_style_defaults
+
         with self._save_lock:
             try:
                 self._normalize_gun_sound_config()
@@ -1629,7 +1659,9 @@ class Config:
                     "kill_icon_scale": self.kill_icon_scale,
                     "kill_icon_base_width": self.kill_icon_base_width,
                     "kill_icon_base_height": self.kill_icon_base_height,
-                    
+                    "kill_icon_fade_enabled": self.kill_icon_fade_enabled,
+                    "kill_icon_headshot_enabled": self.kill_icon_headshot_enabled,
+
                     # 击杀图标FPS设置
                     "kill_icon_fps_1": self.kill_icon_fps_1,
                     "kill_icon_fps_2": self.kill_icon_fps_2,
@@ -1700,21 +1732,17 @@ class Config:
                     "grenade_sound_enabled": self.grenade_sound_enabled,
                     "c4_sound_enabled": self.c4_sound_enabled,
                     "grenade_sound_styles": self.grenade_sound_styles,
-                    "c4_sound_style": self.c4_sound_style,
-                    
+                    # 特殊音效样式在 payload 组装完之后按事件表统一并入，
+                    # 见本函数末尾（这里逐个写就又变成第 N 份清单了）
+
                     # 回合音效设置
                     "round_sound_enabled": self.round_sound_enabled,
-                    "round_start_style": self.round_start_style,
-                    "round_action_style": self.round_action_style,
-                    "round_win_style": self.round_win_style,
-                    "round_lose_style": self.round_lose_style,
-                    "round_mvp_style": self.round_mvp_style,
                     "round_sound_volume": self.round_sound_volume,
-                    
+
                     # 血量警告设置
                     "health_warning_enabled": self.health_warning_enabled,
                     "health_warning_threshold": self.health_warning_threshold,
-                    "health_warning_style": self.health_warning_style,
+                    "health_warning_cooldown": self.health_warning_cooldown,
                     
                     # 切枪音效设置
                     "switch_weapon_sound_enabled": self.switch_weapon_sound_enabled,
@@ -1749,7 +1777,15 @@ class Config:
                     "crosshair_custom_data": self.crosshair_custom_data,
                     "crosshair_animation": self.crosshair_animation,
                     "crosshair_kill_effect": self.crosshair_kill_effect,
+                    "crosshair_gap": self.crosshair_gap,
+                    "crosshair_outline": self.crosshair_outline,
+                    "crosshair_dot": self.crosshair_dot,
+                    "crosshair_alpha": self.crosshair_alpha,
+                    "crosshair_color_custom": self.crosshair_color_custom,
                     "crosshair_reset_enabled": self.crosshair_reset_enabled,
+                    "crosshair_reset_attack_key": self.crosshair_reset_attack_key,
+                    "crosshair_reset_secondary_enabled": self.crosshair_reset_secondary_enabled,
+                    "crosshair_reset_secondary_key": self.crosshair_reset_secondary_key,
                     "crosshair_renderer": self.crosshair_renderer,
                     
                     # 闪光效果设置
@@ -1927,6 +1963,13 @@ class Config:
                                 getattr(self, "gun_sound_duck_ratio", profile.default_duck_ratio),
                             )
                             for profile in GUN_SOUND_PROFILE_LIST
+                        }
+                    )
+                    # 特殊音效（回合 / C4 / 血量）的样式字段，同上按表派生
+                    payload.update(
+                        {
+                            attr: getattr(self, attr, default)
+                            for attr, default in _sound_style_defaults().items()
                         }
                     )
                     json.dump(payload, f, indent=4, ensure_ascii=False)

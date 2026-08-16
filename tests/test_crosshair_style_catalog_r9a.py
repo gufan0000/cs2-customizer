@@ -163,14 +163,54 @@ def _preview_style_branches() -> set[str]:
     return found
 
 
-def test_preview_handles_every_user_style():
-    """预览是独立的一套绘制代码，加样式时最容易漏的就是它。
+def test_preview_has_no_private_drawing_branches():
+    """预览**不许**再按样式分叉。
 
-    回退验证：删掉预览里的 `elif style == "t_shape":` 分支，这条立刻变红。
+    这条判据是从反面写的，和它取代的那条正好相反。原来那条数的是
+    `_update_preview` 里有没有覆盖到每个样式的 `elif style == "..."` 分支——
+    因为当年预览确实是独立的第二套绘制代码，加样式时最容易漏的就是它。
+
+    2026-08-15 把预览改成直接调 `crosshair_overlay.paint_crosshair` 之后，
+    「漏样式」这个失效模式**在结构上不可能发生**了，再数分支就没有意义
+    （分支数恒为 0）。但另一个失效模式冒了出来：有人图省事又在页面里手写
+    一段绘制。那才是真正要防的——两套几何各画各的，正是十字预览大了一倍、
+    点准心随粗细漂移的根因。
+
+    几何是否真的一致由 tests/test_crosshair_geometry_parity.py 逐像素比。
     """
-    branches = _preview_style_branches()
-    missing = set(USER_STYLES) - branches
-    assert not missing, f"准心页预览没有覆盖这些样式：{sorted(missing)}"
+    assert not _preview_style_branches(), (
+        "预览又开始按样式分叉了：几何只能有一份，改 crosshair_overlay.paint_crosshair"
+    )
+
+
+@pytest.mark.parametrize("style", USER_STYLES)
+def test_preview_renders_every_user_style(style, qapp, monkeypatch):
+    """每个样式都得在预览里画出东西来——比数分支更强的判据。"""
+    from config import config
+    import pages.crosshair_page as page_module
+
+    monkeypatch.setattr(config, "save_config", lambda: None, raising=False)
+    monkeypatch.setattr(config, "crosshair_style", style, raising=False)
+    monkeypatch.setattr(config, "crosshair_size", 30, raising=False)
+    monkeypatch.setattr(config, "crosshair_thickness", 2, raising=False)
+    monkeypatch.setattr(config, "crosshair_animation", "none", raising=False)
+    monkeypatch.setattr(config, "crosshair_kill_effect", "none", raising=False)
+    monkeypatch.setattr(config, "crosshair_custom_data", [[15, 10], [15, 20]], raising=False)
+
+    page = page_module.CrosshairPage()
+    try:
+        page._update_preview()
+        pixmap = page.preview_label.pixmap()
+        assert pixmap is not None and not pixmap.isNull(), f"{style} 预览没出图"
+        image = pixmap.toImage()
+        opaque = any(
+            (image.pixel(x, y) >> 24) & 0xFF
+            for y in range(image.height())
+            for x in range(image.width())
+        )
+        assert opaque, f"{style} 预览是空白的"
+    finally:
+        page.deleteLater()
 
 
 # ==================================================== 4. 破碎联动

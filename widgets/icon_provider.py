@@ -181,6 +181,11 @@ PAGE_ICON_MAP: dict[str, str] = {
     "screen_effects":       "mdi.monitor-screenshot",
     "music":                "mdi.music",
     "voice_output":         "mdi.microphone",
+    # V-007（2026-08-16）：这一条**漏了很久**。`get_page_icon` 查不到就静默
+    # 返回空 QIcon——不报错、不打日志，只是这一项在侧栏里没有图标，
+    # 文字起始位置比同组其它项左移一截，看着像没对齐。
+    # 判据见 tests/test_ui_visual_r1_fixes.py::test_every_nav_page_has_an_icon。
+    "fun_afterlife":        "mdi.cellphone-play",
     "utility":              "mdi.tools",
     "advanced":             "mdi.cog-transfer-outline",
     "audio_health":         "mdi.heart-pulse",

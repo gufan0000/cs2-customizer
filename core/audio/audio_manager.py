@@ -20,9 +20,16 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 from core.audio.audio_file_utils import (
     DEFAULT_AUDIO_EXTENSIONS,
     find_audio_by_stem,
+    find_audio_by_tokens,
     find_first_audio_file,
     list_style_dirs_with_audio,
     list_unique_audio_stems,
+)
+from core.audio.special_events import (
+    events_in_group,
+    get_event,
+    round_event_keys,
+    styles_attr,
 )
 from core.gun_sound_profiles import (
     SUPPORTED_GUN_SOUND_PROFILE_LIST,
@@ -90,7 +97,9 @@ class _CompatMap(Mapping):
 
 
 class AudioManager:
-    ROUND_TYPES = ("start", "action", "win", "lose", "mvp")
+    # 从事件表派生。这里原来是手写的第二份清单，加事件时漏改的表现是
+    # "配了也不响、且不报错"。见 core/audio/special_events。
+    ROUND_TYPES = round_event_keys()
     GRENADE_TYPES = ("hegrenade", "flashbang", "smoke", "molotov", "incgrenade", "decoy")
     GUN_TYPES = tuple(profile.gun_type for profile in SUPPORTED_GUN_SOUND_PROFILE_LIST)
     DISABLED_STYLES = {"", "0", "none", "off", "disabled", "不启用", "未启用"}
@@ -751,6 +760,73 @@ class AudioManager:
             )
             return False
 
+    def _admit_playback(
+        self,
+        key: str,
+        use_channel,
+        channel_type: str,
+        *,
+        event_type: str | None = None,
+        priority: int | None = None,
+        allow_preempt: bool | None = None,
+    ) -> bool:
+        """问策略层这一声该不该播，该播就登记通道归属。返回是否放行。
+
+        从 `play_sound` 里抽出来，好让淡入淡出那条路径也能用同一套判断——
+        以前它自己另走一条，等于回合音效在抢占关系里隐身。
+        """
+        from config import config
+
+        resolved_event_type = str(event_type or channel_type or "default")
+        profile = str(getattr(config, "audio_policy_profile", "kill_preempt_v1") or "kill_preempt_v1")
+        resolved_priority = resolve_priority(
+            resolved_event_type, explicit_priority=priority, profile=profile
+        )
+        request = PlaybackRequest(
+            key=key,
+            channel_type=channel_type,
+            event_type=resolved_event_type,
+            priority=resolved_priority,
+            allow_preempt=True if allow_preempt is None else bool(allow_preempt),
+        )
+
+        with self._playback_lock:
+            active_request = self._active_channel_requests.get(
+                self._channel_state_key(channel_type, use_channel)
+            )
+            channel_busy = bool(
+                use_channel and hasattr(use_channel, "get_busy") and use_channel.get_busy()
+            )
+            decision = decide_channel_action(request, active_request, channel_busy=channel_busy)
+
+            if decision.action == "drop":
+                self.logger.info(
+                    f"[AudioPolicy][DROP] key={key} channel={channel_type} "
+                    f"event={resolved_event_type} priority={resolved_priority} reason={decision.reason}"
+                )
+                self._record_timeline_event(
+                    action="drop", key=key, channel_type=channel_type,
+                    event_type=resolved_event_type, reason=decision.reason, success=False,
+                    meta={"priority": resolved_priority, "profile": profile},
+                )
+                return False
+
+            if decision.action == "preempt" and use_channel and hasattr(use_channel, "stop"):
+                try:
+                    use_channel.stop()
+                except Exception:
+                    pass
+                self._record_timeline_event(
+                    action="preempt", key=key, channel_type=channel_type,
+                    event_type=resolved_event_type, reason=decision.reason, success=True,
+                    meta={"priority": resolved_priority, "profile": profile},
+                )
+
+            self._active_channel_requests[
+                self._channel_state_key(channel_type, use_channel)
+            ] = request
+        return True
+
     def play_voice(self, key: str):
         from config import config
         from voice_output_manager import get_voice_output_manager
@@ -783,7 +859,16 @@ class AudioManager:
         except Exception as e:
             self.logger.error(f"Play voice failed {key}: {e}")
 
-    def play_sound_with_fade(self, key: str, channel_type: str = "round_sound", fade_in_ms: int = 500, fade_out_ms: int = 1000):
+    def play_sound_with_fade(
+        self,
+        key: str,
+        channel_type: str = "round_sound",
+        fade_in_ms: int = 500,
+        fade_out_ms: int = 1000,
+        event_type: str | None = None,
+        priority: int | None = None,
+        allow_preempt: bool | None = None,
+    ):
         from config import config
 
         with self._lock:
@@ -793,9 +878,21 @@ class AudioManager:
 
         info = self._get_info(key)
         if not info:
-            return
+            return False
 
         channel = self._select_channel(channel_type)
+
+        # 走一遍音频策略层。以前这条路径**整个绕过了策略层**：既不问
+        # decide_channel_action 该不该播，也不登记 _active_channel_requests。
+        # 后果是所有回合音效（唯一走淡入淡出的一类）在抢占关系里等于不存在——
+        # 别的音效看到 active_request 是空的，会无条件抢占它；而
+        # gsi_handler_special 里那五处 `priority=88/90` 从来没被读过。
+        if not self._admit_playback(
+            key, channel, channel_type,
+            event_type=event_type, priority=priority, allow_preempt=allow_preempt,
+        ):
+            return False
+
         self._clear_fade_effect(key, channel)
 
         target = getattr(config, "round_sound_volume", self._volume) if channel_type == "round_sound" else getattr(config, "volume", self._volume)
@@ -1054,18 +1151,17 @@ class AudioManager:
         return list_style_dirs_with_audio(directory, extensions=DEFAULT_AUDIO_EXTENSIONS, sort=True)
 
     def scan_round_sound_styles(self):
-        self.round_start_styles = self._scan_sound_styles(os.path.join(self.round_sounds_dir, "start"))
-        self.round_action_styles = self._scan_sound_styles(os.path.join(self.round_sounds_dir, "action"))
-        self.round_win_styles = self._scan_sound_styles(os.path.join(self.round_sounds_dir, "win"))
-        self.round_lose_styles = self._scan_sound_styles(os.path.join(self.round_sounds_dir, "lose"))
-        self.round_mvp_styles = self._scan_sound_styles(os.path.join(self.round_sounds_dir, "mvp"))
-        return {
-            "start": self.round_start_styles,
-            "action": self.round_action_styles,
-            "win": self.round_win_styles,
-            "lose": self.round_lose_styles,
-            "mvp": self.round_mvp_styles,
-        }
+        """扫描每个回合事件的可选风格。
+
+        原来是 5 行硬编码 + 一个手写的返回 dict。加事件时漏改这里的表现是
+        下拉框永远为空，而且不报错。现在按事件表遍历。
+        """
+        result = {}
+        for event in events_in_group("round"):
+            styles = self._scan_sound_styles(os.path.join(self.round_sounds_dir, event.subdir))
+            setattr(self, styles_attr(event), styles)
+            result[event.key] = styles
+        return result
 
     def scan_gun_sound_styles(self):
         self.gun_sound_styles = {w: [] for w in self.GUN_TYPES}
@@ -1240,17 +1336,40 @@ class AudioManager:
             return False
         return self.load_sound(f"grenade-{grenade_type}-{style}", p, "special_sound", weapon_id=grenade_type, style=style)
 
-    def load_c4_sound(self, style) -> bool:
+    def load_c4_sound(self, style, event_key: str = "planted") -> bool:
+        """加载 C4 音效。
+
+        三个事件（安放/拆除/爆炸）共用 `c4_sounds/<风格>/` 这一个目录，靠文件名
+        关键词区分——分层目录会让老用户已导入的素材全部失联。
+
+        ⚠ 挑不到匹配文件时**返回 False，不回落到目录里的第一个文件**。
+        否则老用户目录里只有一个"下包"音效时，拆包和爆炸会各响一遍同一个声音，
+        听起来像 bug，比不响更糟。
+        """
         style = self._norm_style(style)
         if not self._style_enabled(style):
+            return False
+        event = get_event("c4", event_key)
+        if event is None:
             return False
         d = os.path.join(self.c4_sounds_dir, style)
         if not os.path.isdir(d):
             return False
-        p = find_first_audio_file(d, extensions=DEFAULT_AUDIO_EXTENSIONS, preferred_tokens=("planted", "install", "bomb", "下包", "安放"))
+
+        if event.key == "planted":
+            # 安放是老事件：保持原来的"优先匹配关键词、匹配不到取第一个"行为。
+            # 存量用户的素材文件名五花八门（很多就叫 1.mp3），改成严格匹配
+            # 会让他们本来响的音效突然不响。
+            p = find_first_audio_file(
+                d, extensions=DEFAULT_AUDIO_EXTENSIONS, preferred_tokens=event.filename_tokens
+            )
+        else:
+            p = find_audio_by_tokens(
+                d, event.filename_tokens, extensions=DEFAULT_AUDIO_EXTENSIONS
+            )
         if not p:
             return False
-        return self.load_sound(f"c4-planted-{style}", p, "special_sound", style=style)
+        return self.load_sound(f"c4-{event.key}-{style}", p, "special_sound", style=style)
 
     def load_health_warning_sound(self, style) -> bool:
         style = self._norm_style(style)
@@ -1428,8 +1547,12 @@ class AudioManager:
                 gt, style = payload.split("-", 1)
                 return self.load_grenade_sound(gt, style)
 
-        elif key.startswith("c4-planted-"):
-            return self.load_c4_sound(key[len("c4-planted-"):])
+        elif key.startswith("c4-"):
+            payload = key[3:]
+            if "-" in payload:
+                event_key, style = payload.split("-", 1)
+                if get_event("c4", event_key) is not None:
+                    return self.load_c4_sound(style, event_key)
 
         elif key.startswith("health-warning-"):
             return self.load_health_warning_sound(key[len("health-warning-"):])

@@ -67,12 +67,25 @@ def test_bind_conflict_detection():
     assert any("9" in w for w in warnings)
 
 
-def test_viewmodel_disabled_crosshair_no_mouse1():
+def test_viewmodel_disabled_crosshair_does_not_bind_attack_key():
+    """关闭回正时不去动用户的按键绑定。
+
+    这条判据原来写的是 `assert "mouse1" not in content`，也就是"关闭时这一段
+    整个不输出"。那恰恰是 2026-08-15 修掉的缺陷本身：CS2 存 bind 不存 alias，
+    启用过的用户 config.cfg 里长期留着 `bind mouse1 +quickrepos_attack`，
+    什么都不输出等于那个 bind 继续生效 —— 用户点了"关闭"，功能照跑。
+
+    现在关闭时要输出**直通 alias**（把残留 bind 退化成普通开火），但**不输出
+    任何 bind**。所以判据从"不出现 mouse1 三个字"收紧成"不出现绑定动作"。
+    完整的关闭行为见 tests/test_crosshair_reset_cfg.py。
+    """
     cfg = _build_config_obj()
     cfg.crosshair_reset_enabled = False
     cfg.hud_rules_enabled = False
     content = compile_viewmodel(cfg)
-    assert "mouse1" not in content
+    bind_lines = [ln for ln in content.splitlines() if ln.strip().startswith("bind ")]
+    assert not any("mouse" in ln for ln in bind_lines)
+    assert 'alias +quickrepos_attack "+attack"' in content
 
 
 def test_hud_rules_disabled_no_output():

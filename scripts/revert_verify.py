@@ -57,8 +57,9 @@ REVERTS = [
     Revert(
         "R9-A", "T 型竖杆画成完整十字",
         "crosshair_overlay.py",
-        "    sx, sy = rot(0, half)\n    _draw_line(painter, cx, cy, sx, sy)",
-        "    sx, sy = rot(0, half)\n    ux, uy = rot(0, -half)\n    _draw_line(painter, ux, uy, sx, sy)",
+        # 锚点跟着中心间隙(gap)那次改动搬过家：原来是 cx,cy 起画，现在从 rot(0, gap) 起。
+        "    bx1, by1 = rot(0, gap)",
+        "    bx1, by1 = rot(0, -half)",
         "tests/test_crosshair_style_catalog_r9a.py::test_t_shape_has_no_pixels_above_the_center_line",
         "几何错但不报错：像素照样有，只有肉眼看得出不是 T",
     ),
@@ -71,12 +72,20 @@ REVERTS = [
         "击杀破碎效果碎成圆点而不是线段",
     ),
     Revert(
-        "R9-A", "预览漏掉 t_shape 分支",
+        # 2026-08-16：这条原来叫「预览漏掉 t_shape 分支」，打的是
+        # `elif style == "t_shape":`。08-15 把预览改成直接调 paint_crosshair 之后，
+        # 那个分支连同整套私绘代码一起没了，判据也换成了反向的那条，
+        # 而本文件没跟着改——**锚点和判据名双双失效，谁都没发现**，
+        # 直到它把整个回退验证台卡在「基线就不绿」上。
+        "R9-A", "预览又自己按样式分叉画一份",
         "pages/crosshair_page.py",
-        '            elif style == "t_shape":',
-        '            elif style == "__never_matches__":',
-        "tests/test_crosshair_style_catalog_r9a.py::test_preview_handles_every_user_style",
-        "预览空白但屏幕上有准心",
+        "            frame = CrosshairAnimator().advance(state, 0.0)",
+        "            frame = CrosshairAnimator().advance(state, 0.0)\n"
+        "            style = state.style\n"
+        "            if style == \"t_shape\":\n"
+        "                pass",
+        "tests/test_crosshair_style_catalog_r9a.py::test_preview_has_no_private_drawing_branches",
+        "预览和渲染层各画各的几何：十字预览大一倍、点准心随粗细漂移",
     ),
     Revert(
         "R9-A", "样式名表被抄第二份",
@@ -102,6 +111,24 @@ REVERTS = [
         '        pass  # 不设 csgo_dir',
         "tests/test_audit_side_effects_r9a.py::test_live_run_sandboxes_the_game_dir_by_default",
         "UP-093：跑一次真机测试就写用户真实 CS2 目录",
+    ),
+    Revert(
+        "R9-A", "沙箱不再掐配置落盘",
+        "scripts/_audit_sandbox.py",
+        "    block_config_persistence(verbose=verbose)",
+        "    pass  # 落盘不掐了，只改内存里的 csgo_dir",
+        "tests/test_audit_side_effects_r9a.py::test_audit_never_persists_config",
+        "跑一次审计，用户真实配置里的 CS2 目录就被改成 %TEMP% 沙箱路径",
+    ),
+    Revert(
+        # 只掐两个公开入口不够：防抖 timer 和 atexit 兜底都直接调 _do_save_config。
+        # 这条断点专门盯"掐漏了那个真正写盘的"。
+        "R9-A", "沙箱漏掐真正写盘的那个入口",
+        "scripts/_audit_sandbox.py",
+        '_SAVE_ENTRY_POINTS = ("save_config", "save_config_now", "_do_save_config")',
+        '_SAVE_ENTRY_POINTS = ("save_config", "save_config_now")',
+        "tests/test_audit_side_effects_r9a.py::test_audit_never_persists_config",
+        "公开入口都掐了，防抖 timer 到点照样把沙箱路径写进用户配置",
     ),
     # ============================================ R9-B：崩溃日志压缩
     Revert(
@@ -255,21 +282,27 @@ REVERTS = [
         "UP-094：可用区 108px 需 112px，字号放大时打省略号",
     ),
     Revert(
-        "R10", "「保存FPS设置」又被写死宽度",
-        "pages/kill_icon_page.py",
+        # KI-7 把「保存播放设置」搬进了素材工坊。按钮还是那一个，UP-094 的风险
+        # 一模一样（有未保存改动时文案变成「保存播放设置 *」，更宽），只是
+        # `TIGHT_BUTTONS` 那份名单只扫 pages/，够不着对话框——所以断点改打在
+        # 工坊自己那条"底栏文案不许被打省略号"的判据上。
+        "R10", "工坊「保存播放设置」又被写死宽度",
+        "dialogs/kill_icon_workshop.py",
         "        self.save_fps_btn.setMinimumWidth(120)",
-        "        self.save_fps_btn.setFixedWidth(120)",
-        "tests/test_tab_scroll_and_button_width_r10.py::"
-        "test_known_tight_buttons_are_not_width_pinned[kill_icon_page.py]",
-        "UP-094：改动后文案变「保存FPS设置 *」更宽，写死的 120px 更不够",
+        "        self.save_fps_btn.setFixedWidth(72)",
+        "tests/test_kill_icon_workshop_ki7.py::test_no_button_text_gets_elided",
+        "UP-094：写死宽度 + 中文文案 + 字号缩放 = 截断，而对话框不在排版审计视野里",
     ),
     Revert(
         "R10", "产品代码里又混进编码损坏",
         "kill_icon_player.py",
-        '        """加载旧版逐帧动画"""',
+        # KI-1 把本文件整个重写成 Qt 版，原锚点（"""加载旧版逐帧动画"""）随
+        # pygame worker 一起没了。换成同文件里另一句一行中文 docstring——这条
+        # 判据验的是"产品代码里混进私有区乱码能不能被逮住"，与锚在哪句无关。
+        '        """老接口，保留空实现：缓存现在跟着风格与缩放走，不需要外部清。"""',
         # 注意：这里写的是**转义序列**，本文件源码里是 6 个 ASCII 字符，
         # 只有写进目标文件时才变成真正的私有区字符——否则本文件自己就"损坏"了。
-        '        """加载旧版逐帧动画\ue000"""',
+        '        """老接口，保留空实现：缓存现在跟着风格与缩放走，不需要外部清\ue000。"""',
         "tests/test_tab_scroll_and_button_width_r10.py::"
         "test_no_encoding_corruption_outside_the_tutorial_corpus",
         "UP-098：中文变乱码但 Python 照常运行、测试照常绿，只有用户看见乱码",
@@ -305,7 +338,7 @@ REVERTS = [
     Revert(
         "R11", "焦点巡检的分母写错",
         "scripts/tab_order_audit.py",
-        # ⚠ 开源版是 26 页（闭源版 27，多一个账号页）。这个数字随页面集合变，
+        # ⚠ 开源版是 27 页（闭源版 28，多一个账号页）。这个数字随页面集合变，
         # 改页面时锚点要跟着改，否则这条断点会静默"跳过"。
         "TOTAL_PAGES = 27",
         "TOTAL_PAGES = 11",
@@ -1122,6 +1155,476 @@ REVERTS = [
         '把常量指向一个确实已入库的文件，等价于"那张美术底图被 git add 了"。'
         '它既是旧品牌残留，又是来源不清的 AI 素材，公开仓库两头都不该有',
     ),
+
+    # ==================================== KI-4/5/6：击杀图标兼容性与清单板
+    #
+    # 这一组断点全都是**导入照常成功、报错一句没有**的类型——这也是 KI-4
+    # 要修的四条路的共同点。假绿的判据在这里代价特别大：功能测试全绿，
+    # 而用户拿到的是一个 0.03 秒的图标、一条马赛克、或者一个写到资源目录
+    # 外面的文件。
+    Revert(
+        "KI", "定格时长被从播放时间轴上摘掉",
+        "kill_icon_overlay.py",
+        "    animation_duration = frame_count / float(fps) + clamp_hold(hold)",
+        "    animation_duration = frame_count / float(fps)",
+        "tests/test_kill_icon_overlay_ki1.py::test_single_frame_icon_is_visible_at_all",
+        "静态图标只显示 0.033 秒，弹窗说导入成功、游戏里什么都没有",
+    ),
+    Revert(
+        "KI", "裁边改成逐帧各裁各的",
+        "core/kill_icon_import.py",
+        "        box = _frames_union_bbox(frames)\n"
+        "        if box is not None and box != (0, 0, frames[0].width, frames[0].height):\n"
+        "            frames = [frame.crop(box) for frame in frames]",
+        "        box = _frames_union_bbox(frames)\n"
+        "        if box is not None and box != (0, 0, frames[0].width, frames[0].height):\n"
+        "            frames = [frame.crop(frame.getbbox() or box) for frame in frames]",
+        "tests/test_kill_icon_compat_ki4.py::"
+        "test_trim_uses_the_union_box_so_the_animation_does_not_jitter",
+        "每一帧的内容都被推到画格正中，播放时整个动画在原地抖",
+    ),
+    Revert(
+        "KI", "zip 条目路径不再校验",
+        "core/kill_icon_pack.py",
+        '        if part == "..":\n            return None',
+        '        if part == "..":\n            continue',
+        "tests/test_kill_icon_pack_ki4.py::"
+        "test_zip_slip_is_refused_before_anything_is_written",
+        "zip-slip：从网上下的图标包能往资源目录外面写文件",
+    ),
+    Revert(
+        "KI", "选中图集的 png 不再去找同名 json",
+        "core/kill_icon_import.py",
+        '    sibling = _sibling_metadata_path(path) if lower.endswith(".png") else None',
+        "    sibling = None",
+        "tests/test_kill_icon_compat_ki4.py::test_selecting_the_sheet_png_finds_its_json",
+        "整张图集被当成一帧，屏幕上是一条巨大的马赛克，全程零警告",
+    ),
+    Revert(
+        "KI", "单文件与目录的格式表又分家",
+        "core/kill_icon_import.py",
+        "SEQUENCE_EXTENSIONS = tuple(sorted(set(ANIMATED_EXTENSIONS + STATIC_EXTENSIONS)))",
+        'SEQUENCE_EXTENSIONS = (".png", ".webp", ".jpg", ".jpeg", ".bmp")',
+        "tests/test_kill_icon_compat_ki4.py::"
+        "test_the_two_extension_tables_are_literally_the_same_set",
+        "jpg 单独拖进来被拒、放进文件夹却能进——用户只觉得这软件挑食",
+    ),
+    Revert(
+        # KI-7 之后这段逻辑在素材工坊里（设置页不再逐等级编辑）。
+        "KI", "单帧素材的时长又被当成播放速度",
+        "dialogs/kill_icon_workshop.py",
+        '            if frames == 1 and hasattr(self.player, "update_hold_for_style"):',
+        "            if False:",
+        "tests/test_kill_icon_grid_ki6.py::"
+        "test_static_levels_save_a_hold_and_animated_levels_save_a_frame_rate",
+        "调静态图标的时长毫无反应：帧率对一张图来说没有意义",
+    ),
+    Revert(
+        "KI", "拖拽过滤器又不认文件夹",
+        "widgets/drop_import_mixin.py",
+        "            if self._accept_directories and os.path.isdir(p):",
+        "            if False and os.path.isdir(p):",
+        "tests/test_kill_icon_page_ki3.py::test_folders_can_be_dropped_at_all",
+        "帧序列文件夹拖进去毫无反应，连报错都没有，而页面上写着「拖进来就能导入」",
+    ),
+    Revert(
+        "KI", "切风格后拿上一个风格的帧数糊弄",
+        "kill_icon_player.py",
+        '        info = self._catalog.get((kills, "")) if style_name == self._catalog_style else None\n'
+        '        if info is not None:\n'
+        '            return info.frame_count',
+        '        info = self._catalog.get((kills, "")) if style_name == self.current_style else None\n'
+        '        if info is not None:\n'
+        '            return info.frame_count',
+        "tests/test_kill_icon_grid_ki6.py::"
+        "test_switching_styles_does_not_report_the_previous_styles_frames",
+        "刚导入一个图标包，清单板五个格子显示的是老风格的帧数和时长，而且不会自己好",
+    ),
+    Revert(
+        "KI", "装载完成不通知页面",
+        "kill_icon_player.py",
+        "        self.assets_ready.emit(style_name)",
+        "        pass  # 不通知",
+        "tests/test_kill_icon_grid_ki6.py::"
+        "test_the_page_refreshes_itself_when_the_assets_land",
+        "导入成功了、格子却还是空的，要再刷一次才好",
+    ),
+    Revert(
+        "KI", "空格子上的删除/导出没有灰掉",
+        "widgets/kill_icon_level_grid.py",
+        "        export.setEnabled(has_assets)",
+        "        export.setEnabled(True)",
+        "tests/test_kill_icon_grid_ki6.py::test_the_menu_greys_out_what_cannot_be_done",
+        "点了没反应比灰着更让人困惑",
+    ),
+
+    # ==================================== KI-7：拆成「简单层 + 素材工坊」两层
+    #
+    # 这一组防的不是功能坏掉，而是**复杂度长回去**和**搬家途中掉东西**。
+    # 两者都没有当场的症状：页面胖回去了没人会报 bug，工坊里少接一根线也
+    # 要等到有人真去用那个功能才发现。
+    Revert(
+        "KI", "缩略图又走整套解码那条路",
+        "widgets/kill_icon_style_strip.py",
+        "        from kill_icon_overlay import load_level_thumbnail",
+        "        from kill_icon_overlay import load_level_animation as load_level_thumbnail",
+        "tests/test_kill_icon_simple_page_ki7.py::test_thumbnails_do_not_decode_whole_animations",
+        "风格库里有几套就整套解码几次，用户 519 帧的默认风格一进页面就顿住",
+    ),
+    Revert(
+        "KI", "导入小窗开始问第二个问题",
+        "dialogs/kill_icon_import_wizard.py",
+        "        self.warning_label.setWordWrap(True)",
+        "        self.warning_label.setWordWrap(True)\n"
+        "        from PySide6.QtWidgets import QSlider as _S\n"
+        "        self._extra = _S(self)",
+        "tests/test_kill_icon_wizard_ki7.py::test_the_wizard_asks_exactly_one_question",
+        "「最多问一个问题」被稀释成又一个高级面板",
+    ),
+    Revert(
+        "KI", "预选的等级和下拉里显示的对不上",
+        "dialogs/kill_icon_import_wizard.py",
+        '        index = self.level_combo.findData(f"{self._kills}{self._variant}")',
+        "        index = self.level_combo.findData((self._kills, self._variant))",
+        "tests/test_kill_icon_wizard_ki7.py::test_the_dropdown_actually_shows_the_guessed_level",
+        "下拉显示「1 杀」而实际会导入到 3 杀——元组过 QVariant 后 findData 恒 -1",
+    ),
+    Revert(
+        "KI", "设置页又把编辑器搬回首屏",
+        "pages/kill_icon_page.py",
+        "        scroll_layout.addWidget(self._create_workshop_card())",
+        "        from widgets.kill_icon_level_grid import KillIconLevelGrid\n"
+        "        self.level_grid = KillIconLevelGrid()\n"
+        "        scroll_layout.addWidget(self.level_grid)\n"
+        "        scroll_layout.addWidget(self._create_workshop_card())",
+        "tests/test_kill_icon_simple_page_ki7.py::test_the_editor_did_not_follow_the_page",
+        "只想换套图标的人一进来又要面对 30 多个可操作控件",
+    ),
+    Revert(
+        "KI", "拖到某一格上还多问一句",
+        "dialogs/kill_icon_workshop.py",
+        "    def _on_level_files_dropped(self, kills, paths):\n"
+        '        """拖到某一格上：就进那一格。用户已经用位置表达了意图，不再问一遍。"""\n'
+        "        self.import_paths(paths, int(kills))",
+        "    def _on_level_files_dropped(self, kills, paths):\n"
+        "        self._on_files_dropped(paths)",
+        "tests/test_kill_icon_workshop_ki7.py::test_dropping_onto_a_level_cell_targets_that_level",
+        "用户已经用「拖到哪一格」表达了意图，还弹个框问一遍",
+    ),
+    Revert(
+        "KI", "工坊里改完节奏试播用的是存盘值",
+        "dialogs/kill_icon_workshop.py",
+        "        seconds = cell.seconds if cell else 0.0\n"
+        "        fps = fps_for_duration(frames, seconds) if frames > 1 else None",
+        "        fps = self.player.get_style_fps(self.style_name, kills) if frames > 1 else None",
+        "tests/test_kill_icon_workshop_ki7.py::"
+        "test_testing_a_level_uses_the_slider_value_not_the_stored_one",
+        "拖完滑条试播毫无变化，用户以为「拖了没用」",
+    ),
+    Revert(
+        # 这条防的是"页面上那块预览凭空消失"——布局不溢出、不报错、判据全绿，
+        # 只有渲染成图肉眼看才发现。撑住宽度的**只有** sizeHint（最小宽是 0，
+        # 那是为窄窗口留的），所以断点打在 sizeHint 上。
+        "KI", "预览控件又不报自己的期望尺寸",
+        "widgets/kill_icon_preview.py",
+        "        return QSize(self._box[0], self._box[1])",
+        "        return QSize(0, 0)",
+        "tests/test_kill_icon_simple_page_ki7.py::test_the_hero_preview_is_actually_visible",
+        "QWidget 默认 sizeHint 无效，摆进水平布局就被收扁",
+    ),
+    Revert(
+        "KI", "卡片条高度在装进真卡片之前就写死",
+        "pages/kill_icon_page.py",
+        # 锚点在 2026-08-16 修 V-004 时被改写过一次（原文是
+        # `setFixedHeight(self.style_strip.sizeHint().height() + 6)`）。
+        # 失效体检把它逮了出来——**断点一旦锚不上就是在空转**。
+        "        self.style_scroll.setFixedHeight(need + 6)",
+        "        self.style_scroll.setFixedHeight(72)",
+        "tests/test_kill_icon_simple_page_ki7.py::"
+        "test_the_card_strip_is_tall_enough_to_show_the_whole_card",
+        "风格卡最后一行「素材齐全 / 2-5 个等级」被裁掉，切换前看不出缺不缺素材",
+    ),
+    Revert(
+        # 断点必须是 `setFixedWidth`，不能只是把 `setMinimumWidth` 调小：
+        # 网格列宽由该列最宽的按钮决定，最小宽调小了实际宽度照样够——
+        # 那个断点模拟不出任何缺陷，判据当然不会红（第一版就是这么假绿的）。
+        # 真正会出事的形状是 UP-094 那一种：写死宽度 + 中文文案 + 字号缩放。
+        "KI", "工坊「高级导入 / 批量…」又被写死宽度",
+        "dialogs/kill_icon_workshop.py",
+        "        self.advanced_btn.setMinimumWidth(156)",
+        "        self.advanced_btn.setFixedWidth(96)",
+        "tests/test_kill_icon_workshop_ki7.py::test_no_button_text_gets_elided",
+        "对话框不在排版审计的视野里，按钮文案被打省略号没人会发现",
+    ),
+    Revert(
+        "KI", "工坊的底栏按钮不再折行",
+        "dialogs/kill_icon_workshop.py",
+        "        columns = len(self._buttons) if self.width() >= self.BUTTONS_ONE_ROW_WIDTH else 2",
+        "        columns = len(self._buttons)",
+        "tests/test_kill_icon_workshop_ki7.py::test_the_dialog_fits_its_own_minimum_size",
+        "五个按钮并排要 660px 而窗口最小 560——拖窄就把按钮挤出去（排版审计不量对话框）",
+    ),
+
+    # ---- KI-7b：异构模型复审之后修的五条 ------------------------------
+    Revert(
+        # 这一条是**只看截图**被指出来的：KI-7 自带 73 条判据全绿，
+        # 因为"改完要点保存"这件事我自己知道，所以从没写过"不点会怎样"。
+        "KI", "工坊关窗又把没保存的节奏扔掉",
+        "dialogs/kill_icon_workshop.py",
+        "        if self._dirty:\n            self._apply_timing()\n        self.level_grid.stop_previews()",
+        "        self.level_grid.stop_previews()",
+        "tests/test_kill_icon_ki7b_review_fixes.py::"
+        "test_closing_the_workshop_saves_pending_timing",
+        "拖完滑条预览立刻变快（看着已生效），点「完成」改动全丢，只有按钮上一个 *",
+    ),
+    Revert(
+        # 断点只挪掉 reject 那一半：拦 accept 是最自然的写法，而用户关窗
+        # 最常用的恰恰是右上角那个叉（走 reject）。
+        "KI", "关窗落盘只拦「完成」不拦叉窗口",
+        "dialogs/kill_icon_workshop.py",
+        "    def done(self, result):\n        # 关窗**一定**先落盘",
+        "    def accept(self):\n        result = 1\n        # 关窗**一定**先落盘",
+        "tests/test_kill_icon_ki7b_review_fixes.py::test_closing_by_escape_also_saves",
+        "叉掉窗口/按 Esc 依旧静默丢改动，而这是最常用的关窗方式",
+    ),
+    Revert(
+        "KI", "切风格之前不先落盘",
+        "dialogs/kill_icon_workshop.py",
+        "        if self._dirty:\n            self._apply_timing()\n        self.style_name = name",
+        "        self.style_name = name",
+        "tests/test_kill_icon_ki7b_review_fixes.py::"
+        "test_switching_style_flushes_pending_timing_to_the_old_style",
+        "在 A 上调完节奏切到 B，改动无声消失；先改 style_name 再落还会写错风格",
+    ),
+    Revert(
+        "KI", "爆头角标又把「已就绪」顶掉",
+        "widgets/kill_icon_level_grid.py",
+        '        self.badge_label.setText("已就绪")',
+        '        self.badge_label.setText("爆头专属" if self._has_headshot else "已就绪")',
+        "tests/test_kill_icon_ki7b_review_fixes.py::"
+        "test_headshot_does_not_replace_the_ready_badge",
+        "那一格看上去像「爆头专用」，而设置页的爆头是个独立勾选框，两处概念对不上",
+    ),
+    Revert(
+        "KI", "时长滑条又变回没有名字",
+        "widgets/kill_icon_level_grid.py",
+        '        self.slider_caption = QLabel("在屏幕上停留")',
+        '        self.slider_caption = QLabel("")',
+        "tests/test_kill_icon_ki7b_review_fixes.py::"
+        "test_the_duration_slider_says_what_it_does",
+        "光秃秃一根滑条配「0.60 秒 · 20 FPS」，拖的是时长/帧率/进度三种都说得通",
+    ),
+    Revert(
+        # 断点让下拉在当前风格不在库里时静默停在第一项——这正是 QComboBox
+        # 的默认行为，也是最容易写出来的那一版。
+        "KI", "工坊下拉丢掉磁盘上已消失的当前风格",
+        "dialogs/kill_icon_workshop.py",
+        "        if self.style_name and self.style_name not in styles:\n"
+        "            styles.insert(0, self.style_name)",
+        "        styles = list(styles)",
+        "tests/test_kill_icon_ki7b_review_fixes.py::"
+        "test_current_style_survives_even_if_it_vanished_from_disk",
+        "下拉显示 A、style_name 还是 B，用户以为在编辑 A 其实在编辑 B",
+    ),
+    Revert(
+        # 断点把反解改成"自己按比例估"——就是没有 `icon_geometry` 那一版
+        # 最容易写出来的近似：拿示意图中心当基准，忽略落点公式里的 3/4 和 +50。
+        "KI", "示意图拖拽自己估落点不走叠加层公式",
+        "widgets/kill_icon_preview.py",
+        "        base_x, base_y, w, h = self.icon_geometry((0, 0))\n"
+        "        offset_x = int(round((point.x() - map_x) / ratio - (base_x + w / 2)))\n"
+        "        offset_y = int(round((point.y() - map_y) / ratio - (base_y + h / 2)))",
+        "        screen_w, screen_h = REFERENCE_SCREEN\n"
+        "        offset_x = int(round((point.x() - map_x) / ratio - screen_w / 2))\n"
+        "        offset_y = int(round((point.y() - map_y) / ratio - screen_h / 2))",
+        "tests/test_kill_icon_ki7b_review_fixes.py::"
+        "test_dragging_lands_where_the_blue_box_is_drawn",
+        "点的地方和框画的地方分家，界面看着没毛病、进游戏才发现位置不对",
+    ),
+    Revert(
+        "KI", "拖拽不再夹在滑条量程里",
+        "widgets/kill_icon_preview.py",
+        "        limit = self.OFFSET_LIMIT\n"
+        "        return (max(-limit, min(limit, offset_x)),\n"
+        "                max(-limit, min(limit, offset_y)))",
+        "        return (offset_x, offset_y)",
+        "tests/test_kill_icon_ki7b_review_fixes.py::"
+        "test_dragging_is_clamped_to_the_slider_range",
+        "拖出量程的值滑条表示不了，回填就被夹回去——表现是松手往回弹一下",
+    ),
+    Revert(
+        "KI", "示意图拖动的值不回滑条",
+        "pages/kill_icon_page.py",
+        "        self.position_map.position_changed.connect(self._on_map_dragged)",
+        "        pass",
+        "tests/test_kill_icon_ki7b_review_fixes.py::"
+        "test_the_page_routes_the_drag_through_its_sliders",
+        "蓝框拖得动但什么都不改，等于做了个骗人的交互",
+    ),
+    Revert(
+        "KI", "拖到原地也发一枪信号",
+        "widgets/kill_icon_preview.py",
+        "        if offset == self._offset:\n            return\n        self._offset = offset",
+        "        self._offset = offset",
+        "tests/test_kill_icon_ki7b_review_fixes.py::"
+        "test_dragging_to_the_same_place_stays_quiet",
+        "每次 mouseMove 都发，一次拖动能把配置写盘打满（save_config 有防抖但不是免费的）",
+    ),
+    Revert(
+        # 这条是"改完布局要出一张图看一眼"那条规矩当场兑现的：加了"可拖动"
+        # 三个字之后，示意图底下那行的两头都被裁了——而它是 drawText 画的，
+        # 排版审计量的是控件几何，一个字都量不到。
+        "KI", "示意图底下那行字又硬画不省略",
+        "widgets/kill_icon_preview.py",
+        "        return QFontMetrics(self.font()).elidedText(\n"
+        "            self.CAPTION, Qt.ElideRight, max(0, int(width)))",
+        "        return self.CAPTION",
+        "tests/test_kill_icon_ki7b_review_fixes.py::"
+        "test_the_caption_never_gets_painted_past_the_edge",
+        "说明文字被裁掉两头，看上去像渲染坏了；排版审计量不到 drawText",
+    ),
+    Revert(
+        # 把写死高度加回去 = 复现"setFixedHeight 打不过 QSS min-height"。
+        # Qt 在 min > max 时取 min，于是按钮 54 高、布局按 28 算，
+        # 下边框被卡片边缘切掉一道。判据必须带主题样式表跑，否则这条恒绿。
+        "KI", "每格按钮又被写死高度（打不过 QSS 的 min-height）",
+        "widgets/kill_icon_level_grid.py",
+        '        self.test_btn.setObjectName("secondaryButton")\n',
+        '        self.test_btn.setObjectName("secondaryButton")\n'
+        '        self.test_btn.setFixedHeight(28)\n',
+        "tests/test_kill_icon_ki7b_review_fixes.py::"
+        "test_cell_buttons_stay_inside_the_card",
+        "按钮下边框被卡片边缘齐齐切掉；布局按 28 算所以几何上「没溢出」，判据全绿",
+    ),
+    Revert(
+        # 这条的来路特殊：**异构模型在一张干净截图上 3/3 报出来的**，
+        # 我自己 73 条 KI-7 判据一条都没覆盖。断点退回"有多长画多长"。
+        "KI", "预览框里的占位文字又有多长画多长",
+        "widgets/kill_icon_preview.py",
+        "        box = self.placeholder_box(rect)\n"
+        "        return (box, Qt.AlignCenter | Qt.TextWordWrap,\n"
+        "                self.placeholder_for_box(box.width(), box.height()))",
+        "        return rect, Qt.AlignCenter, self._placeholder",
+        "tests/test_kill_icon_ki7b_review_fixes.py::"
+        "test_the_placeholder_never_spills_out_of_the_preview_box",
+        "「这套风格还没有素材…」两头各切掉一个字，且画在圆角边框外面，像渲染坏了",
+    ),
+
+    # ---- V 组：UI 视觉巡检 R1（2026-08-16）------------------------------
+    # 这六条的共同点是**几何全部合法**，所以排版审计一路绿灯——
+    # 它们只有在像素上才看得见。详见 docs/quality/UI视觉巡检_R1_20260816.md。
+    Revert(
+        "V", "QSS 图片又退回 data URI",
+        "theme_manager.py",
+        '        check_rule = f"image: url({check_icon});" if check_icon else ""',
+        '        check_rule = "image: url(data:image/svg+xml;base64,PHN2Zy8+);"',
+        "tests/test_ui_visual_r1_fixes.py::test_qss_never_uses_data_uri_images",
+        "Qt 不认 data URI，写了不报错也不显示：所有已勾选的复选框只剩一个纯色方块",
+    ),
+    Revert(
+        "V", "下拉箭头退回 Web CSS 的三角形技巧",
+        "theme_manager.py",
+        "            QComboBox::down-arrow {{\n"
+        "                {arrow_rule}",
+        "            QComboBox::down-arrow {{\n"
+        "                border-left: 5px solid transparent;\n"
+        "                border-top: 6px solid red;",
+        # ⚠ 这条断点删掉的是 `image:` 那一行本身，所以"图片路径存不存在"那条判据
+        # 会**空转成绿**（一条 image: 都没有，循环体一次都不进）。回退验证第一次
+        # 就是这么抓到的——必须配一条"下拉箭头得有 image:"的判据才拦得住。
+        "tests/test_ui_visual_r1_fixes.py::test_combobox_arrow_is_drawn_with_an_image",
+        "Qt 把四条边照实心画：全应用 233 个下拉框的箭头都变成实心小方块",
+    ),
+    Revert(
+        "V", "箭头图标画成方块",
+        "theme_manager.py",
+        "    painter.fillPath(path, color)",
+        "    painter.fillRect(0, 0, int(w), int(h), color)",
+        "tests/test_ui_visual_r1_fixes.py::test_down_arrow_icon_is_a_triangle_not_a_block",
+        "下拉箭头不是三角形而是方块——正是修复前用户看到的样子",
+    ),
+    Revert(
+        "V", "帮助按钮的 padding 归零被撤掉",
+        "theme_manager.py",
+        "                min-width: 24px; max-width: 24px;\n"
+        "                min-height: 24px; max-height: 24px;",
+        "                min-height: 42px;",
+        "tests/test_ui_visual_r1_fixes.py::test_help_button_box_model_is_consistent",
+        "min > max 时 Qt 取 min：24×24 的圆变成 24×42 灰胶囊，「?」被 padding 挤没",
+    ),
+    Revert(
+        "V", "帮助按钮又开始自己写内联样式",
+        "ui_help_panel.py",
+        '        self.setToolTip("查看帮助")',
+        '        self.setToolTip("查看帮助")\n'
+        '        self.setStyleSheet("QPushButton { color: red; }")',
+        "tests/test_ui_visual_r1_fixes.py::test_help_button_box_model_is_consistent",
+        "内联样式会被 ui_style_applier 的清扫器抹掉（本类没声明 fp_keep_style），"
+        "于是 23 个页面的帮助按钮全变成无字灰胶囊",
+    ),
+    Revert(
+        "V", "卡片条视口比内容矮",
+        "pages/kill_icon_page.py",
+        # ⚠ 第一版断点写的是 `need = sizeHint - 10`，**没逮住**：这个方法会被调
+        # 好几次（建页 / load_settings / 事件循环空转后再校一次），每次都拿当时的
+        # sizeHint 重算，最后一次算出来的值反而不比最终内容矮。
+        # 断点要**直接砍最终高度**才稳定复现"视口装不下内容"。
+        "        self.style_scroll.setFixedHeight(need + 6)",
+        "        self.style_scroll.setFixedHeight(need - 20)",
+        "tests/test_ui_visual_r1_fixes.py::"
+        "test_kill_icon_style_strip_viewport_fits_its_content",
+        "视口比内容矮，而这个滚动区纵向是 AlwaysOff：「zip / 动图 / 图片」被永久切掉",
+    ),
+    Revert(
+        "V", "页面说明又写回版面决策",
+        "pages/kill_sound_page.py",
+        '    PAGE_LEAD = "击杀敌人时播放你自己的音效，可以按武器类别和连杀数分开配。'
+        '先去「基础设置」打开总开关，再逐把枪选风格，点「测试」试听。"',
+        '    PAGE_LEAD = "击杀音效页保持列表式效率，把分类切换和快速试听留在一屏里。"',
+        "tests/test_page_copy_is_user_facing.py::test_page_copy_has_no_layout_jargon",
+        "副标题讲的是界面怎么排而不是功能是什么，玩家读完不知道该干嘛"
+        "——外审在 8 个页面上独立指出同一件事",
+    ),
+    Revert(
+        "V", "文案又指向不存在的「首页」",
+        "pages/kill_sound_page.py",
+        "再去「基础设置」打开总开关。",
+        "再回首页启用。",
+        "tests/test_page_copy_is_user_facing.py::"
+        "test_page_copy_does_not_point_at_a_nonexistent_page",
+        "「回首页启用」曾出现在 5 个页面，而侧栏里从来没有叫「首页」的东西",
+    ),
+    Revert(
+        "V", "侧栏又有页面漏配图标",
+        "widgets/icon_provider.py",
+        '    "fun_afterlife":        "mdi.cellphone-play",',
+        "",
+        "tests/test_ui_visual_r1_fixes.py::test_every_nav_page_has_an_icon",
+        "get_page_icon 查不到就静默返回空 QIcon：那一项在侧栏里没图标、"
+        "文字比同组其它项左移一截",
+    ),
+    Revert(
+        "V", "方形约束又落回共用的 modeToggleButton 上",
+        "theme_manager.py",
+        "            QPushButton#modeToggleIconButton {{\n"
+        "                padding: 0px;",
+        "            QPushButton#modeToggleButton {{\n"
+        "                padding: 0px;",
+        "tests/test_ui_visual_r1_fixes.py::"
+        "test_sidebar_mode_button_is_not_squeezed_into_a_square",
+        "侧栏底部「紧凑模式 «」被压成 38px 方块，文字裁成「奏模式」"
+        "——我自己修 V-005 时踩的回归，重跑截图才发现",
+    ),
+    Revert(
+        "V", "切页后不再把当前导航项滚进可视区",
+        "gui_widget.py",
+        "            self._ensure_nav_button_visible(page_id)\n",
+        "",
+        "tests/test_ui_visual_r1_fixes.py::"
+        "test_sidebar_scrolls_the_active_nav_item_into_view",
+        "默认 1280×800 下 28 页里 15 页在折叠线外，切过去侧栏还停在顶部，"
+        "当前项既看不见也没高亮 —— 用户失去「我在哪一页」的指示",
+    ),
 ]
 
 
@@ -1138,12 +1641,73 @@ def run_pytest(selector: str) -> bool:
     return proc.returncode == 0
 
 
+def selector_is_collectable(selector: str) -> bool:
+    """判据名还存在吗？只收集不执行，快且没有副作用。
+
+    判据被改名/删掉之后，本文件里的 nodeid 就成了空指针。pytest 对
+    "collect 不到" 的退出码是 5（`-q` 下打印 `no tests collected`），
+    和"跑了但红了"的 1 是两码事——可基线检查只看 `returncode == 0`，
+    于是一次改名会被报成「基线就不绿」，**整台回退验证直接停摆**，
+    而真正的原因（这条断点已经空转很久了）一个字都没提。
+    2026-08-16 就是这么被卡住的：`test_preview_handles_every_user_style`
+    早在 08-15 改成了 `test_preview_has_no_private_drawing_branches`。
+    """
+    env = dict(os.environ)
+    env["PYTHONIOENCODING"] = "utf-8"
+    proc = subprocess.run(
+        [sys.executable, "-m", "pytest", selector, "--collect-only", "-q",
+         "--no-header", "-p", "no:cacheprovider"],
+        cwd=str(ROOT), env=env, capture_output=True, text=True,
+        encoding="utf-8", errors="replace", timeout=300,
+    )
+    return proc.returncode == 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", default="", help="只跑某一组（R9-A / R9-B / R9-C / R9-D）")
+    ap.add_argument("--stale-only", action="store_true",
+                    help="只做失效体检（锚点是否还在、判据名是否还在），不改任何文件、不跑用例")
     args = ap.parse_args()
 
     items = [r for r in REVERTS if not args.only or r.group == args.only]
+
+    # ---- 失效体检：断点会随产品代码一起腐烂，先把腐烂的挑出来单独报 ----
+    # 放在基线之前：一条改了名的判据不该让另外 90 多条断点跟着停摆。
+    print("=" * 78)
+    print("失效体检：锚点还在不在、判据名还在不在")
+    print("=" * 78)
+    stale = []
+    for r in items:
+        if not r.path.exists():
+            stale.append((r, "产品文件已不存在"))
+            continue
+        n = r.path.read_text(encoding="utf-8").count(r.old)
+        if n != 1:
+            stale.append((r, f"锚点在源码里出现 {n} 次（要求恰好 1 次）"))
+    checked = {}
+    for r in items:
+        if any(r is s for s, _ in stale):
+            continue
+        if r.selector not in checked:
+            checked[r.selector] = selector_is_collectable(r.selector)
+        if not checked[r.selector]:
+            stale.append((r, f"判据名已不存在：{r.selector}"))
+    if stale:
+        print(f"⚠ {len(stale)}/{len(items)} 条断点已失效——它们**一直在空转**，"
+              f"以为有人看着的地方其实没人看着：")
+        for r, why in stale:
+            print(f"   - {r.group} {r.name}：{why}")
+        print("   本轮跳过这些，其余照跑。修法：把锚点/判据名改到现在的代码上。\n")
+    else:
+        print(f"✅ {len(items)} 条断点的锚点与判据名都还对得上\n")
+    stale_ids = {id(r) for r, _ in stale}
+    items = [r for r in items if id(r) not in stale_ids]
+    if args.stale_only:
+        return 3 if stale else 0
+    if not items:
+        print("没有可跑的断点。")
+        return 3
 
     # 开跑前给所有涉及的文件拍快照，收尾无论如何都还原
     touched = {r.path for r in items}
@@ -1200,12 +1764,14 @@ def main() -> int:
         print(f"跳过 {len(skipped)} 条（锚点对不上，说明产品代码变了，得更新本文件）：")
         for r, note in skipped:
             print(f"  - {r.group} {r.name}：{note}")
+    if stale:
+        print(f"⚠ 另有 {len(stale)} 条断点已失效，本轮没跑（见开头的失效体检）")
     if missed:
         print(f"❌ {len(missed)} 条判据是**假绿**的：")
         for r, note in missed:
             print(f"  - {r.group} {r.name} → {r.selector}")
         return 1
-    return 0 if not skipped else 3
+    return 0 if not (skipped or stale) else 3
 
 
 if __name__ == "__main__":

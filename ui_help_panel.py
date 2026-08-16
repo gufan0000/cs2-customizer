@@ -12,46 +12,40 @@ from PySide6.QtWidgets import (
     QSizePolicy, QScrollArea
 )
 from PySide6.QtGui import QFont
-from theme_manager import get_theme_manager
 
 
 class HelpButton(QPushButton):
-    """圆形 "?" 帮助按钮 (24x24)"""
+    """圆形 "?" 帮助按钮 (24x24)
+
+    ⚠ **样式必须留在全局 QSS 里（`theme_manager` 的 `QPushButton#helpButton`），
+    这里一个字都不许写内联样式。** 原先是在这儿 `setStyleSheet()` 按主题现算的，
+    结果 23 个页面的帮助按钮**全部变成一个无字灰胶囊**，成因是三级串联：
+
+      1. `ui_style_applier` 的清扫器在建页后递归 `setStyleSheet("")`
+         （只放过声明了 `fp_keep_style` 的控件，本类从没声明过）
+         → 内联样式被抹光，落到通用 `QPushButton` 规则上；
+      2. 通用规则的 `min-height` 把最小高顶到 42，而 `setFixedSize(24, 24)`
+         只压得住**最大**高 —— **Qt 在 min > max 时取 min**，于是 24×42，
+         `border-radius: 12px` 再也画不出圆；
+      3. 通用规则的横向 padding（≥12px×2）把 24px 宽吃成负数，
+         「?」需要 7px 无处可画 → **整个字消失**。
+
+    而 config_snapshot / audio_health / preset_center 等 5 个页面的正文
+    明写着「点右上角「?」看用法」—— 文案指着一个用户看不见的按钮。
+
+    走全局 QSS 之后，主题切换由 theme_manager 重刷样式表统一负责，
+    既不需要注册回调，也不存在"被清扫"这条路径。
+    """
 
     def __init__(self, parent=None):
         super().__init__("?", parent)
         self.setObjectName("helpButton")
-        self.setFixedSize(24, 24)
+        # 28 而不是 24：QSS 里写的 min/max 是内容盒尺寸（24），加上 1.5px 边框
+        # 实际就是 28。这里必须跟 QSS 算出来的最终值一致——写小了 Qt 会取 min，
+        # 又变回那个"最大压不住最小"的形变。
+        self.setFixedSize(28, 28)
         self.setCursor(Qt.PointingHandCursor)
         self.setToolTip("查看帮助")
-        self._tm = get_theme_manager()
-        self._apply_style()
-        self._tm.register_theme_changed_callback(self._apply_style)
-
-    def _apply_style(self):
-        c = self._tm.current_theme.colors
-        self.setStyleSheet(f"""
-            QPushButton#helpButton {{
-                background: transparent;
-                color: {c.accent_primary};
-                border: 1.5px solid {c.accent_primary};
-                border-radius: 12px;
-                font-size: 13px;
-                font-weight: 700;
-                padding: 0px;
-            }}
-            QPushButton#helpButton:hover {{
-                background: {c.accent_primary};
-                color: white;
-            }}
-        """)
-
-    def deleteLater(self):
-        try:
-            self._tm.unregister_theme_changed_callback(self._apply_style)
-        except Exception:
-            pass
-        super().deleteLater()
 
 
 class HelpPanel(QWidget):
@@ -249,37 +243,6 @@ PAGE_HELP_TEXTS = {
         "3. 放入 MP3/WAV/OGG 格式的音频文件（按击杀数命名：1、2 ...）<br>"
         "4. 文件夹名称会自动显示在下拉菜单中"
     ),
-    "kill_icon": (
-        "<b>功能说明</b><br>"
-        "击杀图标会在击杀敌人时在屏幕上显示动画效果，仅支持 Sprite Sheet（精灵图）格式。<br><br>"
-        "<b>使用方法</b><br>"
-        "1. 在基础设置中启用「击杀图标」开关<br>"
-        "2. 选择一个图标风格<br>"
-        "3. 调整图标大小、显示位置和 FPS 播放速度<br>"
-        "4. 点击「预览」查看动画效果<br><br>"
-        "<b>格式要求</b><br>"
-        "• 仅支持 Sprite Sheet 格式（单张图片包含所有动画帧）<br>"
-        "• 每个击杀数需要独立的精灵图和配置文件（如 1.png + 1.json）<br>"
-        "• JSON 配置文件中包含帧数、FPS 等播放参数<br><br>"
-        "<b>自定义图标</b><br>"
-        "1. 在 <code>AppData/Local/CS2Customizer/resources/kill_icons/</code> 创建风格文件夹<br>"
-        "2. 使用页面底部的「Sprite Sheet 制作工具」将 PNG 序列帧合并为精灵图<br>"
-        "3. 工具会自动生成 .png + .json 配置文件<br>"
-        "4. FPS 设置修改后需点击保存按钮才会更新配置文件"
-    ),
-    "crosshair": (
-        "<b>功能说明</b><br>"
-        "准心功能为游戏提供覆盖式自定义准心，叠加在游戏画面上方，不影响游戏内的鼠标操作。<br><br>"
-        "<b>使用方法</b><br>"
-        "1. 在基础设置中启用「自定义准心」开关<br>"
-        "2. 选择准心形状（十字、圆点、圆环等）<br>"
-        "3. 调整准心的颜色、大小、粗细等参数<br>"
-        "4. 可选开启动画效果（如击杀时的缩放动画）<br>"
-        "5. 所有设置实时生效，准心会立即显示在屏幕中央<br><br>"
-        "<b>注意事项</b><br>"
-        "• 准心为屏幕覆盖层，不会被游戏检测<br>"
-        "• 设置会自动保存，下次启动时自动恢复"
-    ),
     "death_sound": (
         "<b>功能说明</b><br>"
         "被击杀音效会在玩家被击杀时播放自定义音效。<br><br>"
@@ -363,7 +326,7 @@ PAGE_HELP_TEXTS = {
         "2. 为每组预设绑定快捷键，游戏内按键即可切换<br>"
         "3. 设置循环切换按键（默认 CAPSLOCK），可在所有预设间循环<br><br>"
         "<b>准心快速回正</b><br>"
-        "开启后，按下开火键时准心跟随后坐力（cl_crosshair_recoil 1），松开时瞬间回正（设为 0），无曲线动画。<br><br>"
+        "开启后，按下开火键时准心跟随后坐力（cl_crosshair_recoil 1），松开时瞬间回正（设为 0），无曲线动画。<br>队友和 demo 里看到的准心设置在<b>对局开始那一刻</b>就定死了，而那一刻你不可能在开火，所以这个开关全程只对你自己生效。<br>开火键可以改（默认 mouse1）；R8 左轮的右键也是开火，需要的话单独勾选。<br><br>"
         "<b>保存与生效</b><br>"
         "1. 调整完参数后点击「保存设置到CFG」按钮<br>"
         "2. CFG 文件会写入 CS2 目录下的 <code>game/csgo/cfg/cs2customizer.cfg</code><br>"
@@ -520,7 +483,7 @@ PAGE_HELP_TEXTS.update({
         "<b>使用方法</b><br>"
         "1. 在基础设置中启用「自定义准心」开关<br>"
         "2. 选择准心形状（十字、圆点、圆环等）<br>"
-        "3. 调整准心的颜色、大小、粗细等参数<br>"
+        "3. 调整准心的颜色、大小、粗细等参数<br>&nbsp;&nbsp;&nbsp;• 中心间隙：让准心中间留空，不挡住要瞄的那个点<br>&nbsp;&nbsp;&nbsp;• 黑色描边：亮地板/沙地上看不清准星时开它<br>&nbsp;&nbsp;&nbsp;• 中心点、不透明度、自定义颜色（六个固定色不够用时）<br>"
         "4. 可选开启动画效果（如击杀时的缩放动画）<br>"
         "5. 所有设置实时生效，准心会立即显示在屏幕中央<br><br>"
         "<b>文件与配置位置</b><br>"
@@ -561,17 +524,40 @@ PAGE_HELP_TEXTS.update({
     ),
     "kill_icon": (
         "<b>功能说明</b><br>"
-        "击杀图标会在击杀敌人时在屏幕上显示动画效果，仅支持 Sprite Sheet（精灵图）格式。<br><br>"
-        "<b>使用方法</b><br>"
-        "1. 在基础设置中启用「击杀图标」开关<br>"
-        "2. 选择一个图标风格<br>"
-        "3. 调整图标大小、显示位置和 FPS 播放速度<br>"
-        "4. 点击「预览」查看动画效果<br><br>"
-        "<b>格式要求与目录</b><br>"
-        "1. 每套风格放在 <code>AppData/Local/CS2Customizer/resources/kill_icons/风格名/</code><br>"
-        "2. 每个击杀数需要独立的精灵图和配置文件，例如 <code>1.png + 1.json</code>、<code>2.png + 2.json</code><br>"
-        "3. JSON 配置文件中包含帧数、FPS 等播放参数<br>"
-        "4. 也可以先用页面底部的「Sprite Sheet 制作工具」生成后再保存进对应风格目录"
+        "击杀图标会在击杀敌人时把一段动画叠在屏幕上（只有你自己看得见）。<br><br>"
+        "<b>三步就好</b><br>"
+        "1. 勾上「开启击杀图标」<br>"
+        "2. 在「风格库」里点一张卡就换——卡片上有缩略图和「素材齐不齐」<br>"
+        "3. 点「在屏幕上试播」，位置和大小所见即所得；不顺眼点「调整位置和大小」<br><br>"
+        "<b>装一套新的</b><br>"
+        "• <b>把图标包(.zip)、动图或图片拖到这一页上</b>，或点「＋ 导入」<br>"
+        "• zip 图标包是一整套风格，直接装完 5 个等级，一句都不问<br>"
+        "• 单个素材会弹一个小窗问「用在几杀」；文件名带等级（<code>3hs.gif</code>）"
+        "就已经替你选好了，直接按「导入」<br>"
+        "• 裁透明边、抠纯色背景、帧率、定格时长都是自动判的，不用管<br><br>"
+        "<b>关于格式</b><br>"
+        "• 想要干净的半透明边缘请用 WebP 动图 / APNG / PNG 序列<br>"
+        "• GIF 的透明度是 1-bit 的（像素只能全透明或全不透明），边缘会有硬白边<br>"
+        "• 静态图片会作为单帧图标定格显示<br>"
+        "• 视频（mp4/webm）不支持，请先转成 WebP 动图或 GIF<br>"
+        "• 超过 1024 像素的帧会自动等比缩小；各帧尺寸不一会居中对齐<br><br>"
+        "<b>想自己做一套 → 素材工坊</b><br>"
+        "• 页面底部「打开素材工坊」：五个击杀等级摊成一块板，每一格自己就能"
+        "换素材、调时长、循环预览<br>"
+        "• 拖到哪一格就进哪一格，不再问「用在几杀」<br>"
+        "• 每一格右键：替换、导入爆头专属、导出、删除；删除可撤销<br>"
+        "• 「导出图标包」把整套风格打成 zip，可以直接发给别人<br>"
+        "• 「高级导入 / 批量」里能抠背景色、裁透明边、手填图集行列、按 1~5 批量导入<br>"
+        "• 展示时长改完要点「保存播放设置」才会写进风格配置<br><br>"
+        "<b>显示效果</b><br>"
+        "• 入场淡入 / 收尾渐隐：渐隐挂在动画播完之后，不会吃掉素材本身的收尾动作<br>"
+        "• 爆头专属图标：要先在工坊里给某个等级导入爆头素材，没导过就用普通图标<br><br>"
+        "<b>素材放在哪儿</b><br>"
+        "1. 每套风格一个目录：<code>AppData/Local/CS2Customizer/resources/kill_icons/风格名/</code><br>"
+        "2. 每个击杀等级一张图集加一份配置，例如 <code>1.png + 1.json</code>；"
+        "爆头是 <code>1hs.png + 1hs.json</code><br>"
+        "3. 正常用不着手动进去——导入会自动转好放好；工坊里的"
+        "「打开素材文件夹」能直接开到这里"
     ),
     "death_sound": (
         "<b>功能说明</b><br>"

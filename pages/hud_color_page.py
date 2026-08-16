@@ -112,7 +112,7 @@ class HudColorPage(QWidget):
         # 这次重构不动一个像素，四种并存的字号是另一回事（UP-092）。
         header = PageHeader(
             "HUD 颜色规则",
-            description="预设负责大方向，数字键和事件负责细调，尽量把常用决策都收在首屏完成。",
+            description="让游戏里的 HUD 跟着局内事件自动变色。挑一个预设方案，再开你想要的事件即可。",
             title_font_size=None,
             spacing=12,
         )

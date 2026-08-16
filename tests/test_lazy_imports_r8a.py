@@ -199,12 +199,17 @@ def test_peek_runtime_audio_manager_never_creates():
 
 
 def test_worker_loops_do_not_busy_poll():
-    """UP-061：两个 pygame 子进程的主循环不能再用 sleep(0.001) 空转。
+    """UP-061：pygame 子进程的主循环不能再用 sleep(0.001) 空转。
 
     判据落在"有没有阻塞等待"上，而不是"源码里有没有那行字"——
     所以同时要求出现阻塞 get 的调用。
+
+    KI-1（2026-08-15）把 `kill_icon_player.py` 从这张表里摘掉了：它的
+    pygame 子进程整个不存在了（改成主进程 Qt 叠加层），**连空转的循环
+    都没有了**——这比"改成阻塞等待"更彻底，不是判据放松。
+    还在表里的 `utility_display.py` 仍是子进程，判据照旧。
     """
-    for filename in ("kill_icon_player.py", "utility_display.py"):
+    for filename in ("utility_display.py",):
         source = (ROOT / filename).read_text(encoding="utf-8")
         # 剥掉注释行，避免命中解释这件事的说明文字
         body = "\n".join(

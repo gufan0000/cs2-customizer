@@ -109,7 +109,11 @@ def test_load_sound_by_key_parses_compat_prefixes(monkeypatch):
     monkeypatch.setattr(mgr, "load_switch_weapon_sound", lambda w, s: calls.setdefault("switch", (w, s)) or True)
     monkeypatch.setattr(mgr, "load_reload_sound", lambda w, s: calls.setdefault("reload", (w, s)) or True)
     monkeypatch.setattr(mgr, "load_grenade_sound", lambda g, s: calls.setdefault("grenade", (g, s)) or True)
-    monkeypatch.setattr(mgr, "load_c4_sound", lambda s: calls.setdefault("c4", s) or True)
+    # load_c4_sound 现在带事件参数：安放/拆除/爆炸共用一个风格目录（2026-08-15）
+    monkeypatch.setattr(
+        mgr, "load_c4_sound",
+        lambda s, event_key="planted": calls.setdefault("c4", s) or True,
+    )
     monkeypatch.setattr(mgr, "load_health_warning_sound", lambda s: calls.setdefault("health", s) or True)
     monkeypatch.setattr(mgr, "load_round_sound", lambda a, b: calls.setdefault("round", (a, b)) or True)
 

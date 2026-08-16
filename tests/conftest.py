@@ -107,3 +107,34 @@ def qapp():
     if _qapp is None:
         pytest.skip("当前环境没有可用的 QApplication")
     return _qapp
+
+
+@pytest.fixture(autouse=True)
+def _config_singleton_is_not_swapped():
+    """每个用例跑完后确认 `config.config` 还是同一个对象。
+
+    **这条是防"整个进程被污染"的**，不是防某个值被改脏。
+
+    `importlib.reload(config)` 会重新执行 `config = Config()`，于是模块属性指向
+    一个**新实例**，而所有早已 `from config import config` 的模块（各个 page、
+    preset_center、gsi_handler…）仍持有**旧实例**。此后"同一个 config"就分了家：
+    测试往新实例写值，产品代码读写旧实例，两边再也对不上。
+
+    2026-08-15 查实：这一个原因同时造成三条判据"逐文件跑全绿、同进程跑全量红"
+    （预设往返、局内视角状态条、自定闪光状态卡）。症状各不相同、看着像三个功能
+    各自坏了，其实是同一个病——而且**红在受害者身上，不在肇事者身上**，所以
+    光看报错永远找不到根因。
+
+    这条 fixture 让肇事的那个用例自己红，把"下游三处莫名其妙"变成"上游一处指名道姓"。
+    需要 reload 的用例请照 `test_qa_non_ui_r12._load_config_module` 的写法把单例还原。
+    """
+    import config as config_mod
+
+    original = config_mod.config
+    yield
+    assert config_mod.config is original, (
+        "这个用例把 config 单例换掉了且没还原（多半是 importlib.reload(config)）。\n"
+        "后果是进程里出现两个 Config：产品代码读旧的、测试读新的，"
+        "污染会一直传到后面**别的**测试文件，红在受害者身上而不是这里。\n"
+        "还原写法见 tests/test_qa_non_ui_r12._load_config_module。"
+    )

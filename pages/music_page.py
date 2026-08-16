@@ -114,7 +114,7 @@ class MusicPage(QWidget):
         # 这次重构不动一个像素，四种并存的字号是另一回事（UP-092）。
         header = PageHeader(
             "音乐播放 / 联动设置",
-            description="这里负责音乐联动策略、播放模式和播放列表管理，重点是让自动化规则一眼可确认。",
+            description="放本地音乐或在线 URL。底部控制栏是手动播放；「音乐联动」只管游戏要不要自动接管。",
             title_font_size=None,
             spacing=12,
         )

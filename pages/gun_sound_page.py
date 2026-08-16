@@ -153,7 +153,7 @@ class GunSoundPage(QWidget):
         # 这次重构不动一个像素，四种并存的字号是另一回事（UP-092）。
         header = PageHeader(
             "枪声设置",
-            description="枪声页更适合先定风格，再快速微调原声保留和静音覆盖，让不同枪型的试听节奏更统一。",
+            description="开火后压住原始枪声、换成你自己的音效。目前只开放半自动武器（手枪 / 狙击枪 / 霰弹枪 / 宙斯），自动武器暂不支持。",
             title_font_size=None,
             spacing=12,
         )
@@ -662,5 +662,5 @@ class GunSoundPage(QWidget):
                     "新增资源后可直接刷新风格列表。"
                 )
             else:
-                action_message = "总开关当前关闭，这里的映射会保留；如新增资源，可先刷新风格列表再回首页启用。"
+                action_message = "总开关当前关闭，这里的映射会保留；如新增资源，可先刷新风格列表再去「基础设置」打开总开关。"
             self.action_bar.set_message(action_message)

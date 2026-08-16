@@ -15,7 +15,6 @@ from __future__ import annotations
 import argparse
 import ast
 import codecs
-import os
 import re
 import shutil
 import subprocess
@@ -25,6 +24,14 @@ from pathlib import Path
 from typing import Iterable, List
 
 from packaging.version import InvalidVersion, Version
+
+# build_tools 不是包。直接跑（`python build_tools/build_release.py`）时 sys.path[0]
+# 已经是本目录，但被测试按路径加载时不是——显式补一次，两条路都能拿到同目录模块。
+_BUILD_TOOLS_DIR = str(Path(__file__).resolve().parent)
+if _BUILD_TOOLS_DIR not in sys.path:
+    sys.path.insert(0, _BUILD_TOOLS_DIR)
+
+from inno_setup import find_iscc, missing_iscc_message  # noqa: E402
 
 
 # 注意：当前 PyArmor 为 trial 版，对超大文件（如 122KB 的 gui_widget.py）
@@ -361,42 +368,16 @@ def read_version(config_file: Path) -> str:
     return match.group(1).strip()
 
 
-def inno_setup_roots() -> List[Path]:
-    """ISCC.exe 可能所在的安装根目录（不含版本子目录）。
-
-    Inno Setup 默认装到 Program Files，但**选"仅为我安装"时会落到
-    `%LOCALAPPDATA%\\Programs`**，那里既不在 PATH 上也不在 Program Files 里。
-    本机就是后者：2.2.3 发版时只查了系统目录，误判成"没装 Inno Setup"、
-    报告说安装包做不了，实际它一直都在。
-    """
-    roots: List[Path] = []
-    local_app_data = os.environ.get("LOCALAPPDATA")
-    if local_app_data:
-        roots.append(Path(local_app_data) / "Programs")
-    for var in ("ProgramFiles", "ProgramFiles(x86)"):
-        value = os.environ.get(var)
-        if value:
-            roots.append(Path(value))
-    return roots
-
-
-def find_iscc_candidates() -> List[Path]:
-    # 目录名带主版本号（Inno Setup 6）——用通配匹配，出 7 时不用改代码；
-    # 逆序让高版本排前面。
-    found: List[Path] = []
-    for root in inno_setup_roots():
-        try:
-            found.extend(sorted(root.glob("Inno Setup*/ISCC.exe"), reverse=True))
-        except OSError:
-            continue
-    return found
-
-
 def find_tool(name: str) -> str | None:
+    lowered = name.lower()
+    if lowered == "iscc":
+        # ISCC 的定位（含 PATH 优先）整个交给 build_tools/inno_setup.py，
+        # 与 scripts/smoke_installer.py 共用同一份——两边各写一套的下场见那个模块的注释。
+        iscc = find_iscc()
+        return str(iscc) if iscc else None
     path = shutil.which(name)
     if path:
         return path
-    lowered = name.lower()
     if lowered == "upx":
         script_dir = Path(__file__).resolve().parent
         candidates = [
@@ -404,10 +385,6 @@ def find_tool(name: str) -> str | None:
             script_dir.parent / ".tools" / "upx" / "upx.exe",
         ]
         for candidate in candidates:
-            if candidate.exists():
-                return str(candidate)
-    if lowered == "iscc":
-        for candidate in find_iscc_candidates():
             if candidate.exists():
                 return str(candidate)
     return None
@@ -900,13 +877,7 @@ def build_installer(project_root: Path, version: str, app_name: str) -> Path:
 
     iscc = find_tool("iscc")
     if not iscc:
-        searched = "\n".join(f"         - {root}\\Inno Setup*\\ISCC.exe" for root in inno_setup_roots())
-        raise RuntimeError(
-            "找不到 Inno Setup 编译器 ISCC.exe。\n"
-            "       PATH 上没有，以下位置也没有：\n"
-            f"{searched}\n"
-            "       装了但不在上面的路径？把 ISCC.exe 所在目录加进 PATH 即可。"
-        )
+        raise RuntimeError(missing_iscc_message())
     print(f"[INFO] ISCC detected: {iscc}")
 
     run([iscc, str(iss_path), f"/DAppVersion={version}"], cwd=project_root)

@@ -172,7 +172,7 @@ class ReloadSoundPage(SoundPageBase, QWidget):
 
     # ------------------------------------------------ R9-D 基类钩子
     PAGE_TITLE = "换弹音效设置"
-    PAGE_LEAD = "换弹音效页保持列表式效率，把分类切换、风格选择和测试入口都压在首屏，方便快速逐项试听。"
+    PAGE_LEAD = "换弹时播放你自己的音效。先去「基础设置」打开总开关，再逐把枪选风格，点「测试」试听。"
     HELP_KEY = "reload_sound"
     STYLE_TOOLS_MENU = False
 
@@ -376,5 +376,5 @@ class ReloadSoundPage(SoundPageBase, QWidget):
                     "新增资源后可直接刷新风格列表。"
                 )
             else:
-                action_message = "总开关当前关闭，这里的映射会保留；如新增资源，可先刷新风格列表再回首页启用。"
+                action_message = "总开关当前关闭，这里的映射会保留；如新增资源，可先刷新风格列表再去「基础设置」打开总开关。"
             self.action_bar.set_message(action_message)

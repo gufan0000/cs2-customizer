@@ -16,6 +16,7 @@ class _DummyAudioManager:
         self.play_sound_calls: list[tuple[str, str]] = []
         self.play_voice_calls: list[str] = []
         self.load_round_sound_calls: list[tuple[str, str]] = []
+        self.load_c4_sound_calls: list[tuple[str, str]] = []
         self.play_sound_with_fade_calls: list[tuple[str, str]] = []
 
     def play_sound(self, key: str, channel_type: str = "kill_sound", **_kwargs):
@@ -27,6 +28,10 @@ class _DummyAudioManager:
 
     def load_round_sound(self, round_type: str, style: str):
         self.load_round_sound_calls.append((round_type, style))
+        return True
+
+    def load_c4_sound(self, style: str, event_key: str = "planted"):
+        self.load_c4_sound_calls.append((event_key, style))
         return True
 
     def play_sound_with_fade(self, key: str, channel_type: str = "round_sound", **_kwargs):

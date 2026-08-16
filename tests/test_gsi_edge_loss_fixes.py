@@ -37,23 +37,31 @@ class _ImmediateTimer:
 
 
 class _SpyRoundSounds:
+    """拦 `_play_event` 记账。
+
+    2026-08-15 之前这里挂的是 `_play_round_win_sound` / `_play_round_lose_sound`
+    这五个逐字复制的方法，它们已经合并成 `_play_event(group, key)`。
+    改挂到合并后的入口反而更准：事件身份是显式参数，探到的就是"到底报了哪个
+    事件"，而不是"哪个方法被调了"。
+    """
+
     def __init__(self, handler, monkeypatch):
-        self.win_calls = 0
-        self.lose_calls = 0
-        monkeypatch.setattr(handler, "_play_round_win_sound", self._win)
-        monkeypatch.setattr(handler, "_play_round_lose_sound", self._lose)
-        # MVP 检查定时器同步化（真实实现是 Timer(0.15) 延迟判定）
+        self.events = []
+        monkeypatch.setattr(handler, "_play_event", self._record)
+        # MVP 判定同步化（真实实现是在后台线程上等 MVP 计数落地）
         monkeypatch.setattr(gsi_handler_special.threading, "Timer", _ImmediateTimer)
-        monkeypatch.setattr(
-            handler, "_check_and_play_win_sound",
-            lambda _data: self._win(),
-        )
 
-    def _win(self):
-        self.win_calls += 1
+    def _record(self, group, key):
+        self.events.append((group, key))
+        return True
 
-    def _lose(self):
-        self.lose_calls += 1
+    @property
+    def win_calls(self):
+        return sum(1 for g, k in self.events if g == "round" and k in ("win", "mvp"))
+
+    @property
+    def lose_calls(self):
+        return sum(1 for g, k in self.events if g == "round" and k == "lose")
 
 
 def _round_payload(phase: str, win_team: str | None = None, round_no: int = 3):

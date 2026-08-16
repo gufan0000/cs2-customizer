@@ -141,11 +141,32 @@ def test_qa001_frozen_build_never_migrates_the_bundled_config():
 
 
 def _load_config_module(tmp_path, monkeypatch):
+    """重载 config 模块，跑一遍它的模块级代码（这几条判据要验的就是那段）。
+
+    ⚠ **用完必须把单例还原回去**，否则整个 pytest 进程都被污染。
+
+    `importlib.reload` 会重新执行 `config = Config()`，于是 `config.config`
+    指向一个**新实例**；而所有早已 `from config import config` 的模块
+    （preset_center / 各个 page / gsi_handler…）仍持有**旧实例**。此后
+    "同一个 config" 就分了家：测试往新实例写值，产品代码读写旧实例。
+
+    2026-08-15 查实这正是三条"逐文件跑全绿、同进程跑全量红"的根源：
+      · test_usability_r6::test_my_preset_roundtrip —— 预设把 11 写进旧实例
+        并存盘（磁盘确实是 11），测试读新实例还是 44
+      · test_tool_pages_ui_polish 的两条 —— 页面读旧实例，测试设的是新实例
+    症状全都是"值对不上"，看起来像各自的功能坏了，其实一个病。
+
+    还原办法是把模块属性指回**原来那个实例对象**：其它模块持有的就是它，
+    指回去两边就重新是同一个了。用 monkeypatch 登记，teardown 自动做。
+    """
     monkeypatch.setenv("CS2C_CONFIG_DIR", str(tmp_path / "cfg"))
     monkeypatch.setenv("CS2C_LOG_DIR", str(tmp_path / "log"))
     import importlib
 
     import config as config_mod
+
+    # 先登记原实例：reload 之后这个属性会被换成新的，teardown 时换回来
+    monkeypatch.setattr(config_mod, "config", config_mod.config, raising=False)
     return importlib.reload(config_mod)
 
 

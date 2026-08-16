@@ -264,11 +264,19 @@ class ResourceManager:
         return os.path.join(style_dir, f"{kills}.json")
 
     @staticmethod
-    def get_kill_icon_sprite_sheet_paths(style_name, kills):
+    def get_kill_icon_sprite_sheet_paths(style_name, kills, variant=""):
+        """图集与配置的路径。`variant` 是可选覆写后缀（如爆头专用 `hs`）。
+
+        变体文件名是 `<等级><变体>.png`（`3hs.png`），**不是**新开一层目录：
+        存量风格目录里已经有 `1.png` / `1/` 两种含义的条目，再加一层子目录
+        会和"逐帧目录"这种老格式撞名。缺省 `variant=""` 时路径与 KI-1 之前
+        逐字节相同，存量素材不受影响。
+        """
         style_dir = ResourceManager.get_kill_icon_style_dir(style_name)
+        suffix = str(variant or "")
         return (
-            os.path.join(style_dir, f"{kills}.png"),
-            os.path.join(style_dir, f"{kills}.json"),
+            os.path.join(style_dir, f"{kills}{suffix}.png"),
+            os.path.join(style_dir, f"{kills}{suffix}.json"),
         )
 
     @staticmethod
@@ -311,6 +319,10 @@ class ResourceManager:
         icons_dir = ResourceManager.get_app_data_path("resources/kill_icons")
         if os.path.isdir(icons_dir):
             for item in os.listdir(icons_dir):
+                # 点号开头的是内部目录（KI-5 的回收站 `.trash`），不是风格。
+                # 它本来也过不了 style_has_kill_icons，这里显式挡一道更省得再想。
+                if item.startswith("."):
+                    continue
                 item_path = os.path.join(icons_dir, item)
                 if os.path.isdir(item_path) and ResourceManager.style_has_kill_icons(item):
                     styles.append(item)

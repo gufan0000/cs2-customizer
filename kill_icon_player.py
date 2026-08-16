@@ -1,734 +1,590 @@
+# -*- coding: utf-8 -*-
 # SPDX-License-Identifier: GPL-3.0-or-later
-import os
+"""击杀图标播放器（KI-1：pygame 子进程 → Qt 叠加层）。
+
+对外接口与老实现**逐个方法对齐**，换渲染器时调用方一行都不用改：
+`gui_widget`（建实例、退出清理）、`main_widget`（挂给击杀处理器）、
+`pages/kill_icon_page`（风格/位置/缩放/FPS/测试）、`gsi_handler_kills`
+（`play_images` / `stop_images`）。
+
+渲染与几何在 [kill_icon_overlay.py]，本文件只管三件事：
+生命周期、线程边界、素材缓存。
+
+线程模型（与准心 R8b 同款，别改成 DirectConnection）
+--------------------------------------------------
+击杀事件从 **GSI 服务器线程**来，而 QWidget 只能在主线程碰。所以
+`play_images` 只负责 `emit`，真正动窗口的 `_handle_play` 挂在信号上，
+由 Qt 排队投递回主线程。老实现靠"跨进程队列"天然回避了这个问题，
+搬进主进程后它就变成必须显式处理的事了。
+
+素材装载则相反——**必须离开主线程**。一套风格 5 个等级、几十帧
+350x250 的解码加预缩放，实测能占主线程几百毫秒；老实现把预缩放拖到
+击杀那一瞬间才做（缓存未命中就当场缩放整套帧），代价是"换完风格第一次
+击杀掉帧"。这里改成装载期在后台线程做完：QImage 不像 QPixmap 那样绑
+GUI 线程，可以在工作线程里解码、缩放，再把结果整个交回主线程。
+"""
+from __future__ import annotations
+
 import json
-import queue as _queue
+import os
+import sys
 import threading
 import time
-from multiprocessing import Queue, Process
+from typing import NamedTuple
+
+from PySide6.QtCore import QObject, Qt, QTimer, Signal
+from PySide6.QtGui import QPainter
+from PySide6.QtWidgets import QApplication, QWidget
+
 from config import config
+from core.utils.logger import get_logger
+from kill_icon_overlay import (
+    FADE_IN_SECONDS,
+    FADE_OUT_SECONDS,
+    TICK_HZ,
+    clamp_fps,
+    clamp_hold,
+    compute_overlay_geometry,
+    compute_scaled_size,
+    load_level_animation,
+    paint_frame,
+    playback_state,
+    scale_animation,
+)
 from resource_manager import ResourceManager
-from core.utils.lazy_module import lazy_module
-import ctypes
 
-# UP-055: `import pygame` 曾在这里的第 1 行，是 show 前关键路径上的 pygame 入口
-# 之一（gui_widget.__init__ 建 KillIconPlayer 时触发），本机约 400ms。
-# 而**父进程一次都不用 pygame**——本文件里所有 `pygame.` 调用都在 KillIconWorker
-# 里，那个类只在子进程(multiprocessing spawn)中运行；父进程的 KillIconPlayer
-# 只负责起进程、发命令。子进程会重新 import 本模块并在入口显式装载。
-# 仍用代理而非 None：万一父进程哪天真碰了 pygame，代价是慢一次，而不是崩一次。
-#
-# 打包安全：pygame 在 build_release.py 的 BASE_HIDDEN_IMPORTS 里显式列着，
-# 不依赖此处的静态 import 被发现，故懒加载不会让它从产物里消失。
-pygame = lazy_module("pygame", __name__)
+logger = get_logger("KillIconPlayer")
+
+#: 支持的击杀等级。>5 杀由 `gsi_handler_kills` 那边钳到 5，这里不重复判断。
+KILL_LEVELS = tuple(range(1, 6))
+
+#: 爆头变体的资源后缀：`<风格>/3hs.png` + `3hs.json`。
+#: 没有这个文件就退回普通图标——变体是**可选覆写**，不是新的必需资源。
+HEADSHOT_VARIANT = "hs"
 
 
-def _load_pygame():
-    """在子进程入口显式装载 pygame（父进程不该调用）。"""
-    import pygame as _pygame
+class LevelInfo(NamedTuple):
+    """一个击杀等级的元数据。**故意不含像素**——见 `KillIconPlayer._catalog`。"""
 
-    globals()["pygame"] = _pygame
-    return _pygame
-
-# DPI感知设置 (保持不变)
-try:
-    ctypes.windll.shcore.SetProcessDpiAwareness(2)
-except (AttributeError, OSError):
-    try:
-        ctypes.windll.user32.SetProcessDPIAware()
-    except (AttributeError, OSError):
-        print("警告: 无法在子进程中设置DPI感知，图标位置在缩放屏幕上可能不准确。")
+    frame_count: int
+    fps: int
+    frame_width: int
+    frame_height: int
+    hold_seconds: float = 0.0
 
 
-class KillIconWorker:
-    """在独立进程中运行的击杀图标工作器 (优化版)"""
-    def __init__(self, command_queue, status_queue):
-        self.command_queue = command_queue
-        self.status_queue = status_queue
-        self.pygame_initialized = False
-        self.screen = None
-        self.clock = None
-        self.sprites = {}
-        self.animations = {}
-        self.playing = False
-        self._play_thread = None  # 当前播放线程引用
-        self.current_animation = None
-        self.current_frame = 0
-        self.window_visible = False
-        self.window_width = 400
-        self.window_height = 300
-        self.window_x = -9999
-        self.window_y = -9999
-        self.offset_x = 0
-        self.offset_y = 0
-        self.scale = 1.0
-        self.base_width = 350
-        self.base_height = 250
-        self.hwnd = None
-        self.last_draw_time = 0
-        self.frame_interval = 1.0 / 30
-        self.running = True
-        self.current_style_name = None
-        self.scaled_sprites_cache = {}
-        
-        # 在初始化时获取屏幕信息（软件启动时就计算好）
-        import platform
-        if platform.system() == "Windows":
-            import win32api
-            self.screen_width = win32api.GetSystemMetrics(0)
-            self.screen_height = win32api.GetSystemMetrics(1)
-            print(f"[KillIconWorker] 屏幕分辨率: {self.screen_width}x{self.screen_height}")
-        else:
-            self.screen_width = 1920
-            self.screen_height = 1080
+class KillIconOverlayWindow(QWidget):
+    """透明、置顶、点击穿透、不抢焦点的图标画布。
 
-    def init_pygame(self):
-        """初始化pygame窗口"""
+    ⚠ 这套标志 + 扩展样式是一整体，别按直觉删减——组合与
+    `crosshair_overlay.CrosshairOverlayWindow` 完全一致，那套已经在生产里
+    画在游戏上了。少 `WA_ShowWithoutActivating` 会抢焦点把游戏切出去，
+    少 `WS_EX_TRANSPARENT` 会吃掉图标那块区域的鼠标点击。
+    """
+
+    def __init__(self):
+        super().__init__(None)
+        self._win32_style_applied = False
+        self._frame = None
+        self._opacity = 1.0
+        self._dpr = 1.0
+
+        flags = Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool
+        for name in ("WindowTransparentForInput", "WindowDoesNotAcceptFocus"):
+            flag = getattr(Qt, name, None)
+            if flag is None and hasattr(Qt, "WindowType"):
+                flag = getattr(Qt.WindowType, name, None)
+            if flag is not None:
+                flags |= flag
+        self.setWindowFlags(flags)
+
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WA_ShowWithoutActivating, True)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self.hide()
+
+    # ------------------------------------------------------------------ 几何
+
+    def device_pixel_ratio(self, screen=None) -> float:
+        screen = screen or self.screen() or QApplication.primaryScreen()
         try:
-            pygame.quit()
-            pygame.init()
-            pygame.display.init()
-            
-            if hasattr(self, 'window_x') and hasattr(self, 'window_y') and self.window_x != -9999:
-                os.environ['SDL_VIDEO_WINDOW_POS'] = f'{self.window_x},{self.window_y}'
-            else:
-                os.environ['SDL_VIDEO_WINDOW_POS'] = '-9999,-9999'
-            
-            self.screen = pygame.display.set_mode(
-                (self.window_width, self.window_height),
-                pygame.NOFRAME | pygame.SRCALPHA | pygame.DOUBLEBUF | pygame.HWSURFACE
-            )
-            pygame.display.set_caption("Kill Icon")
-            
-            import platform
-            if platform.system() == "Windows":
-                import win32api
-                import win32con
-                import win32gui
-                
-                self.hwnd = pygame.display.get_wm_info()["window"]
-                
-                ex_style = win32gui.GetWindowLong(self.hwnd, win32con.GWL_EXSTYLE)
-                ex_style |= win32con.WS_EX_LAYERED | win32con.WS_EX_TOOLWINDOW
-                ex_style &= ~win32con.WS_EX_APPWINDOW
-                win32gui.SetWindowLong(self.hwnd, win32con.GWL_EXSTYLE, ex_style)
-                win32gui.SetLayeredWindowAttributes(self.hwnd, win32api.RGB(0, 0, 0), 0, win32con.LWA_COLORKEY)
-                
-                if self.window_x == -9999:
-                    win32gui.SetWindowPos(self.hwnd, win32con.HWND_TOPMOST, -9999, -9999, 0, 0,
-                        win32con.SWP_NOSIZE | win32con.SWP_NOACTIVATE)
-                else:
-                    win32gui.SetWindowPos(self.hwnd, win32con.HWND_TOPMOST, 
-                        self.window_x, self.window_y,
-                        self.window_width, self.window_height,
-                        win32con.SWP_SHOWWINDOW | win32con.SWP_NOACTIVATE)
-            
-            self.clock = pygame.time.Clock()
-            self.pygame_initialized = True
-            
-            self.clear_screen()
-            
-        except Exception as e:
-            print(f"初始化pygame失败: {e}")
-            self.pygame_initialized = False
-
-    def clear_screen(self):
-        """清空屏幕"""
-        if self.screen:
-            self.screen.fill((0, 0, 0))
-            pygame.display.update()
-
-    def _calculate_window_position(self):
-        """计算窗口位置（基于屏幕尺寸、窗口尺寸、偏移量）"""
-        # 使用预先获取的屏幕尺寸
-        base_x = (self.screen_width - self.window_width) // 2
-        base_y = (self.screen_height * 3) // 4 - self.window_height // 2 + 50
-        
-        self.window_x = base_x + self.offset_x
-        self.window_y = base_y + self.offset_y
-        
-        print(f"[位置计算] 屏幕={self.screen_width}x{self.screen_height}, 窗口={self.window_width}x{self.window_height}, 位置=({self.window_x}, {self.window_y})")
-    
-    def position_window(self, screen_width, screen_height):
-        """计算并设置窗口位置（包含偏移）- 向后兼容方法"""
-        # 父进程传来的是 Qt 逻辑像素（高DPI下与物理像素不一致），不采用；
-        # 但初始化时取的值在运行中改分辨率后会过时——每次定位前在本进程
-        # 内重取物理分辨率，兼顾两者
-        try:
-            import win32api
-            self.screen_width = win32api.GetSystemMetrics(0)
-            self.screen_height = win32api.GetSystemMetrics(1)
+            return float(screen.devicePixelRatio()) if screen else 1.0
         except Exception:
-            pass  # 保留旧值
+            return 1.0
 
-        self._calculate_window_position()
-        
-        if not self.pygame_initialized:
-            os.environ['SDL_VIDEO_WINDOW_POS'] = f'{self.window_x},{self.window_y}'
-        
-        if self.pygame_initialized and self.hwnd:
-            import platform
-            if platform.system() == "Windows":
-                import win32gui
-                import win32con
-                win32gui.SetWindowPos(self.hwnd, win32con.HWND_TOPMOST, 
-                    self.window_x, self.window_y,
-                    self.window_width, self.window_height,
-                    win32con.SWP_SHOWWINDOW | win32con.SWP_NOACTIVATE)
-                self.window_visible = True
-    
-    def hide_window(self):
-        """隐藏窗口"""
-        if self.pygame_initialized and self.hwnd:
-            import platform
-            if platform.system() == "Windows":
-                import win32gui
-                import win32con
-                win32gui.SetWindowPos(self.hwnd, 0, -9999, -9999, 0, 0,
-                    win32con.SWP_NOSIZE | win32con.SWP_NOZORDER)
-            self.window_visible = False
+    def target_screen(self):
+        """图标该画在哪块屏——游戏在哪块就在哪块。
 
-    def load_sprite_sheet(self, kills, sprite_path, json_path):
-        """加载Sprite Sheet"""
-        try:
-            with open(json_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            
-            sprite_surface = pygame.image.load(sprite_path).convert_alpha()
-            
-            frame_width = data.get('frame_width', 350)
-            frame_height = data.get('frame_height', 250)
-            frame_count = data.get('frames', 30)
-            cols = data.get('cols', sprite_surface.get_width() // frame_width)
-            
-            frames = []
-            for i in range(frame_count):
-                x = (i % cols) * frame_width
-                y = (i // cols) * frame_height
-                if x + frame_width <= sprite_surface.get_width() and y + frame_height <= sprite_surface.get_height():
-                    frame_rect = pygame.Rect(x, y, frame_width, frame_height)
-                    frame = sprite_surface.subsurface(frame_rect).copy()
-                    frames.append(frame)
-            
-            self.animations[kills] = {
-                'fps': data.get('fps', 30),
-                'loop': data.get('loop', False),
-                'frame_width': frame_width,
-                'frame_height': frame_height
-            }
-            
-            self.sprites[kills] = frames
-            # 只清除该击杀数的缓存条目，不清除整个缓存
-            keys_to_remove = [k for k in self.scaled_sprites_cache if k[0] == kills]
-            for k in keys_to_remove:
-                del self.scaled_sprites_cache[k]
+        老实现用 `GetSystemMetrics(0/1)` 取主屏尺寸，副屏打游戏时图标弹在
+        主屏上。这里复用准心那套按 GDI 设备名匹配的实现，**不要另写一个**。
+        """
+        from crosshair_overlay import game_screen_device_name, pick_screen
 
-            print(f"加载动画 {kills}杀: FPS={data.get('fps', 30)}")
-            return True
-            
-        except Exception as e:
-            print(f"加载Sprite Sheet失败: {e}")
+        return pick_screen(
+            QApplication.screens(),
+            QApplication.primaryScreen(),
+            game_screen_device_name(),
+        )
+
+    def place(self, physical_width, physical_height, offset_x=0, offset_y=0) -> bool:
+        screen = self.target_screen()
+        if screen is None:
             return False
-
-    def load_frame_sequence(self, kills, frames_dir, metadata_path=None):
-        """加载旧版逐帧动画"""
-        try:
-            frame_files = [
-                os.path.join(frames_dir, name)
-                for name in sorted(os.listdir(frames_dir))
-                if os.path.isfile(os.path.join(frames_dir, name))
-                and name.lower().endswith((".png", ".jpg", ".jpeg", ".bmp", ".webp"))
-            ]
-            if not frame_files:
-                return False
-
-            frames = [pygame.image.load(path).convert_alpha() for path in frame_files]
-            first_frame = frames[0]
-            fps = 30
-            if metadata_path and os.path.exists(metadata_path):
-                try:
-                    with open(metadata_path, 'r', encoding='utf-8') as f:
-                        metadata = json.load(f)
-                    fps = int(metadata.get('fps', 30) or 30)
-                except Exception:
-                    fps = 30
-
-            self.animations[kills] = {
-                'fps': fps,
-                'loop': False,
-                'frame_width': first_frame.get_width(),
-                'frame_height': first_frame.get_height()
-            }
-            self.sprites[kills] = frames
-            keys_to_remove = [k for k in self.scaled_sprites_cache if k[0] == kills]
-            for k in keys_to_remove:
-                del self.scaled_sprites_cache[k]
-
-            print(f"加载逐帧动画 {kills}杀: FPS={fps}, frames={len(frames)}")
-            return True
-        except Exception as e:
-            print(f"加载逐帧动画失败: {e}")
-            return False
-
-    def play_animation(self, kills, custom_fps=None):
-        """播放动画（优化版：使用预缩放）"""
-        # 在方法开头导入，确保在所有地方都可用
-        import platform
-        import win32gui
-        import win32con
-        import win32api
-        
-        if not self.pygame_initialized or kills not in self.sprites:
-            return
-
-        # 停止旧动画并等待线程退出
-        self.playing = False
-        if self._play_thread is not None and self._play_thread.is_alive():
-            self._play_thread.join(timeout=0.2)
-        
-        original_frame_width = self.animations[kills].get('frame_width', self.base_width)
-        original_frame_height = self.animations[kills].get('frame_height', self.base_height)
-
-        target_width = self.base_width * self.scale
-        aspect_ratio = original_frame_height / original_frame_width if original_frame_width > 0 else 1
-        target_height = target_width * aspect_ratio
-
-        scaled_width = int(target_width)
-        scaled_height = int(target_height)
-
-        cache_key = (kills, scaled_width, scaled_height)
-        if cache_key not in self.scaled_sprites_cache:
-            print(f"缓存未命中，为 {cache_key} 创建预缩放帧...")
-            original_frames = self.sprites.get(kills, [])
-            scaled_frames = [pygame.transform.smoothscale(frame, (scaled_width, scaled_height)) for frame in original_frames]
-            self.scaled_sprites_cache[cache_key] = scaled_frames
-        else:
-            print(f"缓存命中: {cache_key}")
-
-        # 如果窗口尺寸改变，更新尺寸并重新计算位置
-        if scaled_width != self.window_width or scaled_height != self.window_height:
-            self.window_width = scaled_width
-            self.window_height = scaled_height
-            # 尺寸改变时重新计算位置（使用预先获取的屏幕尺寸）
-            self._calculate_window_position()
-            
-            # 隐藏窗口，避免重建时的闪烁
-            os.environ['SDL_VIDEO_WINDOW_POS'] = f'{self.window_x},{self.window_y}'
-            self.screen = pygame.display.set_mode(
-                (self.window_width, self.window_height),
-                pygame.NOFRAME | pygame.SRCALPHA | pygame.DOUBLEBUF | pygame.HWSURFACE | pygame.HIDDEN
-            )
-            if platform.system() == "Windows":
-                self.hwnd = pygame.display.get_wm_info()["window"]
-                ex_style = win32gui.GetWindowLong(self.hwnd, win32con.GWL_EXSTYLE)
-                ex_style |= win32con.WS_EX_LAYERED | win32con.WS_EX_TOOLWINDOW
-                ex_style &= ~win32con.WS_EX_APPWINDOW
-                win32gui.SetWindowLong(self.hwnd, win32con.GWL_EXSTYLE, ex_style)
-                win32gui.SetLayeredWindowAttributes(self.hwnd, win32api.RGB(0, 0, 0), 0, win32con.LWA_COLORKEY)
-                # 设置初始位置（不显示）
-                win32gui.SetWindowPos(self.hwnd, win32con.HWND_TOPMOST, 
-                    self.window_x, self.window_y,
-                    self.window_width, self.window_height,
-                    win32con.SWP_NOACTIVATE)
-        
-        # 每次播放都确保窗口位置正确（使用刚计算的新位置）
-        if self.pygame_initialized and self.hwnd:
-            if platform.system() == "Windows":
-                try:
-                    # 三步走：隐藏 → 移动 → 显示（确保无瞬移）
-                    # 第1步：隐藏窗口
-                    win32gui.SetWindowPos(self.hwnd, win32con.HWND_TOPMOST, 
-                        0, 0, 0, 0,
-                        win32con.SWP_HIDEWINDOW | win32con.SWP_NOACTIVATE | win32con.SWP_NOMOVE | win32con.SWP_NOSIZE)
-                    # 第2步：移动到新位置（窗口已隐藏，看不到移动过程）
-                    win32gui.SetWindowPos(self.hwnd, win32con.HWND_TOPMOST, 
-                        self.window_x, self.window_y,
-                        self.window_width, self.window_height,
-                        win32con.SWP_NOACTIVATE)
-                    # 第3步：显示窗口（直接在正确位置显示）
-                    win32gui.SetWindowPos(self.hwnd, win32con.HWND_TOPMOST, 
-                        0, 0, 0, 0,
-                        win32con.SWP_SHOWWINDOW | win32con.SWP_NOACTIVATE | win32con.SWP_NOMOVE | win32con.SWP_NOSIZE)
-                except Exception as e:
-                    print(f"设置窗口位置失败: {e}")
-        
-        fps = custom_fps if custom_fps is not None else self.animations[kills].get('fps', 30)
-        
-        print(f"播放动画 {kills}杀: FPS={fps}, 缩放={self.scale}, 最终尺寸={scaled_width}x{scaled_height}")
-        
-        self.current_animation = kills
-        self.current_frame = -1 # 设置为-1，确保第一帧总是被绘制
-        self.playing = True
-        self.frame_interval = 1.0 / max(1, fps) # 防止除以零
-
-        # 播放代号：旧线程若未在 join 超时内退出，playing 被新播放置回 True
-        # 会让它复活，与新线程并发改写 current_frame/刷新同一窗口（帧错乱）。
-        # 每次播放递增代号，旧线程发现代号失配即自行退出。
-        self._play_token = getattr(self, "_play_token", 0) + 1
-        token = self._play_token
-        self._play_thread = threading.Thread(target=self._play_loop, args=(token,), daemon=True, name="KillIconPlay")
-        self._play_thread.start()
-
-    # ======================================================================
-    # 这是唯一被修改的方法
-    # ======================================================================
-    def _play_loop(self, token=None):
-        """播放循环 (优化版：精确控制帧率，减少不必要的绘制)"""
-        # 检查动画是否有效
-        if not self.playing or self.current_animation not in self.sprites:
-            return
-        if token is not None and token != getattr(self, "_play_token", token):
-            return  # 已被新播放取代
-
-        cache_key = (self.current_animation, self.window_width, self.window_height)
-        
-        if cache_key not in self.scaled_sprites_cache:
-            print(f"错误: 播放循环开始时缓存 {cache_key} 不存在！")
-            self.playing = False
-            return
-            
-        scaled_frames = self.scaled_sprites_cache[cache_key]
-        frame_count = len(scaled_frames)
-
-        if frame_count == 0:
-            self.playing = False
-            return
-            
-        start_time = time.time()
-        
-        while self.playing:
-            if token is not None and token != getattr(self, "_play_token", token):
-                return  # 新播放已接管窗口，本线程退出且不清屏
-            # 计算理论上应该播放的帧
-            elapsed_time = time.time() - start_time
-            target_frame_index = int(elapsed_time / self.frame_interval)
-
-            if target_frame_index >= frame_count:
-                # 动画播放完毕
-                self.playing = False
-                self.clear_screen()
-                break
-
-            # 只有当需要切换到新的一帧时，才进行绘制
-            if target_frame_index > self.current_frame:
-                self.current_frame = target_frame_index
-                
-                try:
-                    # 获取要绘制的帧
-                    frame_to_draw = scaled_frames[self.current_frame]
-                    
-                    # 清屏并绘制新帧
-                    self.screen.fill((0, 0, 0, 0)) # 使用带alpha的颜色清屏
-                    self.screen.blit(frame_to_draw, (0, 0))
-                    
-                    # 更新显示 (这是触发与游戏渲染冲突的关键操作)
-                    pygame.display.update()
-                except IndexError:
-                    # 如果索引越界，说明动画已结束
-                    self.playing = False
-                    self.clear_screen()
-                    break
-                except Exception as e:
-                    print(f"绘制帧时出错: {e}")
-                    self.playing = False
-                    break
-
-            # 计算到下一帧理论时间的休眠时长
-            next_frame_target_time = start_time + (self.current_frame + 1) * self.frame_interval
-            sleep_duration = next_frame_target_time - time.time()
-            
-            # 智能休眠，避免CPU空转，同时保证响应性
-            if sleep_duration > 0:
-                time.sleep(min(sleep_duration, 0.01)) # 每次最多休眠10ms，以快速响应停止命令
-    # ======================================================================
-    # 修改结束
-    # ======================================================================
-
-    def run(self):
-        """主循环"""
-        self.status_queue.put(("initialized", True))
-
-        while self.running:
-            try:
-                # UP-061: 原本是 `if not empty(): get_nowait()` + `time.sleep(0.001)`,
-                # 即约 640~1000Hz 空转轮询 —— 长期占 CPU、阻止 CPU 进深度休眠,
-                # 而这个进程绝大多数时间根本无事可做(没在放动画)。
-                # 改为**阻塞等待**:命令一到就立刻返回(比轮询更跟手,不是更慢),
-                # 超时只用来决定"多久醒一次去泵 pygame 事件"。
-                # 播放中按 ~60Hz 醒(够泵事件),空闲时 5Hz。
-                #
-                # 判据用 window_visible 而不是 pygame_initialized：后者一旦首次
-                # 显示过就**永远为真**，于是"空闲 5Hz"这句承诺从第一次击杀之后就
-                # 再也达不到，等于把 1000Hz 空转换成了 60Hz 空转。
-                # 窗口藏在 (-9999,-9999) 时根本不需要按帧泵事件。
-                try:
-                    cmd = self.command_queue.get(
-                        timeout=0.016 if self.window_visible else 0.2
-                    )
-                except _queue.Empty:
-                    cmd = None
-                if cmd is not None:
-                    if cmd[0] == "quit":
-                        self.running = False
-                        break
-                    elif cmd[0] == "show":
-                        _, screen_width, screen_height = cmd
-                        if not self.pygame_initialized:
-                            self.init_pygame()
-                        self.position_window(screen_width, screen_height)
-                    elif cmd[0] == "hide":
-                        self.hide_window()
-                    elif cmd[0] == "load_style":
-                        _, style_name = cmd
-                        self.current_style_name = style_name
-                        self.sprites.clear()
-                        self.animations.clear()
-                        self.scaled_sprites_cache.clear()
-                        if not self.pygame_initialized:
-                            self.init_pygame()
-                        style_dir = ResourceManager.get_kill_icon_style_dir(style_name)
-                        if os.path.exists(style_dir):
-                            for kills in range(1, 6):
-                                sprite_path, json_path = ResourceManager.get_kill_icon_sprite_sheet_paths(style_name, kills)
-                                if os.path.exists(sprite_path) and os.path.exists(json_path):
-                                    self.load_sprite_sheet(kills, sprite_path, json_path)
-                                    continue
-
-                                legacy_dir = ResourceManager.get_kill_icon_legacy_frames_dir(style_name, kills)
-                                if legacy_dir:
-                                    metadata_path = ResourceManager.get_kill_icon_metadata_path(style_name, kills)
-                                    self.load_frame_sequence(kills, legacy_dir, metadata_path)
-                    elif cmd[0] == "play":
-                        _, kills, custom_fps = cmd
-                        self.play_animation(kills, custom_fps)
-                    elif cmd[0] == "stop":
-                        self.playing = False
-                        self.clear_screen()
-                    elif cmd[0] == "update_offset":
-                        _, offset_x, offset_y = cmd
-                        self.offset_x = offset_x
-                        self.offset_y = offset_y
-                        # 偏移改变时重新计算位置
-                        self._calculate_window_position()
-                        print(f"偏移更新: ({offset_x}, {offset_y}), 新位置: ({self.window_x}, {self.window_y})")
-                    elif cmd[0] == "update_scale":
-                        _, scale = cmd
-                        if self.scale != scale:
-                           self.scale = scale
-                           self.scaled_sprites_cache.clear()
-                           # 缩放改变时也会影响窗口尺寸，播放时会重新计算位置
-                           print(f"缩放更新: {scale}")
-                    elif cmd[0] == "update_base_size":
-                        _, base_width, base_height = cmd
-                        if self.base_width != base_width or self.base_height != base_height:
-                           self.base_width = base_width
-                           self.base_height = base_height
-                           self.scaled_sprites_cache.clear()
-                
-                if self.pygame_initialized:
-                    for event in pygame.event.get():
-                        if event.type == pygame.QUIT:
-                            self.running = False
-                # 不再 sleep：节奏由上面阻塞 get 的 timeout 决定
-            except Exception as e:
-                print(f"Worker错误: {e}")
-        
-        if self.pygame_initialized:
-            pygame.quit()
-
-
-class KillIconPlayer:
-    def __init__(self, parent_window=None):
-        self.parent_window = parent_window
-        self.current_style = None
-        self.process = None
-        self.command_queue = None
-        self.status_queue = None
-        self.worker_ready = False
-        self.animations = {}
-        # 延迟启动工作进程，不阻塞主线程
-        import threading
-        self._start_lock = threading.Lock()
-        self._command_lock = threading.Lock()
-        self._worker_starting = False
-        self._pending_commands = []
-        
-    def _ensure_worker_started(self):
-        if self.worker_ready:
-            return True
-        with self._start_lock:
-            if self.worker_ready:
-                return True
-            if self._worker_starting:
-                return True
-            if self.process and self.process.is_alive():
-                return self.worker_ready
-            self._worker_starting = True
-            threading.Thread(target=self._start_worker, daemon=True, name="KillIconInit").start()
+        geo = screen.geometry()
+        # dpr 取**目标屏**的：跨屏移动那一刻窗口还在旧屏上，拿旧屏的缩放
+        # 算新屏的尺寸会差一个缩放比（准心那边踩过的同一个坑）。
+        self._dpr = self.device_pixel_ratio(screen)
+        target = compute_overlay_geometry(
+            (geo.x(), geo.y(), geo.width(), geo.height()),
+            self._dpr,
+            physical_width,
+            physical_height,
+            offset_x,
+            offset_y,
+        )
+        current = self.geometry()
+        if (current.x(), current.y(), current.width(), current.height()) != target:
+            self.setGeometry(*target)
         return True
 
-    def _start_worker(self):
-        try:
-            self.command_queue = Queue()
-            self.status_queue = Queue()
-            self.process = Process(target=self._worker_main, args=(self.command_queue, self.status_queue))
-            self.process.daemon = True
-            self.process.start()
-            
-            timeout = 5.0
-            start_time = time.time()
-            while time.time() - start_time < timeout:
-                if not self.status_queue.empty():
-                    status, result = self.status_queue.get()
-                    if status == "initialized" and result:
-                        self.worker_ready = True
-                        print("击杀图标工作进程已启动")
-                        break
-                time.sleep(0.1)
-            
-            if not self.worker_ready:
-                print("击杀图标工作进程启动超时")
-            else:
-                self._init_config()
-                self._flush_pending_commands()
-                
-            if config.kill_icon_enabled and self.worker_ready:
-                self.enable_kill_icons()
-        except Exception as e:
-            print(f"启动击杀图标进程失败: {e}")
-            self.worker_ready = False
-        finally:
-            self._worker_starting = False
-    
-    def _init_config(self):
-        """初始化配置"""
-        if self.worker_ready:
-            self._send_command(("update_offset", config.kill_icon_offset_x, config.kill_icon_offset_y))
-            self._send_command(("update_scale", config.kill_icon_scale))
-            self._send_command(("update_base_size", config.kill_icon_base_width, config.kill_icon_base_height))
-    
-    @staticmethod
-    def _worker_main(command_queue, status_queue):
-        # 子进程入口：pygame 只在这一侧需要（UP-055）
-        _load_pygame()
-        worker = KillIconWorker(command_queue, status_queue)
-        worker.run()
-    
-    def _queue_command(self, cmd):
-        with self._command_lock:
-            self._pending_commands.append(cmd)
+    # ------------------------------------------------------------------ 绘制
 
-    def _flush_pending_commands(self):
-        if not self.worker_ready or not self.command_queue:
+    def set_frame(self, frame, opacity=1.0):
+        self._frame = frame
+        self._opacity = opacity
+        self.update()
+
+    def paintEvent(self, event):
+        if self._frame is None:
             return
-        with self._command_lock:
-            pending_commands = list(self._pending_commands)
-            self._pending_commands.clear()
-        for pending_cmd in pending_commands:
-            self._send_command(pending_cmd)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+        paint_frame(painter, self._frame, dpr=self._dpr, opacity=self._opacity)
+        painter.end()
 
-    def _send_command(self, cmd):
-        if self.worker_ready and self.command_queue:
-            try:
-                self.command_queue.put(cmd)
-            except Exception as e:
-                print(f"发送命令失败: {e}")
-        else:
-            self._queue_command(cmd)
+    # ------------------------------------------------- Win32 点击穿透（补刀）
+
+    def apply_click_through(self) -> bool:
+        """Qt 标志已经声明了穿透，这里再从 Win32 层补一遍。
+
+        原因与准心/特效层一致：`WindowTransparentForInput` 在部分 Qt/驱动
+        组合下不落到扩展样式上，漏一次就是用户点不动图标底下的东西。
+        """
+        if self._win32_style_applied or not sys.platform.startswith("win"):
+            return False
+        try:
+            import ctypes
+
+            hwnd = int(self.winId())
+            if not hwnd:
+                return False
+            user32 = ctypes.windll.user32
+            GWL_EXSTYLE = -20
+            WS_EX_LAYERED = 0x00080000
+            WS_EX_TRANSPARENT = 0x00000020
+            WS_EX_TOOLWINDOW = 0x00000080
+            WS_EX_NOACTIVATE = 0x08000000
+            style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+            style |= WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE
+            user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style)
+            self._win32_style_applied = True
+            return True
+        except Exception as exc:
+            logger.debug(f"应用点击穿透扩展样式失败: {exc}")
+            return False
+
+
+class KillIconPlayer(QObject):
+    """击杀图标的对外门面。"""
+
+    #: (击杀等级, 变体, 指定帧率或 -1)
+    _play_signal = Signal(int, str, int)
+    _stop_signal = Signal()
+    #: (风格名, 装载令牌, 素材字典)
+    _assets_signal = Signal(str, int, object)
+
+    #: (风格名) —— 后台装载完成。**设置页必须连这个**。
+    #:
+    #: `load_style` 是同步返回、异步装载的：它立刻把 `current_style` 改掉，
+    #: 而缓存要等后台线程跑完才换。中间那段窗口期里，页面问"这个风格有多少帧"
+    #: 拿到的会是**上一个风格**的数——实测表现是刚导入一个包，清单板上五个格子
+    #: 显示的是老风格的帧数和时长，而且不会自己好，要等下一次刷新才对。
+    assets_ready = Signal(str)
+
+    def __init__(self, parent_window=None):
+        super().__init__(parent_window if isinstance(parent_window, QObject) else None)
+        self.parent_window = parent_window
+        self.current_style = None
+        #: 老接口：`{等级: {'fps': int}}`，设置页和测试都读它
+        self.animations = {}
+
+        self._window = None
+        self._timer = QTimer(self)
+        self._timer.setInterval(max(1, int(round(1000 / TICK_HZ))))
+        self._timer.timeout.connect(self._tick)
+
+        self._playing = False
+        self._start_time = 0.0
+        self._current_frames = ()
+        self._current_fps = 30
+        self._current_hold = 0.0
+        self._last_paint_key = None
+
+        #: {(等级, 变体): LevelInfo}，**只有元数据没有像素**
+        #:
+        #: 这里原本存的是整套原始帧（KillIconAnimation），理由是"改缩放时不用
+        #: 重读盘"。实测（默认风格 519 帧 350x250）：
+        #:
+        #:     缩放 100%   只留缩放 +174MB   两份都留 +174MB
+        #:     缩放 150%   只留缩放 +475MB   两份都留 +564MB
+        #:
+        #: 100% 那行不是笔误——`QImage::scaled` 在目标尺寸与源相同时返回的是
+        #: **同一个隐式共享对象**，所以默认缩放下那份"副本"根本不占内存。
+        #: 真正要钱的是缩放≠100% 的情况（多 89MB）。为一个交互动作（改缩放，
+        #: 本来就在后台线程做、还有系统页缓存兜着）常驻这份，不划算。
+        #:
+        #: ⚠ 别把这条当成"内存优化"记住。**大头是 `_scaled` 自己**：默认风格
+        #: 5 个等级共 519 帧（等级 5 就有 201 帧），100% 下 174MB、150% 下 475MB。
+        #: 那是素材本身的体量，pygame 版同样要付（只是付在子进程里，主进程的
+        #: 内存计数看不见）。真要压它得动"按需装载 + 淘汰"的结构，不在这一层。
+        self._catalog = {}
+        #: {(等级, 变体): tuple[QImage]}，已按当前缩放预缩放好——**唯一的像素副本**
+        self._scaled = {}
+        #: `_catalog` / `_scaled` 里装的**到底是哪个风格**的东西。
+        #: 不能拿 `current_style` 代替：那个在 `load_style` 里同步就改了，
+        #: 而缓存要等后台线程跑完。两者不分开，切风格之后的一小段时间里
+        #: 所有"这个风格有多少帧"的问题都会拿到上一个风格的答案。
+        self._catalog_style = None
+        self._assets_lock = threading.Lock()
+        self._load_token = 0
+        self._loading_thread = None
+
+        self._play_signal.connect(self._handle_play)
+        self._stop_signal.connect(self._handle_stop)
+        self._assets_signal.connect(self._handle_assets_ready)
+
+    # ============================================================ 素材装载
+
+    def _target_size_for(self, animation):
+        return compute_scaled_size(
+            animation.frame_width,
+            animation.frame_height,
+            getattr(config, "kill_icon_base_width", 350),
+            getattr(config, "kill_icon_scale", 1.0),
+        )
+
+    def _load_worker(self, style_name, token):
+        """后台线程：解码 + 预缩放整套风格。
+
+        原始帧**用完即弃**，只把预缩放结果和元数据交回主线程——原始帧的唯一
+        用途就是被缩放一次，留着它等于常驻一份完整副本（见 `_catalog` 的说明）。
+        """
+        try:
+            assets = {}
+            for kills in KILL_LEVELS:
+                for variant in ("", HEADSHOT_VARIANT):
+                    animation = load_level_animation(style_name, kills, variant)
+                    if animation is None:
+                        continue
+                    width, height = self._target_size_for(animation)
+                    assets[(kills, variant)] = (
+                        LevelInfo(animation.frame_count, animation.fps,
+                                  animation.frame_width, animation.frame_height,
+                                  animation.hold_seconds),
+                        scale_animation(animation, width, height),
+                    )
+            self._assets_signal.emit(style_name, token, assets)
+        except Exception as exc:
+            logger.error(f"装载击杀图标素材失败（风格 {style_name}）: {exc}")
+
+    def _start_load(self, style_name):
+        with self._assets_lock:
+            self._load_token += 1
+            token = self._load_token
+        thread = threading.Thread(
+            target=self._load_worker,
+            args=(style_name, token),
+            daemon=True,
+            name="KillIconLoad",
+        )
+        self._loading_thread = thread
+        thread.start()
+
+    def _handle_assets_ready(self, style_name, token, assets):
+        """主线程：接收后台装载结果。"""
+        with self._assets_lock:
+            if token != self._load_token:
+                return  # 已被更新的一次装载取代
+        self.current_style = style_name
+        self._catalog = {key: value[0] for key, value in assets.items()}
+        self._scaled = {key: value[1] for key, value in assets.items()}
+        self._catalog_style = style_name
+        self.animations = {
+            kills: {"fps": info.fps}
+            for (kills, variant), info in self._catalog.items()
+            if not variant
+        }
+        logger.info(
+            f"击杀图标素材就绪: 风格={style_name}, 等级={sorted(self.animations)}"
+        )
+        # 设置页靠它把清单板刷新成新风格的数据——不发这一枪，页面会一直显示
+        # 上一个风格的帧数与时长，而且不会自己好。
+        self.assets_ready.emit(style_name)
+
+    def _frames_for(self, kills, variant):
+        """取某等级的帧序列；变体缺失时退回普通图标。
+
+        后台还没装载完（刚换风格就击杀）时**当场从盘上读一次**：慢一帧总好过
+        不显示。这条路只在装载竞态里走得到，命中率极低，所以不值得为它常驻
+        一份原始帧——那正是这次省掉 80MB 的地方。
+        """
+        for key in ((kills, variant), (kills, "")):
+            frames = self._scaled.get(key)
+            if frames:
+                info = self._catalog[key]
+                return frames, info.fps, info.hold_seconds
+
+        for key in ((kills, variant), (kills, "")):
+            animation = load_level_animation(self.current_style, kills, key[1])
+            if animation is None:
+                continue
+            width, height = self._target_size_for(animation)
+            frames = scale_animation(animation, width, height)
+            self._scaled[key] = frames
+            self._catalog[key] = LevelInfo(animation.frame_count, animation.fps,
+                                           animation.frame_width, animation.frame_height,
+                                           animation.hold_seconds)
+            return frames, animation.fps, animation.hold_seconds
+        return (), clamp_fps(None), 0.0
+
+    # ============================================================ 播放
+
+    def _handle_play(self, kills, variant, custom_fps):
+        if not getattr(config, "kill_icon_enabled", False):
+            return
+        frames, fps, hold = self._frames_for(int(kills), variant or "")
+        if not frames:
+            logger.debug(f"击杀图标没有可播的素材: 等级={kills}, 变体={variant!r}")
+            return
+
+        if custom_fps and int(custom_fps) > 0:
+            fps = clamp_fps(custom_fps)
+
+        if self._window is None:
+            self._window = KillIconOverlayWindow()
+
+        first = frames[0]
+        placed = self._window.place(
+            first.width(),
+            first.height(),
+            getattr(config, "kill_icon_offset_x", 0),
+            getattr(config, "kill_icon_offset_y", 0),
+        )
+        if not placed:
+            logger.warning("找不到可用屏幕，击杀图标本次不显示")
+            return
+
+        # 新击杀直接接管，不排队。参考同类工具的一致做法：连杀时排队会让
+        # 画面一直落后于战斗，而玩家要看的是"刚刚这一杀"。
+        self._current_frames = frames
+        self._current_fps = fps
+        self._current_hold = hold
+        self._start_time = time.monotonic()
+        self._last_paint_key = None
+        self._playing = True
+
+        self._window.set_frame(frames[0], 0.0 if self._fade_enabled() else 1.0)
+        self._window.show()
+        self._window.raise_()
+        self._window.apply_click_through()
+        self._timer.start()
+        self._tick()
+
+    def _fade_enabled(self) -> bool:
+        return bool(getattr(config, "kill_icon_fade_enabled", True))
+
+    def _tick(self):
+        if not self._playing:
+            return
+        fade_in = FADE_IN_SECONDS if self._fade_enabled() else 0.0
+        fade_out = FADE_OUT_SECONDS if self._fade_enabled() else 0.0
+        state = playback_state(
+            time.monotonic() - self._start_time,
+            self._current_fps,
+            len(self._current_frames),
+            fade_in,
+            fade_out,
+            getattr(self, "_current_hold", 0.0),
+        )
+        if state is None:
+            self._handle_stop()
+            return
+
+        index, opacity = state
+        # 帧号和不透明度都没变就别重绘：透明置顶窗每次重绘都要走一遍合成。
+        key = (index, round(opacity * 100))
+        if key == self._last_paint_key:
+            return
+        self._last_paint_key = key
+        if self._window is not None:
+            self._window.set_frame(self._current_frames[index], opacity)
+
+    def _handle_stop(self):
+        self._playing = False
+        self._timer.stop()
+        self._last_paint_key = None
+        if self._window is not None:
+            self._window.hide()
+            self._window.set_frame(None, 1.0)
+
+    @property
+    def is_playing(self) -> bool:
+        return self._playing
+
+    # ============================================================ 对外接口
 
     def enable_kill_icons(self):
-        self._ensure_worker_started()
-        if self.parent_window:
-            # 兼容PySide6和Tkinter
-            if hasattr(self.parent_window, 'winfo_screenwidth'):
-                # Tkinter
-                screen_width = self.parent_window.winfo_screenwidth()
-                screen_height = self.parent_window.winfo_screenheight()
-            else:
-                # PySide6/PyQt6
-                screen = self.parent_window.screen()
-                screen_width = screen.size().width()
-                screen_height = screen.size().height()
-            self._send_command(("show", screen_width, screen_height))
-    
+        """开启：把当前风格的素材准备好（窗口按需在播放时才建）。"""
+        style = getattr(config, "kill_icon_style", "")
+        if style and style != self.current_style:
+            self.load_style(style)
+
     def disable_kill_icons(self):
-        self._send_command(("hide",))
-    
+        self._stop_signal.emit()
+
+    def load_style(self, style_name):
+        """切风格。返回值表示"这个风格有没有可用素材"（同步判断，不等装载）。"""
+        style_found = any(
+            ResourceManager.has_kill_icon_level_assets(style_name, kills)
+            for kills in KILL_LEVELS
+        )
+        self.current_style = style_name
+        self._start_load(style_name)
+        return style_found
+
+    def play_icon(self, kills, custom_fps=None, is_headshot=False):
+        self._play_signal.emit(
+            int(kills),
+            HEADSHOT_VARIANT if is_headshot else "",
+            int(custom_fps) if custom_fps else -1,
+        )
+
+    def play_images(self, style, kills, is_headshot=False):
+        """GSI 击杀回调的入口（`style` 参数是老签名的遗留位，忽略）。"""
+        if not getattr(config, "kill_icon_enabled", False):
+            return
+        configured = getattr(config, "kill_icon_style", "")
+        if configured and configured != self.current_style:
+            if not self.load_style(configured):
+                return
+        if is_headshot and not getattr(config, "kill_icon_headshot_enabled", True):
+            is_headshot = False
+        self.play_icon(kills, None, is_headshot)
+
+    def stop(self):
+        self._stop_signal.emit()
+
+    def stop_images(self):
+        self.stop()
+
+    def clear_preloaded_images(self):
+        """老接口，保留空实现：缓存现在跟着风格与缩放走，不需要外部清。"""
+
+    def update_position_offset(self, offset_x, offset_y):
+        """位置偏移改了。下一次播放时生效（几何在 `place` 里现算）。"""
+        if self._playing and self._window is not None and self._current_frames:
+            first = self._current_frames[0]
+            self._window.place(first.width(), first.height(), offset_x, offset_y)
+
+    def update_scale(self, scale):
+        """缩放改了：拿内存里的原始帧重新预缩放，不重读盘。"""
+        if self.current_style:
+            self._start_load(self.current_style)
+
+    def preview_position_and_scale(self, kills=1, duration=3):
+        """按当前设置真弹一次图标（`duration` 是老签名的遗留位）。
+
+        老实现要靠 `threading.Timer` 到点去 stop——因为它那边"播完"这件事
+        没人管。现在动画自己会走完时间轴并隐藏，不需要外部计时器。
+        """
+        was_enabled = getattr(config, "kill_icon_enabled", False)
+        if not was_enabled:
+            config.kill_icon_enabled = True
+        try:
+            self.play_icon(kills)
+        finally:
+            if not was_enabled:
+                # 只放行这一次预览；别把用户的总开关改掉
+                QTimer.singleShot(50, lambda: setattr(config, "kill_icon_enabled", was_enabled))
+
+    def cleanup(self):
+        self._handle_stop()
+        if self._window is not None:
+            self._window.close()
+            self._window.deleteLater()
+            self._window = None
+        self._catalog = {}
+        self._scaled = {}
+
+    # ============================================================ 素材元数据
+
     def _read_style_metadata(self, style_name, kills):
         metadata_path = ResourceManager.get_kill_icon_metadata_path(style_name, kills)
         if not os.path.exists(metadata_path):
             return {}
         try:
-            with open(metadata_path, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except Exception:
+            with open(metadata_path, "r", encoding="utf-8") as handle:
+                data = json.load(handle)
+            return data if isinstance(data, dict) else {}
+        except (OSError, ValueError):
             return {}
 
-    def load_style(self, style_name):
-        self._ensure_worker_started()
-        self.current_style = style_name
-        self.animations.clear()
-        style_found = False
+    def get_style_fps(self, style_name, kills):
+        if style_name == self._catalog_style and kills in self.animations:
+            return self.animations[kills].get("fps", 30)
+        return clamp_fps(self._read_style_metadata(style_name, kills).get("fps", 30))
 
-        for kills in range(1, 6):
-            if not ResourceManager.has_kill_icon_level_assets(style_name, kills):
-                continue
-            metadata = self._read_style_metadata(style_name, kills)
-            self.animations[kills] = {'fps': int(metadata.get('fps', 30) or 30)}
-            style_found = True
+    def get_style_hold(self, style_name, kills):
+        """这个等级的定格时长（秒）。老素材没有这个字段，返回 0。"""
+        info = self._catalog.get((kills, "")) if style_name == self._catalog_style else None
+        if info is not None:
+            return clamp_hold(info.hold_seconds)
+        return clamp_hold(self._read_style_metadata(style_name, kills).get("hold_seconds", 0.0))
 
-        self._send_command(("load_style", style_name))
-        return style_found
-    
-    def play_icon(self, kills, custom_fps=None):
-        if not config.kill_icon_enabled:
-            return
-        self._ensure_worker_started()
-        if self.parent_window:
-            # 兼容PySide6和Tkinter
-            if hasattr(self.parent_window, 'winfo_screenwidth'):
-                # Tkinter
-                screen_width = self.parent_window.winfo_screenwidth()
-                screen_height = self.parent_window.winfo_screenheight()
-            else:
-                # PySide6/PyQt6
-                screen = self.parent_window.screen()
-                screen_width = screen.size().width()
-                screen_height = screen.size().height()
-            self._send_command(("show", screen_width, screen_height))
-        self._send_command(("play", kills, custom_fps))
-    
-    def stop(self):
-        self._send_command(("stop",))
-    
-    def cleanup(self):
-        with self._command_lock:
-            self._pending_commands.clear()
-        if self.process and self.process.is_alive():
+    def get_style_frame_count(self, style_name, kills):
+        """这个等级有多少帧——设置页的"展示时长"控件靠它做时长↔帧率换算。"""
+        info = self._catalog.get((kills, "")) if style_name == self._catalog_style else None
+        if info is not None:
+            return info.frame_count
+
+        frames = int(self._read_style_metadata(style_name, kills).get("frames", 0) or 0)
+        if frames > 0:
+            return frames
+
+        legacy_dir = ResourceManager.get_kill_icon_legacy_frames_dir(style_name, kills)
+        if legacy_dir and os.path.isdir(legacy_dir):
             try:
-                if self.command_queue:
-                    self.command_queue.put(("quit",))
-            except Exception:
-                pass
-            self.process.join(timeout=2)
-            if self.process.is_alive():
-                self.process.terminate()
-        self.worker_ready = False
-    
-    def play_images(self, style, kills):
-        if not config.kill_icon_enabled:
-            return
-        if not self.current_style or self.current_style != config.kill_icon_style:
-            if not self.load_style(config.kill_icon_style):
-                return
-        self.play_icon(kills, None)
-    
-    def stop_images(self):
-        self.stop()
-    
-    def clear_preloaded_images(self):
-        pass
-    
+                return sum(
+                    1
+                    for name in os.listdir(legacy_dir)
+                    if name.lower().endswith((".png", ".jpg", ".jpeg", ".bmp", ".webp"))
+                )
+            except OSError:
+                return 0
+        return 0
+
     def update_fps_for_style(self, style_name, kills, new_fps):
+        return self._update_timing(style_name, kills, fps=clamp_fps(new_fps))
+
+    def update_hold_for_style(self, style_name, kills, new_hold):
+        """只改定格时长。
+
+        单帧素材走的是这条：对一张静态图来说"播放速度"没有意义，
+        用户拖的那个滑条量的直接就是"停多久"。
+        """
+        return self._update_timing(style_name, kills, hold=clamp_hold(new_hold))
+
+    def _update_timing(self, style_name, kills, fps=None, hold=None):
         metadata_path = ResourceManager.get_kill_icon_metadata_path(style_name, kills)
         style_dir = ResourceManager.get_kill_icon_style_dir(style_name)
         try:
@@ -736,46 +592,24 @@ class KillIconPlayer:
                 return False
             os.makedirs(style_dir, exist_ok=True)
             data = self._read_style_metadata(style_name, kills)
-            data['fps'] = int(new_fps)
-            with open(metadata_path, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
-            if style_name == self.current_style and kills in self.animations:
-                self.animations[kills]['fps'] = int(new_fps)
-            print(f"已保存 {kills}杀 FPS设置: {new_fps}")
+            if fps is not None:
+                data["fps"] = clamp_fps(fps)
+            if hold is not None:
+                data["hold_seconds"] = clamp_hold(hold)
+            with open(metadata_path, "w", encoding="utf-8") as handle:
+                json.dump(data, handle, indent=2, ensure_ascii=False)
+            if fps is not None and style_name == self._catalog_style and kills in self.animations:
+                self.animations[kills]["fps"] = clamp_fps(fps)
+            key = (kills, "")
+            info = self._catalog.get(key)
+            if info is not None:
+                # 节奏变了但帧没变：只换元数据，不重新解码也不重新缩放
+                if fps is not None:
+                    info = info._replace(fps=clamp_fps(fps))
+                if hold is not None:
+                    info = info._replace(hold_seconds=clamp_hold(hold))
+                self._catalog[key] = info
             return True
-        except Exception as e:
-            print(f"更新FPS配置失败: {e}")
+        except OSError as exc:
+            logger.error(f"更新击杀图标播放设置失败: {exc}")
             return False
-    
-    def get_style_fps(self, style_name, kills):
-        if style_name == self.current_style and kills in self.animations:
-            return self.animations[kills].get('fps', 30)
-        metadata = self._read_style_metadata(style_name, kills)
-        return int(metadata.get('fps', 30) or 30)
-    
-    def update_position_offset(self, offset_x, offset_y):
-        """更新位置偏移"""
-        self._ensure_worker_started()
-        self._send_command(("update_offset", offset_x, offset_y))
-    
-    def update_scale(self, scale):
-        """更新缩放比例"""
-        self._ensure_worker_started()
-        self._send_command(("update_scale", scale))
-    
-    def preview_position_and_scale(self, kills=1, duration=3):
-        """预览位置和大小设置"""
-        was_enabled = config.kill_icon_enabled
-        if not was_enabled:
-            config.kill_icon_enabled = True
-            self.enable_kill_icons()
-        
-        self.play_icon(kills, 30)
-        
-        def stop_preview():
-            self.stop()
-            if not was_enabled:
-                config.kill_icon_enabled = False
-                self.disable_kill_icons()
-        
-        threading.Timer(duration, stop_preview).start()

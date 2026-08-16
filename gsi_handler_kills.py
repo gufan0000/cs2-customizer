@@ -762,7 +762,9 @@ class GSIHandlerKills:
                     self.logger.debug(f"播放击杀语音: {voice_key}")
                     audio_manager.play_voice(voice_key)
             if self.image_player and config.kill_icon_enabled:
-                self.image_player.play_images(1, level)
+                # 爆头标记顺带传下去：播放器只在该风格备了 <等级>hs 素材时才用它，
+                # 备不到就退回普通图标（见 kill_icon_player._frames_for）。
+                self.image_player.play_images(1, level, is_headshot=is_headshot)
         return played, used_key
 
     def _process_kill_sounds(self, data, steamid):

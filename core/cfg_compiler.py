@@ -12,6 +12,7 @@ import os
 import tempfile
 from typing import Dict, List, Optional, Tuple
 
+from core.crosshair_reset import build_attack_alias_lines
 from core.hud.rule_compiler import (
     build_hud_rules_block,
     compile_cfg_rules,
@@ -86,18 +87,25 @@ def compile_mute(_config_obj) -> str:
 def compile_viewmodel(config_obj) -> str:
     parts: List[str] = ["// -- Viewmodel Settings (CS2 Customizer) --"]
 
-    # 准心回正：如果 HUD 运行时刷新已启用，mouse1 由 HUD rules 段合并处理
+    # 准心回正：如果 HUD 运行时刷新已启用，开火键由 HUD rules 段合并处理
     crosshair_enabled = getattr(config_obj, "crosshair_reset_enabled", False)
-    hud_handles_mouse1 = has_hud_runtime_refresh(config_obj)
+    hud_handles_attack = has_hud_runtime_refresh(config_obj)
 
-    if crosshair_enabled and not hud_handles_mouse1:
+    if not hud_handles_attack:
         parts.append("")
-        parts.append("// == Crosshair Quick Reset ==")
-        parts.append("cl_crosshair_recoil 1")
-        parts.append('alias +quickrepos_attack "+attack; cl_crosshair_recoil 1"')
-        parts.append('alias -quickrepos_attack "-attack; cl_crosshair_recoil 0"')
-        parts.append("bind mouse1 +quickrepos_attack")
-        parts.append('echo "Crosshair quick reset enabled"')
+        if crosshair_enabled:
+            parts.append("// == Crosshair Quick Reset ==")
+            parts.extend(build_attack_alias_lines(config_obj, recoil=True))
+            parts.append('echo "Crosshair quick reset enabled"')
+        else:
+            # 关闭时**必须**也输出点东西：用户的 config.cfg 里可能还存着
+            # 上次启用时留下的 `bind mouse1 +quickrepos_attack`（CS2 存 bind
+            # 不存 alias）。什么都不输出的话，那个 bind 还活着，"关闭"是假的。
+            # 详见 core/crosshair_reset 的模块 docstring。
+            parts.append("// == Crosshair Quick Reset (off — restore) ==")
+            parts.extend(
+                build_attack_alias_lines(config_obj, recoil=False, emit_bind=False)
+            )
 
     presets = getattr(config_obj, "viewmodel_presets", [])
     if presets:

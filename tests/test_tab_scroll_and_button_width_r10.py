@@ -154,7 +154,11 @@ def test_every_tab_is_scrollable():
 #: 全仓还有 21 处 `setFixedWidth` 用在按钮上，目前都有余量，
 #: 由排版审计（6 个主题×字号组合逐个量真实截断）看着，不在这里一刀切。
 TIGHT_BUTTONS = {
-    "kill_icon_page.py": ["重置位置和大小", "保存FPS设置"],
+    # KI-7 把「保存播放设置」搬进了素材工坊（dialogs/kill_icon_workshop.py），
+    # 这份名单只扫 pages/ 下的文件，所以那一条跟着挪走了。
+    # 工坊那一侧由 test_kill_icon_workshop_ki7.py::test_the_dialog_fits_its_own_minimum_size
+    # 盯着（口径不同：那条量的是整窗放不放得下，比"某个按钮有没有被写死宽度"更硬）。
+    "kill_icon_page.py": ["重置位置和大小"],
 }
 
 
@@ -252,6 +256,12 @@ _KNOWN_BROKEN: set[str] = set()
 _SKIP_DIRS = {
     ".git", "__pycache__", ".build", "node_modules", ".pytest_cache",
     "artifacts", "release", "dist", "build",
+    # `.claude/worktrees/` 是助手会话建的临时 git worktree（`.git/info/exclude`
+    # 里已排除，不入库）。它里面是**整个仓库的另一份拷贝**，扫到的话既会
+    # 重复计数、又会把那份拷贝的历史问题算到当前工作区头上。
+    # 2026-08-15 实测：一个残留 worktree 让这条判据报出 44 个"编码损坏"文件，
+    # 全部来自那份拷贝的 docs/tutorial/ —— 而当前工作区的同名文件是好的。
+    ".claude",
 }
 _SCAN_EXTS = {".py", ".md", ".json", ".yml", ".yaml", ".txt"}
 

@@ -120,6 +120,35 @@ def find_first_audio_file(
     return os.path.join(directory, candidates[0])
 
 
+def find_audio_by_tokens(
+    directory: str,
+    tokens: Optional[Iterable[str]] = None,
+    extensions: Optional[Sequence[str]] = None,
+) -> Optional[str]:
+    """按文件名关键词找音频，**找不到就返回 None，不回落到第一个文件**。
+
+    和 `find_first_audio_file` 的区别只在最后那一步，但语义完全相反：
+    那个是"给我这个目录的代表文件"，这个是"只要真正匹配的那个"。
+
+    用在多个事件共用一个风格目录的场景（C4 的拆除/爆炸）：目录里通常只放了
+    一个"下包"音效，这时拆除事件必须**安静地不响**。回落的话，用户会在拆包时
+    听到本该在下包时响的声音——那听起来像 bug，比不响更糟。
+    """
+    candidates = list_audio_files(directory, extensions=extensions, sort=True)
+    if not candidates:
+        return None
+
+    wanted = [t.strip().lower() for t in (tokens or ()) if t and t.strip()]
+    if not wanted:
+        return None
+
+    for name in candidates:
+        lower_name = name.lower()
+        if any(token in lower_name for token in wanted):
+            return os.path.join(directory, name)
+    return None
+
+
 def find_audio_by_stem(
     directory: str,
     stem: str,

@@ -46,16 +46,32 @@ CORPUS = [
     ("燃烧瓶", "special_sound"), ("火瓶", "special_sound"), ("molly", "special_sound"),
     ("烟雾弹", "special_sound"), ("下包", "special_sound"), ("拆包", "special_sound"),
     ("残血", "special_sound"), ("血少", "special_sound"), ("快死了", "special_sound"),
+    # 2.2.4 新增事件的用户说法
+    ("拆除", "special_sound"), ("包爆了", "special_sound"), ("比赛开始", "special_sound"),
+    ("换边", "special_sound"), ("太吵", "special_sound"),
     # 准心
     ("描边", "crosshair"), ("粗细", "crosshair"), ("点准心", "crosshair"),
     ("圆准心", "crosshair"), ("动态准心", "crosshair"), ("分享码", "crosshair"),
     ("导入准心", "crosshair"), ("准星颜色", "crosshair"),
+    # 2.2.4 补齐的样式参数
+    ("中心间隙", "crosshair"), ("准心挡住", "crosshair"), ("中心点", "crosshair"),
+    ("黑边", "crosshair"), ("半透明", "crosshair"), ("自定义颜色", "crosshair"),
     # 击杀图标
     ("击杀提示", "kill_icon"), ("图案", "kill_icon"), ("击杀动画", "kill_icon"),
+    # KI-2/KI-3：导入入口与展示时长。这批在补词表之前**全都召回不到**——
+    # 用户找导入功能时嘴里说的是"动图""表情包"，不是"精灵图"。
+    ("换图标", "kill_icon"), ("gif", "kill_icon"), ("表情包", "kill_icon"),
+    ("停留时间", "kill_icon"), ("爆头图标", "kill_icon"), ("帧序列", "kill_icon"),
+    # KI-4/KI-6：分发单位变成"一整套风格"，删除有了撤销，静态图有了定格。
+    # 这批词描述的是**用户拿到东西之后想干的事**，而不是功能名。
+    ("图标包", "kill_icon"), ("压缩包", "kill_icon"), ("分享图标", "kill_icon"),
+    ("素材清单", "kill_icon"), ("删除图标", "kill_icon"), ("定格", "kill_icon"),
+    ("抠背景", "kill_icon"), ("黑底", "kill_icon"), ("裁边", "kill_icon"),
     # 局内视角
     ("枪的位置", "viewmodel"), ("手臂位置", "viewmodel"), ("fov", "viewmodel"),
     ("拉近", "viewmodel"), ("第一视角", "viewmodel"), ("快速回正", "viewmodel"),
     ("持枪", "viewmodel"), ("循环按键", "viewmodel"),
+    ("开火键", "viewmodel"), ("队友看不到", "viewmodel"),
     # 开镜放大
     ("假镜", "magnifier"), ("模拟开镜", "magnifier"), ("放大倍率", "magnifier"),
     ("dpi", "magnifier"), ("开镜灵敏度", "magnifier"), ("右键放大", "magnifier"),

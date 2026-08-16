@@ -104,6 +104,14 @@ _CROSSHAIR_KEYS = (
     "crosshair_enabled", "crosshair_style", "crosshair_color", "crosshair_size",
     "crosshair_thickness", "crosshair_animation", "crosshair_kill_effect",
     "crosshair_reset_enabled", "crosshair_custom_data",
+    # 2.2.4 补齐的样式参数。漏登记的表现是"切预设后间隙/描边保持上一套的值"，
+    # 而且**不报错**——预设看起来切了、准星却是两套配置的混合体。
+    "crosshair_gap", "crosshair_outline", "crosshair_dot",
+    "crosshair_alpha", "crosshair_color_custom",
+    # 回正的开火键设置跟着 crosshair_reset_enabled 走：预设里带了开关却不带
+    # 键位，切预设后会用别人的开关配自己的键，而且不报错。
+    "crosshair_reset_attack_key",
+    "crosshair_reset_secondary_enabled", "crosshair_reset_secondary_key",
 )
 _FLASH_KEYS = (
     "flash_enabled", "flash_style", "flash_bg_color", "flash_max_opacity",

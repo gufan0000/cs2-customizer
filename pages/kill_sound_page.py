@@ -188,7 +188,11 @@ class KillSoundPage(SoundPageBase, QWidget):
 
     # ------------------------------------------------ R9-D 基类钩子
     PAGE_TITLE = "击杀音效设置"
-    PAGE_LEAD = "击杀音效页保持列表式效率，把分类切换和快速试听留在一屏里，适合高频逐项排查。"
+    # ⚠ 页面说明是**写给玩家看的**，不是写给做界面的人看的。
+    # 原文「保持列表式效率，把分类切换和快速试听留在一屏里」讲的是版面决策，
+    # 玩家读完既不知道这功能干什么、也不知道第一步该做什么。全站有十几处同病，
+    # 判据见 tests/test_page_copy_is_user_facing.py。
+    PAGE_LEAD = "击杀敌人时播放你自己的音效，可以按武器类别和连杀数分开配。先去「基础设置」打开总开关，再逐把枪选风格，点「测试」试听。"
     HELP_KEY = "kill_sound"
     TEST_LEVELS = [1, 2, 3, 4, 5]
     STYLE_TOOLS_MENU = True
@@ -433,5 +437,5 @@ class KillSoundPage(SoundPageBase, QWidget):
                     "新增资源后可直接刷新风格列表。"
                 )
             else:
-                action_message = "总开关当前关闭，这里的映射会保留；如新增资源，可先刷新风格列表再回首页启用。"
+                action_message = "总开关当前关闭，这里的映射会保留；如新增资源，可先刷新风格列表再去「基础设置」打开总开关。"
             self.action_bar.set_message(action_message)

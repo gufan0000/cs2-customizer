@@ -111,9 +111,69 @@ def compute_centered_geometry(screen_geometry, dpr: float):
     return (x + (w - logical) // 2, y + (h - logical) // 2, logical, logical)
 
 
+def pick_screen(screens, primary, device_name):
+    """从 `screens` 里挑出设备名等于 `device_name` 的那块，挑不到就用 `primary`。
+
+    **按设备名匹配，不按坐标**。多屏时按坐标匹配会踩这个模块顶部警告过的那类
+    错：不同缩放的屏之间，Win32 给的窗口坐标是物理像素、Qt 的屏幕几何是逻辑
+    像素，两边不在一个坐标系里，落点会整体偏移甚至挑错屏。而 Windows 上
+    `QScreen.name()` 返回的就是 GDI 设备名（`\\\\.\\DISPLAY1`），和
+    `GetMonitorInfo` 给的是同一个字符串，比对是精确且与缩放无关的。
+
+    纯函数，为的是不依赖真实多屏环境就能验——这个模块最容易错也最致命的
+    就是几何（准心偏几个像素就废了），同 `compute_centered_geometry`。
+    """
+    if device_name:
+        for screen in screens or ():
+            try:
+                if screen.name() == device_name:
+                    return screen
+            except Exception:
+                continue
+    return primary
+
+
+def game_screen_device_name():
+    """CS2 窗口所在显示器的设备名；找不到返回 None（调用方退回主屏）。
+
+    窗口识别复用 `core.fun.sticky_browser.find_game_window`——它是「类名/标题
+    粗筛 + 进程映像名核实」的写法。**不要在这里另写一个匹配器**：本仓因为
+    宽松匹配窗口出过两次事故（都误伤了用户自己的浏览器），认窗口的实现只该有一份。
+    """
+    if not sys.platform.startswith("win"):
+        return None
+    try:
+        import win32api
+
+        from core.fun.sticky_browser import find_game_window
+
+        hwnd = find_game_window()
+        if not hwnd:
+            return None
+        MONITOR_DEFAULTTONEAREST = 2
+        monitor = win32api.MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST)
+        info = win32api.GetMonitorInfo(monitor)
+        return info.get("Device") or None
+    except Exception as exc:
+        logger.debug(f"解析游戏所在显示器失败，退回主屏: {exc}")
+        return None
+
+
 def resolve_color(name, alpha=255) -> QColor:
-    r, g, b = COLOR_MAP.get(str(name or ""), DEFAULT_COLOR)
-    return QColor(r, g, b, alpha)
+    """色名或 `#rrggbb` → QColor。
+
+    自定义色走 `#rrggbb`：六个固定色名必须继续认（存量配置指向它们），所以
+    不能把 COLOR_MAP 换掉，只能在前面加一条十六进制分支。解析失败一律退回
+    默认绿——准星是功能件，宁可颜色不对也不能画不出来。
+    """
+    text = str(name or "").strip()
+    if text.startswith("#"):
+        color = QColor(text)
+        if color.isValid():
+            color.setAlpha(max(0, min(255, int(alpha))))
+            return color
+    r, g, b = COLOR_MAP.get(text, DEFAULT_COLOR)
+    return QColor(r, g, b, max(0, min(255, int(alpha))))
 
 
 @dataclass
@@ -142,6 +202,19 @@ class CrosshairFrame:
     shatter_fragments: tuple = ()
     shatter_base_style: str = "crosshair"
 
+    #: 中心间隙（物理像素，从中心到线段内端）。0 = 两条线穿过圆心。
+    #: 这是本次补齐里实用性最高的一项：原来十字是实打实地**糊住准星点**的。
+    gap: int = 0
+
+    #: 描边宽度（物理像素，单边）。0 = 不描边。
+    #: 纯色细线在亮地板/沙地上基本看不见，描边是可见性的主要手段。
+    outline: int = 0
+    outline_color: QColor = field(default_factory=lambda: QColor(0, 0, 0, 255))
+
+    #: 中心点：叠在准星形状之上再画一个实心点（CS2 的 cl_crosshairdot）。
+    dot: bool = False
+    dot_radius: int = 2
+
 
 @dataclass
 class CrosshairState:
@@ -159,6 +232,10 @@ class CrosshairState:
     kill_effect: str = "none"
     custom_points: tuple = ()
     antialias: bool = False
+    gap: int = 0
+    outline: int = 0
+    dot: bool = False
+    alpha: int = 255
 
 
 @dataclass
@@ -313,7 +390,8 @@ class CrosshairAnimator:
         dt = 0.0 if self._last_t is None else max(0.0, now - self._last_t)
         self._last_t = now
 
-        color = resolve_color(state.color)
+        color = resolve_color(state.color, getattr(state, "alpha", 255))
+        outline = max(0, int(getattr(state, "outline", 0) or 0))
         frame = CrosshairFrame(
             style=state.style,
             size=max(1, int(state.size)),
@@ -322,6 +400,12 @@ class CrosshairAnimator:
             center=QPointF(CANVAS_PX / 2, CANVAS_PX / 2),
             antialias=bool(state.antialias),
             custom_points=tuple(tuple(p) for p in (state.custom_points or ())),
+            gap=max(0, int(getattr(state, "gap", 0) or 0)),
+            outline=outline,
+            # 描边跟着准星一起透明，否则调低透明度时会剩一圈黑边浮在屏幕上
+            outline_color=QColor(0, 0, 0, color.alpha()),
+            dot=bool(getattr(state, "dot", False)),
+            dot_radius=max(1, max(1, int(state.thickness)) // 2 + 1),
         )
 
         animation = str(state.animation or "none")
@@ -495,11 +579,35 @@ def paint_crosshair(painter: QPainter, frame: CrosshairFrame) -> None:
     """把一帧准心画到 painter 上（纯函数，不碰任何全局状态）。
 
     调用方负责：已经把坐标系换算到物理像素、已经清好背景。
+
+    描边的做法是**把同一套几何画两遍**：先用更粗的深色笔打底，再用正常笔覆盖。
+    比"给每个图元单独算外轮廓"省事得多，而且天然适用于所有样式，包括自定义
+    点阵。代价是描边宽度实际吃掉的是线宽两侧各 outline 像素。
     """
     painter.setRenderHint(QPainter.Antialiasing, bool(frame.antialias))
 
-    pen = QPen(frame.color)
-    pen.setWidth(max(1, int(frame.thickness)))
+    outline = max(0, int(frame.outline))
+    if outline > 0:
+        _paint_shape(painter, frame, frame.outline_color, outline)
+    _paint_shape(painter, frame, frame.color, 0)
+
+    # 中心点画在最后：它要盖在准星形状之上，否则会被线条切掉一块
+    if frame.dot:
+        radius = max(1, int(frame.dot_radius))
+        painter.setPen(Qt.NoPen)
+        if outline > 0:
+            painter.setBrush(frame.outline_color)
+            painter.drawEllipse(frame.center, radius + outline, radius + outline)
+        painter.setBrush(frame.color)
+        painter.drawEllipse(frame.center, radius, radius)
+
+    _paint_overlays(painter, frame)
+
+
+def _paint_shape(painter: QPainter, frame: CrosshairFrame, color, grow: int) -> None:
+    """画一遍准星本体。`grow` >0 时是在打描边底，线更粗、颜色是描边色。"""
+    pen = QPen(color)
+    pen.setWidth(max(1, int(frame.thickness) + 2 * grow))
     pen.setCapStyle(Qt.FlatCap)
     painter.setPen(pen)
     painter.setBrush(Qt.NoBrush)
@@ -507,19 +615,26 @@ def paint_crosshair(painter: QPainter, frame: CrosshairFrame) -> None:
     cx, cy = frame.center.x(), frame.center.y()
     size = max(1, int(frame.size))
     half = size // 2
+    gap = max(0, int(frame.gap))
     style = frame.style
 
     if style == "crosshair":
         if frame.rotation:
-            _paint_rotated_cross(painter, cx, cy, half, frame.rotation)
+            _paint_rotated_cross(painter, cx, cy, half, frame.rotation, gap)
         else:
-            _draw_line(painter, cx, cy - half, cx, cy + half)
-            _draw_line(painter, cx - half, cy, cx + half, cy)
+            # 中心间隙：四段而不是两条过心线。gap=0 时退化成原来的两条线，
+            # 存量用户的观感一像素不变。
+            if gap >= half:
+                return
+            _draw_line(painter, cx, cy - half, cx, cy - gap)
+            _draw_line(painter, cx, cy + gap, cx, cy + half)
+            _draw_line(painter, cx - half, cy, cx - gap, cy)
+            _draw_line(painter, cx + gap, cy, cx + half, cy)
 
     elif style == "dot":
-        radius = max(2, size // 4)
+        radius = max(2, size // 4) + grow
         painter.setPen(Qt.NoPen)
-        painter.setBrush(frame.color)
+        painter.setBrush(color)
         painter.drawEllipse(QPointF(cx, cy), radius, radius)
 
     elif style == "circle":
@@ -528,7 +643,7 @@ def paint_crosshair(painter: QPainter, frame: CrosshairFrame) -> None:
 
     elif style == "t_shape":
         # T 型：横杆整条 + 竖杆只向下半条（上半段留空，不挡爆头线）
-        _paint_t_shape(painter, cx, cy, half, frame.rotation)
+        _paint_t_shape(painter, cx, cy, half, frame.rotation, gap)
 
     elif style == "x_mark":
         # 击杀联动 x_flash 的前 40% 会切到这个样式
@@ -537,12 +652,10 @@ def paint_crosshair(painter: QPainter, frame: CrosshairFrame) -> None:
         _draw_line(painter, cx - length, cy + length, cx + length, cy - length)
 
     elif style == "custom":
-        _paint_custom(painter, frame, cx, cy, size)
+        _paint_custom(painter, frame, cx, cy, size, grow)
 
     elif style == "shatter":
         _paint_shatter(painter, frame, cx, cy)
-
-    _paint_overlays(painter, frame)
 
 
 def _paint_overlays(painter, frame):
@@ -602,7 +715,7 @@ def _paint_shatter(painter, frame, cx, cy):
             painter.setBrush(Qt.NoBrush)
 
 
-def _paint_t_shape(painter, cx, cy, half, angle_deg=0.0):
+def _paint_t_shape(painter, cx, cy, half, angle_deg=0.0, gap=0):
     """T 型准心。angle_deg=0 时几何与老渲染器 `crosshair_animation.py` 逐点一致：
     横杆 (cx-half, cy)→(cx+half, cy)，竖杆 (cx, cy)→(cx, cy+half)。
 
@@ -617,28 +730,41 @@ def _paint_t_shape(painter, cx, cy, half, angle_deg=0.0):
     def rot(dx, dy):
         return cx + dx * cos_v - dy * sin_v, cy + dx * sin_v + dy * cos_v
 
-    x1, y1 = rot(-half, 0)
-    x2, y2 = rot(half, 0)
-    _draw_line(painter, x1, y1, x2, y2)
+    gap = max(0, int(gap))
+    if gap >= half:
+        return
 
-    sx, sy = rot(0, half)
-    _draw_line(painter, cx, cy, sx, sy)
+    # 横杆被中心间隙切成左右两段，竖杆只留下半条
+    lx1, ly1 = rot(-half, 0)
+    lx2, ly2 = rot(-gap, 0)
+    _draw_line(painter, lx1, ly1, lx2, ly2)
+    rx1, ry1 = rot(gap, 0)
+    rx2, ry2 = rot(half, 0)
+    _draw_line(painter, rx1, ry1, rx2, ry2)
+
+    bx1, by1 = rot(0, gap)
+    bx2, by2 = rot(0, half)
+    _draw_line(painter, bx1, by1, bx2, by2)
 
 
-def _paint_rotated_cross(painter, cx, cy, length, angle_deg):
+def _paint_rotated_cross(painter, cx, cy, length, angle_deg, gap=0):
     import math
 
     rad = math.radians(angle_deg)
     cos_v, sin_v = math.cos(rad), math.sin(rad)
-    _draw_line(painter,
-               cx + length * cos_v, cy + length * sin_v,
-               cx - length * cos_v, cy - length * sin_v)
-    _draw_line(painter,
-               cx + length * sin_v, cy - length * cos_v,
-               cx - length * sin_v, cy + length * cos_v)
+    gap = max(0, int(gap))
+    if gap >= length:
+        return
+
+    # 两条过心线各被中心间隙切成两段（gap=0 时四段首尾相接，等价于原来的两条线）
+    for dx, dy in ((cos_v, sin_v), (sin_v, -cos_v)):
+        for sign in (1, -1):
+            _draw_line(painter,
+                       cx + gap * dx * sign, cy + gap * dy * sign,
+                       cx + length * dx * sign, cy + length * dy * sign)
 
 
-def _paint_custom(painter, frame, cx, cy, size):
+def _paint_custom(painter, frame, cx, cy, size, grow=0):
     """自定义准心：一张 30x30 的像素画，(15, 15) 是中心。
 
     换算方式与老实现保持一致（`scale = size / 15`，方块边长 = 线宽），
@@ -651,9 +777,10 @@ def _paint_custom(painter, frame, cx, cy, size):
         return
 
     scale = size / 15.0
-    pixel = max(1, int(frame.thickness))
+    # 描边打底时把每个像素块四周各撑大 grow，正常层再覆盖回去
+    pixel = max(1, int(frame.thickness) + 2 * max(0, int(grow)))
     painter.setPen(Qt.NoPen)
-    painter.setBrush(frame.color)
+    painter.setBrush(frame.outline_color if grow else frame.color)
 
     rad = math.radians(frame.rotation) if frame.rotation else 0.0
     cos_v, sin_v = (math.cos(rad), math.sin(rad)) if frame.rotation else (1.0, 0.0)
@@ -703,20 +830,42 @@ class CrosshairOverlayWindow(QWidget):
 
     # ------------------------------------------------------------------ 几何
 
-    def device_pixel_ratio(self) -> float:
-        screen = self.screen() or QApplication.primaryScreen()
+    def device_pixel_ratio(self, screen=None) -> float:
+        screen = screen or self.screen() or QApplication.primaryScreen()
         try:
             return float(screen.devicePixelRatio()) if screen else 1.0
         except Exception:
             return 1.0
 
+    def target_screen(self):
+        """准心该画在哪块屏。
+
+        原来这里写死 `primaryScreen()`，而同一个类的 `device_pixel_ratio()` 用的
+        是 `self.screen()` —— 副屏打游戏的用户，准心画在主屏正中；两块屏缩放不同
+        时连大小都是错的（拿 A 屏的缩放去算 B 屏的尺寸）。
+        """
+        return pick_screen(
+            QApplication.screens(),
+            QApplication.primaryScreen(),
+            game_screen_device_name(),
+        )
+
     def recenter(self) -> bool:
-        screen = QApplication.primaryScreen()
+        screen = self.target_screen()
         if screen is None:
             return False
         geo = screen.geometry()
-        self.setGeometry(*compute_centered_geometry(
-            (geo.x(), geo.y(), geo.width(), geo.height()), self.device_pixel_ratio()))
+        # dpr 必须取**目标屏**的，不能取窗口当前所在屏的：跨屏移动的那一刻
+        # 窗口还在旧屏上，用旧屏的缩放算新屏的边长就会差一个缩放比。
+        target = compute_centered_geometry(
+            (geo.x(), geo.y(), geo.width(), geo.height()),
+            self.device_pixel_ratio(screen))
+        current = self.geometry()
+        if (current.x(), current.y(), current.width(), current.height()) == target:
+            # 没变就别动：setGeometry 会触发 move/resize 事件和一次重绘，
+            # 而这个方法现在是被低频定时器周期性调用的
+            return False
+        self.setGeometry(*target)
         return True
 
     # ------------------------------------------------------------------ 绘制
@@ -784,6 +933,9 @@ class CrosshairOverlayManager(QObject):
     #: 锁帧真正限制的是合成与定时器唤醒次数。见设计文档 §5-1。
     FRAME_INTERVAL_MS = int(round(1000 / 24))
 
+    #: 重定位轮询周期。只做「游戏在哪块屏」这一件事，3 秒够用。
+    RECENTER_INTERVAL_MS = 3000
+
     def __init__(self, config_obj, root=None):
         super().__init__(root if isinstance(root, QObject) else None)
         self.config = config_obj
@@ -801,11 +953,19 @@ class CrosshairOverlayManager(QObject):
             kill_effect=getattr(config_obj, "crosshair_kill_effect", "none"),
             custom_points=tuple(tuple(p) for p in (getattr(config_obj, "crosshair_custom_data", ()) or ())),
         )
+        self._sync_style_extras()
 
         self._timer = QTimer(self)
         self._timer.setInterval(self.FRAME_INTERVAL_MS)
         self._timer.timeout.connect(self._tick)
         self._kill_signal.connect(self._handle_kill)
+
+        # 低频重定位：show 的时候游戏可能还没启动，或者用户中途把 CS2 挪到了
+        # 另一块屏。0.33Hz，一次只是枚举窗口 + 比一次几何，几何没变就直接返回，
+        # 与「静态准心不跑 24FPS 定时器」那条设计不冲突。
+        self._recenter_timer = QTimer(self)
+        self._recenter_timer.setInterval(self.RECENTER_INTERVAL_MS)
+        self._recenter_timer.timeout.connect(self._recenter_tick)
 
     # ------------------------------------------------------------ 兼容接口
 
@@ -882,12 +1042,28 @@ class CrosshairOverlayManager(QObject):
         self._visible = True
         self._render_once()
         self._sync_timer()
+        self._recenter_timer.start()
 
     def hide_crosshair(self):
         self._visible = False
         self._timer.stop()
+        self._recenter_timer.stop()
         if self._window is not None:
             self._window.hide()
+
+    def _recenter_tick(self):
+        """周期性确认准心还在游戏那块屏上。
+
+        show 的那一刻 CS2 可能还没启动（用户习惯先开助手再开游戏），那时只能
+        退回主屏；游戏起来之后得有人把它挪过去，就是这里。
+        """
+        if not self._visible or self._window is None:
+            return
+        try:
+            if self._window.recenter():
+                self._render_once()
+        except Exception:
+            logger.debug("周期重定位失败（忽略，下次再试）", exc_info=True)
 
     def destroy(self):
         self.hide_crosshair()
@@ -898,6 +1074,12 @@ class CrosshairOverlayManager(QObject):
             self._window = None
 
     def update_settings(self, size, thickness, color, style, animation_style, kill_effect):
+        """⚠ 签名不许改：`gui_widget` / 准心页 / 放大镜页共 12 处在调它。
+
+        2.2.4 补的那几个样式参数（间隙/描边/中心点/透明度/自定义色）**不进参数
+        列表**，和 custom_points 一样从 config 上读——加一个参数就要改 12 个
+        调用点，而漏改的那几处会静默传旧值。
+        """
         self._state.size = size
         self._state.thickness = thickness
         self._state.color = color
@@ -907,8 +1089,21 @@ class CrosshairOverlayManager(QObject):
         self._state.custom_points = tuple(
             tuple(p) for p in (getattr(self.config, "crosshair_custom_data", ()) or ())
         )
+        self._sync_style_extras()
         self._render_once()
         self._sync_timer()
+
+    def _sync_style_extras(self):
+        """把只从 config 读的那几个样式参数刷进 state。"""
+        cfg = self.config
+        custom_color = str(getattr(cfg, "crosshair_color_custom", "") or "").strip()
+        if custom_color:
+            # 自定义色覆盖色名。留着 crosshair_color 不动，用户清空自定义色就回到色名
+            self._state.color = custom_color
+        self._state.gap = max(0, int(getattr(cfg, "crosshair_gap", 0) or 0))
+        self._state.outline = max(0, int(getattr(cfg, "crosshair_outline", 0) or 0))
+        self._state.dot = bool(getattr(cfg, "crosshair_dot", False))
+        self._state.alpha = max(0, min(255, int(getattr(cfg, "crosshair_alpha", 255) or 255)))
 
     def register_kill_handler(self, gsi_handler_kills):
         if not gsi_handler_kills:

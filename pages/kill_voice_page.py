@@ -184,7 +184,7 @@ class KillVoicePage(SoundPageBase, QWidget):
 
     # ------------------------------------------------ R9-D 基类钩子
     PAGE_TITLE = "击杀语音设置"
-    PAGE_LEAD = "击杀语音页保持列表式效率，把分类切换、语音风格和试听都压在一屏里，方便快速逐项排查。"
+    PAGE_LEAD = "击杀时播报一句语音，连杀会递进（Double Kill、Triple Kill）。先去「基础设置」打开总开关，再逐把枪选风格，点「测试」试听。"
     HELP_KEY = "kill_voice"
     TEST_LEVELS = [1, 2, 3, 4, 5]
     STYLE_TOOLS_MENU = True
@@ -416,5 +416,5 @@ class KillVoicePage(SoundPageBase, QWidget):
                     "新增资源后可直接刷新风格列表。"
                 )
             else:
-                action_message = "总开关当前关闭，这里的映射会保留；如新增资源，可先刷新风格列表再回首页启用。"
+                action_message = "总开关当前关闭，这里的映射会保留；如新增资源，可先刷新风格列表再去「基础设置」打开总开关。"
             self.action_bar.set_message(action_message)

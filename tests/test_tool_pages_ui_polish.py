@@ -10,7 +10,13 @@ from PySide6.QtWidgets import QApplication, QLabel, QMessageBox, QBoxLayout, QSi
 
 from config import config
 from core.audio.audio_event_timeline import AudioEvent, get_audio_event_timeline
+from core.audio.special_events import events_in_group
 from core.config_snapshot_manager import SnapshotMeta
+
+#: 回合事件的**分母拿事件表现算**，不写死。
+#: 写死分母的代价见 core/audio/special_events 的模块 docstring：加事件时它不会
+#: 报错，只会让"已选 4/5"这类文案悄悄对不上真实数量。
+_ROUND_EVENT_COUNT = len(events_in_group("round"))
 
 
 @pytest.fixture(scope="module")
@@ -755,6 +761,11 @@ class _DummyKillIconPlayer:
     def get_style_fps(self, _style, kills):
         return {1: 24, 2: 28, 3: 32, 4: 36, 5: 40}[kills]
 
+    def get_style_frame_count(self, _style, _kills):
+        # KI-3：滑条量的是"展示时长"，落盘的仍是帧率，中间靠帧数换算。
+        # 假播放器不给这个数的话，页面会认为"这个等级没素材"，把滑条禁掉。
+        return 30
+
     def update_position_offset(self, offset_x, offset_y):
         self.position_updates.append((offset_x, offset_y))
 
@@ -773,14 +784,26 @@ class _DummyKillIconPlayer:
 
 
 def test_kill_icon_page_status_strip_tracks_adjustments(qapp, monkeypatch):
+    """KI-7：这一页只回答"用哪一套 · 放哪儿 · 开没开"。
+
+    KI-6 那一版的状态条有七条，把「时长 · 1.5-5.0s」「预览 · 已连接」这类
+    **只有做素材的人才关心**的数摆在了首屏；逐等级的编辑也整块摆在页面正中。
+    用户的原话是「有点复杂有点乱」。现在编辑整块搬进素材工坊，
+    这一页的状态条压到四条（那些数退进详情文案，鼠标停上去能看到）。
+    """
     import pages.kill_icon_page as kill_icon_page_module
 
     monkeypatch.setattr(kill_icon_page_module.ResourceManager, "list_kill_icon_styles", lambda: ["classic", "modern"])
     monkeypatch.setattr(config, "save_config", lambda: None, raising=False)
     monkeypatch.setattr(config, "kill_icon_style", "classic", raising=False)
+    monkeypatch.setattr(config, "kill_icon_enabled", True, raising=False)
     monkeypatch.setattr(config, "kill_icon_offset_x", 12, raising=False)
     monkeypatch.setattr(config, "kill_icon_offset_y", -8, raising=False)
     monkeypatch.setattr(config, "kill_icon_scale", 1.1, raising=False)
+    monkeypatch.setattr(kill_icon_page_module, "load_level_animation", lambda *a, **k: None)
+    monkeypatch.setattr(kill_icon_page_module, "style_summary",
+                        lambda style, *a, **k: {"levels": [1, 2, 3, 4, 5], "missing": [],
+                                                "headshot_levels": [], "frames": 100})
     monkeypatch.setattr(QMessageBox, "information", lambda *_args, **_kwargs: 0)
     monkeypatch.setattr(QMessageBox, "warning", lambda *_args, **_kwargs: 0)
 
@@ -792,51 +815,38 @@ def test_kill_icon_page_status_strip_tracks_adjustments(qapp, monkeypatch):
     qapp.processEvents()
 
     assert page.summary_label.isHidden() is True
-    assert page.top_content_layout.direction() == QBoxLayout.LeftToRight
     chips = _visible_audio_status_chip_texts(page.status_badge_label)
-    assert len(chips) == 5
+    assert len(chips) == 4
+    assert any(text.startswith("总开关 · ") for text in chips)
+    assert any(text.startswith("素材 · ") for text in chips)
     assert any(text.startswith("风格 · classic") for text in chips)
-    assert "预览 · 已连接" in chips
-    assert "偏移 · 12/-8" in chips
-    assert "当前风格：classic · 已扫描 2 套风格 · 预览已连接" in page.style_summary_label.text()
-    assert "当前位置：X 12 / Y -8 · 缩放 110%" in page.adjust_summary_label.text()
-    assert page.fps_summary_label.text() == f"当前 FPS：{page._current_fps_summary()} · 已同步到当前风格"
-    assert "资源状态：已扫描 2 套风格" in page.tool_summary_label.text()
+    assert "位置 · 12/-8 · 110%" in chips
+    # 退下去的信息不是丢掉，是收进详情
+    assert "预览组件：已连接" in page.status_card.toolTip()
+    assert "当前风格：classic" in page.style_summary_label.text()
+    assert "素材 5/5 个等级" in page.style_summary_label.text()
     assert page.action_bar.secondary_btn.isHidden() is False
     assert page.action_bar.primary_btn.isHidden() is False
-    assert page.action_bar.secondary_btn.text() == "测试 1 杀"
-    assert page.action_bar.primary_btn.text() == "预览当前设置"
+    assert page.action_bar.secondary_btn.text() == "打开素材工坊"
+    assert page.action_bar.primary_btn.text() == "在屏幕上试播"
     assert "当前风格：classic" in page.action_bar.message_label.text()
 
-    page.style_combo.setCurrentIndex(page.style_combo.findData("modern"))
+    # 换风格靠点卡片，不是下拉框——换之前就看得见长什么样
+    page.style_strip.style_selected.emit("modern")
+    page.adjust_toggle_btn.setChecked(True)
     page.x_slider.setValue(30)
     page.y_slider.setValue(-15)
     page.scale_slider.setValue(125)
-    page.fps_sliders[1].setValue(45)
 
     assert player.loaded_styles[-1] == "modern"
     assert player.position_updates[-1] == (30, -15)
     assert player.scale_updates[-1] == 1.25
     chips = _visible_audio_status_chip_texts(page.status_badge_label)
-    assert "FPS · 待同步" in chips
-    assert "当前风格：modern" in page.style_summary_label.text()
+    assert "位置 · 30/-15 · 125%" in chips
+    assert any(text.startswith("风格 · modern") for text in chips)
     assert "当前位置：X 30 / Y -15 · 缩放 125%" in page.adjust_summary_label.text()
-    assert page.fps_summary_label.text() == f"当前 FPS：{page._current_fps_summary()} · 尚未保存到风格配置"
-    assert page.action_bar.primary_btn.text() == "保存FPS设置"
-
-    page._save_fps_settings()
-
-    assert ("modern", 1, 45) in player.fps_updates
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
-    assert any(text.startswith("FPS · ") and text != "FPS · 待同步" for text in chips)
-    assert page.fps_summary_label.text() == f"当前 FPS：{page._current_fps_summary()} · 已同步到当前风格"
     assert "30 / Y -15" in page.status_card.toolTip()
     assert "125%" in page.status_card.toolTip()
-    assert page.action_bar.primary_btn.text() == "预览当前设置"
-
-    page.resize(980, 900)
-    qapp.processEvents()
-    assert page.top_content_layout.direction() == QBoxLayout.TopToBottom
 
     page.deleteLater()
     qapp.processEvents()
@@ -940,7 +950,7 @@ def test_special_sound_page_status_card_tracks_threshold_and_volume(qapp, monkey
     assert "当前已选 2/6 类 · 模块已启用" in page.grenade_summary_label.text()
     assert "当前样式：beacon · 模块已关闭" in page.c4_summary_label.text()
     assert "阈值 18 · 当前样式：warning · 模块已启用" in page.health_summary_label.text()
-    assert "音量 65% · 已选 4/5 · 模块已启用" in page.round_summary_label.text()
+    assert f"音量 65% · 已选 4/{_ROUND_EVENT_COUNT} · 模块已启用" in page.round_summary_label.text()
     assert "阈值 18" in page.status_card.toolTip()
     grenade_index = page.grenade_grid.indexOf(page.grenade_cards[2])
     grenade_row, grenade_col, _, _ = page.grenade_grid.getItemPosition(grenade_index)
@@ -958,7 +968,7 @@ def test_special_sound_page_status_card_tracks_threshold_and_volume(qapp, monkey
     assert any("40%" in text for text in chips)
     assert "当前样式：beacon · 模块已启用" in page.c4_summary_label.text()
     assert "阈值 25 · 当前样式：warning · 模块已启用" in page.health_summary_label.text()
-    assert "音量 40% · 已选 4/5 · 模块已启用" in page.round_summary_label.text()
+    assert f"音量 40% · 已选 4/{_ROUND_EVENT_COUNT} · 模块已启用" in page.round_summary_label.text()
     assert "阈值 25" in page.summary_label.toolTip()
     assert "音量 40%" in page.status_card.toolTip()
 

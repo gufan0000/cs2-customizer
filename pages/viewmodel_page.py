@@ -124,7 +124,7 @@ class ViewmodelPage(QWidget):
         # 这次重构不动一个像素，四种并存的字号是另一回事（UP-092）。
         header = PageHeader(
             "局内视角设置",
-            description="把准心回正、循环切换和 CFG 同步收在首屏，预设区域继续保留完整编辑空间，方便边调边存。",
+            description="调局内武器模型的位置和视角，可存成预设一键切换，改完同步进 CFG。",
             title_font_size=None,
             spacing=12,
         )
@@ -184,10 +184,38 @@ class ViewmodelPage(QWidget):
         self.crosshair_reset_checkbox.stateChanged.connect(self._on_crosshair_reset_changed)
         crosshair_layout.addWidget(self.crosshair_reset_checkbox)
 
-        self.crosshair_info = QLabel("原理：按下开火键时 cl_crosshair_recoil 1，松开时设为 0，实现准心瞬间回正")
+        self.crosshair_info = QLabel(
+            "原理：按下开火键时 cl_crosshair_recoil 1，松开时设为 0，实现准心瞬间回正。\n"
+            "队友和 demo 里看到的准心设置在对局开始那一刻就定死了，而那一刻你不可能在开火，"
+            "所以这个开关全程只对你自己生效。"
+        )
         self.crosshair_info.setObjectName("hintLabel")
         self.crosshair_info.setWordWrap(True)
         crosshair_layout.addWidget(self.crosshair_info)
+
+        key_row = QHBoxLayout()
+        key_row.setSpacing(8)
+        key_label = QLabel("开火键")
+        key_label.setMinimumWidth(56)
+        key_row.addWidget(key_label)
+        self.crosshair_attack_key_edit = QLineEdit()
+        self.crosshair_attack_key_edit.setPlaceholderText("mouse1")
+        self.crosshair_attack_key_edit.setMaximumWidth(140)
+        self.crosshair_attack_key_edit.setToolTip(
+            "改过开火键的话填这里，默认 mouse1。填了识别不了的名字会自动退回 mouse1。"
+        )
+        self.crosshair_attack_key_edit.editingFinished.connect(self._on_crosshair_attack_key_changed)
+        key_row.addWidget(self.crosshair_attack_key_edit)
+        key_row.addStretch()
+        crosshair_layout.addLayout(key_row)
+
+        self.crosshair_secondary_checkbox = QCheckBox("副开火键也回正（R8 左轮右键）")
+        self.crosshair_secondary_checkbox.setToolTip(
+            "默认关。CFG 没有计数器，两个开火键同时按住时先松开的那个会提前回正；"
+            "实战里很少同时按，介意的话保持关闭。"
+        )
+        self.crosshair_secondary_checkbox.stateChanged.connect(self._on_crosshair_secondary_changed)
+        crosshair_layout.addWidget(self.crosshair_secondary_checkbox)
         self.crosshair_summary_label = QLabel("")
         self.crosshair_summary_label.setObjectName("hintLabel")
         self.crosshair_summary_label.setWordWrap(True)
@@ -604,6 +632,32 @@ class ViewmodelPage(QWidget):
         self._mark_unsaved()
         self.logger.info(f"准心快速回正: {'启用' if config.crosshair_reset_enabled else '禁用'}")
     
+    def _on_crosshair_attack_key_changed(self):
+        """开火键变更。
+
+        这里存**用户原样输入**，合法性由 core.crosshair_reset 在编译时判定并
+        在非法时退回 mouse1 —— 判定规则只该有一份，页面不重复实现一遍。
+        输入框回填的是编译器实际会用的那个键，所以用户能立刻看出自己填废了。
+        """
+        from core.crosshair_reset import resolve_attack_key
+
+        config.crosshair_reset_attack_key = self.crosshair_attack_key_edit.text().strip()
+        effective = resolve_attack_key(config)
+        if effective != config.crosshair_reset_attack_key:
+            config.crosshair_reset_attack_key = effective
+            self.crosshair_attack_key_edit.setText(effective)
+        config.save_config()
+        self._mark_unsaved()
+        self.logger.info(f"准心回正开火键: {effective}")
+
+    def _on_crosshair_secondary_changed(self, _state):
+        config.crosshair_reset_secondary_enabled = self.crosshair_secondary_checkbox.isChecked()
+        config.save_config()
+        self._mark_unsaved()
+        self.logger.info(
+            f"准心回正副开火键: {'启用' if config.crosshair_reset_secondary_enabled else '禁用'}"
+        )
+
     def _on_auto_switch_toggled(self, checked):
         """自动切换开关变更"""
         if getattr(self, "_loading", False):
@@ -723,7 +777,17 @@ class ViewmodelPage(QWidget):
         try:
             if hasattr(config, 'crosshair_reset_enabled'):
                 self.crosshair_reset_checkbox.setChecked(config.crosshair_reset_enabled)
-            
+
+            from core.crosshair_reset import resolve_attack_key
+
+            # 回填的是编译器实际会用的键，不是配置里存的原始字符串——
+            # 存量配置里可能有非法值，让用户看见真实生效的那个
+            self.crosshair_attack_key_edit.setText(resolve_attack_key(config))
+            self.crosshair_secondary_checkbox.setChecked(
+                bool(getattr(config, "crosshair_reset_secondary_enabled", False))
+            )
+
+
             if hasattr(config, 'viewmodel_auto_switch_enabled'):
                 self.auto_switch_checkbox.setChecked(config.viewmodel_auto_switch_enabled)
             

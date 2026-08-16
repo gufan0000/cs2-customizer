@@ -365,7 +365,7 @@ class VoiceOutputPage(QWidget):
         # 这次重构不动一个像素，四种并存的字号是另一回事（UP-092）。
         header = PageHeader(
             "语音输出",
-            description="这里统一管理语音播放、音板快捷键和音效转发，尽量把高频控制收在首屏。",
+            description="三件事：把文字转成语音说进游戏、用快捷键放音板、把击杀音效转给队友听。都要先装好虚拟声卡。",
             title_font_size=None,
             spacing=12,
         )

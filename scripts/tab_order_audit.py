@@ -106,7 +106,13 @@ PAGE_FACTORY = {
 # 构造即 spawn 子进程的页面，默认跳过（口径同 `layout_overflow_audit.UNSAFE_PAGES`，
 # 但这里能中和的更多：`magnifier` 靠关热键开关、`music` 靠 NEUTRALIZE 关首次下载，
 # 两个都已经纳入默认档）。要跑它们加 `--include-unsafe`。
-SPAWNS_SUBPROCESS = {"flash", "kill_icon", "viewmodel"}
+# ⚠ 2026-08-16：`kill_icon` 从这份名单里移走了。它当年"不安全"是因为整条播放链
+#    跑在一个 pygame 子进程里（建播放器就 spawn 一个 python.exe + SDL 视频窗口），
+#    KI-1 把渲染搬到主进程的 Qt 叠加层之后那个子进程就不存在了，叠加窗口也只在
+#    **真正播放的那一刻**才创建。排版审计早在 KI-1 时就跟着改了，这边一直没改——
+#    于是这一页在焦点巡检里**白白少测了一整轮重构**（KI-6 把它重写成了清单板）。
+#    「不安全名单」和「已经不安全了吗」是两件事，改完渲染架构要顺手复核这类名单。
+SPAWNS_SUBPROCESS = {"flash", "viewmodel"}
 
 # ⚠ UP-101: 这份名单原先只有 **11** 个页面，而报告只打印"11 个页面全部为 0"，
 # 读起来像全覆盖 —— 和 UP-096 是同一种病（"全绿要先问分母"），只是换了个审计。
@@ -127,6 +133,9 @@ NEUTRALIZE = {
     # 会劫持用户的鼠标右键。关掉开关走 `disable_magnifier()` 分支，UI 照常完整构建。
     # 这条中和条件是 `layout_overflow_audit.NEUTRALIZABLE` 里验证过的，照搬。
     "magnifier": {"magnifier_enabled": False},
+    # 击杀图标页：总开关按成 False，构造这一页不会创建任何叠加窗口。
+    # 同样照搬 `layout_overflow_audit.NEUTRALIZABLE` 里验证过的条件。
+    "kill_icon": {"kill_icon_enabled": False},
 }
 
 

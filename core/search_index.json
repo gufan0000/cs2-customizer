@@ -723,9 +723,33 @@
   },
   {
    "page": "special_sound",
-   "text": "C4 安放音效",
+   "text": "C4 安放",
    "card": "",
    "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "special_sound",
+   "text": "C4 拆除",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "special_sound",
+   "text": "C4 爆炸",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "special_sound",
+   "text": "再次提醒间隔",
+   "card": "",
+   "tab": "血量警告",
    "kind": "label",
    "src": "runtime"
   },
@@ -923,6 +947,14 @@
   },
   {
    "page": "crosshair",
+   "text": "恢复",
+   "card": "准心颜色",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "crosshair",
    "text": "白色",
    "card": "准心颜色",
    "tab": "",
@@ -1003,6 +1035,22 @@
   },
   {
    "page": "crosshair",
+   "text": "不透明度",
+   "card": "大小与粗细",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "crosshair",
+   "text": "中心间隙",
+   "card": "大小与粗细",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "crosshair",
    "text": "准心大小",
    "card": "大小与粗细",
    "tab": "",
@@ -1027,6 +1075,22 @@
   },
   {
    "page": "crosshair",
+   "text": "显示中心点",
+   "card": "大小与粗细",
+   "tab": "",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "crosshair",
+   "text": "黑色描边",
+   "card": "大小与粗细",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "crosshair",
    "text": "绘制准心",
    "card": "自定义准心",
    "tab": "",
@@ -1043,7 +1107,15 @@
   },
   {
    "page": "kill_icon",
-   "text": "保存FPS设置",
+   "text": "入场淡入 / 收尾渐隐",
+   "card": "",
+   "tab": "",
+   "kind": "check",
+   "src": "static"
+  },
+  {
+   "page": "kill_icon",
+   "text": "在屏幕上试播",
    "card": "",
    "tab": "",
    "kind": "button",
@@ -1051,39 +1123,15 @@
   },
   {
    "page": "kill_icon",
-   "text": "图标大小",
+   "text": "开启击杀图标",
    "card": "",
    "tab": "",
-   "kind": "label",
+   "kind": "check",
    "src": "static"
   },
   {
    "page": "kill_icon",
-   "text": "垂直位置",
-   "card": "",
-   "tab": "",
-   "kind": "label",
-   "src": "static"
-  },
-  {
-   "page": "kill_icon",
-   "text": "当前风格",
-   "card": "",
-   "tab": "",
-   "kind": "label",
-   "src": "static"
-  },
-  {
-   "page": "kill_icon",
-   "text": "快速测试",
-   "card": "",
-   "tab": "",
-   "kind": "label",
-   "src": "static"
-  },
-  {
-   "page": "kill_icon",
-   "text": "打开 Sprite Sheet 制作工具",
+   "text": "打开素材工坊",
    "card": "",
    "tab": "",
    "kind": "button",
@@ -1091,10 +1139,34 @@
   },
   {
    "page": "kill_icon",
-   "text": "水平位置",
+   "text": "撤销",
    "card": "",
    "tab": "",
-   "kind": "label",
+   "kind": "button",
+   "src": "static"
+  },
+  {
+   "page": "kill_icon",
+   "text": "爆头用专属图标",
+   "card": "",
+   "tab": "",
+   "kind": "check",
+   "src": "static"
+  },
+  {
+   "page": "kill_icon",
+   "text": "知道了",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "static"
+  },
+  {
+   "page": "kill_icon",
+   "text": "调整位置和大小 ⌄",
+   "card": "",
+   "tab": "",
+   "kind": "button",
    "src": "static"
   },
   {
@@ -1107,40 +1179,24 @@
   },
   {
    "page": "kill_icon",
-   "text": "预览当前设置",
-   "card": "",
-   "tab": "",
-   "kind": "button",
-   "src": "static"
-  },
-  {
-   "page": "kill_icon",
-   "text": "位置与缩放",
-   "card": "位置与缩放",
+   "text": "当前图标",
+   "card": "当前图标",
    "tab": "",
    "kind": "card",
    "src": "static"
   },
   {
    "page": "kill_icon",
-   "text": "图标风格",
-   "card": "图标风格",
+   "text": "自己做一套",
+   "card": "自己做一套",
    "tab": "",
    "kind": "card",
    "src": "static"
   },
   {
    "page": "kill_icon",
-   "text": "播放速度 (FPS)",
-   "card": "播放速度 (FPS)",
-   "tab": "",
-   "kind": "card",
-   "src": "static"
-  },
-  {
-   "page": "kill_icon",
-   "text": "资源工具",
-   "card": "资源工具",
+   "text": "风格库",
+   "card": "风格库",
    "tab": "",
    "kind": "card",
    "src": "static"
@@ -1163,6 +1219,14 @@
   },
   {
    "page": "viewmodel",
+   "text": "副开火键也回正（R8 左轮右键）",
+   "card": "",
+   "tab": "",
+   "kind": "check",
+   "src": "static"
+  },
+  {
+   "page": "viewmodel",
    "text": "启用准心快速回正",
    "card": "",
    "tab": "",
@@ -1175,6 +1239,14 @@
    "card": "",
    "tab": "",
    "kind": "check",
+   "src": "static"
+  },
+  {
+   "page": "viewmodel",
+   "text": "开火键",
+   "card": "",
+   "tab": "",
+   "kind": "label",
    "src": "static"
   },
   {

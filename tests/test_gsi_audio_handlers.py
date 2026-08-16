@@ -17,6 +17,7 @@ class _DummyAudioManager:
         self.play_sound_calls: list[tuple[str, str]] = []
         self.play_voice_calls: list[str] = []
         self.load_round_sound_calls: list[tuple[str, str]] = []
+        self.load_c4_sound_calls: list[tuple[str, str]] = []
         self.play_sound_with_fade_calls: list[tuple[str, str]] = []
 
     def play_sound(self, key: str, channel_type: str = "kill_sound", **_kwargs):
@@ -31,6 +32,10 @@ class _DummyAudioManager:
         return True
 
     def load_health_warning_sound(self, _style: str):
+        return True
+
+    def load_c4_sound(self, style: str, event_key: str = "planted"):
+        self.load_c4_sound_calls.append((event_key, style))
         return True
 
     def play_sound_with_fade(self, key: str, channel_type: str = "round_sound", **_kwargs):
@@ -890,11 +895,10 @@ def test_special_round_sounds_use_runtime_audio(monkeypatch):
     monkeypatch.setattr(config, "round_mvp_style", "styleMvp", raising=False)
 
     handler = gsi_handler_special.GSIHandlerSpecial()
-    handler._play_round_start_sound()
-    handler._play_action_start_sound()
-    handler._play_round_win_sound()
-    handler._play_round_lose_sound()
-    handler._play_mvp_sound()
+    # 五个 `_play_round_*` 方法已合并成 `_play_event(group, key)`（2026-08-15）。
+    # 它们本来就是逐字复制、只差三个字面量的五份代码。
+    for event_key in ("start", "action", "win", "lose", "mvp"):
+        handler._play_event("round", event_key)
 
     expected_loads = {
         ("start", "styleStart"),

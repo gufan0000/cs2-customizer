@@ -53,7 +53,12 @@ def test_generate_stylesheet_does_not_grow():
 # --------------------------------------------------------------- UP-097
 
 #: 手搓 `QFrame#card` 的处数（`scripts/component_adoption.py` 实测）。只许减不许增。
-HANDROLLED_CARD_MAX = 45
+#:
+#: ⚠ 这个数**必须等于实测值**，不能留富余。R11 定的是 45，而 KI-6 把击杀图标页
+#: 重构成清单板时那页从 3 处减到 2 处，实测值掉到 44——棘轮于是空出一格，
+#: 「再加一处手搓卡片」照样绿。2026-08-16 的回退验证台就是这么逮出来的：
+#: **棘轮的档位高于现状一格，它就不是棘轮。** 减少手搓卡片时记得同步压这个数。
+HANDROLLED_CARD_MAX = 44
 
 _SETOBJECTNAME_CARD = re.compile(r"""setObjectName\(\s*["']card["']\s*\)""")
 

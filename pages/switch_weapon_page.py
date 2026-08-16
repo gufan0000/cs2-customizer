@@ -184,7 +184,7 @@ class SwitchWeaponPage(SoundPageBase, QWidget):
 
     # ------------------------------------------------ R9-D 基类钩子
     PAGE_TITLE = "切枪音效设置"
-    PAGE_LEAD = "切枪音效页继续走紧凑列表路线，把分类切换、风格选择和测试入口都留在首屏，方便快速比对。"
+    PAGE_LEAD = "切换武器时播放你自己的音效。先去「基础设置」打开总开关，再逐把枪选风格，点「测试」试听。"
     HELP_KEY = "switch_weapon"
     STYLE_TOOLS_MENU = False
 
@@ -394,5 +394,5 @@ class SwitchWeaponPage(SoundPageBase, QWidget):
                     "新增资源后可直接刷新风格列表。"
                 )
             else:
-                action_message = "总开关当前关闭，这里的映射会保留；如新增资源，可先刷新风格列表再回首页启用。"
+                action_message = "总开关当前关闭，这里的映射会保留；如新增资源，可先刷新风格列表再去「基础设置」打开总开关。"
             self.action_bar.set_message(action_message)

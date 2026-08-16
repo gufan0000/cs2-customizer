@@ -93,8 +93,15 @@ UNSAFE_PAGES = {"viewmodel", "magnifier", "flash", "voice_output", "kill_icon", 
 # 名单本身不动(它还服务于预载跳过、建页基准等别的用途),这里只在审计里
 # 按页给出"中和条件"。中和不了的仍旧跳过,并照旧把跳过的页打印出来——
 # 静默少测会被读成"全都覆盖了"。
+#   kill_icon: KI-1 之前它"不安全"是因为整条播放链跑在一个 pygame 子进程里
+#              （建播放器就 spawn 一个 python.exe + SDL 视频窗口）。KI-1 把渲染
+#              搬到主进程的 Qt 叠加层之后，那个子进程不存在了，而叠加窗口只在
+#              **真正播放的那一刻**才创建。审计里没人触发播放，再把总开关按成
+#              False，构造这一页不会有任何前台副作用。
+#              名单本身不动（预载跳过那边的口径是另一回事），这里只放行审计。
 NEUTRALIZABLE = {
     "magnifier": {"magnifier_enabled": False},
+    "kill_icon": {"kill_icon_enabled": False},
 }
 
 # UP-100: 紧凑模式的窗口尺寸。与 `gui_widget.MainWindow.__init__`（最小尺寸）

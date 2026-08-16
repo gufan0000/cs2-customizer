@@ -352,7 +352,7 @@ class MagnifierPage(QWidget):
         # UP-047: 页头改用 PageHeader。间距按本页原值传入，一个像素不动。
         header = PageHeader(
             "开镜放大",
-            description="把倍率、热键、偏移和武器范围集中在一个页面里，方便边试边收敛到最顺手的开镜手感。",
+            description="开镜时把屏幕中心放大，模拟更高倍率的瞄准镜；还能在放大时自动切到更低的灵敏度。先去「基础设置」打开总开关。",
             title_font_size=None,
             spacing=12,
         )

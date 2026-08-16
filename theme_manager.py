@@ -5,10 +5,109 @@
 集成设计系统规范，确保所有组件遵循统一标准
 """
 
+import os
 from dataclasses import dataclass
 from typing import Dict
 from core.utils.logger import get_logger
 from ui_design_system import get_design_system
+
+logger = get_logger(__name__)
+
+# ============ QSS 图标资源 ============
+#
+# ⚠⚠ **QSS 的 `image: url(...)` 只认真实文件路径（和 Qt 资源路径），
+#     不认 `data:` URI。** 实测 `QPixmap.load("data:image/svg+xml;base64,...")`
+#     直接返回 False —— 写了不报错、不打日志，**只是那个图标永远不显示**。
+#
+# 这个坑本项目踩过两次，而且两次都藏了很久：
+#   · 复选框的对勾用 data URI 写的 → **所有已勾选的复选框都只是一个纯色方块**，
+#     看不出勾没勾（紫色方块很像"选中态"，所以一直没人觉得不对）；
+#   · 下拉箭头一度用"透明左右边框 + 实心上边框"这个 **Web CSS 三角形技巧**，
+#     Qt 不认，四条边照实心画 → 全应用 233 个下拉框右边都是**紫色实心小方块**。
+#
+# 正确姿势：用 QPainter 把图标画成 PNG 落到磁盘，QSS 里引用文件路径。
+# 颜色跟主题走，所以按 (名字, 颜色) 缓存，一个主题只生成一次。
+
+_ICON_CACHE: Dict[tuple, str] = {}
+
+
+def _icon_dir():
+    """图标缓存目录。跟配置同根，因此测试用 CS2C_CONFIG_DIR 隔离时会一起隔离。"""
+    from config import get_config_dir      # 延迟导入，避免与 config 形成环
+
+    path = os.path.join(get_config_dir(), "qss_icons")
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def _qss_icon(name: str, color: str, width: int, height: int, draw) -> str:
+    """生成（或复用）一张图标 PNG，返回 QSS 能直接用的路径；失败返回空串。
+
+    返回空串时调用方必须**整条 `image:` 都不要写**——写一个坏路径和写 data URI
+    一样是静默失效。宁可用 Qt 的默认外观，也不要一个永远不显示的图标。
+    """
+    key = (name, color, width, height)
+    if key in _ICON_CACHE:
+        return _ICON_CACHE[key]
+    try:
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QColor, QImage, QPainter
+
+        scale = 3        # 超采样再由 QSS 缩回去，边缘才不毛糙
+        img = QImage(width * scale, height * scale, QImage.Format_ARGB32)
+        img.fill(Qt.transparent)
+        painter = QPainter(img)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        try:
+            draw(painter, QColor(color), width * scale, height * scale)
+        finally:
+            painter.end()
+
+        safe = color.lstrip("#").lower()
+        path = os.path.join(_icon_dir(), f"{name}_{safe}_{width}x{height}.png")
+        # QImage.save 失败只返回 False、不抛异常——必须显式判，否则会写出一条
+        # 指向不存在文件的 QSS，症状和 data URI 一模一样。
+        if not img.save(path, "PNG"):
+            logger.warning(f"QSS 图标写盘失败，改用默认外观: {path}")
+            _ICON_CACHE[key] = ""
+            return ""
+        # QSS 里的路径一律用正斜杠：反斜杠会被当转义
+        uri = path.replace("\\", "/")
+        _ICON_CACHE[key] = uri
+        return uri
+    except Exception as exc:
+        logger.warning(f"QSS 图标生成失败，改用默认外观: {exc}")
+        _ICON_CACHE[key] = ""
+        return ""
+
+
+def _draw_down_arrow(painter, color, w, h):
+    from PySide6.QtCore import QPointF
+    from PySide6.QtGui import QPainterPath
+
+    path = QPainterPath()
+    path.moveTo(QPointF(0, 0))
+    path.lineTo(QPointF(w, 0))
+    path.lineTo(QPointF(w / 2.0, h))
+    path.closeSubpath()
+    painter.fillPath(path, color)
+
+
+def _draw_check(painter, color, w, h):
+    from PySide6.QtCore import QPointF
+    from PySide6.QtGui import QPainterPath, QPen
+    from PySide6.QtCore import Qt
+
+    pen = QPen(color)
+    pen.setWidthF(max(1.6, w * 0.17))
+    pen.setCapStyle(Qt.RoundCap)
+    pen.setJoinStyle(Qt.RoundJoin)
+    painter.setPen(pen)
+    path = QPainterPath()
+    path.moveTo(QPointF(w * 0.20, h * 0.53))
+    path.lineTo(QPointF(w * 0.43, h * 0.75))
+    path.lineTo(QPointF(w * 0.80, h * 0.28))
+    painter.drawPath(path)
 
 
 @dataclass
@@ -259,6 +358,77 @@ class Theme:
         c = QColor(hex_color)
         return f"rgba({c.red()}, {c.green()}, {c.blue()}, {alpha})"
 
+    def _icon_button_qss(self, c, radius) -> str:
+        """两个"只有一个字符"的小方按钮：顶栏模式切换、页面标题旁的帮助「?」。
+
+        ⚠ **它们必须自带 `padding: 0` 和 min/max 尺寸，一条都不能省。**
+        通用 `QPushButton` 规则带着横向 `padding: ≥12px` 和 `min-height`，
+        而 QSS 属性是**逐条**生效的——只覆盖颜色不覆盖盒模型，就会出现
+        "按钮还在、字没了"：
+          · 帮助按钮 24px 宽扣掉两边 padding 直接是负数 → 「?」整个消失，
+            **23 个页面全中**，而其中 5 页的正文还写着「点右上角「?」看用法」；
+          · 模式切换按钮 38px 宽只剩 12px，而「⇔」要 16px → 同样消失。
+
+        ⚠ 另一半是尺寸：`setFixedSize()` 只压得住**最大**尺寸，QSS 的
+        `min-height` 会把最小尺寸顶上去，而 **Qt 在 min > max 时取 min**。
+        帮助按钮因此从 24×24 变成 24×42 的灰胶囊。所以 min/max 两头都要在
+        这儿写死，而且**Python 侧的 setFixedSize 必须等于这里算出来的最终值**：
+        QSS 的 min/max 说的是**内容盒**，边框要另加
+        （帮助按钮 24+1.5×2≈28，模式按钮 38+1×2=40，故 border-radius 取 14）。
+
+        ⚠ **尺寸约束只能挂在 `modeToggleIconButton` 上，不能挂 `modeToggleButton`。**
+        侧栏底部那个「紧凑模式 «」宽文字按钮**共用后者这个 objectName**，
+        我第一版把 `min-width: 38px` 写进共用选择器，直接把它压成一个 38px
+        方块、文字裁成「奏模式」—— 修完重跑截图才发现。共用 objectName 的控件
+        加盒模型约束前，先搜一遍还有谁在用。
+        """
+        return f"""
+            QPushButton#modeToggleButton, QPushButton#modeToggleIconButton {{
+                background-color: transparent;
+                color: {c.text_secondary};
+                border: 1px solid {c.border_secondary};
+                border-radius: {radius.md}px;
+                font-size: 16px;
+            }}
+            QPushButton#modeToggleIconButton {{
+                padding: 0px;
+                min-width: 38px; max-width: 38px;
+                min-height: 38px; max-height: 38px;
+            }}
+            QPushButton#helpButton {{
+                background: transparent;
+                color: {c.accent_primary};
+                border: 1.5px solid {c.accent_primary};
+                border-radius: 14px;
+                font-size: 13px;
+                font-weight: 700;
+                padding: 0px;
+                min-width: 24px; max-width: 24px;
+                min-height: 24px; max-height: 24px;
+            }}
+            QPushButton#helpButton:hover {{
+                background: {c.accent_primary};
+                color: {c.text_on_primary};
+            }}
+        """
+
+    def _sidebar_scrollbar_qss(self, c) -> str:
+        """侧栏滚动条要比别处更实一点。
+
+        通用把手是 alpha 60/255（≈23%），压在深色侧栏上实测最亮只有
+        (28,31,43)，**肉眼完全看不出这里能滚**——而默认 1280×800 下侧栏视口
+        657px、内容 1403px，**28 页里有 15 页在折叠线以下**。
+        "看不出能滚"对用户就等于"那些功能不存在"。
+        """
+        return f"""
+            QScrollArea#sidebarScroll QScrollBar::handle:vertical {{
+                background: {self._hex_to_rgba(c.scrollbar_handle, 130)};
+            }}
+            QScrollArea#sidebarScroll QScrollBar::handle:vertical:hover {{
+                background: {c.scrollbar_hover};
+            }}
+        """
+
     def generate_stylesheet(self) -> str:
         """生成完整的QSS样式表"""
         c = self.colors  # 简化引用
@@ -311,6 +481,13 @@ class Theme:
         generic_button_padding_vertical = max(4, spacing.sm - 2)
         generic_button_padding_horizontal = max(12, spacing.lg - 2)
         spin_button_radius = max(3, radius.sm - 2)
+
+        # 下拉箭头与复选框对勾：都必须是**磁盘上的真文件**，理由见文件头
+        # `_qss_icon` 上面那段。拿不到路径时**整条 `image:` 都不写**。
+        arrow_icon = _qss_icon("down_arrow", c.accent_primary, 10, 6, _draw_down_arrow)
+        arrow_rule = f"image: url({arrow_icon});" if arrow_icon else ""
+        check_icon = _qss_icon("check", c.text_on_primary, 12, 12, _draw_check)
+        check_rule = f"image: url({check_icon});" if check_icon else ""
         
         return f"""
             /* ========== 全局样式 ========== */
@@ -377,6 +554,7 @@ class Theme:
             QScrollArea#sidebarScroll > QWidget > QWidget {{
                 background: transparent;
             }}
+{self._sidebar_scrollbar_qss(c)}
 
             QWidget#sidebarBrand {{
                 background: transparent;
@@ -462,15 +640,10 @@ class Theme:
                 background-color: {c.bg_tertiary};
             }}
 
-            QPushButton#modeToggleButton {{
-                background-color: transparent;
-                color: {c.text_secondary};
-                border: 1px solid {c.border_secondary};
-                border-radius: {radius.md}px;
-                font-size: 16px;
-            }}
+{self._icon_button_qss(c, radius)}
 
-            QPushButton#modeToggleButton:hover {{
+            QPushButton#modeToggleButton:hover,
+            QPushButton#modeToggleIconButton:hover {{
                 background-color: {c.bg_tertiary};
                 color: {c.text_primary};
                 border-color: {c.border_primary};
@@ -1088,7 +1261,7 @@ class Theme:
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
                     stop:0 {self._lighten_color(c.accent_primary)}, stop:1 {c.accent_primary});
                 border-color: {c.accent_primary};
-                image: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMiIgaGVpZ2h0PSIxMiIgdmlld0JveD0iMCAwIDEyIDEyIj48cGF0aCBmaWxsPSJ3aGl0ZSIgZD0iTTEwLjI4IDIuMjhsLTYgNi0yLjU5LTIuNTlhMSAxIDAgMDAtMS40MSAxLjQxbDMuMyAzLjNhMSAxIDAgMDAxLjQxIDBsNi43LTYuN2ExIDEgMCAwMC0xLjQxLTEuNDJ6Ii8+PC9zdmc+);
+                {check_rule}
             }}
             
             QCheckBox::indicator:hover {{
@@ -1264,12 +1437,9 @@ class Theme:
             }}
             
             QComboBox::down-arrow {{
-                image: none;
-                border-left: 5px solid transparent;
-                border-right: 5px solid transparent;
-                border-top: 6px solid {c.accent_primary};
-                width: 0;
-                height: 0;
+                {arrow_rule}
+                width: 10px;
+                height: 6px;
             }}
             
             QComboBox QAbstractItemView {{
@@ -1798,6 +1968,27 @@ class Theme:
 
             QTabBar::tab:disabled {{
                 color: {c.text_disabled};
+            }}
+        """ + self._component_qss(c)
+
+    def _component_qss(self, c) -> str:
+        """后加的组件样式往这儿放，别再往上面那一坨里堆。
+
+        UP-058 判为不拆 `generate_stylesheet`，但立了一条棘轮：它**只许减不许增**
+        （`tests/test_closed_items_ratchet_r11.py`）。棘轮的报错里写得很清楚——
+        "新样式请开新方法"。这就是那个方法。
+        """
+        return f"""
+            /* KI-7: 卡片式单选（击杀图标的风格库）。选中态必须**看得出来**——
+             * 那一排卡片就是"当前用的是哪一套"的唯一答案，只靠名字前面加个
+             * 对勾太弱。只染左色条 + 提亮背景，**不动 border-width**：
+             * 改宽度会让卡内子控件左右跳，切风格时整排卡都会抖一下
+             * （和 QFrame#card[semantic] 那条不改宽度是同一个理由）。
+             * 颜色只能来自 ThemeColors token —— QSS 正文里 #RRGGBB 字面量
+             * 为 0 是本项目最值钱的架构资产，8 个主题靠它各自成立。 */
+            QFrame#card[selected="true"] {{
+                background-color: {self._hex_to_rgba(c.accent_primary, 28)};
+                border-left: 3px solid {c.accent_primary};
             }}
         """
 

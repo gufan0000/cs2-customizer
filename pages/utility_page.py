@@ -80,7 +80,7 @@ class UtilityPage(QWidget):
         # 这次重构不动一个像素，四种并存的字号是另一回事（UP-092）。
         header = PageHeader(
             "道具瞄点",
-            description="这里集中管理道具瞄点的热键、显示参数和当前地图素材，尽量让常用动作都在首屏完成。",
+            description="在游戏里叠一层道具投掷点位参考，按阵营自动切换。先去「基础设置」打开总开关，设好热键，进对局按一下就出。",
             title_font_size=None,
             spacing=12,
         )

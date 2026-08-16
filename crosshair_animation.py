@@ -187,7 +187,17 @@ class CrosshairAnimationSystem:
             logger.error(f"显示准心时出错: {e}", exc_info=True)
     
     def update_settings(self, size, thickness, color, style, animation_style, kill_effect):
-        """更新准心设置"""
+        """更新准心设置。
+
+        ⚠ **这套老渲染器不支持 2.2.4 补的样式参数**（中心间隙 / 描边 / 中心点 /
+        透明度 / 自定义色）。它只在 Qt 渲染器创建失败时才会被启用，属于保命回退，
+        不值得把新几何再实现一遍。
+
+        但"不支持"必须**出声**：静默忽略的话，用户在页面上拖间隙滑块、预览也
+        跟着变，游戏里却纹丝不动，看起来像功能坏了而不是回退了。这里在真的
+        配了新参数时记一条 warning，体检报告和日志里都能看到。
+        """
+        self._warn_unsupported_extras()
         # 检查设置是否改变
         new_settings = (size, thickness, color, style, animation_style, kill_effect)
         if self.last_settings != new_settings:
@@ -201,7 +211,35 @@ class CrosshairAnimationSystem:
         self.style = style
         self.animation_style = animation_style
         self.kill_effect = kill_effect
-    
+
+    #: 老渲染器画不出来的样式参数：配置名 → 中文说明。空值/0 视为没配。
+    _UNSUPPORTED_EXTRAS = {
+        "crosshair_gap": "中心间隙",
+        "crosshair_outline": "黑色描边",
+        "crosshair_dot": "中心点",
+        "crosshair_color_custom": "自定义颜色",
+    }
+
+    def _warn_unsupported_extras(self):
+        try:
+            configured = [
+                label
+                for attr, label in self._UNSUPPORTED_EXTRAS.items()
+                if getattr(self.config, attr, None) not in (None, "", 0, False)
+            ]
+            alpha = getattr(self.config, "crosshair_alpha", 255)
+            if alpha not in (None, 255):
+                configured.append("透明度")
+            if configured and configured != getattr(self, "_warned_extras", None):
+                self._warned_extras = configured
+                self.logger.warning(
+                    "[准心] 当前是 pygame 回退渲染器，以下设置画不出来："
+                    + "、".join(configured)
+                    + "（只有 Qt 渲染器创建失败才会回退，原因见启动日志）"
+                )
+        except Exception:
+            pass
+
     def draw_crosshair_loop(self):
         """优化的准心绘制循环 - 保留所有动画功能"""
         try:

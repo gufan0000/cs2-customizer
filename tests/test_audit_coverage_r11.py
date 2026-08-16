@@ -39,14 +39,19 @@ CI = ROOT / ".github" / "workflows" / "ci.yml"
 TOTAL_PAGES = 27
 
 #: 焦点巡检当前的默认覆盖面。`basic` 在 `gui_widget` 里内联建、没有独立类，
-#: 进不了工厂表；另外 3 个构造即 spawn 子进程，默认档跳过。
-#: **这个数只许增不许减。**
-FOCUS_MIN_DEFAULT_PAGES = 21
+#: 进不了工厂表；另外 2 个（flash / viewmodel）构造即 spawn 子进程，默认档跳过。
+#: **这个数只许增不许减，而且必须等于实测值——留富余的棘轮不是棘轮。**
+#: 2026-08-16：22 → 25。原来实测已经是 24 而档位停在 22，空着两格，
+#: 意味着"悄悄少测两个页面"照样绿；同一天回退验证台在手搓卡片那条上
+#: 逮到的是一模一样的毛病。顺带把 `kill_icon` 从跳过名单挪进中和名单
+#: （KI-1 之后它不再 spawn 子进程了），覆盖面 24 → 25。
+FOCUS_MIN_DEFAULT_PAGES = 24
 #: `--include-unsafe` 时能覆盖到的页面数（26 = 27 − basic）。
 FOCUS_MIN_ALL_PAGES = 26
 
-#: 排版审计默认档的覆盖面（27 − 5 个构造即起设备的页面）。
-LAYOUT_MIN_DEFAULT_PAGES = 21
+#: 排版审计默认档的覆盖面（27 − 4 个构造即起设备/子进程的页面）。
+#: 同上：必须等于实测值。2026-08-16：23 → 24。
+LAYOUT_MIN_DEFAULT_PAGES = 23
 
 
 def _module(path: Path):

@@ -56,30 +56,47 @@ def test_compile_cfg_rules_contains_refresh_proxy_when_runtime_enabled():
     assert any('alias +fp_hud_a "+left; exec cs2customizer_hud_runtime.cfg"' == line for line in lines)
     assert any('alias +fp_hud_d "+right; exec cs2customizer_hud_runtime.cfg"' == line for line in lines)
 
+    # 开火键的 alias 名统一成 quickrepos_attack（原来 HUD 路径自己叫
+    # fp_hud_mouse1，两条路径各绑各的，切换 HUD 开关会留下 stale bind）。
+    # 老名字仍会被定义成直通，见 core/crosshair_reset.LEGACY_ALIASES。
     assert any(
-        "alias +fp_hud_mouse1" in line and "exec cs2customizer_hud_runtime.cfg" in line
+        "alias +quickrepos_attack " in line and "exec cs2customizer_hud_runtime.cfg" in line
         for line in lines
     )
     assert any(
-        "alias -fp_hud_mouse1" in line and "exec cs2customizer_hud_runtime.cfg" in line
+        "alias -quickrepos_attack " in line and "exec cs2customizer_hud_runtime.cfg" in line
         for line in lines
     )
-    assert any("bind mouse1 +fp_hud_mouse1" in line for line in lines)
+    assert any("bind mouse1 +quickrepos_attack" in line for line in lines)
 
 
-def test_compile_cfg_rules_mouse1_merges_crosshair_reset():
+def test_compile_cfg_rules_attack_key_merges_crosshair_reset():
     cfg = _build_config_obj()
     cfg.crosshair_reset_enabled = True
     lines = compile_cfg_rules(cfg)
 
-    mouse1_plus = [line for line in lines if "alias +fp_hud_mouse1" in line]
-    assert len(mouse1_plus) == 1
-    assert "cl_crosshair_recoil 1" in mouse1_plus[0]
+    plus = [line for line in lines if line.startswith("alias +quickrepos_attack ")]
+    assert len(plus) == 1
+    assert "cl_crosshair_recoil 1" in plus[0]
+    assert "exec cs2customizer_hud_runtime.cfg" in plus[0]
 
-    mouse1_minus = [line for line in lines if "alias -fp_hud_mouse1" in line]
-    assert len(mouse1_minus) == 1
-    assert "cl_crosshair_recoil 0" in mouse1_minus[0]
+    minus = [line for line in lines if line.startswith("alias -quickrepos_attack ")]
+    assert len(minus) == 1
+    assert "cl_crosshair_recoil 0" in minus[0]
     assert "cl_crosshair_recoil 0" in lines
+
+
+def test_compile_cfg_rules_defines_legacy_alias_as_passthrough():
+    """老 alias 名必须有定义，否则残留的 bind 会把开火键变成死键。"""
+    for reset in (False, True):
+        cfg = _build_config_obj()
+        cfg.crosshair_reset_enabled = reset
+        lines = compile_cfg_rules(cfg)
+        legacy = [line for line in lines if line.startswith("alias +fp_hud_mouse1 ")]
+        assert len(legacy) == 1
+        assert "+attack" in legacy[0]
+        # 直通不带回正层：万一它被用上，代价只是"少了回正"，不是开不了枪
+        assert "cl_crosshair_recoil" not in legacy[0]
 
 
 def test_get_cfg_paths():

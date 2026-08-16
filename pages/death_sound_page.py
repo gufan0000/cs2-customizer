@@ -117,7 +117,7 @@ class DeathSoundPage(QWidget):
         # 这次重构不动一个像素，四种并存的字号是另一回事（UP-092）。
         header = PageHeader(
             "被击杀音效设置",
-            description="被击杀音效页保持轻量，只保留样式切换和快速试听，把说明收成更清楚的卡片层级。",
+            description="自己被击杀时播放一段音效。先去「基础设置」打开总开关，选一套风格，点「测试」试听。",
             title_font_size=None,
             spacing=12,
         )

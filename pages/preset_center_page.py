@@ -96,7 +96,7 @@ class PresetCenterPage(MyPresetsMixin, QWidget, DirtyPageMixin):
 
         workbench_card, workbench_layout = SettingsCard.make(
             "预设工作台",
-            "把范围、导入策略和常用操作收进一张工作台卡里，首屏判断会更直接，也更像一块完整工具面板。", spacing=10
+            "勾选要打包的范围，然后导出成文件发给别人；导入别人的预设也在这儿。", spacing=10
         )
         workbench_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
 

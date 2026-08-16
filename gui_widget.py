@@ -940,8 +940,13 @@ class MainWindow(QMainWindow):
 
         # 窗口模式切换按钮（两种模式都显示）
         self._mode_toggle_btn = QPushButton("⇔")
-        self._mode_toggle_btn.setObjectName("modeToggleButton")
-        self._mode_toggle_btn.setFixedSize(38, 38)
+        # 与侧栏底部那个「紧凑模式 «」**不能共用 objectName**：那是宽文字按钮，
+        # 这是方形图标按钮，两者的盒模型约束正好相反（见 _icon_button_qss）。
+        self._mode_toggle_btn.setObjectName("modeToggleIconButton")
+        # 40 而不是 38：QSS 里的 min/max-width 是**内容盒**（38），外面还有 1px 边框。
+        # 写 38 的话 QSS 算出的最小值 40 会顶掉 setFixedSize 的最大值 38
+        # （Qt 在 min > max 时取 min），又回到形变那条老路。
+        self._mode_toggle_btn.setFixedSize(40, 40)
         self._mode_toggle_btn.setCursor(Qt.PointingHandCursor)
         self._mode_toggle_btn.setToolTip("切换紧凑/完整模式")
         self._mode_toggle_btn.clicked.connect(self._toggle_compact_mode)
@@ -1062,6 +1067,8 @@ class MainWindow(QMainWindow):
         scroll_area.setWidgetResizable(True)
         scroll_area.setFrameShape(QFrame.NoFrame)
         scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        # 切页后要把当前项滚进可视区，得留个引用。见 `_ensure_nav_button_visible`。
+        self._sidebar_scroll = scroll_area
         
         # 导航按钮容器
         nav_container = QWidget()
@@ -2366,6 +2373,7 @@ class MainWindow(QMainWindow):
             # QIcon 是位图、不受 QSS color 影响）
             self._current_page_id = page_id
             self._refresh_nav_icons(page_id)
+            self._ensure_nav_button_visible(page_id)
             try:
                 from core.page_usage_tracker import record_page_open
 
@@ -2392,6 +2400,25 @@ class MainWindow(QMainWindow):
 
             self.logger.info(f"切换到页面: {page_id}")
 
+    def _ensure_nav_button_visible(self, page_id):
+        """把当前页的导航按钮滚进可视区。
+
+        ⚠ 不做这件事的后果比想象中大：完整模式默认 1280×800 下，侧栏视口只有
+        657px 而内容要 1403px —— **28 页里 15 页在折叠线外**（HUD颜色、屏幕特效、
+        音乐播放、账号中心、高级设置、配置快照、关于软件…）。切过去之后滚动条
+        仍停在 0，那一项既看不见也没高亮，**用户彻底失去「我在哪一页」的指示**，
+        看起来就像点了没反应。搜索跳转过去更是如此。
+        """
+        scroll = getattr(self, "_sidebar_scroll", None)
+        btn = getattr(self, "nav_buttons", {}).get(page_id)
+        if scroll is None or btn is None or not btn.isVisible():
+            return
+        try:
+            # 上下各留一点余量，免得当前项正好贴在视口边缘上，看着像被截断
+            scroll.ensureWidgetVisible(btn, 0, 24)
+        except Exception as e:
+            self.logger.debug(f"导航项滚动定位失败: {e}")
+
     def _sync_nav_selection_to_current_page(self):
         """当切页被取消时，恢复导航按钮选中状态。"""
         if not hasattr(self, 'content_stack') or not hasattr(self, 'pages'):
@@ -2413,6 +2440,7 @@ class MainWindow(QMainWindow):
         # 否则会停在"另一页被选中"的颜色上
         self._current_page_id = current_page_id
         self._refresh_nav_icons(current_page_id)
+        self._ensure_nav_button_visible(current_page_id)
 
         if hasattr(self, '_overlay_buttons') and self._overlay_buttons:
             for btn_id, btn in self._overlay_buttons.items():

@@ -97,6 +97,13 @@ def _probe(monkeypatch, sounds):
     mgr.fade_threads = {}
     mgr.fade_owner = {}
     mgr._fade_seq = 0
+    # 2026-08-15：淡入淡出路径开始走音频策略层了（此前它整个绕过策略层，
+    # 回合音效在抢占关系里等于不存在）。真实的 AudioManager 在 __init__ 里
+    # 一定有这两样，探针是手搓的所以要补上。
+    # 故意**不**给 _admit_playback 加"属性缺失就放行"的兜底：那会把真正的
+    # 初始化遗漏也一起吞掉。
+    mgr._playback_lock = Lock()
+    mgr._active_channel_requests = {}
     channel = _FakeChannel()
     mgr.round_sound_channel = channel
     for key, snd in sounds.items():

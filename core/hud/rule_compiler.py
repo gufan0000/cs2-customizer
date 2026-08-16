@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 import tempfile
 
+from core.crosshair_reset import build_attack_alias_lines
 from core.hud.rule_model import (
     has_runtime_enabled_rules,
     is_valid_hud_color,
@@ -70,31 +71,19 @@ def compile_cfg_rules(config_obj):
             lines.append(f'alias -{alias} "{minus_action}; exec cs2customizer_hud_runtime.cfg"')
             lines.append(f"bind {key} +{alias}")
 
-        # mouse1 alias 代理刷新（按下+释放都 exec）
-        crosshair_reset = getattr(config_obj, "crosshair_reset_enabled", False)
-        if crosshair_reset:
-            lines.append(
-                'alias +fp_hud_mouse1 "+attack;'
-                " cl_crosshair_recoil 1;"
-                ' exec cs2customizer_hud_runtime.cfg"'
+        # 开火键 alias 代理刷新（按下+释放都 exec）。
+        # alias 本体交给 core.crosshair_reset 生成——这里以前自己抄了一遍，
+        # 结果两条路径对 cl_crosshair_recoil 的静息值写反了（那边是 1，这边是 0）。
+        # 现在两边共用一个生成器，想写反都写不出来。
+        refresh = ("exec cs2customizer_hud_runtime.cfg",)
+        lines.extend(
+            build_attack_alias_lines(
+                config_obj,
+                recoil=bool(getattr(config_obj, "crosshair_reset_enabled", False)),
+                extra_press=refresh,
+                extra_release=refresh,
             )
-            lines.append(
-                'alias -fp_hud_mouse1 "-attack;'
-                " cl_crosshair_recoil 0;"
-                ' exec cs2customizer_hud_runtime.cfg"'
-            )
-            lines.append("bind mouse1 +fp_hud_mouse1")
-            lines.append("cl_crosshair_recoil 0")
-        else:
-            lines.append(
-                'alias +fp_hud_mouse1 "+attack;'
-                ' exec cs2customizer_hud_runtime.cfg"'
-            )
-            lines.append(
-                'alias -fp_hud_mouse1 "-attack;'
-                ' exec cs2customizer_hud_runtime.cfg"'
-            )
-            lines.append("bind mouse1 +fp_hud_mouse1")
+        )
 
     return lines
 

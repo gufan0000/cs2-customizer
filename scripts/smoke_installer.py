@@ -36,6 +36,13 @@ try:
 except Exception:
     pass
 
+# ISCC 的定位与 build_tools/build_release.py 共用同一份实现（build_tools 不是包，
+# 按路径挂进 sys.path）。这里原先自己写了一套、把 "Inno Setup 6" 钉死在三条候选
+# 路径里：装了 Inno Setup 7 的机器上打包脚本找得到、本脚本却报"没装"，而且不肯
+# 说它找过哪儿——同一个坑在同一个仓库里踩两遍，就是因为有两份实现。
+sys.path.insert(0, str(ROOT / "build_tools"))
+from inno_setup import find_iscc, missing_iscc_message  # noqa: E402
+
 ISS = ROOT / "build_tools" / "installer.iss"
 SMOKE_ISS = ROOT / "build_tools" / "installer_smoketest.iss"
 SMOKE_APPID = "{{71FC196A-0F18-4608-B746-0983A65518E4}}"
@@ -46,19 +53,6 @@ RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 RUN_VALUE = "CS2Customizer"
 UNINST_KEY = r"Software\Microsoft\Windows\CurrentVersion\Uninstall"
 
-ISCC_CANDIDATES = [
-    Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Inno Setup 6" / "ISCC.exe",
-    Path(r"C:\Program Files (x86)\Inno Setup 6\ISCC.exe"),
-    Path(r"C:\Program Files\Inno Setup 6\ISCC.exe"),
-]
-
-
-def find_iscc() -> Path | None:
-    for p in ISCC_CANDIDATES:
-        if p.is_file():
-            return p
-    which = shutil.which("iscc")
-    return Path(which) if which else None
 
 
 # ============================================================================
@@ -253,7 +247,8 @@ def main() -> int:
 
     iscc = find_iscc()
     if not iscc:
-        print("!! 找不到 ISCC.exe（Inno Setup 6）")
+        # 点名找过哪些位置。只印一句"找不到"会被读成"没装"——2.2.3 就是这么误判的。
+        print("!! " + missing_iscc_message(indent="   "))
         return 1
 
     install_dir = Path(os.environ["LOCALAPPDATA"]) / "CS2CustomizerInstallSmoke" / "CS2 Customizer"

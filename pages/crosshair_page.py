@@ -2,7 +2,7 @@
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                                QSlider, QRadioButton, QComboBox, QPushButton,
                                QFrame, QScrollArea, QButtonGroup, QDialog,
-                               QMessageBox, QFileDialog, QSizePolicy)
+                               QMessageBox, QFileDialog, QSizePolicy, QCheckBox)
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QMouseEvent
 from config import config, get_app_data_dir
@@ -250,7 +250,7 @@ class CrosshairPage(QWidget):
         # 用 add_title_action 追加——它加在 stretch 之后，与原来的顺序一致。
         header = PageHeader(
             "准心设置",
-            description="这里负责准心的形态、颜色、动效和击杀联动，参数调整尽量保持像工具面板一样直达。",
+            description="调准心的形状、颜色、动效和击杀联动。改完点右下角「绘制准心」写进游戏。",
             title_font_size=None,
             spacing=12,
             title_spacing=None,  # 沿用 Qt 默认间距：写死 10 会让右上角的 "?" 挪 2px
@@ -669,7 +669,68 @@ class CrosshairPage(QWidget):
         self.thickness_slider.setValue(config.crosshair_thickness)
         self.thickness_slider.valueChanged.connect(self._on_thickness_changed)
         layout.addWidget(self.thickness_slider)
-        
+
+        # 中心间隙。默认 0 = 两条线穿过圆心，正好糊住你要瞄的那个点；
+        # 这是这次补齐里对实战影响最直接的一项。
+        gap_header = QHBoxLayout()
+        gap_title = QLabel("中心间隙")
+        gap_header.addWidget(gap_title)
+        gap_header.addStretch()
+        self.gap_value_label = QLabel(str(getattr(config, "crosshair_gap", 0)))
+        gap_header.addWidget(self.gap_value_label)
+        layout.addLayout(gap_header)
+
+        self.gap_slider = QSlider(Qt.Horizontal)
+        self.gap_slider.setMinimum(0)
+        self.gap_slider.setMaximum(20)
+        self.gap_slider.setValue(int(getattr(config, "crosshair_gap", 0) or 0))
+        self.gap_slider.setToolTip("准星中心留空多少像素。0 表示两条线穿过圆心，会挡住瞄准点。")
+        self.gap_slider.valueChanged.connect(self._on_gap_changed)
+        layout.addWidget(self.gap_slider)
+
+        # 描边。纯色细线在亮地板/沙地上基本看不见，这是可见性的主要手段。
+        outline_header = QHBoxLayout()
+        outline_title = QLabel("黑色描边")
+        outline_header.addWidget(outline_title)
+        outline_header.addStretch()
+        self.outline_value_label = QLabel(str(getattr(config, "crosshair_outline", 0)))
+        outline_header.addWidget(self.outline_value_label)
+        layout.addLayout(outline_header)
+
+        self.outline_slider = QSlider(Qt.Horizontal)
+        self.outline_slider.setMinimum(0)
+        self.outline_slider.setMaximum(4)
+        self.outline_slider.setValue(int(getattr(config, "crosshair_outline", 0) or 0))
+        self.outline_slider.setToolTip("给准星描一圈黑边，亮色地面上更容易看清。0 为不描边。")
+        self.outline_slider.valueChanged.connect(self._on_outline_changed)
+        layout.addWidget(self.outline_slider)
+
+        # 透明度
+        alpha_header = QHBoxLayout()
+        alpha_title = QLabel("不透明度")
+        alpha_header.addWidget(alpha_title)
+        alpha_header.addStretch()
+        self.alpha_value_label = QLabel(
+            f"{int(getattr(config, 'crosshair_alpha', 255) or 255) * 100 // 255}%"
+        )
+        alpha_header.addWidget(self.alpha_value_label)
+        layout.addLayout(alpha_header)
+
+        self.alpha_slider = QSlider(Qt.Horizontal)
+        self.alpha_slider.setMinimum(10)
+        self.alpha_slider.setMaximum(100)
+        self.alpha_slider.setValue(
+            max(10, int(getattr(config, "crosshair_alpha", 255) or 255) * 100 // 255)
+        )
+        self.alpha_slider.valueChanged.connect(self._on_alpha_changed)
+        layout.addWidget(self.alpha_slider)
+
+        self.dot_checkbox = QCheckBox("显示中心点")
+        self.dot_checkbox.setToolTip("在准星中心叠一个实心点，配合中心间隙使用效果最好")
+        self.dot_checkbox.setChecked(bool(getattr(config, "crosshair_dot", False)))
+        self.dot_checkbox.toggled.connect(self._on_dot_toggled)
+        layout.addWidget(self.dot_checkbox)
+
         return card
     
     def _create_style_card(self):
@@ -765,9 +826,29 @@ class CrosshairPage(QWidget):
             
             row_layout.addStretch()
             layout.addLayout(row_layout)
-        
+
+        # 六个固定色名之外的任意颜色。留着色名不动，清空自定义色就回到色名——
+        # 存量配置指向的是那六个名字，不能替换掉。
+        custom_row = QHBoxLayout()
+        custom_row.setSpacing(8)
+        self.custom_color_btn = QPushButton("自定义颜色…")
+        self.custom_color_btn.setFixedHeight(32)
+        style_as_secondary_button(self.custom_color_btn)
+        self.custom_color_btn.clicked.connect(self._on_custom_color_picked)
+        custom_row.addWidget(self.custom_color_btn)
+
+        self.clear_custom_color_btn = QPushButton("恢复")
+        self.clear_custom_color_btn.setFixedWidth(64)
+        self.clear_custom_color_btn.setFixedHeight(32)
+        style_as_secondary_button(self.clear_custom_color_btn)
+        self.clear_custom_color_btn.clicked.connect(self._on_custom_color_cleared)
+        custom_row.addWidget(self.clear_custom_color_btn)
+        custom_row.addStretch()
+        layout.addLayout(custom_row)
+        self._sync_custom_color_button()
+
         return card
-    
+
     def _create_animation_card(self):
         """创建动画效果卡片"""
         card = self._create_card()
@@ -917,6 +998,55 @@ class CrosshairPage(QWidget):
         self._sync_overview_status()
         self.logger.debug(f"准心粗细更新: {value}")
     
+    def _apply_style_extra(self, attr, value, label=None, label_text=None):
+        """新增样式参数的公共落盘路径：存配置 → 刷预览 → 刷渲染器 → 刷概览。"""
+        setattr(config, attr, value)
+        if label is not None:
+            label.setText(label_text)
+        config.save_config()
+        self._update_preview()
+        self._update_crosshair_system()
+        self._sync_overview_status()
+        self.logger.debug(f"{attr} 更新: {value}")
+
+    def _on_gap_changed(self, value):
+        self._apply_style_extra("crosshair_gap", int(value), self.gap_value_label, str(value))
+
+    def _on_outline_changed(self, value):
+        self._apply_style_extra("crosshair_outline", int(value), self.outline_value_label, str(value))
+
+    def _on_alpha_changed(self, value):
+        # 滑块是百分比，配置存 0-255
+        self._apply_style_extra(
+            "crosshair_alpha", max(0, min(255, int(value) * 255 // 100)),
+            self.alpha_value_label, f"{value}%",
+        )
+
+    def _on_dot_toggled(self, checked):
+        self._apply_style_extra("crosshair_dot", bool(checked))
+
+    def _on_custom_color_picked(self):
+        from PySide6.QtWidgets import QColorDialog
+
+        current = str(getattr(config, "crosshair_color_custom", "") or "") or "#00ff00"
+        picked = QColorDialog.getColor(QColor(current), self, "选择准星颜色")
+        if not picked.isValid():
+            return
+        self._apply_style_extra("crosshair_color_custom", picked.name())
+        self._sync_custom_color_button()
+
+    def _on_custom_color_cleared(self):
+        """清空自定义色 = 回到上面那六个色名。"""
+        self._apply_style_extra("crosshair_color_custom", "")
+        self._sync_custom_color_button()
+
+    def _sync_custom_color_button(self):
+        if not hasattr(self, "custom_color_btn"):
+            return
+        value = str(getattr(config, "crosshair_color_custom", "") or "").strip()
+        self.custom_color_btn.setText(f"自定义颜色：{value}" if value else "自定义颜色…")
+        self.clear_custom_color_btn.setVisible(bool(value))
+
     def _on_style_changed(self, style_value):
         """准心样式改变"""
         config.crosshair_style = style_value
@@ -1003,91 +1133,70 @@ class CrosshairPage(QWidget):
         return effect_map.get(effect_text, "none")
     
     def _update_preview(self):
-        """更新准心预览"""
+        """更新准心预览——**直接调渲染层，不再自己画一遍**。
+
+        原来这里有一整套独立的绘制分支，和 `crosshair_overlay.paint_crosshair`
+        的几何对不上，而且是每个样式各错各的：
+          · 十字 / T 型：预览半长 = size，实际 = size//2 —— 预览是实际的 **2 倍**
+          · 点：预览半径**乘了 thickness/2**，实际与粗细无关 —— 调粗细时预览
+            会变大而游戏里纹丝不动
+          · 圆圈：碰巧一致
+        所以"切样式时哪个更大"的相对关系在预览里就是错的。
+
+        这个文件顶部的注释已经为同类问题痛斥过一次（样式中文名当年抄了三遍），
+        只是那次抄的是文案、这次抄的是几何。修法一样：**只留一份**。
+        预览现在是 1:1 物理像素，所见即游戏里所得。
+        """
         try:
-            # 创建准心图像
-            size = config.crosshair_size
-            thickness = config.crosshair_thickness
-            color = config.crosshair_color
-            style = config.crosshair_style
-            
-            # 限制预览大小
-            preview_size = min(40, size)
-            img_size = preview_size * 2
-            
-            # UP-033: 按设备像素比出图。原来直接按逻辑像素建 QImage 又不设
-            # devicePixelRatio，于是在 150%/200% 缩放的高 DPI 屏上，这张图会被
-            # Qt 拉伸到 1.5~2 倍显示——线条糊、边缘毛。
-            # 做法：画布放大 dpr 倍、painter 先 scale(dpr)，下面所有绘制代码
-            # 仍然按逻辑坐标写（一行都不用改），最后把 dpr 标回图上让 Qt 正确缩放。
+            from crosshair_overlay import (
+                CANVAS_PX,
+                CrosshairAnimator,
+                CrosshairState,
+                paint_crosshair,
+            )
+
+            custom_color = str(getattr(config, "crosshair_color_custom", "") or "").strip()
+            state = CrosshairState(
+                size=int(getattr(config, "crosshair_size", 20) or 20),
+                thickness=int(getattr(config, "crosshair_thickness", 2) or 2),
+                color=custom_color or str(getattr(config, "crosshair_color", "green") or "green"),
+                style=str(getattr(config, "crosshair_style", "crosshair") or "crosshair"),
+                animation=str(getattr(config, "crosshair_animation", "none") or "none"),
+                kill_effect="none",  # 预览是静态的，不放击杀联动
+                custom_points=tuple(
+                    tuple(p) for p in (getattr(config, "crosshair_custom_data", ()) or ())
+                ),
+                gap=max(0, int(getattr(config, "crosshair_gap", 0) or 0)),
+                outline=max(0, int(getattr(config, "crosshair_outline", 0) or 0)),
+                dot=bool(getattr(config, "crosshair_dot", False)),
+                alpha=max(0, min(255, int(getattr(config, "crosshair_alpha", 255) or 255))),
+            )
+            # now=0.0 且动画器是全新的 → 相位 0 = 各动画的静止形态，结果确定
+            frame = CrosshairAnimator().advance(state, 0.0)
+
+            # UP-033: 按设备像素比出图。frame 的坐标是**物理像素**，所以画布就按
+            # CANVAS_PX 个物理像素建，再把 dpr 标回图上让 Qt 缩到对应的逻辑尺寸——
+            # 这样预览在屏幕上占的物理像素数与游戏里完全相同。
             dpr = float(self.preview_label.devicePixelRatioF() or 1.0)
             if dpr <= 0:
                 dpr = 1.0
 
-            # 创建QImage
-            image = QImage(int(img_size * dpr), int(img_size * dpr), QImage.Format_ARGB32)
-            image.setDevicePixelRatio(dpr)
+            # ⚠ **不要在 QImage 上设 devicePixelRatio**。设了之后 QPainter 的
+            # 坐标系会变成逻辑像素，而 frame 的坐标是物理像素——1.25 档下这张
+            # 100px 的画布会被当成 80px 用，预览反而比游戏里小、还糊。
+            # DPR 只标在 pixmap 上：位图仍是 CANVAS_PX 个真实像素，Qt 按 dpr
+            # 缩到 CANVAS_PX/dpr 个逻辑像素显示，屏幕上占的物理像素恰好不变。
+            image = QImage(CANVAS_PX, CANVAS_PX, QImage.Format_ARGB32)
             image.fill(Qt.transparent)
-            
-            # 绘制准心
+
             painter = QPainter(image)
-            painter.setRenderHint(QPainter.Antialiasing)
-            painter.scale(dpr, dpr)
-            
-            # 设置颜色
-            color_map = {
-                "red": QColor(255, 0, 0),
-                "green": QColor(0, 255, 0),
-                "blue": QColor(0, 0, 255),
-                "yellow": QColor(255, 255, 0),
-                "cyan": QColor(0, 255, 255),
-                "white": QColor(255, 255, 255)
-            }
-            pen_color = color_map.get(color, QColor(0, 255, 0))
-            pen = QPen(pen_color, thickness)
-            painter.setPen(pen)
-            
-            center = preview_size
-            
-            # 绘制不同样式的准心
-            if style == "crosshair":
-                # 十字准心
-                painter.drawLine(center, center - preview_size, center, center + preview_size)
-                painter.drawLine(center - preview_size, center, center + preview_size, center)
-            elif style == "dot":
-                # 点准心（PySide6 的 drawEllipse 无 float 四参重载，必须取整）
-                dot_size = int(max(2, preview_size // 4) * (thickness / 2))
-                painter.setBrush(pen_color)
-                painter.drawEllipse(center - dot_size, center - dot_size, dot_size * 2, dot_size * 2)
-            elif style == "circle":
-                # 圆圈准心
-                circle_size = max(5, preview_size // 2)
-                painter.drawEllipse(center - circle_size, center - circle_size, circle_size * 2, circle_size * 2)
-            elif style == "t_shape":
-                # T 型准心：横杆整条 + 竖杆只向下半条
-                # 与 `crosshair_overlay._paint_t_shape` 同一套几何，改一边要改两边
-                painter.drawLine(center - preview_size, center, center + preview_size, center)
-                painter.drawLine(center, center, center, center + preview_size)
-            elif style == "custom" and hasattr(config, 'crosshair_custom_data') and config.crosshair_custom_data:
-                # 自定义准心
-                scale = preview_size / 15
-                for point in config.crosshair_custom_data:
-                    x, y = point
-                    abs_x = center + (x - 15) * scale
-                    abs_y = center + (y - 15) * scale
-                    pixel_size = max(1, int(thickness))
-                    painter.setBrush(pen_color)
-                    painter.drawRect(
-                        int(abs_x - pixel_size / 2), int(abs_y - pixel_size / 2), pixel_size, pixel_size
-                    )
-            
+            paint_crosshair(painter, frame)
             painter.end()
-            
-            # 转换为QPixmap并显示（fromImage 会继承 image 的 devicePixelRatio）
+
             pixmap = QPixmap.fromImage(image)
             pixmap.setDevicePixelRatio(dpr)
             self.preview_label.setPixmap(pixmap)
-            
+
         except Exception as e:
             self.logger.error(f"更新预览失败: {e}")
     
@@ -1234,6 +1343,13 @@ class CrosshairPage(QWidget):
         # 加载大小和粗细
         self.size_slider.setValue(config.crosshair_size)
         self.thickness_slider.setValue(config.crosshair_thickness)
+        self.gap_slider.setValue(int(getattr(config, "crosshair_gap", 0) or 0))
+        self.outline_slider.setValue(int(getattr(config, "crosshair_outline", 0) or 0))
+        self.alpha_slider.setValue(
+            max(10, int(getattr(config, "crosshair_alpha", 255) or 255) * 100 // 255)
+        )
+        self.dot_checkbox.setChecked(bool(getattr(config, "crosshair_dot", False)))
+        self._sync_custom_color_button()
         
         # 加载样式（已在创建时设置）
         # 加载颜色（已在创建时设置）
