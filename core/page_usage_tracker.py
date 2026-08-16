@@ -39,6 +39,9 @@ _cache: Dict[str, Dict] | None = None
 _cache_mtime: float = -1.0
 _dirty = False
 _flush_timer = None
+# 数据代次。`reset()` 每次自增；`flush()` 拿快照时记下当时的代次，落盘前再对一次。
+# 用来作废那种"cancel 已经拦不住"的在途 flush —— 详见 `reset()` 的注释。
+_generation = 0
 _FLUSH_DELAY_S = 5.0
 # 去抖落盘跑在 threading.Timer 线程上,而 record_page_open 在 GUI 线程改同一个
 # dict——不加锁的话,flush 里 json.dump 遍历到一半被插入新键会抛 RuntimeError
@@ -133,9 +136,27 @@ def flush() -> None:
         if not _dirty or _cache is None:
             return
         snapshot = dict(_cache)
+        generation = _generation
         _dirty = False
-    _write_to_disk(snapshot)
+    _write_if_current(snapshot, generation)
+
+
+def _write_if_current(snapshot: Dict[str, Dict], generation: int) -> None:
+    """落盘，但只在这份快照**还没被作废**时。
+
+    ⚠ 拿快照与真正写盘之间有一道缝，`reset()` 可能正好挤在这儿 ——
+    那次 reset 的 `cancel()` 拦不住已经跑到这里的我们（cancel 只拦得住
+    还没开始跑的 Timer 回调）。所以落盘前再对一次代次：对不上就说明这份
+    快照已被作废，写下去就是把重置前的旧数据倒灌回磁盘。
+
+    单独成一个函数是为了**能被确定性地测**：判据可以自己走一遍
+    "拿快照 → reset → 尝试落盘"，不必去赌线程调度。
+    """
+    global _cache_mtime
     with _lock:
+        if generation != _generation:
+            return
+        _write_to_disk(snapshot)
         _cache_mtime = _disk_mtime()
 
 
@@ -197,9 +218,17 @@ def reset() -> None:
 
     必须先取消待写的去抖 Timer,否则"重置所有设置"之后 5 秒,那个 Timer 会把
     重置前的旧数据又写回磁盘。
+
+    ⚠ **光 `cancel()` 是不够的**：`threading.Timer.cancel()` 只拦得住**还没开始跑**
+    的回调；已经进了 `flush()`、正卡在"快照拿完、盘还没写"那一瞬的那一次，
+    cancel 拦不住 —— 它照样会把重置前的旧数据写下去，正是本函数要防的事。
+    所以再加一道**代次**：这里自增，`flush()` 落盘前对一次，对不上就作废。
+    2026-08-16 由 CI 逮到（本机 8/8 绿、runner 上偶发红）：上一个用例的待写快照
+    在 reset 之后才落盘，把测试刚写进去的夹具数据冲掉，`top_pages()` 返回空列表。
     """
-    global _flush_timer
+    global _flush_timer, _generation
     with _lock:
+        _generation += 1
         try:
             if _flush_timer is not None:
                 _flush_timer.cancel()

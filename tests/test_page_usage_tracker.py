@@ -204,3 +204,36 @@ def test_flush_cancels_pending_timer():
     assert put._flush_timer is not None, "record 后应当有挂起的去抖 timer"
     put.flush()
     assert put._flush_timer is None, "flush 后挂起的 timer 应当已被取消"
+
+
+def test_reset_invalidates_an_already_running_flush():
+    """`reset()` 之后，**已经在跑**的那次 flush 不许再把旧数据写回磁盘。
+
+    `threading.Timer.cancel()` 只拦得住还没开始跑的回调。已经进了 `flush()`、
+    正卡在"快照拿完、盘还没写"那一瞬的那一次，cancel 拦不住 ——
+    它照样会把重置前的旧数据倒灌回去，正是 `reset()` 要防的事。
+
+    这不是假想：2026-08-16 由 CI 逮到（本机 8/8 绿、runner 上偶发红）。
+    上一个用例的待写快照在 reset 之后才落盘，把测试刚写进去的夹具数据冲掉，
+    `top_pages()` 于是返回空列表，下一行取 `top[0]` 直接 IndexError。
+
+    判据**不赌线程调度**：直接走一遍"拿快照 → 中途 reset → 尝试落盘"。
+    """
+    put.reset()
+    put.record_page_open("crosshair")
+    with put._lock:
+        snapshot = dict(put._cache)
+        generation = put._generation
+    assert "crosshair" in snapshot, "快照没拿到东西，判据在空转"
+
+    put.reset()                                   # 这一下把上面那份快照作废
+    put._write_if_current(snapshot, generation)   # 在途 flush 此时才落到盘
+
+    # ⚠ **必须直接读磁盘，不能走 `top_pages()`**。第一版就是那么写的，结果
+    # 把修复整个去掉判据照样绿 —— `top_pages` → `_load()` 有一层 mtime 缓存，
+    # 而两次写盘落在同一个文件时间戳精度内，`_load` 根本没重读，
+    # 返回的是内存里那份空的。**那样量的是缓存，不是磁盘。**
+    with open(put._store_path(), "r", encoding="utf-8") as f:
+        on_disk = json.load(f)
+    assert on_disk == {}, (
+        f"reset 之后那次在途 flush 仍把旧数据写回了磁盘：{on_disk}")

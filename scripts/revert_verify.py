@@ -1576,6 +1576,16 @@ REVERTS = [
         "视口比内容矮，而这个滚动区纵向是 AlwaysOff：「zip / 动图 / 图片」被永久切掉",
     ),
     Revert(
+        "V", "reset 之后的在途 flush 又能把旧数据倒灌回磁盘",
+        "core/page_usage_tracker.py",
+        "        if generation != _generation:\n            return\n",
+        "",
+        "tests/test_page_usage_tracker.py::"
+        "test_reset_invalidates_an_already_running_flush",
+        "Timer.cancel() 拦不住已经开始跑的回调：「重置所有设置」之后，"
+        "上一批统计会被倒灌回来。CI 上表现为 top_pages 返回空、IndexError（本机复现不出）",
+    ),
+    Revert(
         "V", "页面说明又写回版面决策",
         "pages/kill_sound_page.py",
         '    PAGE_LEAD = "击杀敌人时播放你自己的音效，可以按武器类别和连杀数分开配。'
