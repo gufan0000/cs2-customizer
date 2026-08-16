@@ -315,8 +315,19 @@ def test_sidebar_scrolls_the_active_nav_item_into_view(app):
     win = _shown_window(app)
     try:
         viewport = win._sidebar_scroll.viewport()
+        # ⚠ **不许把「构造即起设备」的那几页也走一遍**（音乐 / 语音输出 / 自定闪光 /
+        # 局内视角 / 开镜放大 / 击杀图标）。第一版这么干了，代价有二：
+        #   · 本机跑探针时**直接卡死在音乐页**（那一页构造会真起音频设备）；
+        #   · GitHub runner 上 `music` 这一项断言失败（y=569 在视口外），
+        #     而本机 150/150 全绿 —— 典型的"只在别人机器上红"。
+        # 侧栏滚动跟"切到哪一页"无关，用剩下这些页面证明它一样充分；
+        # 名单取产品自己那份 `_preload_skip_pages`，不另抄一份免得漂移。
+        # 这也和 layout_overflow_audit / tab_order_audit 的一贯口径一致。
+        skip = set(getattr(win, "_preload_skip_pages", ()) or ())
         checked, out_of_view = 0, []
         for page_id in list(win._page_names.keys()):
+            if page_id in skip:
+                continue
             win.show_page(page_id, animated=False)
             for _ in range(2):
                 app.processEvents()
@@ -328,6 +339,9 @@ def test_sidebar_scrolls_the_active_nav_item_into_view(app):
             if not (0 <= y and y + btn.height() <= viewport.height()):
                 out_of_view.append(f"{page_id}(y={y})")
         # ⚠ 没有这一行，上面的 continue 会让整段空转成绿——回退验证抓到过。
+        # 空转守卫：没有这一行，上面的两个 continue 会让整段静默跳过、绿得毫无意义。
+        # 闭源版 28 页 − 6 页设备页 = 22；开源版少一个账号页 = 21。取 20 留一格余量，
+        # 再少就说明有人往跳过名单里加东西了，那时候该来看一眼而不是让它继续绿。
         assert checked >= 20, f"只检了 {checked} 项导航，判据在空转"
         assert win._sidebar_scroll.verticalScrollBar().maximum() > 0, (
             "侧栏根本没溢出，这个判据在当前尺寸下证明不了任何事")
