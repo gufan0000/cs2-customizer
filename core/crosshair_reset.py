@@ -169,3 +169,93 @@ def build_attack_alias_lines(
         lines.append(_alias(f"-{legacy}", "-attack", None, release_extras))
 
     return lines
+
+
+# ---------------------------------------------------------------------------
+# 谁把我们的 alias 抢走了（2026-08-18，用户实录）
+# ---------------------------------------------------------------------------
+#
+# 用户报「准星跟随没效果」，查下来根因不在本仓：他的 `autoexec.cfg` 是
+#
+#     exec cs2customizer.cfg          ← 我们
+#     exec FastShoot/setup
+#     exec cs2customizer.cfg   ← 开源版 CS2 Customizer ，**最后执行**
+#
+# 而 `cs2customizer.cfg` 里有一模一样的
+# `alias +quickrepos_attack "+attack; exec cs2customizer_hud_runtime.cfg"`
+# —— 全文 `cl_crosshair_recoil` 出现 **0 次**（开源版是功能子集，没这个功能）。
+# 同名 alias，**后 exec 的赢**，于是我们那两行被原样覆盖，功能静默死掉、零报错。
+#
+# ⭐ 要害：**开源版是从本仓裁出来的，两个产品共用同一套 alias 名字空间。**
+# 而上面写着 `PRIMARY_ALIAS` 改名等于把存量用户的开火键变成死键 ——
+# **这个碰撞不能靠改名躲过去**，只能靠 ① 保证我们最后 exec ② 检测到就说出来。
+#
+# 同一类风险对任何第三方 cfg 工具都成立（这台机器上还有 FastShoot / f5e）。
+
+#: 我们会定义、因而可能被别人重定义的全部 alias 名。
+OWNED_ALIASES = (PRIMARY_ALIAS, SECONDARY_ALIAS, *LEGACY_ALIASES)
+
+_EXEC_RE = re.compile(r"^\s*exec\s+([^\s/;]+(?:/[^\s;]+)?)", re.I | re.M)
+
+
+def exec_order(autoexec_text: str) -> List[str]:
+    """按出现顺序列出 `autoexec.cfg` 里 exec 的目标（去掉 .cfg 后缀）。"""
+    out = []
+    for raw in _EXEC_RE.findall(autoexec_text or ""):
+        name = raw.strip().strip('"').strip("'")
+        if name.lower().endswith(".cfg"):
+            name = name[:-4]
+        out.append(name)
+    return out
+
+
+def _defines_our_alias(text: str) -> List[str]:
+    hits = []
+    for name in OWNED_ALIASES:
+        # `alias +quickrepos_attack ...` / `alias "-quickrepos_attack" ...`
+        if re.search(rf'^\s*alias\s+"?[+-]{re.escape(name)}"?\s', text or "", re.I | re.M):
+            hits.append(name)
+    return hits
+
+
+def find_alias_overriders(autoexec_text: str, read_cfg, our_cfg: str = "cs2customizer") -> List[dict]:
+    """找出**排在我们后面**、且重定义了我们 alias 的 cfg。
+
+    `read_cfg(name)` 由调用方提供：给 cfg 名（不带后缀），返回文本或 None。
+    这样本模块不碰文件系统，判据可以直接喂字典进来。
+
+    返回 `[{"cfg": 名字, "aliases": [被抢的 alias]}]`，**顺序即 exec 顺序**。
+    列表非空 = 我们那份准心回正语义在游戏里是死的。
+    """
+    order = exec_order(autoexec_text)
+    if our_cfg not in order:
+        return []
+    after = order[order.index(our_cfg) + 1:]
+    found = []
+    for name in after:
+        if name == our_cfg:
+            continue
+        stolen = _defines_our_alias(read_cfg(name) or "")
+        if stolen:
+            found.append({"cfg": name, "aliases": stolen})
+    return found
+
+
+def rewrite_autoexec_with_us_last(autoexec_text: str, our_cfg: str = "cs2customizer") -> str:
+    """把 `exec cs2customizer.cfg` 挪到所有 exec 的**最后**，其余内容一字不动。
+
+    只在我们确实不是最后一个 exec 时才改；已经在最后就原样返回
+    （**别每次启动都重写用户的文件**）。
+    """
+    order = exec_order(autoexec_text)
+    if our_cfg not in order or order[-1] == our_cfg:
+        return autoexec_text
+
+    ours = re.compile(rf'^\s*exec\s+"?{re.escape(our_cfg)}(?:\.cfg)?"?\s*$', re.I)
+    kept = [ln for ln in (autoexec_text or "").splitlines() if not ours.match(ln)]
+    while kept and not kept[-1].strip():
+        kept.pop()
+    kept.append("")
+    kept.append("// CS2 Customizer ：本行必须排在其他 exec 之后 —— 同名 alias 后执行的生效")
+    kept.append(f"exec {our_cfg}.cfg")
+    return "\n".join(kept) + "\n"

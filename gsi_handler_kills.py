@@ -55,6 +55,11 @@ class GSIHandlerKills:
         self.frame_has_weapon_snapshot = False  # 当前帧是否有 weapons 快照
         self.last_confirmed_fire_weapon_time = 0.0  # 最近一次确认开火武器的时间
         self.kill_weapon_inference_ttl = 0.6  # weapons 缺失时才短时间回用最近开火武器
+        #: RN-096：本帧没人开火时，「刚开过火的那把枪」压过「此刻举着的那把枪」的时限。
+        #: 比上面那个宽（1.2s）是因为它盖的是**切枪竞速**：开完一枪切副武器，
+        #: 而 `round_kills` 那一包晚一拍才到。GSI 默认节流约 0.1s，
+        #: 加上切枪动画与网络抖动，1.2s 足够覆盖而又不至于把几秒后的另一次击杀算进来。
+        self.kill_weapon_switch_grace = 1.2
 
         # 记录每个玩家已播放的击杀等级，与武器无关
         self.played_kill_levels = {}  # {steamid: set(1, 2, 3...)}
@@ -371,6 +376,41 @@ class GSIHandlerKills:
         candidates.sort(reverse=True)
         return candidates[0][2]
 
+    @staticmethod
+    def _melee_config_key(weapon_name):
+        """把 GSI 报回来的近战武器名归一成**配置表里那个键**。
+
+        GSI 报的是皮肤名（`weapon_knife_karambit`、`weapon_knife_butterfly`…），
+        而设置页写进配置的键只有 `weapon_knife` 一个。不归一就永远查不到。
+        非近战返回空串。
+        """
+        if not weapon_name:
+            return ""
+        if weapon_name.startswith("weapon_knife"):
+            return "weapon_knife"
+        if weapon_name == "weapon_taser":
+            return "weapon_taser"
+        return ""
+
+    def _apply_melee_fallback(self, weapon_name, styles_map):
+        """近战击杀：**用户明确配过就用他配的，没配过才沿用上一把非刀武器。**
+
+        分开两条路走（音效一条、语音一条）是必须的：用户完全可能只给刀配了音效
+        没配语音，这时候音效要用刀的、语音要沿用上一把枪。放在武器解析里一刀切
+        就做不到这件事。
+        """
+        melee_key = self._melee_config_key(weapon_name)
+        if not melee_key:
+            return weapon_name
+        configured = str((styles_map or {}).get(melee_key, "0") or "0").strip()
+        if configured not in ("", "0"):
+            return melee_key
+        fallback = getattr(self, "last_melee_fallback_weapon", "") or ""
+        if fallback:
+            self.logger.debug(f"近战击杀未配置风格，沿用上一把非 knife 武器: {fallback}")
+            return fallback
+        return weapon_name
+
     def _resolve_kill_weapon(self, current_time=None):
         current_time = current_time if current_time is not None else time.time()
         weapon = ""
@@ -382,6 +422,30 @@ class GSIHandlerKills:
         elif self.frame_active_weapon:
             weapon = self.frame_active_weapon
             weapon_source = "frame_active_weapon"
+            # ⚠ RN-096（2026-08-18，用户实战 + 离线复现）：
+            # **「此刻举在手里的枪」不等于「打死人的那把枪」。**
+            #
+            # 用户死斗实录：AWP 打死人之后顺手切副武器（狙击手的标准操作，
+            # 切枪跑得快），而 `round_kills` 的那一包**晚一拍才到**。等它到的时候
+            # 弹药变化已经落在上一包里，本帧推断不出开火武器，于是就地取材用了
+            # 「当前举着的五七」—— 8 次 AWP 击杀全被记成五七。
+            #
+            # 关键在于：**本帧一发子弹都没少，就说明这两包之间谁都没开火**，
+            # 那这次击杀只可能来自「刚刚开过火的那把枪」（或近战/投掷物）。
+            # 此时「刚开过火」是比「举在手里」强得多的信号。
+            #
+            # ⚠ 近战必须让位：`weapon_knife` / `weapon_taser` 没有弹夹，
+            # 永远推断不出开火，一律走这条就会把刀杀记成上一把枪，
+            # RN-016 那条「近战配了没反应」立刻复活。所以近战原样保留。
+            if (
+                not self._melee_config_key(self.frame_active_weapon)
+                and self.last_confirmed_fire_weapon
+                and self.last_confirmed_fire_weapon != self.frame_active_weapon
+                and current_time - self.last_confirmed_fire_weapon_time
+                <= self.kill_weapon_switch_grace
+            ):
+                weapon = self.last_confirmed_fire_weapon
+                weapon_source = "recent_fire_beats_switched_active"
         elif (
             not self.frame_has_weapon_snapshot
             and self.last_confirmed_fire_weapon
@@ -390,11 +454,19 @@ class GSIHandlerKills:
             weapon = self.last_confirmed_fire_weapon
             weapon_source = "recent_last_confirmed_fire_weapon"
 
-        if weapon.startswith("weapon_knife") or weapon == "weapon_taser":
-            if self.last_non_knife_weapon:
-                self.logger.debug(f"使用 knife 击杀，应用上一个非 knife 武器设置: {self.last_non_knife_weapon}")
-                weapon = self.last_non_knife_weapon
-                weapon_source = f"{weapon_source}->last_non_knife_weapon"
+        # ⚠ **近战击杀不在这里改写武器名了**（RN-016，2026-08-17）。
+        # 原先这里无条件把刀/电击枪的击杀换成「上一把非刀武器」。这个默认是对的
+        # ——大多数人按枪配音效，刀杀不沿用就只能退到通用音效——但它有两个后果：
+        #   ① 用户在「击杀音效」页里给近战配的风格**永远不生效**（设了没反应）；
+        #   ② 就算沿用不成立（这局还没开过枪），留下的也是 GSI 原样报回来的
+        #      **皮肤名**（`weapon_knife_karambit` 之类，所以上面才用 startswith），
+        #      而配置表的键是 `weapon_knife` —— 两边对不上，照样查不到。
+        # ⇒ 近战那两项配置**从来就没生效过**，不是"大部分时候不生效"。
+        # 现在只记下回退目标，真正用不用留给各自的取键函数**按各自的配置表**决定：
+        # 用户明确配了就用他配的，没配才沿用上一把枪。这样默认行为一点不变。
+        self.last_melee_fallback_weapon = ""
+        if self._melee_config_key(weapon):
+            self.last_melee_fallback_weapon = self.last_non_knife_weapon or ""
 
         self.logger.debug(
             f"击杀武器解析: resolved={weapon or 'none'}, source={weapon_source}, "
@@ -442,9 +514,10 @@ class GSIHandlerKills:
             self.logger.debug("未解析到击杀武器，跳过击杀音效播放")
             return None
 
-        if not weapon_name:
-            self.logger.debug("未解析到击杀武器，跳过击杀语音播放")
-            return None
+        # ⚠ 这里原先还有一段一模一样的 `if not weapon_name` —— 复制粘贴残留，
+        # 日志里写的还是"击杀**语音**"，而这是音效函数。第二段永远进不去。
+
+        weapon_name = self._apply_melee_fallback(weapon_name, config.weapon_kill_sounds)
 
         weapon_style = "0"
         has_explicit_style = weapon_name in config.weapon_kill_sounds
@@ -546,6 +619,8 @@ class GSIHandlerKills:
             return None
                  
         # 获取配置中的武器风格设置
+        weapon_name = self._apply_melee_fallback(weapon_name, config.weapon_kill_voices)
+
         weapon_style = "0"
         has_explicit_style = weapon_name in config.weapon_kill_voices
         weapon_voice_styles = getattr(audio_manager, "weapon_kill_voice_styles", {}) or {}
@@ -745,27 +820,59 @@ class GSIHandlerKills:
         self.played_kill_levels.setdefault(steamid, set())
 
     def _emit_kill_feedback(self, level, is_headshot, current_time):
-        """P4.3: 播放一次击杀反馈（音效→语音→图标），返回 (played, used_key)。
+        """播放一次击杀反馈：音效 / 语音 / 图标 **三者各判各的**。
 
-        从死斗/非死斗两个高度重复的分支抽取的公共逻辑——去重判断仍由调用方负责，
-        本方法只负责"取键、播放、成功后联动语音与图标"，行为与原内联代码等价。
+        返回 `(emitted, used_key)`：`emitted` = 这次击杀**至少给出了一种反馈**，
+        调用方拿它做去重（同一次击杀不重复反馈）。
+
+        ⚠ **QA/RN：这里原来是三合一门控。** 原写法是
+        `sound_key = ...; if not sound_key: return False, ""` 然后把语音和图标
+        整个塞进 `if played:` 里 —— 于是**击杀图标和击杀语音被"这把枪的击杀音效
+        有没有成功播出"暗中决定**。
+
+        实测（2026-08-18 用户死斗实录，日志在册）：112 次击杀里 8 次没有任何反馈，
+        **8 次全是 `weapon_fiveseven`** —— 那把枪在配置里是「不启用」。
+        于是玩家看到的是「击杀音效和图标**都**不出」，进而把击杀图标总开关关掉了。
+
+        ⇒ 击杀图标有自己的开关（`kill_icon_enabled`）、自己的素材、自己的设置页，
+        和「这把枪配没配音效」**没有任何关系**。语音同理。
+        ⭐ 一个功能的开关被另一个功能的配置暗中决定，是这类缺陷里最难查的一种：
+        三个功能同时"坏"，看起来像总线故障，实际是耦合。
         """
+        played = False
+        used_key = ""
         sound_key = self._get_weapon_kill_sound_key(self.last_kill_weapon, level, is_headshot)
-        if not sound_key:
-            return False, ""
-        played, used_key = self._play_kill_sound_with_retry(sound_key, level, is_headshot)
-        if played:
-            self.last_kill_sound_time = current_time
-            if config.kill_voice_enabled:
-                voice_key = self._get_weapon_kill_voice_key(self.last_kill_weapon, level, is_headshot)
-                if voice_key:
-                    self.logger.debug(f"播放击杀语音: {voice_key}")
-                    audio_manager.play_voice(voice_key)
-            if self.image_player and config.kill_icon_enabled:
-                # 爆头标记顺带传下去：播放器只在该风格备了 <等级>hs 素材时才用它，
-                # 备不到就退回普通图标（见 kill_icon_player._frames_for）。
-                self.image_player.play_images(1, level, is_headshot=is_headshot)
-        return played, used_key
+        if sound_key:
+            played, used_key = self._play_kill_sound_with_retry(sound_key, level, is_headshot)
+            if played:
+                self.last_kill_sound_time = current_time
+            else:
+                # ⚠ 只有"配了却没播出来"才算失败。**"这把枪本来就不启用"不是失败** ——
+                # 原先那条 WARNING 把两者混为一谈，日志里一片"击杀音效失败"，
+                # 查起来直接把人带偏（我自己就被带偏过一次）。
+                self.logger.warning(
+                    f"击杀音效配了风格却没播出来: weapon={self.last_kill_weapon}, "
+                    f"level={level}, key={used_key}")
+        else:
+            self.logger.debug(
+                f"击杀音效未配置或已禁用，跳过: weapon={self.last_kill_weapon}, level={level}")
+
+        voiced = False
+        if config.kill_voice_enabled:
+            voice_key = self._get_weapon_kill_voice_key(self.last_kill_weapon, level, is_headshot)
+            if voice_key:
+                self.logger.debug(f"播放击杀语音: {voice_key}")
+                audio_manager.play_voice(voice_key)
+                voiced = True
+
+        iconed = False
+        if self.image_player and config.kill_icon_enabled:
+            # 爆头标记顺带传下去：播放器只在该风格备了 <等级>hs 素材时才用它，
+            # 备不到就退回普通图标（见 kill_icon_player._frames_for）。
+            self.image_player.play_images(1, level, is_headshot=is_headshot)
+            iconed = True
+
+        return (played or voiced or iconed), used_key
 
     def _process_kill_sounds(self, data, steamid):
         """处理击杀音效"""
@@ -959,9 +1066,11 @@ class GSIHandlerKills:
                                 if played:
                                     self.played_sounds_this_round.setdefault(steamid, set()).add(virtual_key)
                                 else:
-                                    self.logger.warning(
-                                        f"死斗模式击杀音效失败: steamid={steamid}, kill_level={kill_level}, key={used_key}"
-                                    )
+                                    # 三条通道一条都没给出反馈 —— 多半是三个开关都关着
+                                    # 或这把枪什么都没配。**这不是故障，别再报 WARNING。**
+                                    self.logger.debug(
+                                        f"死斗模式本次击杀无任何反馈: steamid={steamid}, "
+                                        f"kill_level={kill_level}, key={used_key}")
                                 self.logger.debug(f"死斗模式: 播放了 {current_round_kills} 杀的音效，使用等级 {kill_level}")
                     else:
                         # 非死斗模式：按击杀级别(1-5)去重
@@ -973,9 +1082,9 @@ class GSIHandlerKills:
                                 if played:
                                     self.played_kill_levels[steamid].add(current_round_kills)
                                 else:
-                                    self.logger.warning(
-                                        f"竞技/自定义击杀音效失败: steamid={steamid}, kills={current_round_kills}, key={used_key}"
-                                    )
+                                    self.logger.debug(
+                                        f"竞技/自定义本次击杀无任何反馈: steamid={steamid}, "
+                                        f"kills={current_round_kills}, key={used_key}")
 
                         elif current_round_kills > 5:
                             pass  # previous_round_kills 已在上方统一更新

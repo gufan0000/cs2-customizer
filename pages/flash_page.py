@@ -159,6 +159,30 @@ class FlashPage(QWidget):
         if hasattr(self, "tab_widget") and self.tab_widget.count() > 0:
             self.tab_widget.setCurrentIndex(self.tab_widget.count() - 1)
 
+    def _enable_and_start(self):
+        """RN-079：在本页就把总开关打开并启动，不用去别的页找。
+
+        原状是：底栏最醒目的主按钮叫「前往效果预览」—— 一个**不改变任何状态**的
+        导航动作，而顶部胶囊常年「效果·未启用 / 运行·待启动」，全页没有任何启动入口。
+        外审改前改后都是 **3/3 全票判「高」**，措辞集中在
+        「配完不知道怎么让它在 CS2 里生效」。
+
+        ⚠ 写 `config.flash_enabled` 之后**必须回写首页那颗开关**
+        （`sync_feature_switch`），否则会出现「首页显示关、实际已开」的三态不一致 ——
+        `self.switches` 在 RN-089 之前是个写了从没读过的字典。
+        """
+        if not bool(getattr(config, "flash_enabled", False)):
+            config.flash_enabled = True
+            config.save_config()
+            self.logger.info("闪光总开关已在本页打开（RN-079）")
+            window = self.window()
+            if hasattr(window, "sync_feature_switch"):
+                window.sync_feature_switch("flash_enabled")
+        if not getattr(self.process_manager, "is_running", False):
+            self._set_preview_status("正在启动闪光进程...")
+            self._init_flash_process()
+        self._sync_overview_status()
+
     def _sync_action_bar(self):
         if not hasattr(self, "action_bar"):
             return
@@ -191,7 +215,19 @@ class FlashPage(QWidget):
             )
         else:
             self.action_bar.configure_secondary("重置设置", self._reset_settings, visible=True)
-            self.action_bar.configure_primary("前往效果预览", self._open_preview_tab, visible=True)
+            # ⚠ RN-079：主按钮必须是**能改变状态**的那一个。
+            # 原来无条件写「前往效果预览」——一个不改变任何状态的导航动作，
+            # 而胶囊常年「效果·未启用 / 运行·待启动」，全页没有启动入口。
+            # 现在按当前状态给"下一步真正该做的事"；两样都齐了才退回导航。
+            if not bool(getattr(config, "flash_enabled", False)):
+                # ⚠ 名字必须说清"打开的是什么"。第一版叫「打开并启动」，外审 3/3 × 多张图
+                # 判「高」：「不知道是开启闪光替换、启动后台监听、还是启动游戏」。
+                # 改成点名那个开关本身（和首页「功能开关」里的标签一字不差）。
+                self.action_bar.configure_primary("启用自定闪光", self._enable_and_start, visible=True)
+            elif not getattr(getattr(self, "process_manager", None), "is_running", False):
+                self.action_bar.configure_primary("启动", self._enable_and_start, visible=True)
+            else:
+                self.action_bar.configure_primary("前往效果预览", self._open_preview_tab, visible=True)
             action_message = (
                 f"当前页面：{current_tab} · 闪光样式 {style_text} / 媒体 {media_text}"
                 f" · 运行状态 {runtime_text}。"
@@ -248,8 +284,6 @@ class FlashPage(QWidget):
 
         summary_text = "\n".join(detail_lines)
         render_badges(self.status_badge_label, badges, detail_tooltip=summary_text)
-        self.summary_label.setText(summary_text)
-        self.summary_label.setToolTip(summary_text)
         self.status_card.setToolTip(summary_text)
         if hasattr(self, "basic_overview_title_label"):
             self.basic_overview_title_label.setText(f"{bg_color_text}背景 · {opacity}%")
@@ -295,7 +329,7 @@ class FlashPage(QWidget):
         # 这次重构不动一个像素，四种并存的字号是另一回事（UP-092）。
         header = PageHeader(
             "闪光效果设置",
-            description="被闪的时候，用你自己的颜色、图片和音效替换游戏默认的闪白。先去「基础设置」打开总开关。",
+            description="被闪的时候，用你自己的颜色、图片和音效替换游戏默认的闪白。还没启用的话，点一下「启用自定闪光」就能开。",
             title_font_size=None,
             spacing=12,
         )
@@ -319,11 +353,10 @@ class FlashPage(QWidget):
         status_header.addStretch()
         status_card_layout.addLayout(status_header)
 
-        self.summary_label = QLabel("")
-        self.summary_label.setObjectName("hintLabel")
-        self.summary_label.setWordWrap(True)
-        self.summary_label.hide()
-        status_card_layout.addWidget(self.summary_label)
+        # ⚠ RN-009：这里原来有一个 `self.summary_label` —— 建出来就 `hide()`，
+        # 全仓没有任何一处让它显示回来，而每次状态同步还照给它 `setText` 十行详情。
+        # 那十行本来就已经由徽章的 detail_tooltip 和 `status_card.setToolTip()` 给出，
+        # 删掉不丢任何信息。
         main_layout.addWidget(self.status_card)
         
         # 创建TabWidget
@@ -380,7 +413,7 @@ class FlashPage(QWidget):
 
         controls_card, controls_layout = SettingsCard.make(
             "基础参数",
-            "把底色、不透明度和过渡节奏收在同一块里，先把基础观感调顺，再去样式和媒体页细化。",
+            "被闪时用什么颜色、盖得多浓、淡入淡出多快。",
         )
         controls_grid = QGridLayout()
         controls_grid.setContentsMargins(0, 2, 0, 0)
@@ -454,7 +487,7 @@ class FlashPage(QWidget):
 
         overview_card, overview_layout = SettingsCard.make(
             "当前组合",
-            "把首屏基础观感、媒体搭配和预览状态压成一张概况卡，调完背景后不用再往下找重点信息。",
+            "当前这一套配置的摘要：颜色、媒体和预览状态。",
         )
         overview_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
         self.basic_overview_card = overview_card
@@ -483,7 +516,7 @@ class FlashPage(QWidget):
         # 实时预览卡片（v3.3 新增 — 填充下半屏空白，提供即时视觉反馈）
         preview_card, preview_layout = SettingsCard.make(
             "实时预览",
-            "这块面板根据上方的颜色与不透明度直接合成当前闪光观感，点击预览区可模拟一次淡入效果。",
+            "按你当前的颜色和不透明度合成出实际观感；点一下预览区就模拟一次淡入。",
         )
         preview_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.basic_preview_widget = FlashPreviewWidget()
@@ -658,7 +691,7 @@ class FlashPage(QWidget):
 
         source_card, source_layout = SettingsCard.make(
             "图片来源",
-            "样式、刷新和文件夹入口收在一起，切素材时不用来回找按钮。",
+            "选一套闪光图片。自己往图片文件夹里加了素材，点「刷新样式列表」才会出现在这里。",
         )
         self.image_style_combo = QComboBox()
         self.image_style_combo.addItem("不使用图片", "none")
@@ -690,7 +723,7 @@ class FlashPage(QWidget):
 
         behavior_card, behavior_layout = SettingsCard.make(
             "呈现方式",
-            "轮换和透明度集中在一块，方便快速比对不同媒体表现。",
+            "多张图片要不要换着出现，以及图片盖上去有多实。",
         )
         self.image_rotation_combo = QComboBox()
         self.image_rotation_combo.addItem("不轮换", "none")
@@ -823,7 +856,7 @@ class FlashPage(QWidget):
 
         behavior_card, behavior_layout = SettingsCard.make(
             "播放行为",
-            "轮换策略、音量和自动停播放在同一块，方便连续试听时快速调优。",
+            "被闪时这段音效怎么播：换不换着播、多大声、闪光结束后要不要跟着停。",
         )
         self.audio_rotation_combo = QComboBox()
         self.audio_rotation_combo.addItems(["不轮换", "随机", "顺序"])
@@ -888,7 +921,7 @@ class FlashPage(QWidget):
 
         control_card, control_layout = SettingsCard.make(
             "预览控制",
-            "把强度、时长、状态和主触发入口收在同一块里，试参数时视线不会来回跳。",
+            "不用进游戏也能试：定好强度和时长，直接放一次看效果。",
         )
         status_row = QHBoxLayout()
         status_row.setSpacing(8)
@@ -934,7 +967,7 @@ class FlashPage(QWidget):
 
         quick_card, quick_layout = SettingsCard.make(
             "快速触发",
-            "把四个常用强度排成一行，连续比对不同参数组合时更利落。",
+            "点一下就按这个强度放一次，不必先调上面的滑块。",
         )
         button_grid = QGridLayout()
         button_grid.setHorizontalSpacing(8)

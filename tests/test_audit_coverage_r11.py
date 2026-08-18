@@ -51,7 +51,7 @@ FOCUS_MIN_ALL_PAGES = 26
 
 #: 排版审计默认档的覆盖面（27 − 4 个构造即起设备/子进程的页面）。
 #: 同上：必须等于实测值。2026-08-16：23 → 24。
-LAYOUT_MIN_DEFAULT_PAGES = 23
+LAYOUT_MIN_DEFAULT_PAGES = 27
 
 
 def _module(path: Path):
@@ -162,9 +162,21 @@ def test_focus_audit_prints_its_denominator():
 
 
 def test_layout_audit_default_coverage_never_shrinks():
-    unsafe = set(_literal(LAYOUT_AUDIT, "UNSAFE_PAGES"))
-    neutralizable = set(_literal(LAYOUT_AUDIT, "NEUTRALIZABLE"))
-    skipped = unsafe - neutralizable
+    # RN-002 起，「构造即占设备的页面」全仓只有一份，在 core.page_traits。
+    # 这里直接读真相源而不是审计脚本里的字面量 —— 那份字面量已经不存在了，
+    # 而且读真相源本来就更对：覆盖面缩水的**根因**是名单变长，就该盯着名单本身。
+    # （`core.page_traits` 不依赖 Qt，导它不会付起 QApplication 的代价，
+    #   `_literal` 那条"别 import 审计脚本"的顾虑在这里不适用。）
+    # RN-005/RN-059：中和表已收成 `scripts/_audit_neutralize.py` 一份，
+    # 排版审计不再自己持有 `NEUTRALIZABLE` —— 这里改问那份表。
+    # ⚠ 覆盖面**同时从 24 抬到 28**（六个设备页全部纳入），所以下面那个下限
+    #   是被**抬高**的，不是被放宽的。
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+    from _audit_neutralize import unsafe_pages
+
+    skipped = set(unsafe_pages())
     covered = TOTAL_PAGES - len(skipped)
     assert covered >= LAYOUT_MIN_DEFAULT_PAGES, (
         f"排版审计默认覆盖面从 {LAYOUT_MIN_DEFAULT_PAGES} 掉到了 {covered}。"

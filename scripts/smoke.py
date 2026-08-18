@@ -27,8 +27,6 @@
 from __future__ import annotations
 
 import importlib
-import os
-import subprocess
 import sys
 import time
 import unittest

@@ -34,7 +34,13 @@ ROOT = Path(__file__).resolve().parents[1]
 # --------------------------------------------------------------- UP-058
 
 #: `generate_stylesheet` 当前行数（R11 实测 261-1801）。只许减不许增。
-GENERATE_STYLESHEET_MAX_LINES = 1541
+#:
+#: ⚠ 2026-08-18 破例 +2（1541 → 1543）：RN-066/076 修单选钮形状，
+#: `:checked` 里**必须补一行 `border-radius`**（缺陷就长在缺这一行上），
+#: 外加一行指路注释。这条棘轮的本意是「别再往这一坨里堆**新样式**」，
+#: 而不是「不许修这一坨里的缺陷」—— 一条禁止修缺陷的棘轮是坏棘轮。
+#: 破例必须写清是哪一行、为什么；**不写理由的抬高等于把棘轮拆了**。
+GENERATE_STYLESHEET_MAX_LINES = 1543
 
 
 def test_generate_stylesheet_does_not_grow():

@@ -145,7 +145,7 @@ class HudColorPage(QWidget):
 
         preset_card, preset_layout = SettingsCard.make(
             "预设工作台",
-            "先用预设定大方向，再补默认色和事件细调，让首屏更像一块完整的 HUD 控制台。", spacing=10
+            "先套一个配色预设定大方向，再单独改默认色和各个事件的颜色。", spacing=10
         )
         self.context_hint_label = QLabel("")
         self.context_hint_label.setObjectName("hintLabel")

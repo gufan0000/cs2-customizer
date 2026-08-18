@@ -145,11 +145,26 @@ CRITICAL_LOCAL_MODULES = [
 ]
 
 # 归档校验：确认这些模块确实被打进包里（明文或混淆均可，只校验存在性）
+#: 打包产物里**必须**能查到的模块。名字用 `pyi-archive_viewer -b -r` 的写法：
+#: 顶层模块是裸名（`gui_widget`），包内模块是点路径（`core.kill_icon_import`）。
+#:
+#: ⚠ **RN-003（2026-08-18 补齐）**：这份清单从 2.1.3 起就没再动过，
+#: 而 2.2.4 最大的新功能——击杀图标一整条链路——**一个模块都不在册**。
+#: 打包漏掉它们，`verify_onefile_archive` 照样通过、安装包照样出得来，
+#: 用户装上之后那个功能是死的，而**发布链路全程不会报一声**。
+#: 这正是这套工程一直在打的那类缺陷：静默失败。
 CRITICAL_ARCHIVE_MODULES = [
     "main_widget",
     "gui_widget",
     "gsi_server",
     "resource_manager",
+    # 2.2.4(RN-003): 击杀图标链路。渲染走 Qt 叠加层、素材导入转图集、
+    # zip 图标包校验——三层缺任何一层，功能就是"开关能点、屏幕上什么都没有"。
+    "kill_icon_overlay",
+    "kill_icon_player",
+    "core.kill_icon_import",
+    "core.kill_icon_library",
+    "core.kill_icon_pack",
 ]
 
 # onefile 归档里资源条目的前缀。PyInstaller 把 datas 的目标名按 os.sep 规范化，

@@ -27,7 +27,6 @@ from __future__ import annotations
 import os
 import statistics
 import sys
-import tempfile
 import time
 from pathlib import Path
 
@@ -40,11 +39,12 @@ except Exception:
 
 # 隔离配置与日志目录，绝不碰用户真实数据
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-_tmp = Path(tempfile.gettempdir()) / "cs2customizer_flashbench"
-(_tmp / "config").mkdir(parents=True, exist_ok=True)
-(_tmp / "logs").mkdir(parents=True, exist_ok=True)
-os.environ.setdefault("CS2C_CONFIG_DIR", str(_tmp / "config"))
-os.environ.setdefault("CS2C_LOG_DIR", str(_tmp / "logs"))
+# RN-032：配置目录一律走共享工装 —— 自己 mkdir + setdefault 挡不住
+# migrate_old_config() 把仓库根那份未跟踪的个人 config.json 复制进来。
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _pristine_config import use_pristine_config_dir  # noqa: E402
+
+_tmp = use_pristine_config_dir("cs2customizer_flashbench")
 
 from config import config  # noqa: E402
 from flash_process_manager import FlashProcessManager  # noqa: E402

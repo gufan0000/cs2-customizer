@@ -147,7 +147,7 @@ def main() -> int:
 
     print(f"\n[baseline] saved={manifest['saved_count']}/{manifest['expected_count']}")
     if manifest["failed"]:
-        print(f"[baseline] FAILED:")
+        print("[baseline] FAILED:")
         for f in manifest["failed"]:
             print(f"    {f['res']}_{f['page']}: {f['error']}")
         return 1

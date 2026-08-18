@@ -491,7 +491,7 @@ class VoiceOutputPage(QWidget):
 
         routing_card, routing_layout = self._create_panel_card(
             "播放路由",
-            "主音量、模式和本地监听集中在一起，切换输出策略时更直观。",
+            "语音播出去时多大声、和麦克风怎么混，以及要不要自己也听到一份。",
         )
         volume_label = QLabel("主音量:")
         self._apply_compact_label(volume_label, width=58, bold=True)
@@ -544,7 +544,7 @@ class VoiceOutputPage(QWidget):
 
         device_card, device_layout = self._create_panel_card(
             "输入设备与配置",
-            "麦克风设备和整页配置导入导出放在同一区域，切换环境时更省操作。",
+            "选用哪个麦克风；换电脑或换设备时，整页设置可以导出再导入。",
         )
         mic_row = QHBoxLayout()
         mic_row.setSpacing(8)

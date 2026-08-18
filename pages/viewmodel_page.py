@@ -148,11 +148,10 @@ class ViewmodelPage(QWidget):
         status_row.addStretch()
         status_card_layout.addLayout(status_row)
 
-        self.summary_label = QLabel("")
-        self.summary_label.setObjectName("hintLabel")
-        self.summary_label.setWordWrap(True)
-        self.summary_label.hide()
-        status_card_layout.addWidget(self.summary_label)
+        # ⚠ RN-009：这里原来有一个 `self.summary_label` —— 建出来就 `hide()`，
+        # 全仓没有任何一处让它显示回来，而每次状态同步还照给它 `setText` 七行详情。
+        # 那七行本来就已经由徽章的 detail_tooltip 和 `status_card.setToolTip()` 给出，
+        # 删掉不丢任何信息。别再往这张卡里加第三份看不见的副本。
         main_layout.addWidget(self.status_card)
         
         # 创建滚动区域
@@ -177,7 +176,7 @@ class ViewmodelPage(QWidget):
 
         crosshair_card, crosshair_layout = SettingsCard.make(
             "准心快速回正",
-            "保留单独的快速回正开关，方便和持枪视角切换分开调试。",
+            "准心快速回正单独开关，开不开都不影响持枪视角设置。",
         )
         self.crosshair_reset_checkbox = QCheckBox("启用准心快速回正")
         self.crosshair_reset_checkbox.setToolTip("开火时准心跟随后坐力，松开后瞬间回正（无曲线动画）")
@@ -224,7 +223,7 @@ class ViewmodelPage(QWidget):
 
         viewmodel_card, viewmodel_layout = SettingsCard.make(
             "持枪切换",
-            "循环按键和自动切换参数集中在一起，改热键时不用来回找。",
+            "按一个键在几组视角预设之间循环，也可以让它按固定间隔自动切。",
         )
         self.viewmodel_summary_label = QLabel("")
         self.viewmodel_summary_label.setObjectName("hintLabel")
@@ -274,7 +273,10 @@ class ViewmodelPage(QWidget):
         self.cfg_summary_label.setWordWrap(True)
         cfg_layout.addWidget(self.cfg_summary_label)
 
-        save_btn = QPushButton("保存设置到CFG")
+        # ⚠ RN-078：这颗和底栏那颗是**同一个动作**，以前一个叫「保存设置到CFG」、
+        # 一个叫「保存到CFG」。两个名字会让人以为是两件事（外审报「同一操作出现两次」）。
+        # 名字统一，位置先都留着 —— 底栏那颗在滚到页面下方时是唯一还看得见的。
+        save_btn = QPushButton("保存到CFG")
         # UP-070: 此前这颗按钮的"主操作"外观是 ui_style_applier 按文案里有"保存"
         # 二字猜出来的——全站唯一还在吃那条猜测的按钮。猜测逻辑已删，这里显式声明。
         # UP-080: 用 style_as_primary_button 而不是裸 setObjectName ——
@@ -292,13 +294,39 @@ class ViewmodelPage(QWidget):
         left_column_layout.addWidget(cfg_card)
         left_column_layout.addStretch(1)
 
+        # ⚠ RN-083：右列以前**只有一张「持枪切换」卡**，自 y≈450 起整列空白，
+        # 而第三张卡「视角预设」被推到 `scroll_layout` 里、落在折叠线以下。
+        # 后果是这一页最核心的东西（5 组预设、每组的 XYZ/FOV 编辑入口）首屏看不见 ——
+        # 外审 3/3 判「高」，原话是「作为『局内视角设置』页却完全找不到
+        # FOV/XYZ 参数与 5 组预设的编辑入口」。
+        # 改成右列容器：持枪切换在上、视角预设在下，正好填掉那半屏空白。
+        right_column = QWidget()
+        right_column_layout = QVBoxLayout(right_column)
+        right_column_layout.setContentsMargins(0, 0, 0, 0)
+        right_column_layout.setSpacing(10)
+        right_column_layout.addWidget(viewmodel_card)
+        self._viewmodel_right_column_layout = right_column_layout
+
         tools_row.addWidget(left_column, 4, Qt.AlignTop)
-        tools_row.addWidget(viewmodel_card, 6, Qt.AlignTop)
+        tools_row.addWidget(right_column, 6, Qt.AlignTop)
         scroll_layout.addLayout(tools_row)
+
+        # RN-069：Tab 顺序曾跟屏幕顺序对不上 —— 走到第 5 个焦点时跳到左下角那颗
+        # 「保存到CFG」（y=487），再折回右上角的「循环按键」输入框（y=229）。
+        # ⭐ 那条是 RN-059 解除盲区后**焦点巡检第一次覆盖到这一页**当场报出来的：
+        #    `flash` / `viewmodel` 此前被 `SPAWNS_SUBPROCESS` 那份第 8 处私有名单
+        #    挡在焦点巡检之外（而探针实测两页构造时子进程调用是 0 次）。
+        #
+        # ⚠ 原来这里有一行 `setTabOrder(auto_switch_interval_input, save_btn)`，
+        # **RN-083 把「视角预设」挪进右列之后它反而成了错的**：焦点巡检当场报
+        # 「需挪动 1 个」，去掉它就是 0 个。因为那一行是给旧版面（右列只有一张卡）
+        # 打的补丁，新版面里屏幕顺序本身已经对了，补丁在跟布局对着干。
+        # ⇒ 教训：**显式 setTabOrder 是对某个具体版面的断言，改版面就要重新验它。**
+        # 现在这一页的 Tab 顺序由布局天然给出，不再依赖任何补丁（焦点巡检 43 个控件 0 挪动）。
 
         presets_frame, presets_layout = SettingsCard.make(
             "视角预设",
-            "5 组常用持枪参数继续保留完整编辑能力，滚动区域更紧凑一些。",
+            "5 组持枪视角参数，每组都能单独改并保存下来。",
         )
         self.presets_summary_label = QLabel("")
         self.presets_summary_label.setObjectName("hintLabel")
@@ -318,7 +346,9 @@ class ViewmodelPage(QWidget):
         presets_scroll_layout.addStretch()
         presets_scroll.setWidget(presets_scroll_content)
         presets_layout.addWidget(presets_scroll)
-        scroll_layout.addWidget(presets_frame)
+        # RN-083：进右列那半屏空白，不再挂在两列下面（首屏看不见）。
+        self._viewmodel_right_column_layout.addWidget(presets_frame)
+        self._viewmodel_right_column_layout.addStretch(1)
 
         scroll_layout.addStretch()
         scroll_area.setWidget(scroll_widget)
@@ -483,8 +513,6 @@ class ViewmodelPage(QWidget):
             f"预设数量：{preset_count} 组"
         )
         render_badges(self.status_badge_label, badges, detail_tooltip=detail_text)
-        self.summary_label.setText(detail_text)
-        self.summary_label.setToolTip(detail_text)
         self.status_card.setToolTip(detail_text)
         self._sync_panel_summaries()
         self._sync_action_bar()

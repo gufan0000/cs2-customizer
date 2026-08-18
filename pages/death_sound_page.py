@@ -36,6 +36,10 @@ from pages.audio_status_badge import (
     create_badge_label,
     is_style_enabled,
     render_badges,
+    resolve_style,
+    resource_badge,
+    resource_hint,
+    stale_style_name,
 )
 from ui_help_panel import PAGE_HELP_TEXTS, install_help_panel
 from widgets.page_header import PageHeader
@@ -93,6 +97,48 @@ class DeathSoundPage(QWidget):
                 return str(value)
         return str(getattr(config, "death_sound_style", "0") or "0")
 
+    # ------------------------------- 「配了、但那个风格已经不在了」（RN-033）
+    #
+    # 本页原先有**三个各说各话的出口**（2026-08-17 探针实测，配置里写着
+    # 一个已被删除的风格名）：
+    #
+    #   徽章        「开关 · 已启用」「样式 · 已删除的风格」
+    #   下拉框      「不启用」                （`_reset_style_items` 找不到就退回第 0 项）
+    #   选择卡      「当前已选择"已删除的风格"，**切换后可以直接点击测试**确认实际听感」
+    #   点「测试」  「还没选风格」            （`_current_style_value()` 读的是下拉框）
+    #
+    # ⇒ 页面明确指示用户去点测试，测试回答"你还没选"。**这是个闭环矛盾**，
+    #   而且这一页比 kill_sound 那次更严重：那边只是两个数对不上，这边是
+    #   一句明确的操作指引把用户送进一个必然失败的动作。
+    #
+    # 单一真相源：全页只准通过 `_effective_style_value()` 问"现在到底生效什么"。
+    # （武器网格那四页的同款实现在 `pages/sound_page_base.py`；这一页数据模型不同
+    #  ——只有一个全局风格、没有 per-weapon 字典——所以不并进那个 mixin。）
+
+    def _configured_style_value(self) -> str:
+        """配置里写着的原始值（可能指向一个已经不存在的风格）。"""
+        return str(getattr(config, "death_sound_style", "0") or "0")
+
+    def _effective_style_value(self) -> str:
+        """**当前真正生效**的风格；配了但风格已经不在了就返回 `"0"`。
+
+        RN-046：解析这一步本身走 `resolve_style()`（全仓唯一一份）。
+        上一轮这里是本页自己写的三行 —— 逻辑没错，但它是**第二份副本**，
+        而 gun_sound / special_sound 又各要一份 ⇒ 四份。
+        RN-002 / RN-031 / RN-032 已经证过三次：**只要还有第二份，
+        修好一份就等于没修**，而且漂的时候不报错。
+        """
+        return resolve_style(self._configured_style_value(), self.death_styles or [])
+
+    def _stale_style_name(self) -> str:
+        """配过、但那个风格已经不在了 —— 返回它的名字；否则空串。
+
+        这个名字是唯一可行动的信息（"你原来选的是它，它没了，重新选一个"），
+        而它以前在界面上**根本没出现过**：徽章把它当成生效值显示，
+        下拉框把它当成不存在直接忽略，两边都没说"它没了"。
+        """
+        return stale_style_name(self._configured_style_value(), self.death_styles or [])
+
     def _style_preview_names(self, max_items: int = 4) -> list[str]:
         return list(getattr(self, "death_styles", [])[:max_items])
 
@@ -117,7 +163,10 @@ class DeathSoundPage(QWidget):
         # 这次重构不动一个像素，四种并存的字号是另一回事（UP-092）。
         header = PageHeader(
             "被击杀音效设置",
-            description="自己被击杀时播放一段音效。先去「基础设置」打开总开关，选一套风格，点「测试」试听。",
+            # RN-034：原文无条件写「先去「基础设置」打开总开关」，而徽章上同时
+            # 写着「开关 · 已启用」—— 自相矛盾。改成陈述总开关在哪，
+            # "现在到底开没开"交给徽章和底部操作条按状态说。
+            description="自己被击杀时播放一段音效。选一套风格，点「测试」试听；总开关在「基础设置」里。",
             title_font_size=None,
             spacing=12,
         )
@@ -148,9 +197,14 @@ class DeathSoundPage(QWidget):
         status_card_layout.addWidget(self.summary_label)
         layout.addWidget(self.status_card)
 
+        # RN-036：卡片说明原文是**开发者的设计自白**，不是给玩家的话 ——
+        # 「让这一页更像一块轻量工具面板」「把启用状态、候选数量…摆出来，
+        # 确认时不用来回切」讲的都是版面决策。玩家读完既不知道这功能干什么，
+        # 也不知道第一步该做什么。外审 S4 两发独立点出「充斥设计自白，
+        # 产生信息噪音且缺乏有效操作指引」。与 kill_sound 的 PAGE_LEAD 同病。
         selection_card, selection_layout = SettingsCard.make(
-            "样式选择",
-            "保留最常用的样式切换和试听，让这一页更像一块轻量工具面板。",
+            "风格选择",
+            "选一个风格，点「测试」就能听到实际效果。",
         )
         selection_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
 
@@ -184,7 +238,7 @@ class DeathSoundPage(QWidget):
 
         overview_card, overview_layout = SettingsCard.make(
             "当前方案概况",
-            "把启用状态、候选数量和当前扫描到的风格直接摆出来，确认时不用来回切。"
+            "这里是当前生效的风格、总开关状态，以及扫描到的可选风格。"
         )
         overview_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
 
@@ -210,7 +264,7 @@ class DeathSoundPage(QWidget):
 
         resource_card, resource_layout = SettingsCard.make(
             "资源匹配策略",
-            "程序会按样式名在 death 目录中匹配同名音频，新增素材后直接刷新风格列表即可。"
+            "程序会按风格名在 death 目录中匹配同名音频，新增素材后直接刷新风格列表即可。"
         )
         resource_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
 
@@ -339,8 +393,15 @@ class DeathSoundPage(QWidget):
     def _test_sound(self):
         style_value = self._current_style_value()
         if not is_style_enabled(style_value):
-            # UP-037: 原来只写日志,用户看到的是"点了没反应"
-            report_preview_failure(self, PreviewFailure.NO_STYLE)
+            # RN-033：这里原来一律报「还没选风格」，可**用户明明选过** ——
+            # 只是他选的那个风格已经被改名/删掉，下拉框于是退回了「不启用」。
+            # 说「你还没选」是错的，而且跟同一屏上「当前已选择"X"」直接打架。
+            stale_style = self._stale_style_name()
+            if stale_style:
+                report_preview_failure(self, PreviewFailure.STALE_STYLE, stale_style)
+            else:
+                # UP-037: 原来只写日志,用户看到的是"点了没反应"
+                report_preview_failure(self, PreviewFailure.NO_STYLE)
             return
 
         sound_key = f"death-{style_value}"
@@ -370,40 +431,43 @@ class DeathSoundPage(QWidget):
 
     def _refresh_status_badge(self, *_args):
         enabled = bool(getattr(config, "death_sound_enabled", False))
-        current_style = str(getattr(config, "death_sound_style", "0") or "0")
+        # RN-033：这里原来直接读配置的原始值当"当前样式"，而下拉框读的是解析后的值。
+        # 统一到用户眼睛看到的那一边 —— 解析不出来就是"没生效"，别再显示成生效。
+        current_style = self._effective_style_value()
         style_enabled = is_style_enabled(current_style)
+        stale_style = self._stale_style_name()
         available_count = len(getattr(self, "death_styles", []))
 
         health = collect_category_health(("death",))
         detail_tooltip = build_health_detail_tooltip(health)
-        health_level = "success"
-        if not health["ok"]:
-            health_level = "danger"
-        elif health["empty"]:
-            health_level = "warn"
 
+        if stale_style:
+            # ⚠ 文案必须短到能单行放下（kill_sound 那轮把徽章撑成两行、
+            # 比同排另外三颗高一截，而排版审计三条判据一条都没看见）。
+            style_badge = ("warn", "风格 · 已失效")
+        else:
+            style_badge = (
+                "success" if style_enabled else "info",
+                f"风格 · {self._compact_text(current_style if style_enabled else '未选择')}",
+            )
         badges = [
             ("success" if enabled else "warn", f"开关 · {'已启用' if enabled else '未启用'}"),
-            (
-                "success" if style_enabled else "info",
-                f"样式 · {self._compact_text(current_style if style_enabled else '未选择')}",
-            ),
+            style_badge,
             ("success" if available_count else "info", f"候选 · {available_count}"),
-            (
-                health_level,
-                "资源 · 正常" if health["ok"] else f"资源 · 异常 {health['issue_count']}",
-            ),
+            # RN-035：分级收进 `resource_badge()` 一份 —— 七个音效页原先各抄一遍，
+            # 七份都把"素材目录还没建"（全新安装的样子）报成**红色异常**。
+            resource_badge(health),
         ]
 
         detail_lines = [
             f"总开关：{'已启用' if enabled else '已关闭'}",
-            f"当前样式：{current_style if style_enabled else self.DISABLED_STYLE_TEXT}",
-            f"已扫描样式：{available_count}",
-            "测试策略：按样式名匹配 death 目录中的同名音频文件",
+            f"当前风格：{current_style if style_enabled else self.DISABLED_STYLE_TEXT}",
+            f"已扫描风格：{available_count}",
+            "测试策略：按风格名匹配 death 目录中的同名音频文件",
         ]
         preview_names = self._style_preview_names()
         if preview_names:
-            detail_lines.append(f"样式预览：{', '.join(preview_names)}")
+            detail_lines.append(f"风格预览：{', '.join(preview_names)}")
         if detail_tooltip:
             detail_lines.append(detail_tooltip)
 
@@ -412,27 +476,37 @@ class DeathSoundPage(QWidget):
         self.summary_label.setText(summary_text)
         self.summary_label.setToolTip(summary_text)
         self.status_card.setToolTip(summary_text)
-        self._refresh_style_overview(enabled, style_enabled, current_style, available_count)
+        self._refresh_style_overview(enabled, style_enabled, current_style, available_count,
+                                     stale_style=stale_style, health=health)
         if hasattr(self, "action_bar"):
             if style_enabled:
                 action_message = (
-                    f"当前样式：{current_style} · 已扫描 {available_count} 个候选；"
+                    f"当前风格：{current_style} · 已扫描 {available_count} 个候选；"
                     "新增素材后可直接刷新风格列表。"
                 )
             else:
                 action_message = (
-                    f"当前未启用样式 · 已扫描 {available_count} 个候选；"
+                    f"当前未启用风格 · 已扫描 {available_count} 个候选；"
                     "可先打开资源目录补充音频，再回来刷新。"
                 )
             self.action_bar.set_message(action_message)
 
-    def _refresh_style_overview(self, enabled: bool, style_enabled: bool, current_style: str, available_count: int):
+    def _refresh_style_overview(self, enabled: bool, style_enabled: bool, current_style: str,
+                                available_count: int, stale_style: str = "",
+                                health: dict | None = None):
         current_name = current_style if style_enabled else self.DISABLED_STYLE_TEXT
         preview_names = self._style_preview_names(max_items=4)
         preview_text = " / ".join(preview_names) if preview_names else "还没有扫描到可用风格，可先补充素材后再刷新。"
 
         if hasattr(self, "selection_state_label"):
-            if style_enabled:
+            if stale_style:
+                # RN-033：这一行原先在失效时说的是「当前已选择"<那个已经没了的风格>"，
+                # 切换后可以直接点击测试确认实际听感」—— 把用户直接送进一个必然失败的动作。
+                self.selection_state_label.setText(
+                    f"原来选的“{self._compact_text(stale_style)}”已经不在了"
+                    "（被改名或删除），上面显示成「不启用」，重新选一个即可。"
+                )
+            elif style_enabled:
                 self.selection_state_label.setText(
                     f"当前已选择“{current_name}”，切换后可以直接点击测试确认实际听感。"
                 )
@@ -442,16 +516,24 @@ class DeathSoundPage(QWidget):
                 )
 
         if hasattr(self, "style_overview_name_label"):
+            # ⚠ 这里是概况卡的**大字标题**。原先直接摆配置里的原始值，
+            # 于是只要配置里那个风格已经不在（实测我的真实配置就是
+            # `death_sound_style="2"` + 候选 0 个），标题就是个光秃秃的
+            # 「2」—— 外审原话「大号数字"2"含义不明」。现在摆解析后的值。
             self.style_overview_name_label.setText(current_name)
         if hasattr(self, "style_overview_meta_label"):
             self.style_overview_meta_label.setText(
                 f"总开关 {'开启' if enabled else '关闭'} · 候选 {available_count} 个"
             )
         if hasattr(self, "style_overview_hint_label"):
-            self.style_overview_hint_label.setText(f"当前可见风格：{preview_text}")
+            # RN-035：资源状态那句人话要落在**可见**的行上
+            # （`summary_label` 是 RN-009 那个建出来就 hide 的死控件）。
+            hint = resource_hint(health or {})
+            self.style_overview_hint_label.setText(
+                hint if hint else f"当前可见风格：{preview_text}")
         if hasattr(self, "resource_summary_label"):
             self.resource_summary_label.setText(
-                "匹配规则：样式名 = 文件名主干；支持 mp3 / wav / ogg。"
+                "匹配规则：风格名 = 文件名主干；支持 mp3 / wav / ogg。"
                 f" 当前目录已扫描 {available_count} 个候选。"
             )
 

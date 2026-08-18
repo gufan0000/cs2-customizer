@@ -22,7 +22,8 @@ import json
 import os
 import re
 import statistics
-from dataclasses import dataclass, field, asdict
+import sys                      # RN-071：下面 stdout.reconfigure 要它，缺了会静默失效
+from dataclasses import dataclass, field
 from pathlib import Path
 
 # ==================== 日志行匹配规则 ====================
@@ -162,6 +163,10 @@ def parse_log(path: Path) -> list:
 
 
 # Windows 控制台默认 GBK，编码不了 ✅/❌ 之类的符号会直接抛 UnicodeEncodeError。
+# ⚠ RN-071：这一段曾经**整块恒失效** —— 本文件没有 `import sys`，抛的是 NameError，
+# 被下面这个 `except Exception: pass` 一口吞掉。29 个用同一写法的脚本里只有它缺。
+# 这就是「兜底把自己的失败也兜掉了」：本文件打 ✅×5 / ❌×3 / ⚠×1，
+# GBK 控制台上本该必崩，而没人看见过它崩，是因为大家都在 UTF-8 终端里跑。
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
@@ -435,9 +440,9 @@ def main() -> int:
         if cross_schema:
             print(f"  ⚠ 口径版本不同（基线 v{old_ver} → 当前 v{new_ver}），"
                   f"卡顿类指标不可直接比大小，只并排列数、不判改善/劣化。")
-            print(f"    原因：v2 起卡顿探测器提前到 QApplication 之后（UP-002），"
-                  f"每次启动会多出一条约 2000ms 的主窗构建停顿——")
-            print(f"    那不是劣化，是原先测不到的那段现在测到了。请以 v2 的首个快照为新起点。")
+            print("    原因：v2 起卡顿探测器提前到 QApplication 之后（UP-002），"
+                  "每次启动会多出一条约 2000ms 的主窗构建停顿——")
+            print("    那不是劣化，是原先测不到的那段现在测到了。请以 v2 的首个快照为新起点。")
             print()
 
         def _cmp(label, o, n, unit="", jank_related=False, fmt="{:.0f}"):

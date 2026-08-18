@@ -128,10 +128,14 @@ def test_skip_pages_not_in_silent_preload_pool():
     import re
     from pathlib import Path
 
+    from core.page_traits import DEVICE_OWNING_PAGES
+
     src = Path(__file__).resolve().parent.parent / "main_widget.py"
     text = src.read_text(encoding="utf-8")
     m = re.search(r"PRELOAD_POOL\s*=\s*\[(.*?)\]", text, re.S)
     assert m, "应当有 PRELOAD_POOL"
     pool = m.group(1)
-    for unsafe in ("viewmodel", "voice_output", "music", "magnifier", "flash", "kill_icon"):
+    # 名单取产品那一份，别在判据里另抄：抄的那份不会跟着产品变，
+    # 于是产品新增一个设备页时，这条判据会以"已覆盖"的名义放它进预载池。
+    for unsafe in sorted(DEVICE_OWNING_PAGES):
         assert f"'{unsafe}'" not in pool, f"{unsafe} 不该进静默预载池"

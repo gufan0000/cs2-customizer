@@ -149,7 +149,7 @@ def main() -> int:
     }
     json_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    print(f"\n[tests] === SUMMARY ===")
+    print("\n[tests] === SUMMARY ===")
     print(f"  total time: {overall_duration:.1f}s")
     print(f"  passed:     {total_passed}")
     print(f"  failed:     {total_failed}")

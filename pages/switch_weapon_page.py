@@ -21,8 +21,9 @@ from widgets.preview_feedback import PreviewFailure, report_preview_failure
 from pages.audio_status_badge import (
     build_health_detail_tooltip,
     collect_category_health,
-    count_enabled_styles,
     render_badges,
+    resource_badge,
+    resource_hint,
 )
 from pages.sound_page_base import SoundPageBase
 from widgets.weapon_row_widget import WeaponRowWidget
@@ -164,27 +165,13 @@ class SwitchWeaponPage(SoundPageBase, QWidget):
         name, weapons = self._tab_groups[index]
         return name, tuple(weapons)
 
-    def _configured_count_for_weapons(self, weapons: tuple[str, ...] | list[str]) -> int:
-        return sum(
-            1
-            for weapon in weapons
-            if str((config.weapon_switch_sounds or {}).get(weapon, "0")).strip() not in {"", "0"}
-        )
-
-    def _configured_preview_names(self, max_items: int = 4) -> list[str]:
-        names: list[str] = []
-        configured = getattr(config, "weapon_switch_sounds", {}) or {}
-        for weapons in self.CATEGORIES.values():
-            for weapon in weapons:
-                if str(configured.get(weapon, "0")).strip() not in {"", "0"}:
-                    names.append(self.WEAPON_NAMES.get(weapon, weapon))
-                if len(names) >= max_items:
-                    return names
-        return names
-
     # ------------------------------------------------ R9-D 基类钩子
     PAGE_TITLE = "切枪音效设置"
-    PAGE_LEAD = "切换武器时播放你自己的音效。先去「基础设置」打开总开关，再逐把枪选风格，点「测试」试听。"
+    # RN-034：原文无条件写「先去「基础设置」打开总开关」，而徽章上同时
+    # 明明写着「开关 · 已启用」—— 自相矛盾，外审六发里四发独立点出这一条。
+    # 改成陈述总开关在哪，不再命令用户去做一件可能已经做完的事；
+    # "现在到底开没开"由徽章和底部操作条按状态说（那两处本来就是条件文案）。
+    PAGE_LEAD = "切换武器时播放你自己的音效。逐把枪选风格，点「测试」试听；总开关在「基础设置」里。"
     HELP_KEY = "switch_weapon"
     STYLE_TOOLS_MENU = False
 
@@ -205,7 +192,13 @@ class SwitchWeaponPage(SoundPageBase, QWidget):
         return all_options
 
     def _test_weapon(self, weapon: str, level=None) -> None:
-        self._test_switch_sound(weapon) if level is None else self._test_switch_sound(weapon, level)
+        # RN-037：原来写成 `... if level is None else self._test_switch_sound(weapon, level)`，
+        # 而 `_test_switch_sound()` **只接一个参数** —— 那个分支一旦走到必报 TypeError。
+        # 它没爆过，纯粹因为本页 `TEST_LEVELS is None` ⇒ `WeaponRowWidget` 不建档位菜单、
+        # `testLevelClicked` 永不发射。是死代码，但是**写错的**死代码：哪天给本页
+        # 加上档位试听，第一次点就崩。连杀档位是击杀音效独有的，这里直接忽略 level。
+        del level
+        self._test_switch_sound(weapon)
 
 
     def _scan_switch_weapon_styles(self):
@@ -298,9 +291,17 @@ class SwitchWeaponPage(SoundPageBase, QWidget):
         self.logger.info(f"武器 {weapon} 切枪音效更新: {old_style} -> {normalized}")
 
     def _test_switch_sound(self, weapon: str):
-        style_value = (config.weapon_switch_sounds or {}).get(weapon, "0")
-        if not style_value or style_value == "0":
+        configured = self._configured_style(weapon)
+        if not self._is_style_enabled(configured):
             report_preview_failure(self, PreviewFailure.NO_STYLE, weapon)
+            return
+        # RN-033：原来直接拿配置的原始值去找目录，于是**那一行明明显示「不启用」**，
+        # 点「测试」却报「文件不存在」—— 用户会去查音频设备/素材，而真正的原因是
+        # 他配的那个风格已经被改名或删掉了。这里先问解析后的值，把话说准。
+        style_value = self._resolved_style(weapon)
+        if not self._is_style_enabled(style_value):
+            report_preview_failure(self, PreviewFailure.STALE_STYLE,
+                                   f"{weapon} · {configured}")
             return
 
         sound_key = f"switch-{weapon}-{style_value}"
@@ -333,29 +334,30 @@ class SwitchWeaponPage(SoundPageBase, QWidget):
 
     def _refresh_status_badge(self, *_args):
         enabled = bool(getattr(config, "switch_weapon_sound_enabled", False))
-        selected_count = count_enabled_styles((config.weapon_switch_sounds or {}).values())
+        # RN-033：这三个数原来各走各的口径 —— `selected_count` 数**配置里的原始值**、
+        # `_configured_count_for_weapons` 也数原始值，而下面每一行显示的是
+        # `_get_style_display_text()`（解析不出来就显示「不启用」）。
+        # 于是风格目录一动，顶部写着「已配置 · 3」而三行全是「不启用」，且**无人报错**。
+        # 现在全部走基类的 `_resolved_style()` 这一个真相源，只解析一次。
+        resolved = self._resolved_styles()
+        selected_count = self._configured_weapon_count(resolved=resolved)
+        stale_count = self._stale_weapon_count(resolved)
         current_tab_name, current_weapons = self._get_current_tab_info()
-        current_count = self._configured_count_for_weapons(current_weapons)
+        current_count = self._configured_weapon_count(list(current_weapons), resolved=resolved)
 
         health = collect_category_health(("switch_weapons",))
         detail_tooltip = build_health_detail_tooltip(health)
-        health_level = "success"
-        if not health["ok"]:
-            health_level = "danger"
-        elif health["empty"]:
-            health_level = "warn"
 
         badges = [
             ("success" if enabled else "warn", f"开关 · {'已启用' if enabled else '未启用'}"),
-            ("success" if selected_count else "info", f"已配置 · {selected_count}"),
+            self._configured_badge(selected_count, stale_count),
             (
                 "success" if current_count else "info",
                 f"分类 · {self._compact_text(current_tab_name)} {current_count}/{len(current_weapons)}",
             ),
-            (
-                health_level,
-                "资源 · 正常" if health["ok"] else f"资源 · 异常 {health['issue_count']}",
-            ),
+            # RN-035：分级收进 `resource_badge()` 一份 —— 原先七个音效页各抄一遍，
+            # 七份都把"素材目录还没建"（全新安装的样子）报成**红色异常**。
+            resource_badge(health),
         ]
 
         detail_lines = [
@@ -365,7 +367,7 @@ class SwitchWeaponPage(SoundPageBase, QWidget):
             f"全部武器已配置：{selected_count}/{sum(len(weapons) for weapons in self.CATEGORIES.values())}",
             "测试策略：按需加载当前武器目录下的首个可用音频文件",
         ]
-        preview_names = self._configured_preview_names()
+        preview_names = self._configured_weapon_names(resolved=resolved)
         if preview_names:
             detail_lines.append(f"已配置示例：{', '.join(preview_names)}")
         if detail_tooltip:
@@ -376,12 +378,20 @@ class SwitchWeaponPage(SoundPageBase, QWidget):
         self.summary_label.setText(summary_text)
         self.summary_label.setToolTip(summary_text)
         self.status_card.setToolTip(summary_text)
-        preview_names = self._configured_preview_names()
+        # RN-038：这里原本又算了一遍 `_configured_preview_names()`，而上面十行之内
+        # 没有任何东西改变过它的输入 —— 纯重复计算，与 kill_voice 的 RN-014 同形。
         self.category_overview_title_label.setText(f"当前分类 · {current_tab_name}")
         self.category_overview_meta_label.setText(
             f"本分类已配置 {current_count}/{len(current_weapons)} · 全局已配置 {selected_count}/{sum(len(weapons) for weapons in self.CATEGORIES.values())}"
         )
-        if preview_names:
+        # RN-033/RN-035：这一行是**屏幕上唯一说得清"出了什么事、该怎么办"的地方**
+        # （`summary_label` 是 RN-009 那个建出来就 hide 的死控件，写进去等于没写）。
+        # 优先级：失效项（可行动）> 资源状态（新用户第一次来就该看到的那句）> 已配置示例。
+        if stale_count:
+            self.category_overview_hint_label.setText(self._stale_style_hint(stale_count))
+        elif resource_hint(health):
+            self.category_overview_hint_label.setText(resource_hint(health))
+        elif preview_names:
             self.category_overview_hint_label.setText(
                 f"已配置示例：{', '.join(preview_names)} · 测试会按需加载首个可用音频文件。"
             )

@@ -138,7 +138,7 @@ class AudioImportWizardPage(QWidget):
         # 这次重构不动一个像素，四种并存的字号是另一回事（UP-092）。
         header = PageHeader(
             "资源导入向导",
-            description="这里把外部素材扫描、预演和导入收在一起，适合先看识别结果，再决定要不要真正写入资源目录。",
+            description="先扫描外部素材、看清识别成了什么，确认无误再写入资源目录 —— 确认之前不动你现有的音效库。",
             title_font_size=None,
             spacing=12,
         )

@@ -11,7 +11,7 @@ CS2 Customizer — GSI 全对局信号模拟器 (full-match simulation harness)
   LD_LIBRARY_PATH=~/.local/extralib xvfb-run -a python3 scripts/gsi_full_sim.py
 """
 from __future__ import annotations
-import os, sys, time, ctypes, types, traceback
+import os, sys, ctypes, types
 from unittest.mock import MagicMock
 
 # ---------------- 沙盒垫片 (Windows-only / 系统库缺失) ----------------

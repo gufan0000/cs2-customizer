@@ -59,17 +59,33 @@ def _read_from_disk() -> Dict[str, Dict]:
         return {}
 
 
-def _disk_mtime() -> float:
+def _disk_mtime():
+    """文件的"版本戳"：**纳秒时间戳 + 字节数**，不是光看 mtime。
+
+    ⚠ 只看 `getmtime()` 会漏掉"同一个时间戳刻度内的两次写入"。
+    2026-08-17 CI 实测逮到：`reset()` 写下 `{}`（2 字节）之后，紧接着有人
+    把新内容写进同一个文件——两次写落在同一刻度里，于是 `_load()` 认为
+    "文件没变"，**返回了缓存里那份空的**。
+    表现是统计凭空清零；在判据里表现为 `top_pages()` 返空 → IndexError。
+    本机复现不出来（磁盘慢一点就错开了），只有快机器上才发作。
+
+    真实后果不只是测试：用户「重置所有设置」之后马上做配置恢复/快照回滚，
+    恢复进来的统计会被这层缓存挡在外面，看起来就是"恢复没生效"。
+
+    加上字节数就够了——内容变了而长度恰好一样、还落在同一纳秒刻度里，
+    这种巧合不必再防（真要防就得算哈希，那反而把省下的 JSON 解析成本又付回去）。
+    """
     try:
-        return os.path.getmtime(_store_path())
+        st = os.stat(_store_path())
+        return (st.st_mtime_ns, st.st_size)
     except Exception:
-        return -1.0
+        return (-1, -1)
 
 
 def _load() -> Dict[str, Dict]:
     """取统计数据（调用方必须已持有 _lock）。
 
-    缓存 + mtime 校验:省掉每次切页的 JSON 解析,但文件被外部改动(测试夹具、
+    缓存 + 版本戳校验:省掉每次切页的 JSON 解析,但文件被外部改动(测试夹具、
     手工编辑、配置恢复)时仍能读到新内容——语义与改造前一致。
     一次 stat() 的成本相对 JSON 解析可忽略。
     """

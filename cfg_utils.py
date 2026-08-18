@@ -2,6 +2,8 @@
 import os
 import platform
 import re
+
+from core import crosshair_reset
 from core.utils.logger import get_logger
 
 logger = get_logger("CfgUtils")
@@ -288,8 +290,84 @@ def setup_autoexec(csgo_dir):
             with open(autoexec_path, "w", encoding="utf-8") as f:
                 f.write(exec_command + "\n")
             logger.info(f"Created autoexec.cfg and added '{exec_command}'")
+
+        # ⚠ 2026-08-18：**排在后面的同名 alias 会把我们的整段覆盖掉。**
+        # 用户实录：`exec cs2customizer.cfg`（开源版）排在我们后面，
+        # 用一模一样的 `+quickrepos_attack` 覆盖了我们的准心回正，
+        # 而它全文没有 `cl_crosshair_recoil` ⇒ 准星跟随静默失效、零报错。
+        # alias 名不能改（存量用户的 config.cfg 里存着指向它的 bind，
+        # 改名 = 开火键变死键，见 core/crosshair_reset 的模块说明），
+        # 所以只能保证**我们最后 exec**，并且把仍然存在的冲突说出来。
+        ensure_cs2customizer_exec_is_last(csgo_dir)
     except Exception as e:
         logger.error(f"Error handling autoexec.cfg: {e}")
+
+
+def detect_alias_conflicts(csgo_dir):
+    """列出排在我们后面、且重定义了我们 alias 的 cfg。
+
+    返回 `[{"cfg": 名字, "aliases": [...]}]`；空列表 = 没人抢。
+    **只读**，不改任何文件。
+    """
+    cfg_dir = os.path.join(csgo_dir or "", "game", "csgo", "cfg")
+    autoexec_path = os.path.join(cfg_dir, "autoexec.cfg")
+    if not os.path.exists(autoexec_path):
+        return []
+
+    def _read(name):
+        path = os.path.join(cfg_dir, name if name.lower().endswith(".cfg") else name + ".cfg")
+        if not os.path.exists(path):
+            return None
+        try:
+            with open(path, "r", encoding="utf-8", errors="ignore") as fh:
+                return fh.read()
+        except OSError:
+            return None
+
+    try:
+        with open(autoexec_path, "r", encoding="utf-8", errors="ignore") as fh:
+            autoexec_text = fh.read()
+    except OSError:
+        return []
+    return crosshair_reset.find_alias_overriders(autoexec_text, _read)
+
+
+def ensure_cs2customizer_exec_is_last(csgo_dir):
+    """把 `exec cs2customizer.cfg` 挪到 autoexec 的最后，并把残余冲突记进日志。
+
+    返回 True 表示确实改写了 autoexec。已经在最后就不动文件
+    —— **别每次启动都重写用户自己的文件**。
+    """
+    autoexec_path = os.path.join(csgo_dir or "", "game", "csgo", "cfg", "autoexec.cfg")
+    if not os.path.exists(autoexec_path):
+        return False
+    try:
+        with open(autoexec_path, "r", encoding="utf-8", errors="ignore") as fh:
+            original = fh.read()
+    except OSError as exc:
+        logger.error(f"读 autoexec.cfg 失败: {exc}")
+        return False
+
+    rewritten = crosshair_reset.rewrite_autoexec_with_us_last(original)
+    moved = rewritten != original
+    if moved:
+        try:
+            with open(autoexec_path, "w", encoding="utf-8") as fh:
+                fh.write(rewritten)
+            logger.info("已把 'exec cs2customizer.cfg' 挪到 autoexec.cfg 末尾"
+                        "（同名 alias 后执行的生效，排在前面等于被后面的 cfg 覆盖）")
+        except OSError as exc:
+            logger.error(f"写 autoexec.cfg 失败: {exc}")
+            return False
+
+    # 挪到最后仍可能有人在**别处**抢（比如用户手工 exec）。剩下的说出来。
+    for hit in detect_alias_conflicts(csgo_dir):
+        logger.warning(
+            f"⚠ {hit['cfg']}.cfg 重定义了 {', '.join(hit['aliases'])} "
+            f"—— 它排在 cs2customizer.cfg 之后，准心快速回正/准星跟随会被它覆盖掉。"
+            f"请在 autoexec.cfg 里把 'exec {hit['cfg']}.cfg' 移到 'exec cs2customizer.cfg' 之前，"
+            f"或者删掉它。")
+    return moved
 
 
 def ensure_hud_cfg_exists(csgo_dir):

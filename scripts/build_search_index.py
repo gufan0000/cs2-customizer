@@ -25,7 +25,7 @@
 不是设计出来的：
 
 * **通道 A（离屏运行时）**：`WA_DontShowOnScreen` 真把页面建出来，遍历控件树。
-  盲区 = `layout_overflow_audit.UNSAFE_PAGES` 那 6 页。它们构造时会注册全局热键 /
+  盲区 = 曾经是 6 个设备页。RN-005/RN-059 之后已全部纳入（中和条件见 `scripts/_audit_neutralize.py`）。它们构造时会注册全局热键 /
   起音频设备 / spawn 子进程，在脚本里建它们等于真的占设备、真的打扰前台。
   **这份安全名单我不放宽**，宁可让通道 B 去补。
 
@@ -73,18 +73,18 @@ import json
 import os
 import re
 import sys
-import tempfile
 import threading
 from collections import defaultdict
 from pathlib import Path
 
 # 与 layout_overflow_audit 同款隔离：绝不碰用户真实配置/日志/游戏目录
 os.environ.setdefault("CS2C_SAFE_MODE_ACTIVE", "1")
-_tmp = Path(tempfile.gettempdir()) / "cs2customizer_search_index"
-(_tmp / "config").mkdir(parents=True, exist_ok=True)
-(_tmp / "logs").mkdir(parents=True, exist_ok=True)
-os.environ.setdefault("CS2C_CONFIG_DIR", str(_tmp / "config"))
-os.environ.setdefault("CS2C_LOG_DIR", str(_tmp / "logs"))
+# RN-032：配置目录走共享工装。这条最要紧 —— 索引是**要随发布包出厂**的生成物，
+# 页面控件文案会随配置变，拿开发机配置生成等于把个人状态烙进产品。
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _pristine_config import use_pristine_config_dir  # noqa: E402
+
+_tmp = use_pristine_config_dir("cs2customizer_search_index")
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -117,13 +117,16 @@ class EnvironmentUnavailable(RuntimeError):
     """
 
 
-# 与 layout_overflow_audit.UNSAFE_PAGES / bench_page_build.UNSAFE_PAGES 同一份名单。
-# 改这里请几处一起改。
-UNSAFE_PAGES = {"viewmodel", "magnifier", "flash", "voice_output", "kill_icon", "music"}
-# 能靠配置开关中和掉危险副作用的页（口径同 layout_overflow_audit.NEUTRALIZABLE）
-NEUTRALIZABLE = {
-    "magnifier": {"magnifier_enabled": False},
-}
+# 名单取产品那一份（唯一真相源），这里不另抄——抄出来的副本不会跟着产品变。
+# RN-005：中和表全仓唯一一份（这段以前在 5 支脚本里各写一遍，内容 1~3 项不等，
+# 后果是 flash / viewmodel / voice_output 三页被全部 5 支跳过 —— 零覆盖）。
+from _audit_neutralize import (  # noqa: E402
+    apply as neutralize_apply,
+    enable_audit_mode,
+    unsafe_pages,
+)
+
+enable_audit_mode()   # 必须在 import 产品模块之前
 
 # ---------------- 噪声过滤 ----------------
 
@@ -271,11 +274,8 @@ def harvest_runtime(include_unsafe: bool = False, verbose: bool = True):
 
     skipped = []
     if not include_unsafe:
-        for pid, overrides in NEUTRALIZABLE.items():
-            if pid in page_ids:
-                for attr, value in overrides.items():
-                    setattr(config, attr, value)
-        skipped = sorted(p for p in page_ids if p in UNSAFE_PAGES and p not in NEUTRALIZABLE)
+        neutralize_apply(config, page_ids)
+        skipped = sorted(p for p in page_ids if p in unsafe_pages())
         page_ids = [p for p in page_ids if p not in skipped]
 
     def card_title_of(widget, page):

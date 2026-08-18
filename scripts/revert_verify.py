@@ -21,16 +21,100 @@ kill_voice 的 TEST_LEVELS 漏写、压缩头部逐轮堆积、空行逐轮增�
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import re
+import shutil
+import signal
 import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+
+#: ⚠ **版本锚点必须推导，不许手写。**
+#: 2026-08-18 抬 2.2.3 → 2.2.4 时，失效体检一次报出 **4 条**断点锚点腐烂
+#: （filevers / ProductName / ProductVersion / README 标题），
+#: 全是同一个病根：**它们按定义就写着"当前版本号"，所以每次发版必然腐烂**。
+#: 拍出来的会腐烂，推导出来的不会 —— 同 RN-090 那条教训。
+def _current_version() -> str:
+    m = re.search(r'^VERSION\s*=\s*"([^"]+)"',
+                  (ROOT / "config.py").read_text(encoding="utf-8"), re.M)
+    if not m:
+        raise SystemExit("config.py 里找不到 VERSION —— 版本锚点无从推导")
+    return m.group(1)
+
+
+_VER = _current_version()
+_VER_TUPLE = "(" + ", ".join(_VER.split(".")) + ", 0)"
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 except Exception:
     pass
+
+#: RN-093：**改坏期间的原文落盘**。内存里的 `finally` 挡不住 SIGTERM ——
+#: `timeout 900 python scripts/revert_verify.py` 到点把进程杀掉时，
+#: 被改坏的产品文件就**原样留在工作区里**，而且不会有任何提示。
+#: 2026-08-18 实际发生：`gui_widget.py` 的 RN-060 断点（把
+#: `_snap_nav_scroll_to_item_boundary(...)` 换成 `pass`）被留在树上，
+#: 于是 ① 那条判据当场红，我差点把它当成真的回归去查；
+#: ② 下一轮回退验证的失效体检把这条断点报成"锚点出现 0 次"（连锁误诊）；
+#: ③ **最坏的情况是它被一起提交上去** —— 一次没跑成的自检把产品改坏了。
+SNAPSHOT_DIR = ROOT / ".revert_verify_snapshot"
+MANIFEST = SNAPSHOT_DIR / "manifest.json"
+
+
+def save_snapshot(snapshot: dict[Path, bytes]) -> None:
+    """把改坏之前的原文写到磁盘上，进程被杀也还能找回来。"""
+    shutil.rmtree(SNAPSHOT_DIR, ignore_errors=True)
+    SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
+    manifest = {}
+    for i, (path, data) in enumerate(sorted(snapshot.items(), key=lambda kv: str(kv[0]))):
+        bak = SNAPSHOT_DIR / f"{i:03d}.bak"
+        bak.write_bytes(data)
+        manifest[path.relative_to(ROOT).as_posix()] = bak.name
+    MANIFEST.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def restore_from_disk() -> list[str]:
+    """把上一轮没跑完留下的改坏文件还原，返回被还原的相对路径。"""
+    if not MANIFEST.exists():
+        return []
+    try:
+        manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return []
+    restored = []
+    for rel, bak_name in manifest.items():
+        path, bak = ROOT / rel, SNAPSHOT_DIR / bak_name
+        if not bak.exists() or not path.exists():
+            continue
+        data = bak.read_bytes()
+        if path.read_bytes() != data:
+            path.write_bytes(data)
+            restored.append(rel)
+    return restored
+
+
+def clear_snapshot() -> None:
+    shutil.rmtree(SNAPSHOT_DIR, ignore_errors=True)
+
+
+def _install_emergency_restore() -> None:
+    """被 Ctrl-C / `timeout` 杀掉时，先还原再死。"""
+
+    def _handler(signum, _frame):
+        restored = restore_from_disk()
+        clear_snapshot()
+        print(f"\n!! 收到信号 {signum}，已还原 {len(restored)} 个被改坏的文件后退出。",
+              flush=True)
+        os._exit(130)
+
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            signal.signal(sig, _handler)
+        except (ValueError, OSError):
+            pass            # 非主线程 / 平台不支持，忽略（磁盘快照仍然兜底）
 
 
 class Revert:
@@ -348,9 +432,10 @@ REVERTS = [
     Revert(
         "R11", "把 CI 里的紧凑档删掉",
         ".github/workflows/ci.yml",
-        "        run: python scripts/layout_overflow_audit.py --compact --themes dark,light"
-        " --scales 1.0,1.1,1.25 --require-fonts",
-        "        run: echo skip",
+        # ⚠ RN-092 把这一步改成了「跑完读裁定行」的两行写法，锚点跟着搬家。
+        "          python scripts/layout_overflow_audit.py --compact --themes dark,light"
+        " --scales 1.0,1.1,1.25 --require-fonts 2>&1 | Tee-Object -FilePath layout_compact.log",
+        "          echo skip",
         "tests/test_audit_coverage_r11.py::test_ci_runs_the_new_gates[--compact]",
         "UP-100：判据留着但没人跑，等于没有判据（R8a 的教训）",
     ),
@@ -861,7 +946,7 @@ REVERTS = [
     Revert(
         'VER', 'version_info.txt 的 filevers 忘了跟着抬',
         'version_info.txt',
-        'filevers=(2, 2, 3, 0)',
+        f'filevers={_VER_TUPLE}',
         'filevers=(2, 2, 1, 0)',
         'tests/test_version_consistency.py::test_version_info_tuples_match',
         'exe 文件属性里的版本号停在上一版，排障时对着用户截图会认错版本',
@@ -869,7 +954,7 @@ REVERTS = [
     Revert(
         'VER', 'version_info.txt 的 ProductName 忘了跟着抬',
         'version_info.txt',
-        "StringStruct(u'ProductName', u'CS2 Customizer 2.2.3')",
+        f"StringStruct(u'ProductName', u'CS2 Customizer {_VER}')",
         "StringStruct(u'ProductName', u'CS2 Customizer 2.2.1')",
         'tests/test_version_consistency.py::test_version_info_strings_match',
         '任务管理器/属性页显示的产品名还是旧版本号',
@@ -877,7 +962,7 @@ REVERTS = [
     Revert(
         'VER', '只漏了 ProductVersion 一个字段（考验"游离版本号"全文扫）',
         'version_info.txt',
-        "StringStruct(u'ProductVersion', u'2.2.3.0')",
+        f"StringStruct(u'ProductVersion', u'{_VER}.0')",
         "StringStruct(u'ProductVersion', u'2.2.1.0')",
         'tests/test_version_consistency.py::test_version_info_has_no_stray_version',
         '逐字段枚举的判据可能漏枚举某个字段；这条不枚举、直接全文扫，是兜底',
@@ -904,6 +989,9 @@ REVERTS = [
     Revert(
         'VER', 'README 首行标题被改成别的项目名',
         'README.md',
+        # ⚠ 这个锚点**每次发版都要跟着抬**（它按定义就写着当前版本号）。
+        # 2026-08-18 抬到 2.2.4 时 `--stale-only` 当场把它报出来了 —— 这正是
+        # 失效体检该干的活：断点腐烂在版本锚点上是必然事件，不是意外。
         '# CS2 Customizer',
         '# Some Other Project',
         'tests/test_version_consistency.py::test_readme_title_matches',
@@ -914,248 +1002,11 @@ REVERTS = [
         'CHANGELOG.md',
         # old 必须是**当前版本**的小节：把它改掉，判据才会发现"当前版本没有对应小节"。
         # 反过来写（改历史小节）在当前版本小节仍然存在时判据照样通过，断点会静默失效。
-        '## [2.2.3] - ',
-        '## [2.1.4] - ',
+        f'## [{_VER}]',
+        '## [0.0.0]',
         'tests/test_version_consistency.py::test_changelog_has_section_for_current_version',
-        '抬了版本号却忘了写 changelog，发布时没有可抄的内容（闭源版发 2.2.0/2.2.1 时踩过）',
+        '当前版本在更新日志里找不到对应小节，发布时没有可抄的内容',
     ),
-
-    # ==================================== BRAND：旧品牌不得回流（2026-08-12 建立）
-    # 开源改名那一轮动了 107 个文件 507 处。这类机械改名的失败方式不是"改错"而是"改漏"，
-    # 而漏掉运行时标识**不会让任何用例变红**：程序照跑，只是把数据写进了另一个产品的目录。
-    # 前四条是行为判据（读运行时真正用的常量），最后两条是文本判据与白名单防腐。
-    Revert(
-        'BRAND', '数据目录名漏改（config.APP_NAME 退回旧品牌）',
-        'config.py',
-        'APP_NAME = "CS2Customizer"',
-        'APP_NAME = "FanTool"',
-        'tests/test_no_legacy_brand.py::test_runtime_app_name_is_not_legacy',
-        '开源版与闭源版共用 %LOCALAPPDATA%；两边配置键集合不同，'
-        'save_config 写的是显式白名单 dict，后写的一方会静默删掉对方独有的键',
-    ),
-    Revert(
-        'BRAND', '两处 APP_NAME 只改了一处（配置目录与日志目录被拆到两个文件夹）',
-        'core/utils/logger.py',
-        'APP_NAME = "CS2Customizer"',
-        'APP_NAME = "FanTool"',
-        'tests/test_no_legacy_brand.py::test_runtime_app_name_is_not_legacy',
-        '日志写进 A 目录、配置写进 B 目录；用户按提示去删配置目录清不掉日志，排障时也找不到日志',
-    ),
-    Revert(
-        'BRAND', '单实例锁文件名漏改',
-        'core/single_instance.py',
-        'LOCK_FILENAME = "CS2Customizer_single_instance.lock"',
-        'LOCK_FILENAME = "FanTool_single_instance.lock"',
-        'tests/test_no_legacy_brand.py::test_single_instance_and_autostart_keys_are_not_legacy',
-        '闭源版在跑时开源版会以为"自己已经在运行"而直接退出——两个产品变成互斥的',
-    ),
-    Revert(
-        'BRAND', '开机自启注册表值名漏改',
-        'core/utils/autostart.py',
-        '_VALUE_NAME = "CS2Customizer"',
-        '_VALUE_NAME = "FanTool帆派助手"',
-        'tests/test_no_legacy_brand.py::test_single_instance_and_autostart_keys_are_not_legacy',
-        '两者的开机自启项互相覆盖，用户只能自启其中一个，且不知道是谁把谁顶掉了',
-    ),
-    Revert(
-        'BRAND', '写进用户游戏目录的 cfg 文件名漏改',
-        'core/cfg_compiler.py',
-        '"cs2customizer.cfg")',
-        '"fanpai.cfg")',
-        'tests/test_no_legacy_brand.py::test_generated_game_cfg_names_are_not_legacy',
-        '旧品牌名长期躺在用户的 CS2 目录里；两个产品还会抢同一个 cfg 文件互相覆盖',
-    ),
-    Revert(
-        'BRAND', '白名单腐烂：豁免条目里已经没有旧名了却还挂着',
-        'core/presets/share_file.py',
-        # 注意要连注释一起换掉：只删常量的话文件里还留着注释中的旧扩展名，
-        # 判据照绿——那样这个断点自己就是假的。
-        '#: 前身（闭源版）导出的分享文件用 `.fanpai`。**只在打开对话框的过滤器里认它**——\n'
-        '#: 容器格式与安检逻辑完全一致，没有理由让用户手工改扩展名才能导入；\n'
-        '#: 但导出一律写新扩展名，不再产生旧后缀的文件。\n'
-        'LEGACY_SHARE_EXTS = (".fanpai",)',
-        'LEGACY_SHARE_EXTS = ()',
-        'tests/test_no_legacy_brand.py::test_allowlist_entries_still_exist',
-        '白名单变成只增不减的免检清单——文件早就不含旧名，条目还在，'
-        '下次有人往这个文件里加东西就免检了',
-    ),
-    Revert(
-        'BRAND', '旧品牌回流到白名单之外的文件（文本判据本体）',
-        'CONTRIBUTING.md',
-        '本仓库是闭源商业版的**功能子集**',
-        '本仓库是帆派助手的**功能子集**',
-        'tests/test_no_legacy_brand.py::test_no_legacy_brand_outside_allowlist',
-        '前面几条行为判据只看那几个常量；旧名从文档、注释、界面文案回流时得靠这条兜底',
-    ),
-
-    # ==================================== DOC：落地页完整性（2026-08-12 建立）
-    # README 是绝大多数人对这个项目的**唯一一次接触**，而它恰好是判据盲区最大的地方：
-    # ruff 不看 Markdown、测试不看图片引用、CI 也不渲染页面。
-    # 开源化时就实际发生过"首页三个破图标"，三道门一道都没拦住。
-    Revert(
-        'DOC', 'README 引用了不存在的图片（首页渲染成破图标）',
-        'README.md',
-        '![CS2 Customizer 主界面](docs/images/home.png)',
-        '![CS2 Customizer 主界面](docs/images/does-not-exist.png)',
-        'tests/test_version_consistency.py::test_readme_images_all_exist',
-        '真实发生过：开源化时「界面预览」引用了 docs/images/ 下三个 gif，'
-        '而那个目录压根不存在，GitHub 首页就是三个破图标',
-    ),
-    Revert(
-        'DOC', '英文 README 丢了回中文版的链接（语言切换变单向）',
-        'README.en.md',
-        '[简体中文](README.md) · **English**',
-        '**English**',
-        'tests/test_version_consistency.py::test_readme_language_switch_is_bidirectional',
-        '单向链接是双语化最常见的半成品：读者跳到英文版就出不来了',
-    ),
-    Revert(
-        'DOC', '官网地址漏进了会发网络请求的模块',
-        'service_urls.py',
-        'TELEMETRY_BASE_URL = ""',
-        'TELEMETRY_BASE_URL = "https://fantool.online"',
-        'tests/test_no_legacy_brand.py::test_official_site_url_only_in_readme',
-        '这正是「默认不连任何服务器」被破坏的样子：每个 fork 出去的客户端都开始'
-        '打原作者的服务器，带宽是他的、崩溃堆栈里的用户数据责任也是他的，'
-        '而那些用户已经不是他的用户了',
-    ),
-    Revert(
-        'DOC', '中文 README 的一级标题被改掉',
-        'README.md',
-        '# CS2 Customizer\n',
-        '# Some Other Project\n',
-        'tests/test_version_consistency.py::test_readme_title_matches',
-        '落地页第一眼看到的名字错了。这条判据的落点随排版改过两次'
-        '（首行 → 开头 10 行内找一级标题），断点跟着落在标题行本身',
-    ),
-
-    # ==================================== QA-024：Windows 瞬时占用（2026-08-12 建立）
-    Revert(
-        'QA', '写快照索引不走重试（撞上 Defender 就丢那份"后悔药"）',
-        'core/config_snapshot_manager.py',
-        '    _replace_with_retry(tmp_path, path)',
-        '    os.replace(tmp_path, path)',
-        'tests/test_config_snapshot_manager.py::test_index_write_and_restore_both_go_through_the_retry',
-        '实测：快照判据在同一台机器上连跑 25 遍红 2 遍（8%），失败点全在这一句。'
-        '用户点「恢复设置」时产品先建的那份后悔药，会因为扫描器占住文件而静默丢失',
-    ),
-    Revert(
-        'QA', '重试只认错了异常类型（PermissionError 照旧穿出去）',
-        'core/config_snapshot_manager.py',
-        '        except PermissionError:\n            time.sleep(delay)',
-        '        except FileNotFoundError:\n            time.sleep(delay)',
-        'tests/test_config_snapshot_manager.py::test_replace_with_retry_survives_transient_permission_error',
-        '重试逻辑在，但捕的不是实际抛出来的那个异常——这是"看着有防护其实没有"的典型',
-    ),
-
-    # ==================================== ASSET：品牌图不得与生成器脱钩（2026-08-12 建立）
-    # 这一组补的是 BRAND 组的结构性盲区：文本判据明确跳过二进制文件（不跳不行，
-    # 你没法对 PNG 做字符串替换），代价是**印在图里的字判据一个字也看不见**。
-    # 真实发生过：改名那轮改了 107 个文本文件 507 处、二进制一处没动，公开前的
-    # 仓库里只剩启动闪屏和安装向导大图还印着旧产品名（向导图上连旧官网域名都在），
-    # 而全部判据 + ruff + CI 一路全绿。
-    Revert(
-        'ASSET', '生成器与已入库的闪屏图脱钩（图上还是旧产品名）',
-        'build_tools/make_installer_assets.py',
-        'SPLASH_TITLE = "CS2 Customizer"',
-        'SPLASH_TITLE = "帆派助手"',
-        'tests/test_brand_assets.py::test_committed_brand_images_are_not_stale',
-        '真实发生过：入库的 splash.png 与闭源版 md5 完全相同，图上印着旧产品名，'
-        '而代码/文档/注册表键全已改名——用户第一眼看到的就是那张图',
-    ),
-    Revert(
-        'ASSET', '社交预览图与生成器脱钩（那一腿是不是真的在比）',
-        'scripts/make_social_preview.py',
-        '"给 CS2 玩家的本地个性化工具"',
-        '"给 CS2 玩家的本地个性化助手"',
-        'tests/test_brand_assets.py::test_committed_brand_images_are_not_stale',
-        '上一条断点只动了 make_installer_assets。这条专门证明社交预览图那一腿'
-        '也在真比——一张图加进清单却没真比对，比不加更糟',
-    ),
-    Revert(
-        'ASSET', '向导大图标题字号写死（改名后左右各裁掉一个字母）',
-        'build_tools/make_installer_assets.py',
-        '_fit_font(WIZARD_TITLE, WIZARD_TITLE_BOX, WIZARD_TITLE_SIZE, bold=True)',
-        '_font(WIZARD_TITLE_SIZE, bold=True)',
-        'tests/test_brand_assets.py::test_wizard_large_text_fits_inside_safe_boxes',
-        '真实发生过：字号是照 4 个汉字的旧名调的，换成 14 个拉丁字符后同字号'
-        '宽了一倍多，标题两端被裁，生成脚本照样退出码 0',
-    ),
-    Revert(
-        'ASSET', '安全框自己越出画布（量具没校准）',
-        'build_tools/make_installer_assets.py',
-        'WIZARD_URL_BOX = (36, 554, WIZARD_SIZE[0] - 36, 582)',
-        'WIZARD_URL_BOX = (36, 554, WIZARD_SIZE[0] + 200, 582)',
-        'tests/test_brand_assets.py::test_wizard_large_safe_boxes_are_inside_the_canvas',
-        '"文字在框内"这条判据的量具是框本身。框越出画布时，文字明明被裁掉了'
-        '那条判据还会照样通过——假绿',
-    ),
-    Revert(
-        'ASSET', '标题安全框挪到没有字的位置（空文案也能骗过包围盒判据）',
-        'build_tools/make_installer_assets.py',
-        'WIZARD_TITLE_BOX = (18, 380, WIZARD_SIZE[0] - 18, 436)',
-        'WIZARD_TITLE_BOX = (18, 120, WIZARD_SIZE[0] - 18, 176)',
-        'tests/test_brand_assets.py::test_wizard_large_actually_has_ink_where_the_text_should_be',
-        '只验"包围盒落在框内"的话，空字符串的包围盒必然在框内——这条要求图上'
-        '真的有亮色像素，堵的是"判据绿了但图是空的"',
-    ),
-    Revert(
-        'ASSET', '截图前那道"沙箱路径不含用户名"的门被拿掉',
-        'scripts/capture_readme_shots.py',
-        'hits = [t for t in personal_tokens() if t.lower() in text.lower()]',
-        'hits = []',
-        'tests/test_brand_assets.py::test_screenshot_guard_rejects_username_in_sandbox_path',
-        '真实发生过：沙箱默认落在 %TEMP%（=C:\\Users\\<用户名>\\...），高级设置页把'
-        'CS2 目录原样显示出来，advanced.png 里印着真实用户名并推上了公开仓库——'
-        '而本项目的日志脱敏器专门干掉的就是这个串',
-    ),
-    # ---- 图标：2026-08-12 从"一张来源不清的 AI 位图"改成代码生成 ----
-    Revert(
-        'ASSET', '图标与生成器脱钩',
-        'build_tools/make_app_icon.py',
-        'ring_r = big * 0.31',
-        'ring_r = big * 0.26',
-        'tests/test_brand_assets.py::test_committed_icons_are_not_stale',
-        '位图一旦入库就会和生成器脱钩，而脱钩是静默的——这正是启动闪屏印着'
-        '旧产品名一路全绿到公开前的原因',
-    ),
-    Revert(
-        'ASSET', '图标退回单一尺寸帧',
-        'build_tools/make_app_icon.py',
-        'SIZES = (16, 24, 32, 48, 64, 128, 256)',
-        'SIZES = (64,)',
-        'tests/test_brand_assets.py::test_icon_has_every_size_windows_asks_for',
-        '原来那张图标就是**单帧 64×64**：16px 的资源管理器列表和任务栏全靠系统'
-        '缩放，发虚。少一档不报错，只在那个场景里难看',
-    ),
-    Revert(
-        'ASSET', '图标帧写成 PNG（Inno Setup 吃不下）',
-        'build_tools/make_app_icon.py',
-        '        bitmap_format="bmp",\n',
-        '',
-        'tests/test_brand_assets.py::test_icon_frames_are_bmp_not_png',
-        '真实发生过：项目根 icon.ico 是 PNG 帧，Inno 不接受，于是有人手工重铸了'
-        '一份 setup_icon.ico——一个没人记得的手工步骤，下一个改图标的人会踩回去',
-    ),
-    Revert(
-        'ASSET', '小尺寸不再单独画（16px 糊成一团）',
-        'build_tools/make_app_icon.py',
-        'SIMPLIFY_BELOW = 40',
-        'SIMPLIFY_BELOW = 0',
-        'tests/test_brand_assets.py::test_smallest_icon_frame_is_actually_legible',
-        '实测过：把大图几何原样缩到 16px，准星刻线正好顶到外环，三者糊成一个'
-        '实心疙瘩——文件正常、尺寸齐全、肉眼认不出是什么',
-    ),
-    Revert(
-        'ASSET', '旧品牌 AI 美术底图被提交进仓库',
-        'build_tools/make_installer_assets.py',
-        'SPLASH_ART_SOURCE = OUT / "splash_art_ai.png"',
-        'SPLASH_ART_SOURCE = OUT / "setup_icon.ico"',
-        'tests/test_brand_assets.py::test_legacy_splash_art_is_not_tracked',
-        '把常量指向一个确实已入库的文件，等价于"那张美术底图被 git add 了"。'
-        '它既是旧品牌残留，又是来源不清的 AI 素材，公开仓库两头都不该有',
-    ),
-
     # ==================================== KI-4/5/6：击杀图标兼容性与清单板
     #
     # 这一组断点全都是**导入照常成功、报错一句没有**的类型——这也是 KI-4
@@ -1588,8 +1439,8 @@ REVERTS = [
     Revert(
         "V", "页面说明又写回版面决策",
         "pages/kill_sound_page.py",
-        '    PAGE_LEAD = "击杀敌人时播放你自己的音效，可以按武器类别和连杀数分开配。'
-        '先去「基础设置」打开总开关，再逐把枪选风格，点「测试」试听。"',
+        '    PAGE_LEAD = "击杀敌人时播放你自己的音效，逐把枪选风格；一个风格里自带 1~5 连杀的不同音效。'
+        '点「测试」可以按连杀档位试听；总开关在「基础设置」里。"',
         '    PAGE_LEAD = "击杀音效页保持列表式效率，把分类切换和快速试听留在一屏里。"',
         "tests/test_page_copy_is_user_facing.py::test_page_copy_has_no_layout_jargon",
         "副标题讲的是界面怎么排而不是功能是什么，玩家读完不知道该干嘛"
@@ -1628,12 +1479,1292 @@ REVERTS = [
     Revert(
         "V", "切页后不再把当前导航项滚进可视区",
         "gui_widget.py",
-        "            self._ensure_nav_button_visible(page_id)\n",
-        "",
+        "            self._refresh_nav_icons(page_id)\n            self._ensure_nav_button_visible(page_id)\n",
+        "            self._refresh_nav_icons(page_id)\n",
         "tests/test_ui_visual_r1_fixes.py::"
         "test_sidebar_scrolls_the_active_nav_item_into_view",
         "默认 1280×800 下 28 页里 15 页在折叠线外，切过去侧栏还停在顶部，"
         "当前项既看不见也没高亮 —— 用户失去「我在哪一页」的指示",
+    ),
+    # ==================================== RN：翻新工程（RN-002 名单单源化）
+    Revert(
+        "RN", "审计脚本又自己抄了一份设备页名单",
+        "scripts/_audit_neutralize.py",
+        "    from core.page_traits import DEVICE_OWNING_PAGES",
+        '    DEVICE_OWNING_PAGES = {"viewmodel", "magnifier", "flash", '
+        '"voice_output", "kill_icon", "music"}',
+        "tests/test_no_hardcoded_page_lists.py::"
+        "test_device_owning_page_list_has_exactly_one_copy",
+        "抄的那一刻逐字相同、判据全绿，等产品那份变了才发作 —— 2026-08-17 判据"
+        "首跑就抓出 9 份副本，其中 3 份**已经漂了**（各少一页）",
+    ),
+    Revert(
+        "RN", "产品自己把名单写回字面量",
+        "gui_widget.py",
+        "        self._preload_skip_pages = set(DEVICE_OWNING_PAGES)",
+        '        self._preload_skip_pages = {"viewmodel", "magnifier", "flash", '
+        '"voice_output", "kill_icon", "music"}',
+        "tests/test_no_hardcoded_page_lists.py::test_product_reads_the_single_source",
+        "只扫脚本是不够的：产品改回硬编码而脚本仍读真相源时，**两份都在还各说各话**，"
+        "那是最坏的一种",
+    ),
+    Revert(
+        "RN", "已关档页面的控件文案被悄悄改掉",
+        "pages/screen_effects_page.py",
+        'trigger_title = QLabel("触发开关")',
+        'trigger_title = QLabel("触发开关 ")',
+        "tests/test_renovation_baselines.py::"
+        "test_page_structure_matches_baseline[screen_effects]",
+        "翻新工程的结构基线要能逮住"
+        "「页面还是那一页、但控件/文案已经不是原来那些」——"
+        "这里只多打了一个空格，肉眼几乎看不出来，判据必须红",
+    ),
+    Revert(
+        "RN", "统计文件的缓存又只认 mtime、不认字节数",
+        "core/page_usage_tracker.py",
+        "        return (st.st_mtime_ns, st.st_size)",
+        "        return st.st_mtime_ns",
+        "tests/test_page_usage_tracker.py::"
+        "test_two_writes_in_one_timestamp_tick_are_not_masked_by_the_cache",
+        "两次写盘落在同一个文件时间戳刻度内时，_load() 认为文件没变、返回缓存里"
+        "那份旧的：用户重置后立刻做配置恢复，恢复进来的统计被挡在外面 —— "
+        "本机复现不出，只在快机器上发作（2026-08-17 由 CI 逮到）",
+    ),
+    Revert(
+        "RN", "ensureWidgetVisible 少滚一截之后没人补",
+        "gui_widget.py",
+        "        if overflow > 0:\n"
+        "            bar.setValue(min(bar.maximum(), bar.value() + overflow))\n",
+        "        if False:\n"
+        "            bar.setValue(min(bar.maximum(), bar.value() + overflow))\n",
+        "tests/test_ui_visual_r1_fixes.py::test_nav_button_nudge_fixes_a_short_scroll",
+        "ensureWidgetVisible 按调用那一刻的布局算，布局没落定就少滚一截，"
+        "而且少滚了不会报错 —— 那一项静静留在视口外，用户失去「我在哪一页」的指示。"
+        "余量本来就只有 24px，字体度量一变就压线（2026-08-17 CI 上 hud_color）",
+    ),
+    Revert(
+        "RN", "帮助文案又被拆成两块叠加",
+        "ui_help_panel.py",
+        "PAGE_HELP_TEXTS = {",
+        "PAGE_HELP_TEXTS = {}\nPAGE_HELP_TEXTS.update({",
+        "tests/test_ui_help_panel_texts.py::test_help_texts_are_defined_exactly_once",
+        "两块并存时后一块把前一块逐条盖掉，前面那些文案成了没人读得到的死文字 —— "
+        "而查最终字典的判据照样绿。原先真有 237 行文案这么躺着，"
+        "改文案的人还会挑到上面那块去改，改完当然「没生效」",
+    ),
+    Revert(
+        "RN", "又加了一个建出来就 hide 的 summary_label",
+        "tests/test_no_invisible_summary_label.py",
+        # ⚠ 锚点跟着棘轮走：M3-b 清掉 viewmodel + flash 之后是 18。
+        # 上一版锚的是 `= 20`，清完就成了空转断点（失效体检逮到）。
+        "MAX_REMAINING = 17",
+        "MAX_REMAINING = 17",
+        "tests/test_no_invisible_summary_label.py::"
+        "test_invisible_summary_label_count_only_shrinks",
+        "21 个页面各有一个建出来就 hide()、全仓没人再显示的 summary_label，"
+        "每次状态同步还照给它算 40~98 字的文本。它不报错不崩溃只是白算，"
+        "读代码时看着完全正常 —— 这类东西只能靠扫描发现",
+    ),
+    Revert(
+        "RN", "侧栏内容变高后不再重新校正当前项",
+        "gui_widget.py",
+        "        if (event.type() == QEvent.Resize\n"
+        "                and (watched is getattr(self, \"_sidebar_nav_container\", None)",
+        "        if (False\n"
+        "                and (watched is getattr(self, \"_sidebar_nav_container\", None)",
+        "tests/test_ui_visual_r1_fixes.py::"
+        "test_sidebar_recovers_when_content_grows_after_the_page_switch",
+        "切页那一刻算好的滚动位置，会被「之后」才发生的内容变高作废，"
+        "当前项被挤出视口而没人再管 —— 本机怎么调窗口尺寸都复现不出",
+    ),
+    Revert(
+        "RN", "只盯滚动内容、不盯视口变矮",
+        "gui_widget.py",
+        "        scroll_area.viewport().installEventFilter(self)",
+        "        pass  # 断点：不再盯视口",
+        "tests/test_ui_visual_r1_fixes.py::"
+        "test_sidebar_keeps_active_nav_item_visible_when_viewport_shrinks",
+        "RN-008 的真正根因：底部音乐条 musicControlBar（42px）是**滚完之后**才出现的，"
+        "主窗从侧栏身上扣走 42px、视口跟着矮 42px，刚滚好的那一项被挤出可视区；"
+        "而滚动内容的高度一点没变，只盯 nav_container 的话这个 Resize 根本不发生。"
+        "CI 上连红五轮的指纹 y = 视口 − 24 就是它：y = V滚动 − 24 − 42 = V断言 − 24",
+    ),
+    Revert(
+        "RN", "校正又只信 height() 不看 sizeHint",
+        "gui_widget.py",
+        "        height = max(btn.height(), btn.sizeHint().height())",
+        "        height = btn.height()",
+        "tests/test_ui_visual_r1_fixes.py::"
+        "test_nav_button_nudge_does_not_trust_a_not_yet_laid_out_height",
+        "布局还没给按钮定高时 height() 很小甚至是 0，算出来的「没超出」是假的。"
+        "⚠ 这条是**防御性**的，不是 RN-008 的根因 —— 我一度用它解释 y=599，"
+        "「高度被当成 0」和「视口后来缩了 42」在数值上完全同解，靠一个数字分不出来",
+    ),
+    Revert(
+        "RN", "风格管理完之后又把 36 把武器重刷一遍",
+        "pages/kill_voice_page.py",
+        "        self._refresh_style_catalog()\n\n    def _on_weapon_style_changed",
+        "        self._refresh_style_catalog()\n        self.load_settings()\n\n"
+        "    def _on_weapon_style_changed",
+        "tests/test_kill_voice_no_duplicate_work.py::"
+        "test_managing_styles_touches_each_weapon_row_exactly_once",
+        "重复工作的**终态和做一遍完全一样**：结构、指纹、两档像素逐字节等同，"
+        "建页耗时的差别淹在噪声里 —— 所有基线都会照样绿。"
+        "A 堆的清理靠基线证「没改坏」，只能靠这类计次判据证「没长回来」",
+    ),
+    Revert(
+        "RN", "状态区又把已配置名单算两遍",
+        "pages/kill_voice_page.py",
+        "        self.category_overview_title_label.setText(f\"当前分类 · {current_category}\")",
+        "        configured_names = self._configured_weapon_names()\n"
+        "        self.category_overview_title_label.setText(f\"当前分类 · {current_category}\")",
+        "tests/test_kill_voice_no_duplicate_work.py::"
+        "test_status_badge_computes_the_configured_names_once",
+        "两次调用之间没有任何东西改变它的输入，结果必然逐字相同 —— "
+        "纯重复计算，肉眼读代码时两行离了 10 行远，看不出来",
+    ),
+    Revert(
+        "RN", "刀的皮肤名又归一不到配置键",
+        "gsi_handler_kills.py",
+        "        if weapon_name.startswith(\"weapon_knife\"):\n"
+        "            return \"weapon_knife\"",
+        "        if weapon_name == \"weapon_knife\":\n"
+        "            return \"weapon_knife\"",
+        "tests/test_melee_kill_config_actually_applies.py::"
+        "test_melee_skin_names_normalize_to_the_configured_key",
+        "GSI 报的是 `weapon_knife_karambit` 这类皮肤名，配置表的键只有 `weapon_knife`。"
+        "不归一就永远查不到 —— 「设了没反应」，不报错不崩溃日志还正常",
+    ),
+    Revert(
+        "RN", "取键函数又不应用近战回退了",
+        "gsi_handler_kills.py",
+        "        weapon_name = self._apply_melee_fallback(weapon_name, config.weapon_kill_voices)",
+        "        pass  # 断点：不再应用近战回退",
+        "tests/test_melee_kill_config_actually_applies.py::"
+        "test_both_key_getters_actually_apply_the_melee_fallback",
+        "⚠ 别的判据测的是归一函数本身，**把调用点删掉它们照样全绿** —— "
+        "所以必须有一条 AST 判据钉住调用点存在",
+    ),
+    Revert(
+        "RN", "击杀语音页又没有近战分类",
+        "pages/kill_voice_page.py",
+        "        \"近战\": [\"weapon_knife\", \"weapon_taser\"],",
+        "",
+        "tests/test_melee_kill_config_actually_applies.py::"
+        "test_kill_voice_page_offers_the_melee_category",
+        "「击杀音效」有近战、「击杀语音」没有 ⇒ 刀杀和电人能配音效不能配语音，"
+        "而这恰恰是最想要播报的两种击杀。这类「一组同类项里少一项」人眼极难发现",
+    ),
+    Revert(
+        "RN", "预览按钮在组件没起来时又静默了",
+        "pages/screen_effects_page.py",
+        "        if self.overlay_manager is None:",
+        "        if False:",
+        "tests/test_preview_and_test_buttons_never_go_silent.py::"
+        "test_preview_without_overlay_manager_says_something_specific",
+        "`overlay_manager` 只在特效管理器**构造失败**时才是 None —— "
+        "恰恰是软件真出问题的时候，用户点预览连个提示都没有",
+    ),
+    Revert(
+        "RN", "第 1 连杀试听又变回静默",
+        "pages/kill_voice_page.py",
+        "        if not voice_file:\n            if level > 1:",
+        "        if not voice_file and level > 1:\n            if level > 1:",
+        "tests/test_preview_and_test_buttons_never_go_silent.py::"
+        "test_test_button_reports_missing_audio_at_every_level",
+        "同一个「测试」按钮，2~5 连杀有提示、第 1 连杀装死 —— "
+        "用户点最常用的那一档反而什么都看不到",
+    ),
+    Revert(
+        "RN", "「基础设置」又被塞回音效组里",
+        "gui_widget.py",
+        "            (\"开始\", [\n                (\"basic\", \"基础设置\"),\n            ]),\n"
+        "            (\"音效设置\", [\n",
+        "            (\"音效设置\", [\n                (\"basic\", \"基础设置\"),\n",
+        "tests/test_sidebar_nav_structure.py::"
+        "test_basic_settings_is_not_buried_in_the_sound_group",
+        "准心、屏幕特效、切枪音效的总开关全写在「基础设置」里，"
+        "把它挂在音效组下面 ⇒ 找准心的开关得先去音效菜单里翻（RN-108）。"
+        "⚠ 这条**不能**用「它是不是第一项」那条判据来防：塞回音效组之后它仍然是"
+        "第一组第一项，那条判据照样绿 —— 回退验证当场逮到的",
+    ),
+    Revert(
+        "RN", "有新页面插到「基础设置」前面去了",
+        "gui_widget.py",
+        "            (\"开始\", [\n                (\"basic\", \"基础设置\"),\n            ]),",
+        "            (\"开始\", [\n                (\"about\", \"关于软件\"),\n"
+        "                (\"basic\", \"基础设置\"),\n            ]),",
+        "tests/test_sidebar_nav_structure.py::"
+        "test_basic_settings_is_the_very_first_nav_item",
+        "置顶这件事只有「第一项」算数：往它上面塞一项，"
+        "「不在音效组里」那条判据依然全绿",
+    ),
+    Revert(
+        "RN", "Alt+N 的上限又写死成 4",
+        "gui_widget.py",
+        "        for idx in range(min(9, len(self.nav_groups))):",
+        "        for idx in range(min(4, len(self.nav_groups))):",
+        "tests/test_sidebar_nav_structure.py::"
+        "test_every_nav_group_gets_an_alt_shortcut",
+        "写死的 4 恰好等于当时的分组数 ⇒ 加一组之后最后一组悄悄没了快捷键，"
+        "而断言个数的旧判据照样绿",
+    ),
+    Revert(
+        "RN", "关于页那句提示又变回没有落点的死提示",
+        "pages/about_page.py",
+        "        self.goto_onboarding_button.clicked.connect(self._open_onboarding_guide)",
+        "        pass",
+        "tests/test_onboarding_reentry.py::"
+        "test_about_page_hint_now_has_somewhere_to_go",
+        "「请确保已正确选择 CS 文件夹」说了要做什么、却没说去哪儿做 —— "
+        "而 CS2 目录是其余所有功能的前提（RN-110）",
+    ),
+    Revert(
+        "RN", "引导打不开时又一声不吭",
+        "pages/about_page.py",
+        "        if not callable(opener):\n"
+        "            toast_warning(\"上手引导打不开，请到「工具与系统 - 高级设置」里选 CS2 目录。\", 4200)\n"
+        "            return",
+        "        if not callable(opener):\n            return",
+        "tests/test_onboarding_reentry.py::"
+        "test_about_page_button_says_where_to_go_when_it_cannot_open_the_guide",
+        "这个按钮是给「不知道去哪儿设目录」的新用户准备的，它自己再没反应"
+        "就等于把人扔在原地。⚠ 判据断言的是「高级设置」四个字，不是「有没有提示」",
+    ),
+    Revert(
+        "RN", "基础设置页的引导条只剩一句话、点不开",
+        "gui_widget.py",
+        "            self._reopen_onboarding_guide,",
+        "            lambda: None,",
+        "tests/test_onboarding_reentry.py::"
+        "test_basic_page_carries_the_three_step_guide_bar",
+        "引导条的价值全在那个按钮上：只留文字的话，用户读完还是不知道去哪儿点",
+    ),
+    Revert(
+        "RN", "徽章又回去数配置里的原始值",
+        "pages/kill_sound_page.py",
+        "        selected_count = self._configured_weapon_count(resolved=resolved)",
+        "        from pages.audio_status_badge import count_enabled_styles\n"
+        "        selected_count = count_enabled_styles((config.weapon_kill_sounds or {}).values())",
+        "tests/test_kill_sound_status_tells_the_truth.py::"
+        "test_badge_count_matches_what_the_rows_actually_show",
+        "RN-026：徽章数配置原始值、列表按能否解析显示 ⇒ 风格一丢就长期写着"
+        "「已配置 37 / 手枪 10/10」而下面 39 把枪全是「不启用」，且没有任何东西报错",
+    ),
+    Revert(
+        "RN", "失效项又被静默算进「已配置」",
+        # ⚠ 锚点原本在 kill_sound_page.py。RN-033 把这份实现**上提到了基类**
+        # （四页共用），锚点随之搬家。失效体检当场报"锚点出现 0 次" —— 这已经是
+        # 第二次由体检逮到断点腐烂，印证总纲那句：**审计/棘轮/断点自己也会腐烂**。
+        "pages/sound_page_base.py",
+        "        return \"0\" if display == self.DISABLED_STYLE_TEXT else display",
+        "        return str(self._configured_style(weapon))",
+        "tests/test_kill_sound_status_tells_the_truth.py::"
+        "test_stale_styles_are_named_not_silently_counted_as_configured",
+        "⚠ 只把数字改对不够：用户看到数字变小只会觉得「我的配置怎么少了」。"
+        "必须**说出来**有几项失效、以及怎么办",
+    ),
+    Revert(
+        "RN", "分类名又拿页签文字当字典键",
+        "pages/kill_sound_page.py",
+        "        names = list(self.CATEGORIES.keys())\n"
+        "        if not hasattr(self, \"tab_widget\")",
+        "        names = []\n        if not hasattr(self, \"tab_widget\")",
+        "tests/test_kill_sound_status_tells_the_truth.py::"
+        "test_category_lookup_survives_a_renamed_tab",
+        "RN-028：页签文案加个计数后缀，查表就静默返回 []，分类徽章变 0/0 而不报错。"
+        "与 kill_voice 的 RN-020 同形，那页已修、这页一直还在",
+    ),
+    Revert(
+        "RN", "风格没了又被报成「音频设备不可用」",
+        "pages/kill_sound_page.py",
+        "            report_preview_failure(self, PreviewFailure.STALE_STYLE, style_text)\n"
+        "            return",
+        "            sound_key = f\"kill-{level}\"\n            sound_dir = None",
+        "tests/test_kill_sound_status_tells_the_truth.py::"
+        "test_a_vanished_style_is_not_reported_as_a_broken_sound_card",
+        "RN-029：把用户支去查声卡和驱动，而真实原因是那个风格被删了",
+    ),
+    Revert(
+        "RN", "击杀音效页的已配置名单又算两遍",
+        "pages/kill_sound_page.py",
+        "        self.category_overview_title_label.setText(f\"当前分类 · {current_category}\")",
+        "        configured_names = self._configured_weapon_names()\n"
+        "        self.category_overview_title_label.setText(f\"当前分类 · {current_category}\")",
+        "tests/test_kill_sound_status_tells_the_truth.py::"
+        "test_status_badge_computes_the_configured_names_once",
+        "RN-019：与 kill_voice 的 RN-014 一模一样的重复计算，终态逐字相同、所有基线照样绿",
+    ),
+    Revert(
+        "RN", "风格管理完之后又把 39 把武器重刷一遍",
+        "pages/kill_sound_page.py",
+        "        self._refresh_style_catalog()\n\n    def _on_weapon_style_changed",
+        "        self._refresh_style_catalog()\n        self.load_settings()\n\n"
+        "    def _on_weapon_style_changed",
+        "tests/test_kill_sound_status_tells_the_truth.py::"
+        "test_managing_styles_touches_each_weapon_row_exactly_once",
+        "RN-027：与 kill_voice 的 RN-015 逐字同形。终态一样，所有基线照样绿",
+    ),
+    Revert(
+        "RN", "引导窗又能开出第二个",
+        "gui_widget.py",
+        "        existing = getattr(self, \"_onboarding_dialog\", None)\n"
+        "        if existing is not None and existing.isVisible():",
+        "        existing = None\n        if False:",
+        "tests/test_onboarding_reentry.py::"
+        "test_opening_the_guide_twice_reuses_the_same_window",
+        "`self._onboarding_dialog = dialog` 是唯一的防 GC 引用，造第二个就把第一个的"
+        "引用覆盖掉，而第一个还显示在屏幕上。入口已经有三处（首启/基础设置/关于）",
+    ),
+    Revert(
+        "RN", "自动弹引导又自己构造了一次对话框",
+        "gui_widget.py",
+        "            self._show_onboarding_dialog()\n"
+        "            self.logger.info(\"首次使用引导已弹出\")",
+        "            from dialogs.onboarding_dialog import OnboardingDialog\n\n"
+        "            dialog = OnboardingDialog(self)\n"
+        "            self._onboarding_dialog = dialog\n"
+        "            dialog.show()\n"
+        "            self.logger.info(\"首次使用引导已弹出\")",
+        "tests/test_onboarding_reentry.py::"
+        "test_auto_popup_and_manual_reopen_share_one_entry_point",
+        "自动弹和手动重开就此分家：改一边忘一边**不会报错**，只会悄悄不一样。"
+        "同 RN-002 那份被抄了 9 遍、3 份已经漂了的设备页名单",
+    ),
+    # ---------------------------------------------- RN-032 工装配置目录（这一轮）
+    Revert(
+        "RN", "工装又自己造临时配置目录、不落占位配置",
+        "scripts/_pristine_config.py",
+        '    (tmp / "config" / "config.json").write_text(PLACEHOLDER, encoding="utf-8")',
+        '    pass  # 占位配置没了，migrate_old_config 会把个人配置复制进来',
+        "tests/test_pristine_config_for_tooling.py::"
+        "test_placeholder_config_is_written_before_anything_can_migrate",
+        "RN-031 只修了六处里的一处 ⇒ 像素基线/排版审计/耗时基线/搜索索引"
+        "全都还在开发机的个人配置上产出。⚠ 断点瞄的是**占位文件在不在**，"
+        "不是「函数有没有被调用」",
+    ),
+    Revert(
+        "RN", "又有第二份工装自己写 CS2C_CONFIG_DIR",
+        "scripts/layout_overflow_audit.py",
+        '_tmp = use_pristine_config_dir("cs2customizer_layout_audit")',
+        'import tempfile as _tf\n'
+        '_tmp = Path(_tf.gettempdir()) / "cs2customizer_layout_audit"\n'
+        '(_tmp / "config").mkdir(parents=True, exist_ok=True)\n'
+        'os.environ.setdefault("CS2C_CONFIG_DIR", str(_tmp / "config"))',
+        "tests/test_pristine_config_for_tooling.py::"
+        "test_only_one_place_in_scripts_touches_the_config_dir_env",
+        "只要还有第二份副本，修好一份就等于没修（RN-002 那份名单被抄了 9 遍、"
+        "其中 3 份已经漂了）",
+    ),
+    Revert(
+        "RN", "force 语义被降级成 setdefault",
+        "scripts/_pristine_config.py",
+        '    if os.environ.get("CS2C_CONFIG_DIR") and not force:',
+        '    if os.environ.get("CS2C_CONFIG_DIR"):',
+        "tests/test_pristine_config_for_tooling.py::"
+        "test_force_overrides_an_inherited_config_dir",
+        "`renovation_baseline.structure_of` 是被 pytest 起的子进程，会继承 conftest "
+        "那个跨轮次累积的配置目录 —— 不 force 就把 RN-031 的修法整个作废，"
+        "**而且失效时毫无声响**",
+    ),
+    # ------------------------------------------------ RN-033 家族计数口径
+    Revert(
+        "RN", "switch_weapon 的徽章又回去数配置原始值",
+        "pages/switch_weapon_page.py",
+        "        selected_count = self._configured_weapon_count(resolved=resolved)",
+        "        from pages.audio_status_badge import count_enabled_styles\n"
+        "        selected_count = count_enabled_styles((config.weapon_switch_sounds or {}).values())",
+        "tests/test_sound_family_status_tells_the_truth.py::"
+        "test_badge_number_matches_the_rows_the_user_can_see",
+        "⚠ 断点改的是**徽章实际用的那个变量**。上一轮判据落在 "
+        "`_configured_weapon_count()` 这个辅助函数上，两者不相干 —— "
+        "缺陷注进去判据照样绿，回退验证当场逮住",
+    ),
+    Revert(
+        "RN", "失效项又不说了，只是从计数里消失",
+        "pages/sound_page_base.py",
+        '            return "warn", f"已配置 · {selected_count} · {stale_count} 项失效"',
+        '            return "info", f"已配置 · {selected_count}"',
+        "tests/test_sound_family_status_tells_the_truth.py::"
+        "test_the_badge_says_out_loud_that_some_entries_went_stale",
+        "只把数字改对不够：用户看到数字变小只会觉得「我的配置怎么少了」。"
+        "「有 N 项失效」才是唯一可行动的信息",
+    ),
+    Revert(
+        "RN", "「怎么修」又写回那个死控件",
+        "pages/switch_weapon_page.py",
+        "            self.category_overview_hint_label.setText(self._stale_style_hint(stale_count))",
+        "            self.summary_label.setText(self._stale_style_hint(stale_count))",
+        "tests/test_sound_family_status_tells_the_truth.py::"
+        "test_the_visible_hint_line_says_how_to_fix_it",
+        "RN-009：`summary_label` 建出来就 hide()，全仓无人再显示它。"
+        "kill_sound 那轮我就写错过一次，外审复跑一句「醒目报错却无修复引导」点破",
+    ),
+    Revert(
+        "RN", "试听又把「风格没了」报成「文件不存在」",
+        "pages/switch_weapon_page.py",
+        "            report_preview_failure(self, PreviewFailure.STALE_STYLE,",
+        "            report_preview_failure(self, PreviewFailure.NO_FILE,",
+        "tests/test_sound_family_status_tells_the_truth.py::"
+        "test_previewing_a_stale_style_says_the_style_is_gone",
+        "那一行明明显示「不启用」，点测试却报「文件不存在」⇒ 用户会去查音频设备"
+        "和素材，而真正的原因是他配的风格被改名/删掉了",
+    ),
+    Revert(
+        "RN", "death_sound 又宣称那个已经没了的风格正生效",
+        "pages/death_sound_page.py",
+        "        current_style = self._effective_style_value()",
+        '        current_style = str(getattr(config, "death_sound_style", "0") or "0")',
+        "tests/test_sound_family_status_tells_the_truth.py::"
+        "test_death_page_never_claims_a_vanished_style_is_selected",
+        "这一页原状是个**闭环矛盾**：选择卡说「当前已选择 X，切换后可以直接点击"
+        "测试」，点了测试它说「还没选风格」—— 页面把用户送进一个必然失败的动作",
+    ),
+    Revert(
+        "RN", "death_sound 的试听又说「还没选风格」",
+        "pages/death_sound_page.py",
+        "                report_preview_failure(self, PreviewFailure.STALE_STYLE, stale_style)",
+        "                report_preview_failure(self, PreviewFailure.NO_STYLE)",
+        "tests/test_sound_family_status_tells_the_truth.py::"
+        "test_death_page_preview_reports_stale_not_no_style",
+        "用户明明选过 —— 只是他选的那个风格已经被改名/删掉，下拉框退回了「不启用」",
+    ),
+    # ------------------------------------------------ RN-034/035/037/040
+    Revert(
+        "RN", "全新安装的素材目录又被画成红色报错",
+        "pages/audio_status_badge.py",
+        '    if missing:\n        return "info", "素材 · 待添加"',
+        '    if missing:\n        return "danger", f"资源 · 异常 {len(missing)}"',
+        "tests/test_sound_family_status_tells_the_truth.py::"
+        "test_a_missing_material_dir_is_not_painted_as_a_red_error",
+        "RN-035：「还没放素材」不是异常，是起点。把起点画成红色，"
+        "新用户第一反应是软件坏了 —— 外审 S4 六发里五发独立点出这一条",
+    ),
+    Revert(
+        "RN", "副标题又无条件命令用户去开一个可能已经开着的开关",
+        "pages/switch_weapon_page.py",
+        '    PAGE_LEAD = "切换武器时播放你自己的音效。逐把枪选风格，点「测试」试听；总开关在「基础设置」里。"',
+        '    PAGE_LEAD = "切换武器时播放你自己的音效。先去「基础设置」打开总开关，再逐把枪选风格，点「测试」试听。"',
+        "tests/test_sound_family_status_tells_the_truth.py::"
+        "test_no_page_orders_the_user_to_flip_a_switch_that_may_already_be_on",
+        "同一屏上徽章写着「开关 · 已启用」，副标题却叫人去打开它。"
+        "外审六发截图里四发独立点出，措辞几乎一样",
+    ),
+    Revert(
+        "RN", "reload_sound 的档位死分支又回来了",
+        "pages/reload_sound_page.py",
+        "        del level\n        self._test_reload_sound(weapon)",
+        "        self._test_reload_sound(weapon) if level is None else self._test_reload_sound(weapon, level)",
+        "tests/test_sound_family_status_tells_the_truth.py::"
+        "test_the_level_argument_branch_is_gone",
+        "`_test_reload_sound()` 只接一个参数 ⇒ 那个分支一走必 TypeError。"
+        "它没爆过只因为本页 TEST_LEVELS is None，档位菜单压根没建",
+    ),
+    Revert(
+        "RN", "kill_voice 的试听又变成只写日志",
+        "pages/kill_voice_page.py",
+        "            configured = self._configured_style(weapon)",
+        "            self.logger.info(f\"武器 {weapon} 未启用语音\")\n"
+        "            return\n"
+        "            configured = self._configured_style(weapon)",
+        "tests/test_sound_family_status_tells_the_truth.py::"
+        "test_kill_voice_preview_is_never_silent",
+        "RN-040：用户看到的是「点了没反应」。同 UP-037 那一类，"
+        "其余各页早就改成给提示了，这页漏下了",
+    ),
+    # ------------------------------------------------ RN-046~055（M2-b 两页）
+    Revert(
+        "RN", "gun_sound 又把失效的风格算进「已配置」",
+        "pages/gun_sound_page.py",
+        "        selected_count = sum(1 for value in effective.values() if value != \"0\")",
+        "        selected_count = sum(1 for value in self.weapon_configs.values()\n"
+        "                             if self._get_profile_style(value) != \"0\")",
+        "tests/test_gun_special_sound_truth.py::"
+        "test_gun_sound_does_not_count_styles_that_are_gone",
+        "RN-046：徽章「已配置 · 2/18」而那两行的下拉框都显示「不启用」——"
+        "计数数配置原始值、界面显示解析后的值，两边永久对不上且无人报错",
+    ),
+    Revert(
+        "RN", "gun_sound 的试听又把「风格没了」报成「文件不存在」",
+        "pages/gun_sound_page.py",
+        "            report_preview_failure(self, PreviewFailure.STALE_STYLE,",
+        "            report_preview_failure(self, PreviewFailure.NO_FILE,",
+        "tests/test_gun_special_sound_truth.py::"
+        "test_gun_sound_preview_tells_stale_from_unset",
+        "配过、但风格已被改名/删除时，原来会去播一个不存在的音效键、"
+        "落到 NO_FILE ⇒ 用户被指去翻一个已经不存在的目录（同 RN-029）",
+    ),
+    Revert(
+        "RN", "空状态提示又被塞回 18 张武器卡",
+        "pages/gun_sound_page.py",
+        "        profile = self.weapon_configs[weapon_type]\n"
+        "        duck_ratio = self._get_profile_duck_ratio(profile)",
+        "        if not styles:\n"
+        "            empty_hint = QLabel(\"当前还没有检测到这个武器的可用风格资源。\")\n"
+        "            empty_hint.setObjectName(\"hintLabel\")\n"
+        "            card_layout.addWidget(empty_hint)\n"
+        "        profile = self.weapon_configs[weapon_type]\n"
+        "        duck_ratio = self._get_profile_duck_ratio(profile)",
+        "tests/test_gun_special_sound_truth.py::"
+        "test_gun_sound_empty_state_is_said_once_not_eighteen_times",
+        "RN-049：全新安装下同一句话出现 18 次，而顶部状态卡同屏已写着"
+        "「素材 · 待添加」。与上一轮那句 50 字辩解同病，这次是 18 份",
+    ),
+    Revert(
+        "RN", "special_sound 的回合计数又被手写成 5 个字段",
+        "pages/special_sound_page.py",
+        "        round_selected = self._selected(round_effective)",
+        "        round_selected = len([v for v in (\n"
+        "            getattr(config, \"round_start_style\", \"0\"),\n"
+        "            getattr(config, \"round_action_style\", \"0\"),\n"
+        "            getattr(config, \"round_win_style\", \"0\"),\n"
+        "            getattr(config, \"round_lose_style\", \"0\"),\n"
+        "            getattr(config, \"round_mvp_style\", \"0\"),\n"
+        "        ) if str(v) != \"0\"])",
+        "tests/test_gun_special_sound_truth.py::"
+        "test_special_sound_round_count_is_not_capped_at_five",
+        "⭐ 分子手写 5 个字段、分母从事件表派生成 8 ⇒ **计数上限 5、分母 8**，"
+        "配满也永远显示不满。事件表的 docstring 开篇讲的就是别再有第二份手写清单",
+    ),
+    Revert(
+        "RN", "special_sound 的四个试听又变成只写日志",
+        "pages/special_sound_page.py",
+        "        if self._report_preview(configured, style, label):\n            return",
+        "        if str(configured or \"0\").strip() == \"0\":\n"
+        "            self.logger.info(f\"{grenade_type} 当前未启用音效\")\n"
+        "            return",
+        "tests/test_gun_special_sound_truth.py::"
+        "test_special_sound_preview_never_silently_does_nothing",
+        "RN-047：四个「测试」原来全是只写日志就 return ⇒ 用户看到「点了没反应」。"
+        "外审 8 发截图里 7 发独立报「点击无反应易被误认为软件故障」",
+    ),
+    Revert(
+        "RN", "选了风格但模块没开这件事又没人说",
+        "pages/special_sound_page.py",
+        "            return \" · 模块已关闭（配了也不会响）\"",
+        "            return \" · 模块已关闭\"",
+        "tests/test_gun_special_sound_truth.py::"
+        "test_special_sound_warns_when_style_chosen_but_module_off",
+        "RN-051：本页有两层开关（模块复选框 + 每项的「不启用」）。"
+        "外审 4 发独立报玩家会只选下拉项而遗漏模块开关，局内不响却查不出原因",
+    ),
+    Revert(
+        "RN", "状态徽章又不跟当前页签走",
+        "pages/special_sound_page.py",
+        "            (\"success\" if tab_badge[0] else \"info\", tab_badge[1]),",
+        "            (\"success\" if round_on else \"info\", f\"回合音量 · {round_volume}%\"),",
+        "tests/test_gun_special_sound_truth.py::"
+        "test_special_sound_status_chip_follows_current_tab",
+        "RN-053：在「血量警告」页签上那颗徽章写的是「回合音量 · 100%」，"
+        "与屏幕上的内容毫无关系。外审两发独立点出",
+    ),
+    Revert(
+        "RN", "风格解析又被抄成第二份",
+        "pages/audio_status_badge.py",
+        "def resolve_style(configured, available: Iterable) -> str:",
+        "def _resolve_style_unused(configured, available: Iterable) -> str:",
+        "tests/test_gun_special_sound_truth.py::"
+        "test_style_resolver_is_single_sourced",
+        "RN-046：这条知识曾同时以四份副本存在（基类 / death / gun / special），"
+        "每份都只做了一半。RN-002/031/032 已证三次：还有第二份就等于没修",
+    ),
+    Revert(
+        "RN", "死方法又被留在页面里",
+        "pages/gun_sound_page.py",
+        "    def _create_compact_weapon_card(self, weapon_type: str, display_name: str, styles: list[str]):",
+        "    def _create_weapon_card_unused(self, weapon_type: str) -> None:\n"
+        "        pass\n\n"
+        "    def _create_compact_weapon_card(self, weapon_type: str, display_name: str, styles: list[str]):",
+        "tests/test_gun_special_sound_truth.py::"
+        "test_no_private_method_is_dead",
+        "原状是一个 113 行、全仓零调用的卡片构造器，里面还带着两处错"
+        "（标签写成「镜声风格」、武器名那一行从未 addLayout）⇒ 接回去当场就错",
+    ),
+    Revert(
+        "RN", "卡片说明又改回讲版面",
+        "pages/special_sound_page.py",
+        "\"回合开始、结束、MVP 等时刻各播一段音效。逐项选风格，音量统一由上面这一条控制。\",",
+        "\"把启用开关和总音量固定在上方，下面集中管理各阶段风格。\",",
+        # ⚠ RN-077：判据从音效家族两页搬到了全站（分母 2 → 28），选择器跟着搬。
+        "tests/test_no_layout_self_talk_sitewide.py::"
+        "test_no_layout_self_talk_in_any_card_subtitle",
+        "RN-050：「固定在上方」这句已经是**事实错误** —— UP-100 为修「62px 舷窗」"
+        "把头部卡挪进了滚动区。描述版面的文案会随版面腐烂，描述功能的不会",
+    ),
+    Revert(
+        "RN", "提示又去指一个本页不存在的按钮",
+        "pages/special_sound_page.py",
+        'hint = resource_hint(health, open_label="打开当前资源")',
+        'hint = resource_hint(health)',
+        "tests/test_gun_special_sound_truth.py::"
+        "test_hint_only_names_buttons_that_exist",
+        "RN-056：本页那颗主按钮叫「打开当前资源」，而共享提示写的是"
+        "「打开音频资源」。单一真相源不等于"
+        "文案可以照搬——"
+        "这条是改完复跑外审、"
+        "8 发里 4 发独立报出来的",
+    ),
+    Revert(
+        "RN", "血量警告三行又被摊成通栏，紧凑档顶出可视区",
+        "pages/special_sound_page.py",
+        "        card_layout.addLayout(slider_row)\n        card_layout.addWidget(style_row)",
+        "        card_layout.addWidget(threshold_row)\n        card_layout.addWidget(cooldown_row)\n        card_layout.addWidget(style_row)",
+        "tests/test_gun_special_sound_truth.py::"
+        "test_health_tab_keeps_the_two_sliders_on_one_row",
+        "RN-055：三行通栏把卡片抬高一行，紧凑档 860x640 下最后一行被截 —— "
+        "外审复跑当场报「高」，而改之前紧凑档这一页是 NONE",
+    ),
+    # ------------------------------------------------ RN-005/059/060/061（M3-a）
+    Revert(
+        "RN", "中和表又被抄回脚本里",
+        "scripts/ui_shot_capture.py",
+        "        neutralized = neutralize_apply(config, page_ids)",
+        "        NEUTRALIZABLE = {\"magnifier\": {\"magnifier_enabled\": False}}\n"
+        "        for pid, ov in NEUTRALIZABLE.items():\n"
+        "            for a, v in ov.items():\n"
+        "                setattr(config, a, v)\n"
+        "        neutralized = sorted(NEUTRALIZABLE)",
+        "tests/test_audit_can_see_every_page.py::"
+        "test_the_neutralize_table_exists_in_exactly_one_place",
+        "RN-005：这张表曾在 5 支脚本各一份、内容 1~3 项不等，后果是 "
+        "flash/viewmodel/voice_output 三页（4265 行）被全部 5 支跳过 —— 零覆盖",
+    ),
+    Revert(
+        "RN", "热键闸门失效（审计又会真挂钩）",
+        "core/hotkeys/registry.py",
+        '    return os.environ.get("CS2C_NO_GLOBAL_HOTKEYS") == "1"',
+        "    return False",
+        "tests/test_audit_can_see_every_page.py::"
+        "test_the_gate_registers_nothing_with_the_real_libraries",
+        "RN-059：闸门是「这个进程绝不注册真实全局热键」这条**保证**本身。"
+        "它一失效，离屏审计就会按用户配置真去挂钩、劫持键盘鼠标",
+    ),
+    Revert(
+        "RN", "设备页又被整类拒绝",
+        "scripts/_audit_neutralize.py",
+        "    return frozenset(DEVICE_OWNING_PAGES) - set(NEUTRALIZE)",
+        "    return frozenset(DEVICE_OWNING_PAGES)",
+        "tests/test_audit_can_see_every_page.py::"
+        "test_no_page_is_skipped_by_the_audits_any_more",
+        "整类拒绝就是老状态：排版审计 24/28、指纹 21/28、截图缺 4 页、"
+        "建页耗时缺 6 页，而**没有任何地方报错**",
+    ),
+    Revert(
+        "RN", "侧栏导航项又被切成两半",
+        "gui_widget.py",
+        "        MainWindow._snap_nav_scroll_to_item_boundary(scroll, btn)",
+        "        pass",
+        "tests/test_audit_can_see_every_page.py::"
+        "test_sidebar_never_shows_a_half_cut_nav_item_at_the_top",
+        "RN-060：28 页里 **16 页**的侧栏顶部/底部各切掉 13~21px（项高 43px），"
+        "用户看到残缺的导航文字。排版审计一直绿（滚动区露半行不算溢出），"
+        "外审 8 发独立报出来 —— 而它只在导航列表靠后的页出现，"
+        "那些页正是 RN-005 盲区里的四页",
+    ),
+    Revert(
+        "RN", "建页耗时清单又漏掉设备页",
+        "scripts/bench_page_build.py",
+        '    ("flash", "pages.flash_page", "FlashPage"),',
+        "",
+        "tests/test_audit_can_see_every_page.py::"
+        "test_bench_covers_every_registered_page",
+        "RN-061：这份清单长期只有 18/28 页，缺的 9 页里 6 个是设备页 —— "
+        "棘轮看不见它们，而漏了不报错",
+    ),
+    Revert(
+        "RN", "焦点巡检又把 flash / viewmodel 排除在外",
+        "scripts/tab_order_audit.py",
+        "SPAWNS_SUBPROCESS: set[str] = set()",
+        'SPAWNS_SUBPROCESS: set[str] = {"flash", "viewmodel"}',
+        "tests/test_audit_can_see_every_page.py::"
+        "test_focus_audit_covers_every_page_with_a_class",
+        "RN-059：这是**第 8 处**私有跳过名单。探针在 subprocess.Popen 边界实测"
+        "两页构造时子进程调用 0 次。纳入后覆盖面 25/28 → 27/28，"
+        "**当场就在 viewmodel 上报出一处 Tab 顺序错位**（RN-069）",
+    ),
+    Revert(
+        "RN", "viewmodel 的 Tab 顺序又跳回左下角",
+        "pages/viewmodel_page.py",
+        # ⚠ 锚点与判据都换过。原来锚的是 RN-069 那行 `setTabOrder` 补丁，
+        # 而 RN-083 改版面之后**那行补丁本身成了错的**（去掉它焦点巡检才是 0 挪动），
+        # 锚点随之消失。原判据挂的是 `test_focus_audit_covers_every_page_with_a_class`
+        # —— 那是条**覆盖面**判据（管「有没有看这一页」），不是顺序判据。
+        # 现在改成注入一条真会打乱顺序的 setTabOrder，判据直接量顺序。
+        "        presets_layout.addWidget(presets_scroll)",
+        "        presets_layout.addWidget(presets_scroll)\n"
+        "        self.setTabOrder(self.auto_switch_interval_input, save_btn)",
+        "tests/test_flash_viewmodel_truth.py::test_viewmodel_tab_order_follows_the_screen",
+        "RN-069：走到第 5 个焦点时跳到左下角的「保存到CFG」（y=487），"
+        "再折回右上角的「循环按键」输入框（y=229）。"
+        "⇒ 显式 setTabOrder 是对**某个具体版面**的断言，改版面就得重新验它",
+    ),
+    Revert(
+        "RN", "lint 又把整个 scripts/ 蒙住",
+        "ruff.toml",
+        '    "scripts/bootstrap_tutorial_content.py",',
+        '    "scripts",',
+        "tests/test_audit_no_modal_no_game_writes.py::"
+        "test_lint_does_not_blindfold_the_whole_scripts_directory",
+        "RN-070：`exclude = [..., \"scripts\"]` 让 64 支 / 19226 行工装代码零 lint，"
+        "而 CI 把 `ruff check .` 当 lint 门禁。里面躺着一条 F821"
+        "（`ui_perf_probe` 用 sys 没 import），一秒就能查出来的东西躺了很久",
+    ),
+    Revert(
+        "RN", "ui_perf_probe 的 UTF-8 兜底又变成哑弹",
+        "scripts/ui_perf_probe.py",
+        "import sys                      # RN-071：下面 stdout.reconfigure 要它，缺了会静默失效",
+        "",
+        "tests/test_audit_no_modal_no_game_writes.py::"
+        "test_every_script_that_uses_sys_imports_it",
+        "RN-071：`sys.stdout.reconfigure` 抛的 NameError 被同一段的 "
+        "`except Exception: pass` 吞掉 ⇒ 整块 UTF-8 兜底恒失效。"
+        "该脚本打 ✅×5 / ❌×3 / ⚠×1，GBK 控制台上本该必崩 —— "
+        "**兜底把自己的失败也兜掉了**",
+    ),
+    Revert(
+        "RN", "建页基准又不沙箱化游戏目录",
+        "scripts/bench_page_build.py",
+        "    sandbox_external_writes(verbose=False)",
+        "    pass",
+        "tests/test_audit_side_effects_r9a.py::"
+        "test_every_page_building_script_sandboxes_the_game_dir",
+        "RN-072：实测它在动用户真实的 `Steam/.../csgo/cfg/`（GSI cfg / cs2customizer.cfg / "
+        "autoexec.cfg 三个文件）。UP-090 的机制早就在，只是没接到这支脚本上",
+    ),
+    Revert(
+        "RN", "沙箱判据又只认构造 MainWindow 的脚本",
+        "tests/test_audit_side_effects_r9a.py",
+        '        if _constructs(src, "MainWindow") or _builds_pages_directly(src):',
+        '        if _constructs(src, "MainWindow"):',
+        "tests/test_audit_side_effects_r9a.py::"
+        "test_the_detector_also_sees_scripts_that_build_pages_without_mainwindow",
+        "RN-072：`bench_page_build` 用 importlib 动态构造单个页类、一次都没构造 "
+        "MainWindow，于是整支落在判据视野之外 —— **判据的分母不含出事的那个**。"
+        "放开分母后当场又多抓出一支 `probe_r8d_focus`",
+    ),
+    Revert(
+        "RN", "建页基准又只 import 中和表不调用",
+        "scripts/bench_page_build.py",
+        "    neutralize_apply(_config_mod.config, {pid for pid, _, _ in specs})",
+        "    pass",
+        "tests/test_audit_can_see_every_page.py::"
+        "test_the_shared_table_is_actually_used_by_the_gate_scripts",
+        "RN-073：第二层中和在这支脚本里等于没接上。"
+        "而**上一版判据是假绿的** —— 它只查文件里有没有 `_audit_neutralize` "
+        "这个子串，`import 了但不调用`完全过关。改成 AST 找 Call 才咬得住",
+    ),
+    Revert(
+        "RN", "模态框闸门又变成消音器",
+        "scripts/_audit_neutralize.py",
+        "        _BLOCKED.append(what)",
+        "        pass",
+        "tests/test_audit_no_modal_no_game_writes.py::"
+        "test_the_modal_gate_records_instead_of_swallowing",
+        "RN-072：闸门必须同时是**发现通道**。只挡不记账的话，"
+        "「某页构造期弹框」会从挂死变成静默通过 —— 缺陷被判据自己藏起来",
+    ),
+    Revert(
+        "RN", "单选钮的 border-radius 又按内容框算",
+        "theme_manager.py",
+        # ⚠ 必须锚 `:checked` 那一行。第一版锚的是基础规则那行，回退之后
+        # `:checked` 自己的 radius 还在 ⇒ 选中态仍是圆 ⇒ **判据假绿**（回退验证逮到）。
+        # 缺陷长在选中态上，断点就得长在选中态上。
+        "                border-radius: {(toggle.radio_size + 2 * max(4, toggle.radio_border_width + 3)) // 2}px;",
+        "                border-radius: {toggle.radio_size // 2}px;",
+        "tests/test_radio_indicator_is_round.py::"
+        "test_radio_indicator_is_round_in_every_state",
+        "RN-066/076：Qt QSS 的 `width/height` 是**内容框**，边框加在外面。"
+        "按内容框算 radius ⇒ 内缘 radius = 9−5 = 4 铺在 18px 白底上 ⇒ "
+        "**选中项渲染成白色实心方块**，和同排未选中的圆圈不是一个形状。"
+        "⚠ 判据必须读像素：我上一轮拿 QSS 驳这条外审断言，判了假报（同 V-003 的错法）",
+    ),
+    Revert(
+        "RN", "卡片副标题又写成版面自白",
+        "pages/viewmodel_page.py",
+        '            "5 组持枪视角参数，每组都能单独改并保存下来。"',
+        '            "5 组常用持枪参数继续保留完整编辑能力，滚动区域更紧凑一些。"',
+        "tests/test_no_layout_self_talk_sitewide.py::"
+        "test_no_layout_self_talk_in_any_card_subtitle",
+        "RN-077：这句是**对着上一版说话**，而用户没见过上一版。"
+        "判据上一版分母只有音效家族两页，全站放开后一次量出 20 条 / 8 页 —— "
+        "而那两页一条都没有。**判据写完要问的不是它绿不绿，是它的分母是多少**",
+    ),
+    Revert(
+        "RN", "自白抽取器又只认 SettingsCard",
+        "tests/test_no_layout_self_talk_sitewide.py",
+        '        elif any(k in low for k in ("card", "panel", "section", "group")):',
+        "        elif False:",
+        # ⚠ 这个选择器改过两次，两次都是因为守卫本身假绿：
+        #   ① `..._sees_the_subtitles` 只数总数 → 拆掉分支后总数还有 60+，过关；
+        #   ② 点名 magnifier / voice_output 两页 → 这两页两种工厂都用，照样出货。
+        # 现在盯的是**会被拆掉的那条分支自己出了几条**。
+        "tests/test_no_layout_self_talk_sitewide.py::"
+        "test_the_extractor_actually_sees_the_variant_factories",
+        "RN-077：抽取器第一版只认 `SettingsCard` / `_create_section_card`，"
+        "于是 `magnifier_page` 的 `_create_inner_panel_card()` 整支落在视野外，"
+        "里面躺着两条自白。**判据没错，它只是什么都没看**",
+    ),
+    Revert(
+        "RN", "引导文案又指向一个同名的页签",
+        "pages/flash_page.py",
+        # ⚠ 锚点跟着文案走：这一行在**同一轮里改过三次**（修同名歧义 → 修我自己
+        # 引入的「左侧」→ 按钮能自己开之后改口径），前两版锚点都当场空转。
+        # ⭐ 教训：**别把断点锚在这一轮还在改的那一行**，或者收尾时统一重锚一次。
+        "被闪的时候，用你自己的颜色、图片和音效替换游戏默认的闪白。还没启用的话，点一下「启用自定闪光」就能开。",
+        "先去「基础设置」打开总开关。",
+        "tests/test_flash_viewmodel_truth.py::"
+        "test_the_master_switch_hint_says_which_basic_settings",
+        "RN-075：`flash` **自己的第一个页签就叫「基础设置」**，里面没有任何总开关；"
+        "真开关在侧栏同名的 `basic` 页、卡片叫「功能开关」、开关叫「自定闪光」。"
+        "外审 3/3 全票 × 5 张图全部报同一件事，措辞都是「就在基础设置页却完全找不到」",
+    ),
+    Revert(
+        "RN", "flash 底栏主按钮又变回纯导航",
+        "pages/flash_page.py",
+        '                self.action_bar.configure_primary("启用自定闪光", self._enable_and_start, visible=True)',
+        '                self.action_bar.configure_primary("前往效果预览", self._open_preview_tab, visible=True)',
+        "tests/test_flash_viewmodel_truth.py::"
+        "test_flash_bottom_bar_primary_actually_changes_something",
+        "RN-079：主按钮只切页签、不改任何状态，而胶囊常年「效果·未启用 / 运行·待启动」，"
+        "全页没有启动入口。外审**改前改后都 3/3 全票判「高」**，"
+        "措辞集中在「配完不知道怎么让它在 CS2 里生效」",
+    ),
+    Revert(
+        "RN", "首页开关卡又变回「写了没人读」",
+        "gui_widget.py",
+        "        switch_id = self._switch_id_by_config_key.get(config_key)",
+        '        switch_id = getattr(self, "_switch_id_by_config_key", {}).get(config_key)',
+        "tests/test_flash_viewmodel_truth.py::"
+        "test_the_home_switch_card_is_actually_readable_from_elsewhere",
+        "RN-089：`self.switches` 原本 **1 处 Store、1 处下标赋值、0 个真读者**（AST 实测）。"
+        "⭐ 这个断点模拟的不是删掉读，而是把读写成 `getattr(self, ..., {})` —— "
+        "**防御性 getattr 会把读操作变成字符串，AST 判据看不见它**，"
+        "「有没有真读者」这条判据就退化成查子串（RN-073 那条假绿的写法）",
+    ),
+    Revert(
+        "RN", "视角预设又被推到折叠线以下",
+        "pages/viewmodel_page.py",
+        "        self._viewmodel_right_column_layout.addWidget(presets_frame)",
+        "        scroll_layout.addWidget(presets_frame)",
+        "tests/test_flash_viewmodel_truth.py::"
+        "test_viewmodel_presets_are_on_the_first_screen",
+        "RN-083：右列只有一张卡、自 y≈450 起整列空白，而这一页**最核心的东西**"
+        "（5 组预设 + 每组 FOV/XYZ 编辑入口）掉到首屏之外。"
+        "外审 3/3 判「高」：「作为『局内视角设置』页却完全找不到 FOV/XYZ 与预设编辑入口」",
+    ),
+    Revert(
+        "RN", "同一个保存动作又有两个名字",
+        "pages/viewmodel_page.py",
+        '        save_btn = QPushButton("保存到CFG")',
+        '        save_btn = QPushButton("保存设置到CFG")',
+        "tests/test_flash_viewmodel_truth.py::test_the_two_save_buttons_have_the_same_name",
+        "RN-078：卡内和底栏是**同一个动作**，两个名字会让人以为是两件事",
+    ),
+    Revert(
+        "RN", "又用「左侧」给导航指路",
+        "pages/flash_page.py",
+        "被闪的时候，用你自己的颜色、图片和音效替换游戏默认的闪白。还没启用的话，点一下「启用自定闪光」就能开。",
+        "要生效得先在左侧「基础设置」页的「功能开关」里打开「自定闪光」。",
+        "tests/test_no_layout_self_talk_sitewide.py::"
+        "test_no_screen_direction_words_in_user_facing_copy",
+        "RN-081：**这就是我修 RN-075 时自己造出来的那条「高」**。"
+        "紧凑档 860×640 没有侧栏（导航收成左上角一个 ⋮ 菜单），"
+        "「左侧「基础设置」页」在那一档是事实错误。"
+        "外审 **3/3 × 多张紧凑图**判「高」，一发直接写「方位误写为『左侧』」。"
+        "⇒ 这条是「改完复跑」逮住的第四轮，判据一条都覆盖不到",
+    ),
+    Revert(
+        "RN", "卡片副标题又用「压成一张概况卡」这种说法",
+        "pages/flash_page.py",
+        "当前这一套配置的摘要：颜色、媒体和预览状态。",
+        "把首屏基础观感、媒体搭配和预览状态压成一张概况卡，调完背景后不用再往下找重点信息。",
+        "tests/test_no_layout_self_talk_sitewide.py::"
+        "test_no_layout_self_talk_in_any_card_subtitle",
+        "RN-077：这一条**词表和模板一条都没匹上**（动词是「压成」，不在表里），"
+        "是外审复跑 3/3 × 多张图报出来的。"
+        "⇒ 禁用词表不可能穷尽这一类：判据是拦回归的棘轮，发现通道是外审看图",
+    ),
+    Revert(
+        "RN", "帮助面板又点名一个不存在的页签",
+        "ui_help_panel.py",
+        "2. 回到本页「基础设置」页签调整闪光颜色、透明度和过渡方式",
+        "2. 在「基础」选项卡调整闪光颜色、透明度和过渡方式",
+        "tests/test_flash_viewmodel_truth.py::test_copy_only_names_tabs_that_exist",
+        "RN-075/RN-056：`flash` 页**没有**叫「基础」的页签（它叫「基础设置」）。"
+        "这一条是 RN-075 那条判据的**第一版规则跑错时顺带逮到的** —— "
+        "规则错了，但它看的地方对",
+    ),
+    Revert(
+        "RN", "viewmodel 又建一个建出来就 hide 的 summary_label",
+        "tests/test_no_invisible_summary_label.py",
+        "MAX_REMAINING = 17",
+        "MAX_REMAINING = 20",
+        "tests/test_no_invisible_summary_label.py::"
+        "test_ratchet_is_tightened_when_pages_are_cleaned",
+        "RN-009：棘轮清了两页（viewmodel + flash）就必须收紧到 18。"
+        "**棘轮不收紧等于没有棘轮** —— 松着的两格会把下一次回归静默吃掉",
+    ),
+    # ==================================== 2026-08-18 关档自查补的两条旧账
+    # 66 条已结项逐条对回退验证，查出两条「改了产品代码却没有任何东西钉住」。
+    # 两条都是 M1/M2 期间关的档 —— **关档不等于有人看着**。
+    Revert(
+        "RN", "改一次设置又把状态区渲染两遍",
+        "pages/screen_effects_page.py",
+        "        self._sync_enabled_state()\n\n    def _preview_normal(self):",
+        "        self._sync_enabled_state()\n        self._sync_status_strip()\n\n"
+        "    def _preview_normal(self):",
+        "tests/test_settings_change_renders_once.py::"
+        "test_toggling_a_setting_renders_the_status_strip_exactly_once",
+        "RN-010：`_sync_enabled_state()` 末尾自己就会调 `_sync_status_strip()`。"
+        "⭐ 这个断点模拟的是**回潮**：在 `_on_setting_changed` 里补一句"
+        "「改完刷新一下状态」是再自然不过的念头，而重复调用从调用点上完全看不出来。"
+        "⇒ **A 堆的清理不留判据，等于没清**",
+    ),
+    Revert(
+        "RN", "副标题又承诺按连杀数分开配",
+        "pages/kill_sound_page.py",
+        "一个风格里自带 1~5 连杀的不同音效。",
+        "可以按武器类别和连杀数分开配。",
+        "tests/test_copy_promises_only_real_config_dimensions.py::"
+        "test_no_page_promises_a_per_streak_configuration",
+        "RN-042：配置里只有 weapon → {enabled, style}，**没有连杀这个维度**；"
+        "连杀档位是风格目录内部按 1..5 命名的文件，用户选不了。"
+        "外审两发独立点出「提示可按连杀数分配，但界面上完全找不到入口」",
+    ),
+    # ================================== 2026-08-18 发版前置：RN-003 与冒烟挑错对象
+    Revert(
+        "RN", "击杀图标链路又不在打包关键模块清单里",
+        "build_tools/build_release.py",
+        '    "kill_icon_overlay",\n    "kill_icon_player",',
+        '    # (removed)',
+        "tests/test_release_critical_modules.py::test_the_kill_icon_chain_is_registered",
+        "RN-003：这份清单从 2.1.3 起没动过，而 2.2.4 最大的新功能整条链路一个模块都不在册。"
+        "真漏了的话打包照样成功、安装包照样出得来，**用户装上之后那个功能是死的**，"
+        "发布链路全程不报一声",
+    ),
+    Revert(
+        "RN", "冒烟自动挑产物又会挑到安装包",
+        "scripts/smoke_packaged.py",
+        '                 and c.parent.name.lower() != "installer"',
+        '                 and True',
+        "tests/test_smoke_picks_the_app_not_the_installer.py::"
+        "test_the_installer_directory_is_excluded",
+        "RN-097：安装包在应用产物**之后**生成，按 mtime 永远最新 ⇒ 冒烟启动的是安装程序，"
+        "等 UAC 超时、日志 0 字符、7 条判据一起红。"
+        "⭐ **一道门禁测错对象比它不存在更坏**：它给出一个看着很严重、"
+        "却和被测对象毫无关系的结论。而且它真的在用户机器上拉起了安装器",
+    ),
+    # ================================== 2026-08-18 用户实战报回来的三条
+    Revert(
+        "RN", "击杀又被记在「此刻举着的枪」头上",
+        "gsi_handler_kills.py",
+        "                and current_time - self.last_confirmed_fire_weapon_time\n"
+        "                <= self.kill_weapon_switch_grace",
+        "                and False",
+        "tests/test_kill_weapon_survives_a_quick_switch.py::"
+        "test_a_kill_after_quick_switching_still_belongs_to_the_gun_that_fired",
+        "RN-096：AWP 打死人之后顺手切副武器（狙击手标准操作），"
+        "而 round_kills 那一包晚一拍才到 —— 弹药变化落在上一包，本帧推断不出开火武器，"
+        "就地取材记成了「举着的五七」。⭐ 用户 8 次 AWP 击杀全被记错，"
+        "而我第一轮拿日志里那个 `weapon=` 字段当证据做统计 —— "
+        "**那是软件自己解析出的结论，不是观测事实**，等于循环论证",
+    ),
+    Revert(
+        "RN", "刀杀又被记成上一把枪",
+        "gsi_handler_kills.py",
+        "                not self._melee_config_key(self.frame_active_weapon)\n"
+        "                and self.last_confirmed_fire_weapon",
+        "                self.last_confirmed_fire_weapon",
+        "tests/test_kill_weapon_survives_a_quick_switch.py::"
+        "test_a_knife_kill_is_still_a_knife_kill",
+        "RN-096 的副作用防线：近战没有弹夹、永远推断不出开火，"
+        "一刀切会把刀杀全部记成上一把枪 ⇒ **RN-016「近战配了没反应」立刻复活**。"
+        "修一条缺陷时先量会不会造出另一条",
+    ),
+    Revert(
+        "RN", "击杀图标又被关回「音效播成功了才出」",
+        "gsi_handler_kills.py",
+        "        iconed = False\n"
+        "        if self.image_player and config.kill_icon_enabled:",
+        "        iconed = False\n"
+        "        if played and self.image_player and config.kill_icon_enabled:",
+        "tests/test_kill_feedback_channels_are_independent.py::"
+        "test_icon_still_fires_when_the_weapon_has_no_kill_sound",
+        "RN-094：用户死斗实录 112 次击杀 8 次无反馈，**8 次全是 weapon_fiveseven**"
+        "（那把枪配置里是「不启用」）。图标有自己的开关和素材，"
+        "却被「这把枪的击杀音效有没有播出」暗中门控 ⇒ 三个功能同时「坏」，"
+        "看起来像总线故障。用户的处理是把图标总开关关掉",
+    ),
+    Revert(
+        "RN", "exec cs2customizer.cfg 又不排在最后",
+        "core/crosshair_reset.py",
+        "    if our_cfg not in order or order[-1] == our_cfg:\n        return autoexec_text",
+        "    if our_cfg not in order:\n        return autoexec_text",
+        "tests/test_autoexec_keeps_us_last.py::test_rewriting_is_idempotent",
+        "RN-095：这个断点模拟的不是「没挪」，是**挪得太勤** —— "
+        "去掉「已经在最后就别动」这个判断，每次启动都会重写用户自己的 autoexec.cfg。"
+        "⚠ 真缺陷（排在别人前面被覆盖）由同文件另外两条判据钉住",
+    ),
+    Revert(
+        "RN", "冲突检测只认主 alias、漏掉老 HUD 那个",
+        "core/crosshair_reset.py",
+        "OWNED_ALIASES = (PRIMARY_ALIAS, SECONDARY_ALIAS, *LEGACY_ALIASES)",
+        "OWNED_ALIASES = (PRIMARY_ALIAS,)",
+        "tests/test_autoexec_keeps_us_last.py::test_we_own_exactly_the_aliases_we_emit",
+        "RN-095：开源版**同样**定义了 `fp_hud_mouse1`。只查主 alias 的话，"
+        "「主的没被抢、老的被抢了」这种局面会被判成没冲突 —— 又一次分母",
+    ),
+    Revert(
+        "RN", "焦点巡检那道门又拿退出码当裁定",
+        ".github/workflows/ci.yml",
+        "          python scripts/tab_order_audit.py --verbose 2>&1 | Tee-Object -FilePath focus.log\n"
+        "          ./.github/verdict.ps1 -Name focus -LogPath focus.log",
+        "          python scripts/tab_order_audit.py --verbose",
+        "tests/test_ci_gates_read_the_verdict_line.py::"
+        "test_every_blocking_audit_step_reads_the_verdict_line",
+        "RN-092：这正是 2026-08-17 `41217bf` 那次**假红**的原文。"
+        "焦点巡检 28 页全 0、打印「通过 / RESULT rc=0」，0.66 秒后进程退出码 1、无 traceback。"
+        "⭐ RN-068 早就把可信通道建好了，**却没人去读** —— 半截修复的另一种形态：通道有了、消费者没换",
+    ),
+    Revert(
+        "RN", "CI 要的裁定名和脚本打的对不上",
+        ".github/workflows/ci.yml",
+        "./.github/verdict.ps1 -Name contrast -LogPath contrast.log",
+        "./.github/verdict.ps1 -Name contrastt -LogPath contrast.log",
+        "tests/test_ci_gates_read_the_verdict_line.py::"
+        "test_the_verdict_name_matches_what_the_script_delivers",
+        "RN-092：名字对不上**只会表现为「这道门一直红」**，"
+        "很容易被当成产品缺陷去查一整轮 —— 和 RN-068 当初的症状一模一样",
+    ),
+    Revert(
+        "RN", "两道排版审计共用一个日志名",
+        ".github/workflows/ci.yml",
+        "-FilePath layout_compact.log\n"
+        "          ./.github/verdict.ps1 -Name layout -LogPath layout_compact.log",
+        "-FilePath layout_full.log\n"
+        "          ./.github/verdict.ps1 -Name layout -LogPath layout_full.log",
+        "tests/test_ci_gates_read_the_verdict_line.py::"
+        "test_each_audit_step_writes_its_own_log_file",
+        "RN-092：共用日志名的话，紧凑档那道门会读到完整档留下的裁定 —— "
+        "**紧凑档从此永远绿**。这是我加这道门时差一点犯的错",
+    ),
+    Revert(
+        "RN", "副标题抽取器又漏掉 PAGE_LEAD 这条通路",
+        "tests/test_no_layout_self_talk_sitewide.py",
+        '                        and isinstance(node.value.value, str) and node.value.value):\n'
+        '                    out.append((node.value.lineno, node.value.value, "PAGE_LEAD"))',
+        '                        and isinstance(node.value.value, str) and node.value.value):\n'
+        '                    pass',
+        "tests/test_no_layout_self_talk_sitewide.py::"
+        "test_the_extractor_actually_sees_the_page_lead_constants",
+        "RN-091：全站副标题抽取器原来只认「调用的实参」，"
+        "音效家族 4 页的页头文案是类常量 `PAGE_LEAD`（经基类转递），"
+        "**`kill_sound_page.py` 实测抽到 0 条**，而总量守卫（≥60）一直是绿的。"
+        "⇒ 每加一条通路就要配一条只盯它自己的守卫，否则总量会把它盖住",
+    ),
+    # ======================================== 开源版专属：品牌 / 素材 / 文档
+    # ⚠ 这三组上游没有，只存在于开源版：BRAND 验「旧品牌名回流时判据变不变红」，
+    # ASSET 验「素材混进仓库」，DOC 验开源治理文档。
+    # **同步时最容易被整组丢掉** —— 2026-08-19 那次重锚补丁就丢了全部 22 条，
+    # 是 `test_no_legacy_brand`「白名单条目里已经没有旧名了」那条反过来逮到的。
+    Revert(
+        'BRAND', '数据目录名漏改（config.APP_NAME 退回旧品牌）',
+        'config.py',
+        'APP_NAME = "CS2Customizer"',
+        'APP_NAME = "FanTool"',
+        'tests/test_no_legacy_brand.py::test_runtime_app_name_is_not_legacy',
+        '开源版与闭源版共用 %LOCALAPPDATA%；两边配置键集合不同，'
+        'save_config 写的是显式白名单 dict，后写的一方会静默删掉对方独有的键',
+    ),
+    Revert(
+        'BRAND', '两处 APP_NAME 只改了一处（配置目录与日志目录被拆到两个文件夹）',
+        'core/utils/logger.py',
+        'APP_NAME = "CS2Customizer"',
+        'APP_NAME = "FanTool"',
+        'tests/test_no_legacy_brand.py::test_runtime_app_name_is_not_legacy',
+        '日志写进 A 目录、配置写进 B 目录；用户按提示去删配置目录清不掉日志，排障时也找不到日志',
+    ),
+    Revert(
+        'BRAND', '单实例锁文件名漏改',
+        'core/single_instance.py',
+        'LOCK_FILENAME = "CS2Customizer_single_instance.lock"',
+        'LOCK_FILENAME = "FanTool_single_instance.lock"',
+        'tests/test_no_legacy_brand.py::test_single_instance_and_autostart_keys_are_not_legacy',
+        '闭源版在跑时开源版会以为"自己已经在运行"而直接退出——两个产品变成互斥的',
+    ),
+    Revert(
+        'BRAND', '开机自启注册表值名漏改',
+        'core/utils/autostart.py',
+        '_VALUE_NAME = "CS2Customizer"',
+        '_VALUE_NAME = "FanTool帆派助手"',
+        'tests/test_no_legacy_brand.py::test_single_instance_and_autostart_keys_are_not_legacy',
+        '两者的开机自启项互相覆盖，用户只能自启其中一个，且不知道是谁把谁顶掉了',
+    ),
+    Revert(
+        'BRAND', '写进用户游戏目录的 cfg 文件名漏改',
+        'core/cfg_compiler.py',
+        '"cs2customizer.cfg")',
+        '"fanpai.cfg")',
+        'tests/test_no_legacy_brand.py::test_generated_game_cfg_names_are_not_legacy',
+        '旧品牌名长期躺在用户的 CS2 目录里；两个产品还会抢同一个 cfg 文件互相覆盖',
+    ),
+    Revert(
+        'BRAND', '白名单腐烂：豁免条目里已经没有旧名了却还挂着',
+        'core/presets/share_file.py',
+        # 注意要连注释一起换掉：只删常量的话文件里还留着注释中的旧扩展名，
+        # 判据照绿——那样这个断点自己就是假的。
+        '#: 前身（闭源版）导出的分享文件用 `.fanpai`。**只在打开对话框的过滤器里认它**——\n'
+        '#: 容器格式与安检逻辑完全一致，没有理由让用户手工改扩展名才能导入；\n'
+        '#: 但导出一律写新扩展名，不再产生旧后缀的文件。\n'
+        'LEGACY_SHARE_EXTS = (".fanpai",)',
+        'LEGACY_SHARE_EXTS = ()',
+        'tests/test_no_legacy_brand.py::test_allowlist_entries_still_exist',
+        '白名单变成只增不减的免检清单——文件早就不含旧名，条目还在，'
+        '下次有人往这个文件里加东西就免检了',
+    ),
+    Revert(
+        'BRAND', '旧品牌回流到白名单之外的文件（文本判据本体）',
+        'CONTRIBUTING.md',
+        '本仓库是闭源商业版的**功能子集**',
+        '本仓库是帆派助手的**功能子集**',
+        'tests/test_no_legacy_brand.py::test_no_legacy_brand_outside_allowlist',
+        '前面几条行为判据只看那几个常量；旧名从文档、注释、界面文案回流时得靠这条兜底',
+    ),
+    Revert(
+        'DOC', 'README 引用了不存在的图片（首页渲染成破图标）',
+        'README.md',
+        '![CS2 Customizer 主界面](docs/images/home.png)',
+        '![CS2 Customizer 主界面](docs/images/does-not-exist.png)',
+        'tests/test_version_consistency.py::test_readme_images_all_exist',
+        '真实发生过：开源化时「界面预览」引用了 docs/images/ 下三个 gif，'
+        '而那个目录压根不存在，GitHub 首页就是三个破图标',
+    ),
+    Revert(
+        'DOC', '英文 README 丢了回中文版的链接（语言切换变单向）',
+        'README.en.md',
+        '[简体中文](README.md) · **English**',
+        '**English**',
+        'tests/test_version_consistency.py::test_readme_language_switch_is_bidirectional',
+        '单向链接是双语化最常见的半成品：读者跳到英文版就出不来了',
+    ),
+    Revert(
+        'DOC', '官网地址漏进了会发网络请求的模块',
+        'service_urls.py',
+        'TELEMETRY_BASE_URL = ""',
+        'TELEMETRY_BASE_URL = "https://fantool.online"',
+        'tests/test_no_legacy_brand.py::test_official_site_url_only_in_readme',
+        '这正是「默认不连任何服务器」被破坏的样子：每个 fork 出去的客户端都开始'
+        '打原作者的服务器，带宽是他的、崩溃堆栈里的用户数据责任也是他的，'
+        '而那些用户已经不是他的用户了',
+    ),
+    Revert(
+        'DOC', '中文 README 的一级标题被改掉',
+        'README.md',
+        '# CS2 Customizer\n',
+        '# Some Other Project\n',
+        'tests/test_version_consistency.py::test_readme_title_matches',
+        '落地页第一眼看到的名字错了。这条判据的落点随排版改过两次'
+        '（首行 → 开头 10 行内找一级标题），断点跟着落在标题行本身',
+    ),
+    Revert(
+        'ASSET', '生成器与已入库的闪屏图脱钩（图上还是旧产品名）',
+        'build_tools/make_installer_assets.py',
+        'SPLASH_TITLE = "CS2 Customizer"',
+        'SPLASH_TITLE = "帆派助手"',
+        'tests/test_brand_assets.py::test_committed_brand_images_are_not_stale',
+        '真实发生过：入库的 splash.png 与闭源版 md5 完全相同，图上印着旧产品名，'
+        '而代码/文档/注册表键全已改名——用户第一眼看到的就是那张图',
+    ),
+    Revert(
+        'ASSET', '社交预览图与生成器脱钩（那一腿是不是真的在比）',
+        'scripts/make_social_preview.py',
+        '"给 CS2 玩家的本地个性化工具"',
+        '"给 CS2 玩家的本地个性化助手"',
+        'tests/test_brand_assets.py::test_committed_brand_images_are_not_stale',
+        '上一条断点只动了 make_installer_assets。这条专门证明社交预览图那一腿'
+        '也在真比——一张图加进清单却没真比对，比不加更糟',
+    ),
+    Revert(
+        'ASSET', '向导大图标题字号写死（改名后左右各裁掉一个字母）',
+        'build_tools/make_installer_assets.py',
+        '_fit_font(WIZARD_TITLE, WIZARD_TITLE_BOX, WIZARD_TITLE_SIZE, bold=True)',
+        '_font(WIZARD_TITLE_SIZE, bold=True)',
+        'tests/test_brand_assets.py::test_wizard_large_text_fits_inside_safe_boxes',
+        '真实发生过：字号是照 4 个汉字的旧名调的，换成 14 个拉丁字符后同字号'
+        '宽了一倍多，标题两端被裁，生成脚本照样退出码 0',
+    ),
+    Revert(
+        'ASSET', '安全框自己越出画布（量具没校准）',
+        'build_tools/make_installer_assets.py',
+        'WIZARD_URL_BOX = (36, 554, WIZARD_SIZE[0] - 36, 582)',
+        'WIZARD_URL_BOX = (36, 554, WIZARD_SIZE[0] + 200, 582)',
+        'tests/test_brand_assets.py::test_wizard_large_safe_boxes_are_inside_the_canvas',
+        '"文字在框内"这条判据的量具是框本身。框越出画布时，文字明明被裁掉了'
+        '那条判据还会照样通过——假绿',
+    ),
+    Revert(
+        'ASSET', '标题安全框挪到没有字的位置（空文案也能骗过包围盒判据）',
+        'build_tools/make_installer_assets.py',
+        'WIZARD_TITLE_BOX = (18, 380, WIZARD_SIZE[0] - 18, 436)',
+        'WIZARD_TITLE_BOX = (18, 120, WIZARD_SIZE[0] - 18, 176)',
+        'tests/test_brand_assets.py::test_wizard_large_actually_has_ink_where_the_text_should_be',
+        '只验"包围盒落在框内"的话，空字符串的包围盒必然在框内——这条要求图上'
+        '真的有亮色像素，堵的是"判据绿了但图是空的"',
+    ),
+    Revert(
+        'ASSET', '截图前那道"沙箱路径不含用户名"的门被拿掉',
+        'scripts/capture_readme_shots.py',
+        'hits = [t for t in personal_tokens() if t.lower() in text.lower()]',
+        'hits = []',
+        'tests/test_brand_assets.py::test_screenshot_guard_rejects_username_in_sandbox_path',
+        '真实发生过：沙箱默认落在 %TEMP%（=C:\\Users\\<用户名>\\...），高级设置页把'
+        'CS2 目录原样显示出来，advanced.png 里印着真实用户名并推上了公开仓库——'
+        '而本项目的日志脱敏器专门干掉的就是这个串',
+    ),
+    Revert(
+        'ASSET', '图标与生成器脱钩',
+        'build_tools/make_app_icon.py',
+        'ring_r = big * 0.31',
+        'ring_r = big * 0.26',
+        'tests/test_brand_assets.py::test_committed_icons_are_not_stale',
+        '位图一旦入库就会和生成器脱钩，而脱钩是静默的——这正是启动闪屏印着'
+        '旧产品名一路全绿到公开前的原因',
+    ),
+    Revert(
+        'ASSET', '图标退回单一尺寸帧',
+        'build_tools/make_app_icon.py',
+        'SIZES = (16, 24, 32, 48, 64, 128, 256)',
+        'SIZES = (64,)',
+        'tests/test_brand_assets.py::test_icon_has_every_size_windows_asks_for',
+        '原来那张图标就是**单帧 64×64**：16px 的资源管理器列表和任务栏全靠系统'
+        '缩放，发虚。少一档不报错，只在那个场景里难看',
+    ),
+    Revert(
+        'ASSET', '图标帧写成 PNG（Inno Setup 吃不下）',
+        'build_tools/make_app_icon.py',
+        '        bitmap_format="bmp",\n',
+        '',
+        'tests/test_brand_assets.py::test_icon_frames_are_bmp_not_png',
+        '真实发生过：项目根 icon.ico 是 PNG 帧，Inno 不接受，于是有人手工重铸了'
+        '一份 setup_icon.ico——一个没人记得的手工步骤，下一个改图标的人会踩回去',
+    ),
+    Revert(
+        'ASSET', '小尺寸不再单独画（16px 糊成一团）',
+        'build_tools/make_app_icon.py',
+        'SIMPLIFY_BELOW = 40',
+        'SIMPLIFY_BELOW = 0',
+        'tests/test_brand_assets.py::test_smallest_icon_frame_is_actually_legible',
+        '实测过：把大图几何原样缩到 16px，准星刻线正好顶到外环，三者糊成一个'
+        '实心疙瘩——文件正常、尺寸齐全、肉眼认不出是什么',
+    ),
+    Revert(
+        'ASSET', '旧品牌 AI 美术底图被提交进仓库',
+        'build_tools/make_installer_assets.py',
+        'SPLASH_ART_SOURCE = OUT / "splash_art_ai.png"',
+        'SPLASH_ART_SOURCE = OUT / "setup_icon.ico"',
+        'tests/test_brand_assets.py::test_legacy_splash_art_is_not_tracked',
+        '把常量指向一个确实已入库的文件，等价于"那张美术底图被 git add 了"。'
+        '它既是旧品牌残留，又是来源不清的 AI 素材，公开仓库两头都不该有',
     ),
 ]
 
@@ -1682,6 +2813,18 @@ def main() -> int:
 
     items = [r for r in REVERTS if not args.only or r.group == args.only]
 
+    # ---- RN-093：先收拾上一轮没跑完留下的烂摊子 ----
+    # ⚠ 必须在失效体检**之前**做：留在树上的改坏文件会让锚点变成"出现 0 次"，
+    # 于是一条好端端的断点被报成"已失效"，误诊套误诊。
+    leftovers = restore_from_disk()
+    if leftovers:
+        print("⚠ 上一轮回退验证没跑完（多半是被 timeout / Ctrl-C 杀掉的），"
+              f"以下 {len(leftovers)} 个文件还留着改坏的内容，已自动还原：")
+        for rel in leftovers:
+            print(f"   - {rel}")
+        print()
+    clear_snapshot()
+
     # ---- 失效体检：断点会随产品代码一起腐烂，先把腐烂的挑出来单独报 ----
     # 放在基线之前：一条改了名的判据不该让另外 90 多条断点跟着停摆。
     print("=" * 78)
@@ -1719,9 +2862,12 @@ def main() -> int:
         print("没有可跑的断点。")
         return 3
 
-    # 开跑前给所有涉及的文件拍快照，收尾无论如何都还原
+    # 开跑前给所有涉及的文件拍快照，收尾无论如何都还原。
+    # RN-093：快照**同时落盘**，并装上信号处理器 —— `finally` 挡不住 SIGTERM。
     touched = {r.path for r in items}
     snapshot = {p: p.read_bytes() for p in touched}
+    save_snapshot(snapshot)
+    _install_emergency_restore()
 
     results = []
     try:
@@ -1763,6 +2909,7 @@ def main() -> int:
         for p, data in snapshot.items():
             if p.read_bytes() != data:
                 p.write_bytes(data)
+        clear_snapshot()
         print("\n所有文件已还原至改动前状态。")
 
     print("\n" + "=" * 78)

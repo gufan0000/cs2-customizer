@@ -83,7 +83,7 @@ class AudioTaskPanelPage(QWidget):
 
         history_card, history_layout = SettingsCard.make(
             "任务历史",
-            "这里只展示最近的后台任务记录；运行中的任务会优先反映到上方状态卡里。",
+            "已经跑完的后台任务：做了什么、成没成。正在跑的任务看「当前状态」。",
         )
 
         action_row = QHBoxLayout()

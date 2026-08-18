@@ -34,7 +34,7 @@ PROJECT_RELEASES_URL = f"{PROJECT_REPO_URL}/releases"
 
 class AboutPage(QWidget):
     """关于页面"""
-
+    
     def __init__(self, parent=None):
         super().__init__(parent)
         self.logger = get_logger("AboutPage")
@@ -46,6 +46,24 @@ class AboutPage(QWidget):
 
         self.logger.info("关于页面初始化完成")
 
+    def _open_onboarding_guide(self):
+        """打开主窗口的三步上手引导（RN-110）。
+
+        ⚠ 拿不到主窗口那个方法时**必须说话**：这个按钮就是给「不知道去哪儿设目录」
+        的新用户准备的，它自己再没反应就等于把人扔在原地了。
+        """
+        from ui_toast import toast_warning
+
+        opener = getattr(self.window(), "_show_onboarding_dialog", None)
+        if not callable(opener):
+            toast_warning("上手引导打不开，请到「工具与系统 - 高级设置」里选 CS2 目录。", 4200)
+            return
+        try:
+            opener()
+        except Exception:
+            self.logger.exception("从关于页打开上手引导失败")
+            toast_warning("上手引导打不开，请到「工具与系统 - 高级设置」里选 CS2 目录。", 4200)
+
     def _build_info_text(self):
         return (
             "<p style='font-size: 14px; line-height: 1.8;'>"
@@ -54,7 +72,10 @@ class AboutPage(QWidget):
             f"<b>仓库：</b>{PROJECT_REPO_URL}<br><br>"
             "本工具通过监听 CS2 官方游戏状态接口 (GSI) 来实现击杀音效等功能，"
             "只读取游戏状态并读写 cfg 文件。<br>"
-            "请确保已正确选择 CS 文件夹。<br><br>"
+            # ⚠ 这句话不能只说「要做什么」。紧凑模式下它出现在折叠线以上、
+            # 而下面那个「三步上手引导」按钮在折叠线以下 —— 外审看的就是这一屏，
+            # 报的是「提示了却没有任何操作入口」。⇒ 句子自己把入口点出来。
+            "请确保已正确选择 CS 文件夹 —— 本页下方的「三步上手引导」可以直接完成。<br><br>"
             f"<span style='color: {get_color('info')};'>"
             f"<b>开源软件 · {PROJECT_LICENSE} 许可 · 自由使用与修改</b></span>"
             "</p>"
@@ -114,7 +135,7 @@ class AboutPage(QWidget):
         # 多出来的那段本来就是空白。
         header = PageHeader(
             "关于软件",
-            description="版本信息、开源许可和产品说明都集中在这里，方便确认当前这台桌面端的安装状态。",
+            description="看当前装的是哪个版本，以及开源许可与项目信息。",
             title_font_size=None,
             spacing=12,
         )
@@ -174,6 +195,28 @@ class AboutPage(QWidget):
         self.info_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         self.info_label.setObjectName("infoLabel")  # 使用主题样式
         intro_layout.addWidget(self.info_label)
+
+        # RN-110（轻档）：上面那句「请确保已正确选择 CS 文件夹」原先是一句**死提示** ——
+        # 说了要做什么，却没说去哪儿做。这里补上真正的入口。
+        setup_row = QHBoxLayout()
+        setup_row.setSpacing(8)
+        setup_hint = QLabel("还没设过 CS2 目录？其余功能全都依赖它。")
+        setup_hint.setObjectName("hintLabel")
+        setup_hint.setWordWrap(True)
+        setup_row.addWidget(setup_hint, 1)
+        self.goto_onboarding_button = QPushButton("三步上手引导")
+        style_as_secondary_button(self.goto_onboarding_button)
+        self.goto_onboarding_button.setFixedHeight(36)
+        self.goto_onboarding_button.setMinimumWidth(132)
+        self.goto_onboarding_button.setToolTip("打开选目录 / 写 GSI 配置 / 去试听的三步引导")
+        self.goto_onboarding_button.clicked.connect(self._open_onboarding_guide)
+        # ⚠ AlignRight 不能省：这类按钮的水平策略是 Minimum（可以长大），
+        # 不对齐就会把整行剩余空间吃光（实测 282px vs sizeHint 118px）。
+        # 同页「立即检查更新」正是漏了这一手才被撑到 280px —— 见 RN-024。
+        setup_row.addWidget(self.goto_onboarding_button,
+                            0, Qt.AlignRight | Qt.AlignVCenter)
+        intro_layout.addLayout(setup_row)
+
         layout.addWidget(intro_card)
 
         # 开源版没有更新检查，也不联网取更新日志：版本变更只在仓库的 Releases 页面公布，

@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import itertools
+import os
 import threading
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Iterable, List, Optional
@@ -39,6 +40,37 @@ except Exception:  # pragma: no cover
 
 _lock = threading.RLock()
 _token_seq = itertools.count(1)
+
+
+def hotkeys_disabled() -> bool:
+    """这个进程是否**一律不注册真实全局热键**（RN-059）。
+
+    只由环境变量 `CS2C_NO_GLOBAL_HOTKEYS=1` 打开，**产品代码任何地方都不设它**，
+    只有离屏审计/判据脚本设。
+
+    ## 为什么需要一道显式闸门，而不是继续逐页想办法
+
+    翻新工程的离屏工装长期把 6 个页面整个跳过（`DEVICE_OWNING_PAGES`），
+    理由写的是"构造即注册全局热键、会劫持用户的鼠标右键"。
+    2026-08-17 在 `keyboard` / `mouse` 库边界上架探针实测（全新隔离配置）：
+
+        flash / viewmodel / voice_output / music / magnifier / kill_icon
+        —— 六页**全部**：新增热键绑定 0 条、库调用 0 次、可见窗口 0 个
+
+    因为热键是按**用户配置里已有的绑定**注册的，而隔离配置里什么都没有。
+    ⇒ 那条理由在离屏场景下**基本不成立**，代价是 `flash`(1507 行) /
+      `viewmodel`(823) / `voice_output`(1935) 三页被全部 5 支脚本跳过，
+      **合计 4265 行界面从来没有排版审计、没有指纹基线、没有截图、没有焦点巡检**。
+
+    但"实测这一次没注册"不等于"以后也不会"——只要审计跑在一份**有**绑定的配置上
+    就会真注册。所以这里不靠推理，给一个**保证**：闸门一开，
+    `register_*` 一律只记账不挂钩，`list_bindings()` 照常能查（UI 冲突提示不受影响）。
+
+    ⚠ **故意不复用 `CS2C_SAFE_MODE_ACTIVE`**：那个变量在**真实运行**里也会被
+    `main_widget` 打开（上次原生崩溃后的兼容模式），而那种情况下热键必须照常工作。
+    复用它等于给真实用户偷偷关掉音板热键。
+    """
+    return os.environ.get("CS2C_NO_GLOBAL_HOTKEYS") == "1"
 
 
 @dataclass
@@ -71,6 +103,14 @@ def register_key(
     note: str = "",
 ) -> Optional[int]:
     """注册具体按键（等价 keyboard.on_press_key / on_release_key）。"""
+    if hotkeys_disabled():
+        # RN-059：闸门开着 —— 只记账，不向 keyboard/mouse 挂任何钩子。
+        with _lock:
+            token = _new_token()
+            _bindings[token] = _Binding(
+                token, str(owner), "key", _norm_key(key), False,
+                (note or "") + "（审计模式：未真正挂钩）", [])
+        return token
     if _keyboard is None:
         logger.warning("keyboard 库不可用，register_key 跳过")
         return None
@@ -107,6 +147,14 @@ def register_hotkey(
     note: str = "",
 ) -> Optional[int]:
     """注册组合热键（等价 keyboard.add_hotkey，支持 'ctrl+alt+x' 形式）。"""
+    if hotkeys_disabled():
+        # RN-059：闸门开着 —— 只记账，不向 keyboard/mouse 挂任何钩子。
+        with _lock:
+            token = _new_token()
+            _bindings[token] = _Binding(
+                token, str(owner), "hotkey", _norm_key(hotkey), bool(suppress),
+                (note or "") + "（审计模式：未真正挂钩）", [])
+        return token
     if _keyboard is None:
         logger.warning("keyboard 库不可用，register_hotkey 跳过")
         return None
@@ -136,6 +184,14 @@ def register_hook(
 
     interest_keys: hook 内部真正关心的键（仅用于冲突检测/总览，可空）。
     """
+    if hotkeys_disabled():
+        # RN-059：闸门开着 —— 只记账，不向 keyboard/mouse 挂任何钩子。
+        with _lock:
+            token = _new_token()
+            _bindings[token] = _Binding(
+                token, str(owner), "hook", "*", bool(suppress),
+                (note or "") + "（审计模式：未真正挂钩）", [])
+        return token
     if _keyboard is None:
         logger.warning("keyboard 库不可用，register_hook 跳过")
         return None
@@ -160,6 +216,14 @@ def register_mouse(
     note: str = "",
 ) -> Optional[int]:
     """注册鼠标按键（等价 mouse.on_button down/up）。"""
+    if hotkeys_disabled():
+        # RN-059：闸门开着 —— 只记账，不向 keyboard/mouse 挂任何钩子。
+        with _lock:
+            token = _new_token()
+            _bindings[token] = _Binding(
+                token, str(owner), "mouse", f"mouse:{_norm_key(button)}", False,
+                (note or "") + "（审计模式：未真正挂钩）", [])
+        return token
     if _mouse is None:
         logger.warning("mouse 库不可用，register_mouse 跳过")
         return None

@@ -42,7 +42,8 @@ def main() -> int:
     win.show()
     win.resize(1366, 768)
     for _ in range(8):
-        app.processEvents(); time.sleep(0.06)
+        app.processEvents()
+        time.sleep(0.06)
 
     tm = get_theme_manager()
     errors = []
@@ -50,13 +51,16 @@ def main() -> int:
         try:
             tm.set_theme(theme_name)
             for _ in range(8):
-                app.processEvents(); time.sleep(0.05)
+                app.processEvents()
+                time.sleep(0.05)
             win.show_page("basic", animated=False)
             for _ in range(6):
-                app.processEvents(); time.sleep(0.05)
+                app.processEvents()
+                time.sleep(0.05)
             time.sleep(0.2)
             for _ in range(4):
-                app.processEvents(); time.sleep(0.05)
+                app.processEvents()
+                time.sleep(0.05)
             pix = win.grab()
             out_path = OUT / f"{theme_name}_basic.png"
             ok = pix.save(str(out_path), "PNG")

@@ -42,8 +42,6 @@ from __future__ import annotations
 import bisect
 import os
 import sys
-import tempfile
-from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -54,11 +52,12 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 # layout_overflow_audit 会设 config.ui_expert_mode=True,
 # 换个脚本、换个属性就是真真切切改用户设置了。
 # 与 UP-065 同类:诊断/审计工具写错地方,污染的是用户的真实数据。
-_tmp = Path(tempfile.gettempdir()) / "cs2customizer_tab_audit"
-(_tmp / "config").mkdir(parents=True, exist_ok=True)
-(_tmp / "logs").mkdir(parents=True, exist_ok=True)
-os.environ.setdefault("CS2C_CONFIG_DIR", str(_tmp / "config"))
-os.environ.setdefault("CS2C_LOG_DIR", str(_tmp / "logs"))
+# RN-032：配置目录一律走共享工装 —— 自己 mkdir + setdefault 挡不住
+# migrate_old_config() 把仓库根那份未跟踪的个人 config.json 复制进来。
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _pristine_config import use_pristine_config_dir  # noqa: E402
+
+_tmp = use_pristine_config_dir("cs2customizer_tab_audit")
 # 页面里若有准心/音频的自动启动分支,别让审计把它拉起来
 os.environ.setdefault("CS2C_SAFE_MODE_ACTIVE", "1")
 
@@ -103,8 +102,9 @@ PAGE_FACTORY = {
     "about": ("pages.about_page", "AboutPage"),
 }
 
-# 构造即 spawn 子进程的页面，默认跳过（口径同 `layout_overflow_audit.UNSAFE_PAGES`，
-# 但这里能中和的更多：`magnifier` 靠关热键开关、`music` 靠 NEUTRALIZE 关首次下载，
+# 构造即占外部资源的页面（口径同 `core.page_traits`）。
+# RN-005/RN-059 之后中和表只有 `scripts/_audit_neutralize.py` 一份，
+# 六页全部可纳入 —— 这里不再自己列名单。历史注释保留在下面，
 # 两个都已经纳入默认档）。要跑它们加 `--include-unsafe`。
 # ⚠ 2026-08-16：`kill_icon` 从这份名单里移走了。它当年"不安全"是因为整条播放链
 #    跑在一个 pygame 子进程里（建播放器就 spawn 一个 python.exe + SDL 视频窗口），
@@ -112,7 +112,13 @@ PAGE_FACTORY = {
 #    **真正播放的那一刻**才创建。排版审计早在 KI-1 时就跟着改了，这边一直没改——
 #    于是这一页在焦点巡检里**白白少测了一整轮重构**（KI-6 把它重写成了清单板）。
 #    「不安全名单」和「已经不安全了吗」是两件事，改完渲染架构要顺手复核这类名单。
-SPAWNS_SUBPROCESS = {"flash", "viewmodel"}
+# RN-059：这里原来是 `{"flash", "viewmodel"}` —— 第 8 处私有跳过名单。
+# 探针在 `subprocess.Popen` 边界上实测：两页构造时子进程调用 **0 次**
+# （flash 只在 `flash_enabled` 为真时才起进程，而中和表已把它按成 False；
+#  viewmodel 同理）。⇒ 两页纳入，覆盖面 25/28 → 27/28（只剩内联的 basic）。
+# 留这个空集合是因为报告逻辑要一个统一出口；要往回加，先在
+# `scripts/_audit_neutralize.py` 里写清"它挡住了什么"。
+SPAWNS_SUBPROCESS: set[str] = set()
 
 # ⚠ UP-101: 这份名单原先只有 **11** 个页面，而报告只打印"11 个页面全部为 0"，
 # 读起来像全覆盖 —— 和 UP-096 是同一种病（"全绿要先问分母"），只是换了个审计。
@@ -127,16 +133,14 @@ DEFAULT_PAGES = [pid for pid in PAGE_FACTORY if pid not in SPAWNS_SUBPROCESS]
 #: 「CS的LEMON」。审计每跑一次下一次，CI 里也一样。
 #: **审计工具不该有网络副作用**：它让结果依赖外网可达性，也把构造耗时
 #: 绑在一次 HTTP 上。把开关置真即可，UI 照常完整构建。
-NEUTRALIZE = {
-    "music": {"music_default_song_added": True},
-    # UP-101: 放大镜页构造时会 `_setup_key_detection()` 注册全局热键，
-    # 会劫持用户的鼠标右键。关掉开关走 `disable_magnifier()` 分支，UI 照常完整构建。
-    # 这条中和条件是 `layout_overflow_audit.NEUTRALIZABLE` 里验证过的，照搬。
-    "magnifier": {"magnifier_enabled": False},
-    # 击杀图标页：总开关按成 False，构造这一页不会创建任何叠加窗口。
-    # 同样照搬 `layout_overflow_audit.NEUTRALIZABLE` 里验证过的条件。
-    "kill_icon": {"kill_icon_enabled": False},
-}
+# RN-005：中和表全仓唯一一份（这段以前在 5 支脚本里各写一遍，内容 1~3 项不等，
+# 后果是 flash / viewmodel / voice_output 三页被全部 5 支跳过 —— 零覆盖）。
+from _audit_neutralize import (  # noqa: E402
+    enable_audit_mode,
+)
+
+enable_audit_mode()   # 必须在 import 产品模块之前
+
 
 
 #: 少数页面的构造函数要参数（口径以 `gui_widget` 里真正的构造点为准，
@@ -154,6 +158,7 @@ def _neutralize(page_id):
     from config import config as cfg
 
     previous = {}
+    from _audit_neutralize import NEUTRALIZE
     for key, value in NEUTRALIZE.get(page_id, {}).items():
         previous[key] = getattr(cfg, key, None)
         setattr(cfg, key, value)
@@ -449,8 +454,17 @@ def main():
         if spawns:
             print("   需要覆盖它们请加 --include-unsafe")
     print(f"== 焦点巡检 {'通过' if rc == 0 else '存在错位'} ==")
+    # RN-068/092：机器可读的裁定由 `_audit_verdict.deliver()` 在 `__main__` 里打，
+    # 见文件末尾。这里只把 rc 算出来往上交。
     return rc
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # ⚠ RN-068/092：**裁定由 `_audit_verdict` 交付，不给退出链路改写的机会。**
+    # CI 上出现过「打印通过、退出码 1、无 traceback」——那个 1 来自
+    # Qt/keyboard/各页析构，不是判定结果（2026-08-17 `41217bf` 实录）。
+    # 反向的同一条坑也在册：门禁脚本的非零退出码曾被产品退出链路洗成 0。
+    from _audit_verdict import deliver, make_teardown_noise_visible
+
+    make_teardown_noise_visible()
+    deliver("focus", main())

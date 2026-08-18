@@ -266,7 +266,8 @@ def accept(group, label, source, *, style="矩阵", expect_frames=None,
     ROWS.append(row)
     kills = _next_level()
     try:
-        result = convert_to_style(source, style, kills, resource_manager=RM, **kwargs)
+        # 返回值用不上：对账走下面的**运行时装载器**（游戏里怎么读，这里就怎么读）
+        convert_to_style(source, style, kills, resource_manager=RM, **kwargs)
     except Exception as exc:
         row.ok = False
         row.detail = f"导入失败：{exc}"

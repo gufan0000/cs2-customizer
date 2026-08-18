@@ -1280,17 +1280,19 @@ class Theme:
                 spacing: {spacing.sm}px;
             }}
             
+            /* ⚠ RN-066/076：radius 按**外框**算，为什么见 tests/test_radio_indicator_is_round.py */
             QRadioButton::indicator {{
                 width: {toggle.radio_size}px;
                 height: {toggle.radio_size}px;
-                border-radius: {toggle.radio_size // 2}px;
+                border-radius: {(toggle.radio_size + 2 * toggle.radio_border_width) // 2}px;
                 border: {toggle.radio_border_width}px solid {c.accent_primary};
                 background-color: transparent;
             }}
-            
+
             QRadioButton::indicator:checked {{
                 background-color: white;
                 border: {max(4, toggle.radio_border_width + 3)}px solid {c.accent_primary};
+                border-radius: {(toggle.radio_size + 2 * max(4, toggle.radio_border_width + 3)) // 2}px;
             }}
             
             QRadioButton::indicator:hover {{

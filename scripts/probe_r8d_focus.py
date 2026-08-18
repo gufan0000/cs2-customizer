@@ -22,20 +22,25 @@ from __future__ import annotations
 
 import os
 import sys
-import tempfile
-from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-_tmp = Path(tempfile.gettempdir()) / "cs2customizer_probe_r8d"
-(_tmp / "config").mkdir(parents=True, exist_ok=True)
-(_tmp / "logs").mkdir(parents=True, exist_ok=True)
-os.environ.setdefault("CS2C_CONFIG_DIR", str(_tmp / "config"))
-os.environ.setdefault("CS2C_LOG_DIR", str(_tmp / "logs"))
+# RN-032：配置目录一律走共享工装 —— 自己 mkdir + setdefault 挡不住
+# migrate_old_config() 把仓库根那份未跟踪的个人 config.json 复制进来。
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _pristine_config import use_pristine_config_dir  # noqa: E402
+
+_tmp = use_pristine_config_dir("cs2customizer_probe_r8d")
 os.environ.setdefault("CS2C_SAFE_MODE_ACTIVE", "1")
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.stdout.reconfigure(encoding="utf-8")
+
+# RN-072：本脚本直接构造单个页类，以前落在 R9-A 判据的视野之外
+# （那条判据只认构造 `MainWindow` 的脚本）。UP-090 的机制照样适用。
+from _audit_sandbox import sandbox_external_writes  # noqa: E402
+
+sandbox_external_writes(verbose=False)
 
 from PySide6.QtCore import Qt  # noqa: E402
 from PySide6.QtWidgets import QApplication, QWidget  # noqa: E402

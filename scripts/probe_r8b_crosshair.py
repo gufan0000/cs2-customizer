@@ -19,12 +19,14 @@ from __future__ import annotations
 import os
 import statistics
 import sys
-import tempfile
 import time
 
-_ISOLATED = tempfile.mkdtemp(prefix="cs2customizer_probe_r8b_")
-os.environ["CS2C_CONFIG_DIR"] = os.path.join(_ISOLATED, "config")
-os.environ["CS2C_LOG_DIR"] = os.path.join(_ISOLATED, "logs")
+# RN-032：配置目录走共享工装。原写法 mkdtemp 出来的目录连 config 子目录都没建，
+# 产品侧只能靠"迁移失败被 except 吞掉"侥幸拿到默认值 —— 不是隔离，是碰巧。
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _pristine_config import use_pristine_config_dir  # noqa: E402
+
+_ISOLATED = use_pristine_config_dir("cs2customizer_probe_r8b")
 os.environ["CS2C_SAFE_MODE_ACTIVE"] = "1"
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")

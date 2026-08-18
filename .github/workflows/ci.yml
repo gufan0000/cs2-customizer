@@ -111,7 +111,10 @@ jobs:
       - name: 对比度审计(9 主题 × 11 判据)
         env:
           QT_QPA_PLATFORM: offscreen
-        run: python scripts/ui_contrast_audit.py
+        run: |
+          $ErrorActionPreference = 'Continue'
+          python scripts/ui_contrast_audit.py 2>&1 | Tee-Object -FilePath contrast.log
+          ./.github/verdict.ps1 -Name contrast -LogPath contrast.log
 
       # ⚠ 这一步**故意不设** QT_QPA_PLATFORM=offscreen。
       # offscreen 平台在无桌面会话下可能一个真实字体都没有,那样文字度量全失真,
@@ -122,7 +125,10 @@ jobs:
       # 而某类缺陷恰恰只在**走满三档**时才显形——页面建出来后要连续
       # 两次重排才累积到位。少测中间档不是"少覆盖一档",是整类缺陷都看不见。
       - name: 排版审计(横向溢出 + 文案截断 + 纵向裁切)
-        run: python scripts/layout_overflow_audit.py --width 1200 --height 800 --themes dark,light --scales 1.0,1.1,1.25 --require-fonts
+        run: |
+          $ErrorActionPreference = 'Continue'
+          python scripts/layout_overflow_audit.py --width 1200 --height 800 --themes dark,light --scales 1.0,1.1,1.25 --require-fonts 2>&1 | Tee-Object -FilePath layout_full.log
+          ./.github/verdict.ps1 -Name layout -LogPath layout_full.log
 
       # 紧凑模式是**另一套外壳**,不是"再跑一个尺寸"——窗口固定 860×640、
       # 顶部多一条 50px 顶栏、侧边栏改浮层,内容可视区只有 590px
@@ -135,7 +141,10 @@ jobs:
       # `special_sound` 的「回合」「投掷物」两个页签被压扁成 62px 舷窗。
       # 又一次"全绿要先问分母",只是这次错在**尺寸轴**上。
       - name: 排版审计·紧凑模式(860×640)
-        run: python scripts/layout_overflow_audit.py --compact --themes dark,light --scales 1.0,1.1,1.25 --require-fonts
+        run: |
+          $ErrorActionPreference = 'Continue'
+          python scripts/layout_overflow_audit.py --compact --themes dark,light --scales 1.0,1.1,1.25 --require-fonts 2>&1 | Tee-Object -FilePath layout_compact.log
+          ./.github/verdict.ps1 -Name layout -LogPath layout_compact.log
 
       # 焦点巡检从警告级改成了**阻断级**。原先警告级的理由是"4/5 页有错位、
       # 开局就红的门等于没有门";实测那 52 处报告里 50 处是判据自己的假阳性
@@ -146,4 +155,7 @@ jobs:
       - name: 焦点巡检(阻断级)
         env:
           QT_QPA_PLATFORM: offscreen
-        run: python scripts/tab_order_audit.py --verbose
+        run: |
+          $ErrorActionPreference = 'Continue'
+          python scripts/tab_order_audit.py --verbose 2>&1 | Tee-Object -FilePath focus.log
+          ./.github/verdict.ps1 -Name focus -LogPath focus.log

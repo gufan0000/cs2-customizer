@@ -26,12 +26,15 @@ def _make_window(app):
 def test_shortcuts_registered(app):
     win = _make_window(app)
     try:
-        # Ctrl+F(既有) + Ctrl+1..4 + F1 + Esc
+        # 每个侧栏分组一个 Alt+N,外加 F1 与 Esc
         assert hasattr(win, "_app_shortcuts")
-        assert len(win._app_shortcuts) == 6
         seqs = {sc.key().toString() for sc in win._app_shortcuts}
+        # ⚠ 断言「每个分组都有」而不是断言个数:上限原先写死 4,恰好等于当时的分组数,
+        # RN-108 加了一组之后最后一组悄悄没了快捷键,而写死 4 的判据照样绿。
+        expected_alt = {f"Alt+{i + 1}" for i in range(len(win.nav_groups))}
+        assert expected_alt <= seqs, f"有分组没拿到 Alt 快捷键: {expected_alt - seqs}"
+        assert len(win._app_shortcuts) == len(win.nav_groups) + 2
         # Alt 而非 Ctrl:避免与音板槽位的 ctrl+数字全局热键双触发
-        assert "Alt+1" in seqs and "Alt+4" in seqs
         assert "Ctrl+1" not in seqs
         assert "F1" in seqs
         assert "Esc" in seqs

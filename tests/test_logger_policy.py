@@ -217,7 +217,7 @@ def test_file_handler_level_matches_switch():
 
 
 def test_runtime_log_dir_honors_env_override(monkeypatch, tmp_path):
-    """`main_widget._resolve_runtime_log_dir` 必须和 logger 认同一个覆盖变量。
+    r"""`main_widget._resolve_runtime_log_dir` 必须和 logger 认同一个覆盖变量。
 
     R4 实测踩到：logger 认 `CS2C_LOG_DIR`、main_widget 的 faulthandler 目录
     解析不认，于是 `scripts/live_run.py` 声称"隔离运行"，实际每跑一次都往用户

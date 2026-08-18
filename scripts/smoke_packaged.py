@@ -148,12 +148,26 @@ def main() -> int:
 
     exe = Path(args.exe) if args.exe else None
     if exe is None:
+        # ⚠ QA/RN（2026-08-18 实际踩到）：`release/*/*.exe` 会把
+        # **`release/installer/CS2 Customizer 安装包_2.2.4.exe` 一起捞进来**，
+        # 而它按 mtime 恰好是最新的（安装包在应用产物之后生成）。
+        # 于是这个脚本启动的是**安装程序**：等 UAC 等到超时、探不到窗口、
+        # 日志 0 字符，然后 7 条判据一起红——看起来像"打包版起不来"，
+        # 实际上一个字都没测到。更坏的是它真的在用户机器上拉起了安装器。
+        # ⇒ 自动挑选一律排除 installer 目录；挑中的还必须**同名目录里带 _internal**
+        #   （onedir 产物的形状），否则宁可报错也不瞎跑。
         cands = sorted(ROOT.glob("release/*/*.exe"), key=lambda p: p.stat().st_mtime, reverse=True)
-        cands = [c for c in cands if "unins" not in c.name.lower()]
+        cands = [c for c in cands
+                 if "unins" not in c.name.lower()
+                 and c.parent.name.lower() != "installer"
+                 and "安装包" not in c.name
+                 and (c.parent / "_internal").is_dir()]
         if not cands:
-            print("!! 找不到打包产物，请先跑 build_tools/build_release.py --mode onedir")
+            print("!! 找不到打包产物（onedir：release/<名字>/<名字>.exe 且同级有 _internal）")
+            print("   请先跑 build_tools/build_release.py --mode onedir")
             return 1
         exe = cands[0]
+        print(f"[自动挑选] {exe}")
     if not exe.is_file():
         print(f"!! exe 不存在: {exe}")
         return 1

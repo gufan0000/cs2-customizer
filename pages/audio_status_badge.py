@@ -120,6 +120,43 @@ def count_enabled_styles(values: Iterable) -> int:
     return sum(1 for value in values if is_style_enabled(value))
 
 
+def resolve_style(configured, available: Iterable) -> str:
+    """把配置里的原始值解析成**这一行真正在显示的那个值**。
+
+    RN-046：这条知识全仓要且只要一份。它长期以每页各写一份的形式存在，
+    而每一份都只做了一半 —— 只判"是不是 0"，**不判"这个风格还在不在"**。
+    后果是同一屏上两个数字永久对不上（RN-026 → RN-033 → 这一轮）：
+
+        顶部徽章  「已配置 · 2」   ← 数的是配置里的原始值
+        每一行    「不启用」×2     ← `combo.findData(值)` 找不到就回落到第 0 项
+
+    ⚠ 上一轮把实现上提进了 `SoundPageBase`，但那个基类只服务四页；
+    `gun_sound` / `special_sound` / `death_sound` 的数据模型各不相同，于是
+    "各写一份 or 强行并基类"看着像唯一的两个选项 —— 都不对。
+    真正共用的东西是**一个纯函数**：它不碰数据模型，所以数据模型不同不妨碍共用。
+
+    ⚠ 判"不启用"用的是宽口径 `is_style_enabled`（含 ""/none/off/…），
+    比各页原来的 `== "0"` 更严。这是**有意收紧**：`combo.findData("")`
+    同样找不到、同样显示「不启用」，所以宽口径才是"和屏幕一致"的那一个。
+    """
+    if not is_style_enabled(configured):
+        return "0"
+    value = str(configured).strip()
+    return value if value in {str(item) for item in (available or ())} else "0"
+
+
+def stale_style_name(configured, available: Iterable) -> str:
+    """「配过、但那个风格已经不在了」时返回它的名字；否则空串。
+
+    这是唯一**可行动**的信息。只把数字改对（2 → 0）会让用户更困惑：
+    他明明选过东西，页面却说什么都没配。所以两件事要一起做 ——
+    数字说实话 + 明说"有 N 项失效，重新选一个即可"。
+    """
+    if not is_style_enabled(configured):
+        return ""
+    return "" if resolve_style(configured, available) != "0" else str(configured).strip()
+
+
 def build_health_detail_tooltip(health: dict, max_items: int = 2) -> str:
     """Build concise tooltip text for resource health anomalies."""
     if not health or health.get("ok", True):
@@ -139,6 +176,88 @@ def build_health_detail_tooltip(health: dict, max_items: int = 2) -> str:
             lines.append(f"空目录: {path}")
 
     return "\n".join(lines[: max(1, max_items * 2)])
+
+
+def resource_badge(health: dict) -> Tuple[str, str]:
+    """把资源体检结果翻成**一颗徽章**（等级, 文案）。**七个音效页共用这一份。**
+
+    RN-035：原先七页各写一份
+
+        ("success" if health["ok"] else "danger",
+         "资源 · 正常" if health["ok"] else f"资源 · 异常 {health['issue_count']}")
+
+    七份都把「素材目录还不存在」判成**红色异常**——而那正是**全新安装的样子**。
+    实测（2026-08-17，全新配置）：`death_sound` / `switch_weapon` / `reload_sound`
+    三页各亮一个红色「资源 · 异常 1」，而"异常"的全部内容是一行
+    `缺失目录: ...\\resources\\audio\\switch_weapons`，且这行字**只在 tooltip 里**
+    （屏幕上那个 `summary_label` 是 RN-009 那个建出来就 hide 的死控件）。
+    ⇒ 新用户第一次打开就看见红字报错、又查不到原因，**第一反应是软件坏了**。
+    外审 S4 六发里有五发独立指出这一条，措辞几乎一样。
+
+    "还没放素材"不是异常，是起点。把起点画成红色，等于把每个新用户都吓一次。
+
+    分级只认三件事，优先级从高到低：
+
+      · `invalid` —— **配了、但指的东西不在**（`invalid_config_refs`）。
+        这才是真异常：用户明确选过一个风格，而它没了。红。
+      · `missing` —— 素材目录还没建。全新状态。info（不刺眼），
+        文案直接说"待添加"，而不是"异常"。
+      · `empty`   —— 目录在、里面没有可用音频。黄。
+
+    ⚠ 故意**不改** `collect_category_health()` 里 `ok` 的定义 ——
+    那个字段还有别的消费者（tooltip、音频体检页），在这里换语义会牵连一片。
+    这个函数只负责"怎么画"，不负责"什么算健康"。
+    """
+    health = health or {}
+    invalid = list(health.get("invalid", []) or [])
+    missing = list(health.get("missing", []) or [])
+    empty = list(health.get("empty", []) or [])
+
+    if invalid:
+        return "danger", f"资源 · 异常 {len(invalid)}"
+    if missing:
+        return "info", "素材 · 待添加"
+    if empty:
+        return "warn", "素材 · 有空目录"
+    return "success", "资源 · 正常"
+
+
+def resource_hint(health: dict, open_label: str = "打开音频资源") -> str:
+    """屏幕上要说的那句人话；健康就返回空串。**七页共用。**
+
+    ⭐ `open_label` 是拿血换来的参数（RN-056）。这句话里点名了一个按钮，
+    而**按钮名是按页不同的**：六个音效页那颗叫「打开音频资源」，
+    `special_sound` 那颗叫「打开当前资源」（它按当前页签开不同目录）。
+    我把这个共享提示搬到 special_sound 上之后，页面就在指挥用户去点一个
+    **本页不存在的按钮** —— 改完复跑外审，8 发里 **4 发独立**报
+    「引导文案提示点击『打开音频资源』，而右下角实际按钮是『打开当前资源』」。
+    ⇒ **单一真相源不等于文案可以照搬。**一句话只要提到界面上的某个东西，
+      那个东西就得跟着调用方走，否则"收敛"就制造出了新的不一致。
+    判据：`test_gun_special_sound_truth.py::test_hint_only_names_buttons_that_exist`。
+
+    RN-035 的另一半：徽章只有 6 个字的位置，说不清"接下来该干什么"。
+    而原先唯一的解释在 tooltip 里，且内容是一条绝对路径 —— 对玩家毫无意义。
+
+    ⚠ 这句话必须落在**可见**的控件上。别再写进 `summary_label`
+    （RN-009：那个控件建出来就 `hide()`，全仓没有任何地方再显示它，
+    kill_sound 那轮我就往里写过一次，等于没写）。
+    """
+    health = health or {}
+    if health.get("invalid"):
+        return (f"有 {len(health['invalid'])} 项配置指向的素材已经不在了，"
+                "重新选一个风格即可；也可以到「工具与系统 - 音频体检」看明细。")
+    if health.get("missing"):
+        # ⚠ 这句话第一版写的是「还没有这一类的素材目录 —— **这是全新状态，
+        # 不是出错**。点右下角「打开音频资源」把音频放进去，再点「刷新风格列表」。」
+        # 改完复跑外审，十发里**五发**独立说它"文字冗余、玩家根本不读，
+        # 关键指引反而被忽略"。
+        # ⭐ 根因是我自己绕回去了：那句"不是出错"的辩解，是**因为徽章当时是红的**
+        # 才需要写；而同一轮已经把徽章改成 info（「素材 · 待添加」）了 ——
+        # 徽章不再报错，辩解就成了纯噪音。**修好了病因，就该把当初的止痛药撤掉。**
+        return f"还没有素材：点右下角「{open_label}」放入音频，再点「刷新风格列表」。"
+    if health.get("empty"):
+        return "有风格目录是空的：补进 mp3 / wav / ogg 后点「刷新风格列表」。"
+    return ""
 
 
 def _extract_root(path: str, audio_root: str) -> str:

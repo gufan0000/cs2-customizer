@@ -144,8 +144,10 @@ def test_all_pages_share_one_content_left_edge(qapp, main_window):
 
     from widgets.settings_card import SettingsCard
 
+    from core.page_traits import DEVICE_OWNING_PAGES
+
     win = main_window
-    unsafe = {"viewmodel", "magnifier", "flash", "voice_output", "kill_icon", "music"}
+    unsafe = DEVICE_OWNING_PAGES  # 名单取产品那一份，别在判据里另抄
     edges = {}
     for pid in win._page_names.keys():
         if pid in unsafe:

@@ -9,7 +9,16 @@ exclude = [
     ".git",
     "docs",
     "release",
-    "scripts",   # 辅助脚本（含 2 个历史损坏文件），不参与产品 lint
+    # RN-070：以前这里是整个 `scripts`（64 支 / 19226 行），理由写的是
+    # 「辅助脚本，不参与产品 lint」。代价是量出来的：`scripts/` 里躺着排版审计、
+    # 焦点巡检、搜索索引生成器、回退验证 —— **整个工装层**，而 CI 拿
+    # `ruff check .` 当 lint 门禁，它一个字都没看。里面藏着一条 F821
+    # （`ui_perf_probe` 用 `sys` 没 import，NameError 被 `except: pass` 吞掉，
+    # 整块 UTF-8 兜底恒失效），一秒就能查出来的东西躺了很久。
+    # ⇒ 现在只排除 UP-091 那两个**语法都不合法**的历史损坏文件（ruff 无法解析，
+    #    会刷 2288 条 invalid-syntax 把真信号盖掉）。它们的处置待用户拍板。
+    "scripts/bootstrap_tutorial_content.py",
+    "scripts/capture_web_tutorial_screenshots.py",
 ]
 
 [lint]
@@ -28,4 +37,11 @@ ignore = [
 # 包级 re-export 是公开 API 面
 "core/hud/__init__.py" = ["F401"]
 "core/hotkeys/__init__.py" = ["F401"]
+# RN-070：独立脚本**必须**先把仓库根塞进 sys.path 再 import 产品模块
+# （`PROJECT_ROOT` 那一段），所以模块级 import 不在文件顶部是结构性必然，不是随手写坏。
+# ⚠ 只豁免 E402 这一条；F401/F821 那些真问题照查。
+"scripts/*.py" = ["E402"]
+# 一次性 GSI 全链路模拟器：`if x: return` / `a; b` 风格的密集单行守卫 400 余处，
+# 重排零收益且改动有回归风险（同 voice_output_manager.py 的先例）。
+"scripts/gsi_full_sim.py" = ["E401", "E701", "E702"]
 # 测试经模块命名空间访问的 re-export 已逐行 noqa，此处不需要包级豁免

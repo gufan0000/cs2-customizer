@@ -26,18 +26,17 @@ import argparse
 import os
 import re
 import sys
-import tempfile
-from pathlib import Path
 
 # UP-083: 本脚本虽然只做 token 数学,但 import theme_manager 会连带把 config /
 # logger 拉起来,于是每跑一次就往用户真实的 %LOCALAPPDATA%\CS2Customizer\logs 追加
 # 一段启动横幅。诊断工具污染真实日志 = 污染真实崩溃的取证材料(UP-065 的教训)。
 # 隔离必须在 import 产品代码之前设好。
-_tmp = Path(tempfile.gettempdir()) / "cs2customizer_contrast_audit"
-(_tmp / "config").mkdir(parents=True, exist_ok=True)
-(_tmp / "logs").mkdir(parents=True, exist_ok=True)
-os.environ.setdefault("CS2C_CONFIG_DIR", str(_tmp / "config"))
-os.environ.setdefault("CS2C_LOG_DIR", str(_tmp / "logs"))
+# RN-032：配置目录一律走共享工装 —— 自己 mkdir + setdefault 挡不住
+# migrate_old_config() 把仓库根那份未跟踪的个人 config.json 复制进来。
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _pristine_config import use_pristine_config_dir  # noqa: E402
+
+_tmp = use_pristine_config_dir("cs2customizer_contrast_audit")
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -218,4 +217,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # ⚠ RN-092：裁定走 `_audit_verdict`，不走退出码 —— 见那个文件的说明。
+    from _audit_verdict import deliver, make_teardown_noise_visible
+
+    make_teardown_noise_visible()
+    deliver("contrast", main())

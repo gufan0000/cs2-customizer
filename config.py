@@ -24,7 +24,7 @@ from core.gun_sound_profiles import (
 # 应用程序信息
 APP_NAME = "CS2Customizer"
 CONFIG_FILENAME = "config.json"
-VERSION = "2.2.3"
+VERSION = "2.2.4"
 
 # P4.2: 配置 schema 版本。与软件 VERSION 解耦——只在"配置结构/语义发生需要
 # 迁移的变化"时 +1，并在 CONFIG_MIGRATIONS 注册对应迁移函数。

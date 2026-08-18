@@ -18,7 +18,7 @@
    viewmodel / magnifier / flash / voice_output / kill_icon / music
    这些页构造时会注册全局热键、初始化音频设备、spawn pygame 子进程——
    在审计脚本里建它们等于**真的**占设备、真的弹出全屏覆盖窗，那就是打扰前台。
-   口径与 `gui_widget._preload_skip_pages` / `bench_page_build.UNSAFE_PAGES` 一致。
+   口径与 `gui_widget._preload_skip_pages` 一致；跳过/中和的决定统一由 `scripts/_audit_neutralize.py` 出。
    确实要测它们时用 `--include-unsafe`，但请确认此刻没有别的事情在跑。
 
 ⚠️ **默认走原生平台 + `WA_DontShowOnScreen`，不是 offscreen（R5 改）**
@@ -58,19 +58,19 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-import tempfile
-from pathlib import Path
 
 # 让 MainWindow 跳过 pygame 准心自动显示(gui_widget 里认这个变量)
 os.environ.setdefault("CS2C_SAFE_MODE_ACTIVE", "1")
 # 注意:QT_QPA_PLATFORM 在 main() 里按 --offscreen 决定,见那里的说明。
 # 它只需早于 QApplication 构造,不必早于 import。
 
-_tmp = Path(tempfile.gettempdir()) / "cs2customizer_layout_audit"
-(_tmp / "config").mkdir(parents=True, exist_ok=True)
-(_tmp / "logs").mkdir(parents=True, exist_ok=True)
-os.environ.setdefault("CS2C_CONFIG_DIR", str(_tmp / "config"))
-os.environ.setdefault("CS2C_LOG_DIR", str(_tmp / "logs"))
+# RN-032：配置目录走共享工装。这条对排版审计尤其要紧 ——
+# 个人配置下页面全是"已配置"的样子，而**全新用户的空状态文案完全不同**
+# （更长、更多、还多出几行提示），审计长期没看过那一档。
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _pristine_config import use_pristine_config_dir  # noqa: E402
+
+_tmp = use_pristine_config_dir("cs2customizer_layout_audit")
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 try:
@@ -78,9 +78,7 @@ try:
 except Exception:
     pass
 
-# 与 gui_widget._preload_skip_pages / bench_page_build.UNSAFE_PAGES 同一份名单。
-# 改这里请三处一起改。
-UNSAFE_PAGES = {"viewmodel", "magnifier", "flash", "voice_output", "kill_icon", "music"}
+# 名单取产品那一份（唯一真相源），这里不另抄——抄出来的副本不会跟着产品变。
 
 # UP-084: 这份名单对**排版审计**来说过粗。页面"不安全"是因为构造时会做某件
 # 打扰前台的事,而那件事往往挂在一个**配置开关**下——把开关在隔离配置里关掉,
@@ -99,10 +97,16 @@ UNSAFE_PAGES = {"viewmodel", "magnifier", "flash", "voice_output", "kill_icon", 
 #              **真正播放的那一刻**才创建。审计里没人触发播放，再把总开关按成
 #              False，构造这一页不会有任何前台副作用。
 #              名单本身不动（预载跳过那边的口径是另一回事），这里只放行审计。
-NEUTRALIZABLE = {
-    "magnifier": {"magnifier_enabled": False},
-    "kill_icon": {"kill_icon_enabled": False},
-}
+# RN-005：中和表全仓唯一一份（这段以前在 5 支脚本里各写一遍，内容 1~3 项不等，
+# 后果是 flash / viewmodel / voice_output 三页被全部 5 支跳过 —— 零覆盖）。
+from _audit_neutralize import (  # noqa: E402
+    apply as neutralize_apply,
+    describe as neutralize_describe,
+    enable_audit_mode,
+    unsafe_pages,
+)
+
+enable_audit_mode()   # 必须在 import 产品模块之前
 
 # UP-100: 紧凑模式的窗口尺寸。与 `gui_widget.MainWindow.__init__`（最小尺寸）
 # 和 `_setup_window_size` 的紧凑分支（固定几何 + 居中）是同一组数——改那边请一起改。
@@ -145,6 +149,36 @@ def _scopes(page, app):
                 out.append((tw.tabText(i), widget))
         tw.setCurrentIndex(original)
         app.processEvents()
+    return out
+
+
+def _uneven_status_chips(scope):
+    """返回同一排状态徽章里**高度不一致**的芯片组 [(芯片文案, 高, 该排众数高), ...]。
+
+    RN-026 引出的第 4 条判据。一排徽章本来齐平，某颗文案太长就会换行、比别的高一截，
+    肉眼一看就歪 —— 而**前三条判据一条都看不见它**：换行既不产生横向滚动
+    （放得下），也不截断文字（画得全），更谈不上纵向裁切（滚得动）。
+    实测：把「已配置 · 0」改成「已配置 · 0（37 项风格已失效）」之后整排错位，
+    三条判据全绿，是重看渲染图 + 外审复跑发现的。
+
+    只看 `AudioStatusBadgeBar` 这一种容器：它的芯片是**同一排、同一角色**的，
+    高度不齐就是缺陷；别处的控件高度不同往往是有意的，不能一概而论。
+    """
+    from PySide6.QtWidgets import QLabel, QWidget
+
+    out = []
+    for bar in scope.findChildren(QWidget):
+        if bar.__class__.__name__ != "AudioStatusBadgeBar":
+            continue
+        chips = [c for c in bar.findChildren(QLabel)
+                 if c.isVisible() and c.text().strip()]
+        if len(chips) < 2:
+            continue
+        heights = [c.height() for c in chips]
+        common = max(set(heights), key=heights.count)
+        for chip, h in zip(chips, heights):
+            if h != common:
+                out.append((chip.text().strip(), h, common))
     return out
 
 
@@ -359,14 +393,9 @@ def main():
     neutralized = []
     if not args.include_unsafe:
         # UP-084: 能靠配置开关中和掉危险副作用的页,纳入审计;中和不了的才跳过。
-        for pid, overrides in NEUTRALIZABLE.items():
-            if pid not in page_ids:
-                continue
-            for attr, value in overrides.items():
-                setattr(config, attr, value)
-            neutralized.append(f"{pid}（{', '.join(f'{k}={v}' for k, v in overrides.items())}）")
-        skipped = sorted(p for p in page_ids
-                         if p in UNSAFE_PAGES and p not in NEUTRALIZABLE)
+        for pid in neutralize_apply(config, page_ids):
+            neutralized.append(neutralize_describe([pid]))
+        skipped = sorted(p for p in page_ids if p in unsafe_pages())
         page_ids = [p for p in page_ids if p not in skipped]
 
     themes = ALL_THEMES if args.themes.strip() == "all" else tuple(
@@ -376,6 +405,7 @@ def main():
     problems = []
     elided = []
     clipped = []
+    uneven = []
     checked = 0
 
     for theme in themes:
@@ -408,6 +438,13 @@ def main():
                             clipped.append((theme, scale, label, short, avail_h))
                         for text, have, need in _elided_buttons(scope):
                             elided.append((theme, scale, label, text, have, need))
+                    # ⚠ 徽章判据**对整页量，不走 `_scopes()`**。
+                    # `_scopes()` 对有页签的页面只返回**页签内容**（见它的注释：
+                    # 那是为了躲开隐藏页签的陈旧几何），于是这些页的页头、状态卡、
+                    # 底部操作栏 —— 也就是徽章所在的地方 —— **从来没被任何一条判据看过**。
+                    # 这条覆盖漏洞记在 RN-030，比本判据本身更值得修。
+                    for text, h, common in _uneven_status_chips(page):
+                        uneven.append((theme, scale, pid, text, h, common))
                 except Exception as exc:
                     problems.append((theme, scale, pid, f"异常:{exc}"))
 
@@ -467,11 +504,28 @@ def main():
     else:
         print("  ✓ 无纵向裁切")
 
+    # RN-026 引出的第 4 条：同一排状态徽章里有芯片因文案换行而比别人高
+    if uneven:
+        seen = {}
+        for theme, scale, pid, text, h, common in uneven:
+            seen.setdefault((pid, text), (h, common))
+        print(f"  ✗ {len(seen)} 处状态徽章高度不齐(文案太长换了行):")
+        for (pid, text), (h, common) in sorted(seen.items()):
+            print(f"     [{pid}] 「{text}」 高 {h}px，同排其余 {common}px")
+    else:
+        print("  ✓ 状态徽章高度齐平")
+
     win.close()
     win.deleteLater()
     app.processEvents()
-    return 1 if (problems or elided or clipped) else 0
+    return 1 if (problems or elided or clipped or uneven) else 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # ⚠ RN-092：裁定走 `_audit_verdict`，不走退出码 —— 见那个文件的说明。
+    # 这一道门和焦点巡检一样驱动 Qt，退出期同样有被改写的风险，
+    # 只不过它还没在 CI 上现过形（**没现形不等于没有**）。
+    from _audit_verdict import deliver, make_teardown_noise_visible
+
+    make_teardown_noise_visible()
+    deliver("layout", main())

@@ -33,6 +33,7 @@ from ui_shimmer import add_shimmer_on_hover
 from screen_effect_overlay import ScreenEffectOverlayManager
 from core.audio.audio_resource_health import collect_audio_resource_health
 from core.gun_sound_profiles import sync_legacy_gun_sound_flags
+from core.page_traits import DEVICE_OWNING_PAGES
 from core.runtime.system_status_service import collect_runtime_status
 from pages.audio_status_badge import create_badge_label, render_badges
 from source_backup_manager import run_startup_source_backup
@@ -183,15 +184,9 @@ class MainWindow(QMainWindow):
         self._pages_need_theme_refresh = set()  # 需要主题刷新的页面ID
         self._search_hit_target = None  # R4/UP-024: 当前被搜索高亮的控件
         self._is_closing = False  # 关闭流程标记，防止延迟任务继续触发副作用
-        self._preload_skip_pages = {
-            # 这些页面在构造时会启动热键/线程/子进程/设备，不适合启动阶段静默预加载
-            "viewmodel",
-            "magnifier",
-            "flash",
-            "voice_output",
-            "kill_icon",
-            "music",
-        }
+        # 构造即起热键/线程/子进程/设备的页，不适合启动阶段静默预加载。
+        # 取模块级 DEVICE_OWNING_PAGES（唯一真相源），拷一份免得实例改动串味。
+        self._preload_skip_pages = set(DEVICE_OWNING_PAGES)
         self._expert_only_pages = {
             "audio_health",
             "audio_import_wizard",
@@ -621,19 +616,52 @@ class MainWindow(QMainWindow):
 
     # ---------------- P4.1: 首次使用引导 ----------------
 
+    def _show_onboarding_dialog(self):
+        """打开三步上手引导（选目录 → 写 GSI 配置 → 去试听）。
+
+        ⚠ RN-110：这个引导一直都在，但**一辈子只弹一次** —— 关掉就再也找不回来了。
+        对用户而言「没有首次引导」和「引导等于没有」是同一件事，外审报的就是后者。
+        所以基础设置页的引导条走的是**这个入口**，而不是另抄一套三步文案 ——
+        抄第二份的下场见 RN-002（同一份设备页名单被抄了 9 遍、3 份已经漂了）。
+        """
+        from dialogs.onboarding_dialog import OnboardingDialog
+
+        # 已经开着就抬起来，不再造第二个。
+        # ⚠ 实测这个窗是 ApplicationModal，正常点按钮开不出第二个 —— 但入口现在有三处
+        # （首启自动、基础设置页、关于页），而 `self._onboarding_dialog = dialog` 这一手
+        # **会把上一个的唯一引用覆盖掉**。真出现两个的那天，被覆盖的那个随时可能被 GC，
+        # 而它还显示在屏幕上。外审提的机制不成立（模态挡住了），但这处脆弱是真的。
+        existing = getattr(self, "_onboarding_dialog", None)
+        if existing is not None and existing.isVisible():
+            existing.raise_()
+            existing.activateWindow()
+            return existing
+
+        dialog = OnboardingDialog(self)
+        self._onboarding_dialog = dialog  # 防 GC
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
+        return dialog
+
+    def _reopen_onboarding_guide(self):
+        """基础设置页「重新上手引导」按钮。"""
+        try:
+            self._show_onboarding_dialog()
+        except Exception:
+            self.logger.exception("重新打开上手引导失败")
+            # 不能静默：这个按钮是新用户的兜底入口，它自己再没反应就没别的路了。
+            self.show_toast_safe(
+                "上手引导打不开，详情见日志；CS2 目录也可以在「高级设置」里直接选。",
+                "warning", 4200)
+
     def _maybe_show_onboarding(self):
         try:
             if bool(getattr(self.config, "onboarding_completed", True)):
                 return
             if getattr(self, "_is_closing", False):
                 return
-            from dialogs.onboarding_dialog import OnboardingDialog
-
-            dialog = OnboardingDialog(self)
-            self._onboarding_dialog = dialog  # 防 GC
-            dialog.show()
-            dialog.raise_()
-            dialog.activateWindow()
+            self._show_onboarding_dialog()
             self.logger.info("首次使用引导已弹出")
         except Exception:
             self.logger.exception("首次引导弹出失败（忽略）")
@@ -714,6 +742,27 @@ class MainWindow(QMainWindow):
                 self.logger.exception("崩溃报告发送异常（忽略）")
 
         threading.Thread(target=_worker, name="CrashReportSender", daemon=True).start()
+
+    def _make_nav_button(self, page_id, text):
+        """建一个侧栏导航按钮。
+
+        ⚠ **这段原先抄了两份**（主分组循环一份、「常用」分组一份，各 16 行几乎逐字相同）。
+        两份的代价不是重复本身，而是**改一份忘一份不会报错**：图标尺寸、最小高度、
+        objectName 任何一处漂了，两批按钮就会长得不一样，而且只有肉眼能看出来。
+        —— 同 RN-002 那份被抄了 9 遍的设备页名单，是同一类问题。
+        """
+        from widgets.icon_provider import get_page_icon
+
+        btn = QPushButton(f"  {text}")
+        btn.setObjectName("navButton")
+        btn.setCheckable(True)
+        btn.setMinimumHeight(36)
+        icon = get_page_icon(page_id, role="secondary", size=16)
+        if not icon.isNull():
+            btn.setIcon(icon)
+            btn.setIconSize(QSize(16, 16))
+        btn.clicked.connect(lambda checked, pid=page_id: self.show_page(pid))
+        return btn
 
     def _apply_expert_mode_visibility(self):
         is_expert = bool(getattr(self.config, "ui_expert_mode", False))
@@ -839,6 +888,32 @@ class MainWindow(QMainWindow):
         于是鼠标**扫过一次**卡片，阴影就永久变成原来的 1/4，再也回不来。
         阴影所有权归 SettingsCard 唯一持有。
         """
+        # 侧栏内容高度变了、**或者视口自己变矮了** → 上一次"滚进可视区"的计算作废，重算。
+        # 事件驱动而不是定时器：什么时候真的变完，这两个事件说了算。
+        #
+        # ⚠⚠ **视口那一半是 RN-008 的根因，别再只盯内容**（2026-08-17，CI 连红五轮）：
+        # 底部音乐控制条 `musicControlBar` 高 42px，它是**滚完之后**才出现的，
+        # 主窗把这 42px 从侧栏身上扣走，侧栏视口跟着矮 42px ——
+        # 刚刚滚好的那一项正好被挤到视口外。而**内容高度一点没变**，
+        # 所以只监听 nav_container 的话这个事件根本不发生，没人来补救。
+        # 这解释了那个诡异的不变量：`y = V滚动 − 24 − 42 = V断言 − 24`，
+        # 于是不管视口多高，判据带回来的 y 永远正好等于「视口 − 24」。
+        # 我一度把它误判成"按钮高度被当成 0"（那个算式也能凑出同一个数）——
+        # **两种机制在数值上完全同解，只靠一个数字分不出来**，是外审提示了第二个解才回头查的。
+        _scroll = getattr(self, "_sidebar_scroll", None)
+        if (event.type() == QEvent.Resize
+                and (watched is getattr(self, "_sidebar_nav_container", None)
+                     or (_scroll is not None and watched is _scroll.viewport()))):
+            page_id = getattr(self, "_current_page_id", None)
+            # 重入保护：校正里会 activate() 布局，那有可能再发一次 Resize。
+            if (page_id and not getattr(self, "_is_closing", False)
+                    and not getattr(self, "_ensuring_nav_visible", False)):
+                self._ensuring_nav_visible = True
+                try:
+                    self._ensure_nav_button_visible(page_id)
+                finally:
+                    self._ensuring_nav_visible = False
+
         if event.type() == QEvent.Wheel:
             # 对于这些控件类型，不让滚轮改值
             if isinstance(watched, (QComboBox, QSpinBox, QDoubleSpinBox, QSlider)):
@@ -1078,8 +1153,16 @@ class MainWindow(QMainWindow):
         
         # 导航按钮 - 可折叠分组
         nav_groups = [
-            ("音效设置", [
+            # ⚠ RN-108：「基础设置」原先挂在**「音效设置」组**下面。
+            # 而准心、屏幕特效、换枪音效这些页的总开关都写在它里面，各页只提示
+            # 「请去基础设置开启」—— 于是**找准心的开关得先去音效菜单里翻**。
+            # 用户裁定 A：把它挪出来单独置顶。单独成组（而不是做成一个不属于任何组
+            # 的悬空按钮）是有原因的：紧凑模式浮层、Alt+N 跳组、展开当前组
+            # 这三处都是**按组遍历**的，悬空按钮会从浮层里整个消失。
+            ("开始", [
                 ("basic", "基础设置"),
+            ]),
+            ("音效设置", [
                 ("kill_sound", "击杀音效"),
                 ("kill_voice", "击杀语音"),
                 ("death_sound", "被击杀音效"),
@@ -1119,8 +1202,6 @@ class MainWindow(QMainWindow):
         self.nav_groups = []
         self._page_to_group = {}  # page_id -> NavGroupWidget 映射
         self._page_names = {}  # page_id -> 显示名称
-        # v5 Phase 5: 给每个导航按钮加 icon(替代之前用 4 空格占位)
-        from widgets.icon_provider import get_page_icon
         for group_title, items in nav_groups:
             group_widget = NavGroupWidget(group_title)
             nav_layout.addWidget(group_widget)
@@ -1128,16 +1209,7 @@ class MainWindow(QMainWindow):
 
             for page_id, text in items:
                 self._page_names[page_id] = text
-                btn = QPushButton(f"  {text}")
-                btn.setObjectName("navButton")
-                btn.setCheckable(True)
-                btn.setMinimumHeight(36)
-                # v5 Phase 5: 侧栏 icon
-                icon = get_page_icon(page_id, role="secondary", size=16)
-                if not icon.isNull():
-                    btn.setIcon(icon)
-                    btn.setIconSize(QSize(16, 16))
-                btn.clicked.connect(lambda checked, pid=page_id: self.show_page(pid))
+                btn = self._make_nav_button(page_id, text)
                 group_widget.add_button(btn)
                 self.nav_buttons[page_id] = btn
                 self._page_to_group[page_id] = group_widget
@@ -1157,15 +1229,7 @@ class MainWindow(QMainWindow):
                     freq_group = NavGroupWidget("常用")
                     for page_id in frequent_ids:
                         text = self._page_names.get(page_id, page_id)
-                        btn = QPushButton(f"  {text}")
-                        btn.setObjectName("navButton")
-                        btn.setCheckable(True)
-                        btn.setMinimumHeight(36)
-                        icon = get_page_icon(page_id, role="secondary", size=16)
-                        if not icon.isNull():
-                            btn.setIcon(icon)
-                            btn.setIconSize(QSize(16, 16))
-                        btn.clicked.connect(lambda checked, pid=page_id: self.show_page(pid))
+                        btn = self._make_nav_button(page_id, text)
                         freq_group.add_button(btn)
                         self._frequent_buttons[page_id] = btn
                     nav_layout.insertWidget(0, freq_group)
@@ -1176,6 +1240,16 @@ class MainWindow(QMainWindow):
         nav_layout.addStretch()
         
         scroll_area.setWidget(nav_container)
+        # 侧栏内容的高度会在切页之后才变（分组展开/收起、图标换色、字体度量），
+        # 而"把当前项滚进可视区"是在切页那一刻算的 —— 内容一变，那次计算就作废了。
+        # 盯住内容的 Resize 事件重算一次，比在切页时赌"布局已经落定"可靠得多：
+        # 赌时序在本机怎么都对，2026-08-17 CI 上连红三次（hud_color / audio_health /
+        # crosshair，滚动条才 61/998，明明有的是空间可滚，就是没人去滚）。
+        self._sidebar_nav_container = nav_container
+        nav_container.installEventFilter(self)
+        # ⚠ **视口也要盯**：内容没变而视口变矮，同样能把当前项挤出可视区 ——
+        # 底部音乐条出现时就是这样（RN-008 根因，详见 eventFilter 里的注释）。
+        scroll_area.viewport().installEventFilter(self)
         layout.addWidget(scroll_area, 1)
 
         # 侧边栏底部：紧凑模式切换按钮
@@ -1754,6 +1828,33 @@ class MainWindow(QMainWindow):
         from ui_help_panel import install_help_panel, PAGE_HELP_TEXTS
         install_help_panel(header_row, scroll_layout, PAGE_HELP_TEXTS["basic"])
 
+        # RN-110（轻档）：新用户打开只看到左边十几项细分设置，不知道从哪儿开始。
+        # 一行引导条 + 一个按钮，把已有的三步引导重新打开 —— 见 _show_onboarding_dialog。
+        guide_row = QHBoxLayout()
+        guide_row.setSpacing(10)
+        # ⚠ 第一版文案写的是「三步上手：① 选好 CS2 安装目录 → ②…」，
+        # 外审两发独立指出同一件事：**这一页上根本没有选 CS2 目录的入口**，
+        # 用户读完第 ① 步会在这一页找一圈（「自定义目录」开的是音频素材目录，不是它）。
+        # ⇒ 文案必须自己说清「第 ① 步在哪做」，而不是靠按钮的 tooltip。
+        self.basic_onboarding_hint = QLabel(
+            "第一次用？点右边的按钮走一遍三步上手：选 CS2 安装目录 → 写入 GSI 配置 → 试听验证。"
+            "各功能的总开关就在下面。")
+        self.basic_onboarding_hint.setObjectName("hintLabel")
+        self.basic_onboarding_hint.setWordWrap(True)
+        guide_row.addWidget(self.basic_onboarding_hint, 1)
+        self.basic_onboarding_btn = self._create_home_tool_button(
+            # 不叫「重新上手引导」：对第一次用的人来说「重新」是个反向暗示。
+            "打开上手引导",
+            self._reopen_onboarding_guide,
+            tooltip="重新打开首次启动时的三步引导：选 CS2 目录 / 写入 GSI 配置 / 去试听",
+        )
+        # ⚠ 必须带 AlignRight：`secondaryButton` 的水平策略是 Minimum（**可以长大**），
+        # 只写 addWidget 的话它会把行里剩下的空间全吃掉 —— 实测被撑到 312px，
+        # 而 sizeHint 只有 118px，和同页「刷新状态」那排（118px）差了快 3 倍。
+        # 排版审计量的是「有没有溢出/截断」，2.6 倍宽既不溢出也不截断，**一路绿灯**。
+        guide_row.addWidget(self.basic_onboarding_btn, 0, Qt.AlignRight | Qt.AlignVCenter)
+        scroll_layout.addLayout(guide_row)
+
         status_card = self._create_card("运行面板")
         self.basic_status_card = status_card
         status_layout = status_card.layout()
@@ -1879,6 +1980,7 @@ class MainWindow(QMainWindow):
 
         # 功能开关
         self.switches = {}
+        self._switch_id_by_config_key: dict[str, str] = {}
         switch_configs = [
             ("kill_sound", "击杀音效", "kill_sound_enabled"),
             ("kill_voice", "击杀语音", "kill_voice_enabled"),
@@ -1925,7 +2027,13 @@ class MainWindow(QMainWindow):
             grid_layout.addWidget(row_widget, row, col)
 
             self.switches[switch_id] = toggle
-        
+            # ⚠ RN-089：`self.switches` 以前是**写了从来没读过的字典**（AST 实测：
+            # 1 处 Store、1 处下标赋值、**0 个真读者**）。也就是说配置一旦从别处被改，
+            # 这 17 个开关不会跟着动 —— 没人发现是因为以前只有这里能改它们。
+            # RN-079 要让 `flash` 页自己开总开关，所以必须先有一条回写通路，
+            # 见 `sync_feature_switch()`。同时记下 config_key → switch_id 的反查。
+            self._switch_id_by_config_key[config_key] = switch_id
+
         switches_layout.addLayout(grid_layout)
         scroll_layout.addWidget(switches_card)
         
@@ -2413,11 +2521,172 @@ class MainWindow(QMainWindow):
         btn = getattr(self, "nav_buttons", {}).get(page_id)
         if scroll is None or btn is None or not btn.isVisible():
             return
+
+        # ⚠ **按钮还没被布局定高时，这一整套计算都是错的，别算，等下一轮。**
+        # Qt 的 `ensureWidgetVisible` 内部拿的是 `child->size()`：高度为 0 时
+        # 它只保证左上角那个点可见，按钮整个身子留在视口外。位置同理 ——
+        # 这时候量到的 y 也不是最终值（下面的按钮还会跟着往下挪）。
+        # 2026-08-17 CI 连红四次，判据带回来的数每次都是 `y=599 视口=623`，
+        # 而 599 正好等于 623−24（24 是 ymargin）——**高度被当成了 0 的指纹**。
+        # 本机永远复现不出：这台机器上布局在调用前就已经落定了。
+        if btn.height() <= 0:
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(0, lambda pid=page_id: self._ensure_nav_button_visible(pid))
+            return
         try:
             # 上下各留一点余量，免得当前项正好贴在视口边缘上，看着像被截断
             scroll.ensureWidgetVisible(btn, 0, 24)
+
+            self._nudge_nav_button_fully_into_view(scroll, btn)
+            # ⚠ 还要**再补一次、而且要等布局落定之后**。
+            # 上面那两步（`ensureWidgetVisible` 和第一次校正）都在**同一瞬间**测量，
+            # 于是它们看到的是同一份可能还没落定的布局 —— 布局没落定时两者都以为
+            # "已经在视口里"，谁都不动，那一项就留在了视口外。
+            # 这正是 2026-08-17 CI 上连红两次的样子（先 hud_color 后 audio_health，
+            # 两次都停在 y=599，本机各种窗高都复现不出）：同一瞬间量两遍，
+            # 量的还是同一份陈旧几何，补一万次也没用。
+            # 0ms 的 singleShot 会排到本轮布局之后，那时量到的才是最终位置。
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(
+                0, lambda s=scroll, b=btn: self._nudge_nav_button_fully_into_view(s, b))
         except Exception as e:
-            self.logger.debug(f"导航项滚动定位失败: {e}")
+            # warning 而不是 debug：这条链路 2026-08-17 在 CI 上连红四次，
+            # 而异常被 debug 级别吞掉的话，日志里什么都看不到，只能靠猜。
+            # 用户看不见这条日志，代价是零；下次再红时它就是第一手证据。
+            self.logger.warning(f"导航项滚动定位失败: {e}")
+
+    @staticmethod
+    def _nudge_nav_button_fully_into_view(scroll, btn):
+        """滚完再量一次，还露在外面就自己补上。
+
+        ⚠ `ensureWidgetVisible` 按**调用那一刻**的布局算，布局若还没落定就会
+        少滚一截；而它少滚了**不会报错**，只是那一项静静地留在视口外 ——
+        正是调用方要防的事。
+
+        实测余量本来就薄：完整模式 1280×800 下，侧栏下半部十几页都恰好停在
+        「离视口底 24px」（就是那个 ymargin），最后一项因为已到滚动极限只剩 10px。
+        字体度量稍有不同就压线 —— 2026-08-17 CI 上 `hud_color` 就是这么红的，
+        而本机怎么跑都绿。这是用户看得见的东西，不能停在"尽力而为"。
+
+        单独成一个静态方法是为了**能被确定性地测**：判据可以先把滚动条按到一个
+        故意不对的位置，再调它，不必去复现"布局恰好没落定"那一瞬。
+        """
+        from PySide6.QtCore import QPoint
+
+        viewport = scroll.viewport()
+        bar = scroll.verticalScrollBar()
+        # 先逼布局落定再量。`mapTo` 读的是**当前**几何，而侧栏刚换过选中态与图标，
+        # 布局请求可能还挂在队列里 —— 拿陈旧几何去算，算出来的"没超出"是假的。
+        try:
+            content = scroll.widget()
+            if content is not None and content.layout() is not None:
+                content.layout().activate()
+        except Exception:
+            pass
+        y = btn.mapTo(viewport, QPoint(0, 0)).y()
+        # ⚠ **高度要取 max(当前高, sizeHint 高)**，不能只信 `height()`。
+        # 布局还没给按钮定高时 `height()` 会很小甚至是 0，这时算出来的
+        # "没超出"是假的 —— 2026-08-17 CI 连红三次，判据带回来的数每次都是
+        # `y=599 高=42 视口=623`：**599 正好等于 623 − 24**，也就是滚动只保证了
+        # 按钮左上角那个点可见（留 24px 边距），按钮自己的 42px 高度被当成了 0。
+        # 三个不同的页面、三次红，y 一模一样，说明这不是偶发而是算式漏了高度。
+        height = max(btn.height(), btn.sizeHint().height())
+        overflow = (y + height) - viewport.height()
+        if overflow > 0:
+            bar.setValue(min(bar.maximum(), bar.value() + overflow))
+        elif y < 0:
+            bar.setValue(max(bar.minimum(), bar.value() + y))
+
+        MainWindow._snap_nav_scroll_to_item_boundary(scroll, btn)
+
+    @staticmethod
+    def _snap_nav_scroll_to_item_boundary(scroll, keep_visible=None):
+        """把侧栏滚动值对齐到**导航项的顶边**，别让视口上边缘落在某一项中间。
+
+        RN-060。实测（2026-08-17，1280×800 完整模式，逐页量）：
+
+            侧栏视口 657px，内容 1449px，项高约 43px
+            滚动值依次是 26 / 69 / 112 / 155 / 244 / 287 / …（差值正好 43）
+            ⇒ **28 页里 16 页**的视口上边缘落在某一项中间，
+              顶部被切 13~20px、底部被切 19~21px —— 项高的近一半
+
+        用户看到的是**残缺的导航文字**（「基础设置」只剩下半截、「HUD颜色」只剩
+        上半截）。外审 8 发独立报这一条，跨 4 个页面的 7 张截图。
+
+        ⚠ 为什么排版审计一直是绿的：侧栏是 QScrollArea，"露半行"在几何上不算溢出
+        （同 RN-045 的病根）。判据看不见的东西，只有眼睛能看见。
+
+        ⚠ 为什么这条到今天才被发现：滚动值为 0 的前 11 页和滚到底的 `about`
+        恰好都对齐，而**截图覆盖面以前只有那些页**。
+        `flash` / `music` / `voice_output` 这些在导航列表靠后的页正是
+        RN-005 盲区里的四页 —— 解除盲区的第一轮外审就撞上了它。
+
+        只对齐**上**边缘：下边缘露出的半项是"下面还有内容"的自然提示，
+        而上边缘之上的内容用户不需要提示（往上滚就是了）。
+        对齐后若把 `keep_visible` 挤出视口，就放弃对齐 —— 
+        「当前项必须可见」（RN-008）优先级高于「边缘对齐」。
+        """
+        from PySide6.QtCore import QPoint
+
+        bar = scroll.verticalScrollBar()
+        if bar is None or bar.maximum() <= 0:
+            return
+        viewport = scroll.viewport()
+        content = scroll.widget()
+        if viewport is None or content is None:
+            return
+
+        from PySide6.QtWidgets import QAbstractButton
+
+        # 项在**内容坐标系**里的顶边（不是视口坐标系 —— 那会随滚动变化）
+        tops = sorted({
+            btn.mapTo(content, QPoint(0, 0)).y()
+            for btn in content.findChildren(QAbstractButton)
+            if btn.isVisible() and btn.height() > 4
+        })
+        if not tops:
+            return
+
+        current = bar.value()
+        if current in tops:
+            return
+
+        # ⚠ RN-100：**按距离就近对齐，两个方向都试。**
+        # 原来只往上退（`max(t for t in tops if t <= current)`），理由写的是
+        # "不会把当前项推出视口"。在闭源版看不出问题——那里项高恰好统一 43px，
+        # 滚动值天然落在边界上，`target == current` 直接返回，这条路根本没走过。
+        #
+        # 开源版少一个账号页，项高变成 42 / 43 / 47 混着（分组标题比普通项高），
+        # 于是 `ensureWidgetVisible` 算出的值**偏离边界 4px**：实测滚动值
+        # 48 / 91 / 134 / 177…，而项顶边在 52 / 99 / 141…。
+        # 这时"只往上退"的唯一候选是 10 —— 往上跳 38px，当前项被挤出视口 ⇒ 撤销
+        # ⇒ 停在 48 ⇒ **顶上那一项被切掉 38 的 40**，只剩 2px。开源版 14 页中招。
+        #
+        # ⭐ 同一段代码在两边表现完全不同，差别只是"项高是否恰好整齐"。
+        #   一个只在整齐时正确的算法，在它正确的那个环境里是**看不出来**的。
+        below = [t for t in tops if t <= current]
+        above = [t for t in tops if t > current]
+        targets = []
+        if below:
+            targets.append(max(below))
+        if above:
+            targets.append(min(above))
+        targets.sort(key=lambda t: abs(t - current))   # 就近优先
+
+        def _keeps_visible() -> bool:
+            if keep_visible is None:
+                return True
+            y = keep_visible.mapTo(viewport, QPoint(0, 0)).y()
+            height = max(keep_visible.height(),
+                         keep_visible.sizeHint().height())
+            return y >= 0 and (y + height) <= viewport.height()
+
+        for target in targets:
+            bar.setValue(target)
+            if bar.value() == target and _keeps_visible():
+                return
+        # 两个方向都会把当前项挤出去 —— 「当前项必须可见」优先（RN-008）
+        bar.setValue(current)
 
     def _sync_nav_selection_to_current_page(self):
         """当切页被取消时，恢复导航按钮选中状态。"""
@@ -2614,6 +2883,36 @@ class MainWindow(QMainWindow):
         label.setObjectName("switchLabelOn" if checked else "switchLabelOff")
         label.style().unpolish(label)
         label.style().polish(label)
+
+    def sync_feature_switch(self, config_key: str) -> bool:
+        """把 `config.<config_key>` 的当前值回写到首页那个开关上。
+
+        RN-079：`flash` 页新增的「打开并启动」会自己写 `flash_enabled`，
+        而首页「功能开关」卡里那颗开关**不会自动跟着动** ——
+        `self.switches` 在 RN-089 之前是个写了从没读过的字典（0 个真读者）。
+        少了这一步就会出现「首页显示关、实际已开」的三态不一致，
+        而且下一次 `save_config` 会把谁的值落盘取决于谁最后碰过它。
+
+        回报 True 表示真的找到并同步了那颗开关（调用方可以据此判断有没有空转）。
+        """
+        # ⚠ 这里刻意**不写** `getattr(self, "switches", {})` —— 那样写虽然更防御，
+        # 但读操作就变成了一个字符串，AST 判据看不见它，
+        # 「switches 有没有真读者」这条判据会退化成查子串（RN-073 那条假绿的写法）。
+        # 存在性用 hasattr 单独守，读本身保持成真正的属性访问。
+        if not hasattr(self, "switches") or not hasattr(self, "_switch_id_by_config_key"):
+            return False
+        switch_id = self._switch_id_by_config_key.get(config_key)
+        toggle = self.switches.get(switch_id) if switch_id else None
+        if toggle is None:
+            return False
+        value = bool(getattr(self.config, config_key, False))
+        if toggle.isChecked() != value:
+            toggle.blockSignals(True)          # 只同步显示，别再走一轮 _on_switch_changed
+            toggle.setChecked(value)
+            toggle.blockSignals(False)
+        if getattr(toggle, "_label", None) is not None:
+            self._update_switch_label_color(toggle._label, value)
+        return True
 
     def _on_switch_changed(self, config_key, checked):
         """开关状态改变"""
@@ -3217,13 +3516,15 @@ class MainWindow(QMainWindow):
             self._show_search_suggestions()
 
     def _init_global_shortcuts(self):
-        """R1-3: Ctrl+1..4 展开并跳到对应侧栏分组首页;F1 当前页帮助;Esc 收起帮助/搜索焦点。"""
+        """R1-3: Alt+1..9 展开并跳到对应侧栏分组首页;F1 当前页帮助;Esc 收起帮助/搜索焦点。"""
         from PySide6.QtGui import QKeySequence, QShortcut
 
         self._app_shortcuts = []
         # 用 Alt+N 而非 Ctrl+N:音板槽位热键默认就是 ctrl+数字(keyboard 全局钩子),
         # 应用聚焦时 Ctrl+N 会双触发(切组+播放音板)——审计中实测发现的冲突。
-        for idx in range(min(4, len(self.nav_groups))):
+        # ⚠ 上限原先写死 4，正好等于当时的分组数;RN-108 加了「开始」组之后
+        # 最后一组就悄悄没了快捷键。改成按实际分组数发，只受 Alt+1..9 这九个键限制。
+        for idx in range(min(9, len(self.nav_groups))):
             sc = QShortcut(QKeySequence(f"Alt+{idx + 1}"), self)
             sc.activated.connect(lambda i=idx: self._goto_nav_group(i))
             self._app_shortcuts.append(sc)

@@ -35,10 +35,13 @@ from core.utils.logger import get_logger
 from pages.audio_status_badge import (
     build_health_detail_tooltip,
     collect_category_health,
-    count_enabled_styles,
     create_badge_label,
     render_badges,
+    resolve_style,
+    resource_badge,
+    resource_hint,
 )
+from widgets.preview_feedback import PreviewFailure, report_preview_failure
 from ui_help_panel import PAGE_HELP_TEXTS, install_help_panel
 from widgets.page_action_bar import PageActionBar
 from widgets.settings_card import SettingsCard
@@ -141,10 +144,88 @@ class SpecialSoundPage(QWidget):
             return value[: max_length - 1] + "…"
         return value
 
+    # ── RN-046：三个口径统一到这一处 ───────────────────────────────────
+    # 原状（探针实测，8 个回合事件全配上一个已删除的风格）：
+    #
+    #   回合摘要   「已选 5/8」          ← 分子手写 5 个字段、且数的是原始值
+    #   八行下拉框 全是「不启用」        ← `findData` 找不到就退回第 0 项
+    #
+    # 两个错叠在一起：**分子上限 5、分母 8**（分母 `len(ROUND_TYPE_META)` 是
+    # 从事件表派生的，2.2.4 加的 比赛开始/比赛结束/半场交换 只进了分母），
+    # 外加 RN-026 那个"数原始值"的老病。
+    # `core/audio/special_events` 的 docstring 开篇讲的就是"别再有第二份手写
+    # 清单"，而徽章代码里躺着的正是第二份。
+
+    def _available_styles(self, attr_or_grenade: str, *, grenade=False) -> list:
+        if grenade:
+            return (getattr(self.audio_manager, "grenade_sound_styles", {})
+                    or {}).get(attr_or_grenade, []) or []
+        return getattr(self.audio_manager, attr_or_grenade, []) or []
+
+    def _effective_grenade_styles(self) -> dict:
+        raw = config.grenade_sound_styles or {}
+        return {g: resolve_style(raw.get(g, "0"), self._available_styles(g, grenade=True))
+                for g in self.GRENADE_TYPES}
+
+    def _effective_round_styles(self) -> dict:
+        """回合各事件真正生效的风格。**键来自事件表，不是手写清单。**"""
+        return {
+            key: resolve_style(getattr(config, config_attr, "0"),
+                               self._available_styles(manager_attr))
+            for key, (_label, manager_attr, config_attr) in self.ROUND_TYPE_META.items()
+        }
+
+    def _effective_c4_styles(self) -> dict:
+        available = self._available_styles("c4_sound_styles")
+        return {event.key: resolve_style(getattr(config, event.config_attr, "0"), available)
+                for event in self.C4_EVENTS}
+
+    def _effective_health_style(self) -> str:
+        return resolve_style(getattr(config, "health_warning_style", "0"),
+                             self._available_styles("health_warning_styles"))
+
+    @staticmethod
+    def _selected(effective: dict) -> int:
+        return sum(1 for value in effective.values() if value != "0")
+
+    def _stale_total(self) -> int:
+        """配过、但风格已经不在了的项数（四类合计）。"""
+        raw_grenade = config.grenade_sound_styles or {}
+        pairs = [(raw_grenade.get(g, "0"), v)
+                 for g, v in self._effective_grenade_styles().items()]
+        pairs += [(getattr(config, self.ROUND_TYPE_META[k][2], "0"), v)
+                  for k, v in self._effective_round_styles().items()]
+        pairs += [(getattr(config, e.config_attr, "0"), self._effective_c4_styles()[e.key])
+                  for e in self.C4_EVENTS]
+        pairs.append((getattr(config, "health_warning_style", "0"),
+                      self._effective_health_style()))
+        return sum(1 for configured, effective in pairs
+                   if str(configured or "0").strip() not in ("", "0") and effective == "0")
+
     def _style_summary(self, style_value):
         if str(style_value or "").strip() == "0":
             return "未启用"
         return self._compact_text(style_value, "未启用", 18)
+
+    def _module_state_note(self, enabled: bool, selected: int) -> str:
+        """这一类的开关状态；**选了风格却没勾开关时额外挑明**。
+
+        RN-051：这一页有**两层开关**（模块复选框 + 每一项的「不启用」）。
+        外审 8 发截图里 4 发独立报「双重开关逻辑冲突，玩家容易只选下拉项而
+        遗漏总开关，导致局内不生效」。加控件会让事情更复杂；
+        真正缺的是**把当前状态说清楚**。
+
+        ⚠ 第一版我写成"只在配了却没开时才说话"，其余情况返回空串 ——
+        于是"模块已关闭且什么都没配"这个状态**一个字都没有了**，
+        而原来的文案是会说「模块已关闭」的。
+        既有判据 `test_special_sound_page_status_card_tracks_threshold_and_volume`
+        当场逮住。⇒ **收敛文案时先问"原来说的哪句话被我弄没了"。**
+        """
+        if enabled:
+            return " · 模块已启用"
+        if selected:
+            return " · 模块已关闭（配了也不会响）"
+        return " · 模块已关闭"
 
     def _count_enabled_modules(self):
         return sum(
@@ -158,10 +239,18 @@ class SpecialSoundPage(QWidget):
             if bool(enabled)
         )
 
-    def _collect_style_values(self):
-        style_values = list((config.grenade_sound_styles or {}).values())
-        style_values.extend(getattr(config, attr, "0") for attr in config_defaults())
-        return style_values
+    def _collect_effective_styles(self) -> list:
+        """全页每一项**真正生效**的风格值。
+
+        RN-046：原来这里收的是配置里的原始值（`config_defaults()` 的键逐个
+        `getattr`），于是「样式 · N」这颗徽章数出来的 N 和屏幕上每一行显示的
+        「不启用」永久对不上。
+        """
+        values = list(self._effective_grenade_styles().values())
+        values.extend(self._effective_round_styles().values())
+        values.extend(self._effective_c4_styles().values())
+        values.append(self._effective_health_style())
+        return values
 
 
     @staticmethod
@@ -350,7 +439,7 @@ class SpecialSoundPage(QWidget):
 
         header_card, header_layout = SettingsCard.make(
             "投掷物音效",
-            "按投掷物类型分开选择音效风格，测试按钮用于快速确认映射是否顺耳。",
+            "每种投掷物各选一个风格，点「测试」就能听到实际效果。",
         )
         self.grenade_enabled_checkbox = QCheckBox("启用投掷物音效")
         self.grenade_enabled_checkbox.setChecked(bool(config.grenade_sound_enabled))
@@ -527,7 +616,7 @@ class SpecialSoundPage(QWidget):
 
         card, card_layout = SettingsCard.make(
             "血量警告",
-            "把阈值和提示音效放在同一组里，方便边调触发线边试听警告强度。",
+            "血量掉到设定值以下时提醒你一声。阈值和提醒间隔都可以自己调。",
         )
         self.health_enabled_checkbox = QCheckBox("启用低血量警告")
         self.health_enabled_checkbox.setChecked(bool(config.health_warning_enabled))
@@ -597,13 +686,28 @@ class SpecialSoundPage(QWidget):
         self.cooldown_value_label.setFont(QFont("Microsoft YaHei", 12, QFont.Bold))
         cooldown_layout.addWidget(self.cooldown_value_label)
 
-        content_row = QHBoxLayout()
-        content_row.setContentsMargins(0, 0, 0, 0)
-        content_row.setSpacing(10)
-        content_row.addWidget(threshold_row, 1)
-        content_row.addWidget(style_row, 1)
-        card_layout.addLayout(content_row)
-        card_layout.addWidget(cooldown_row)
+        # RN-055：三行同级设置项原来是「两行并排半宽 + 一行通栏」，
+        # 外审 S3 报「触发阈值与警告音效带独立边框包裹，而同级的再次提醒间隔
+        # 通栏拉伸，容器样式与排版结构不一致」。
+        # 核实：三行**都是** `_row_card()`（同一个 `QFrame#card`），
+        # 所以"无边框"那半句是错的 —— 但**现象是真的**：同一层级的三个东西，
+        # 两个半宽一个通栏，读起来像分了组，而它们并没有分组。
+        # ⚠ 第一版我改成**三行等宽通栏**，容器是一致了，但卡片高了一行 ——
+        # 改完复跑外审，紧凑档（860×640）当场报「警告音效下拉框与测试按钮
+        # 被卡片容器底边截断」（高），而改之前紧凑档这一页是 NONE。
+        # ⇒ **我用一个「中」换来了一个「高」，是笔亏本的交易。**
+        #
+        # 现在的改法不加高度：把**两个滑块**（阈值 / 间隔，同一类东西）并排，
+        # 「选风格 + 试听」通栏单独一行。行数和原来一样是 2，
+        # 而分组从"两个不同类的东西并排"变成"两个同类的东西并排" ——
+        # 外审那条抱怨的根子是**视觉分组和语义分组不一致**，不是边框本身。
+        slider_row = QHBoxLayout()
+        slider_row.setContentsMargins(0, 0, 0, 0)
+        slider_row.setSpacing(10)
+        slider_row.addWidget(threshold_row, 1)
+        slider_row.addWidget(cooldown_row, 1)
+        card_layout.addLayout(slider_row)
+        card_layout.addWidget(style_row)
         layout.addWidget(card)
         layout.addStretch()
 
@@ -619,7 +723,7 @@ class SpecialSoundPage(QWidget):
 
         header_card, header_layout = SettingsCard.make(
             "回合音效",
-            "把启用开关和总音量固定在上方，下面集中管理各阶段风格，便于快速试一整套节奏。",
+            "回合开始、结束、MVP 等时刻各播一段音效。逐项选风格，音量统一由上面这一条控制。",
         )
         self.round_enabled_checkbox = QCheckBox("启用回合音效")
         self.round_enabled_checkbox.setChecked(bool(config.round_sound_enabled))
@@ -737,15 +841,36 @@ class SpecialSoundPage(QWidget):
         self._refresh_status_badge()
         self.logger.info(f"{grenade_type} 样式已更新: {style}")
 
+    # ── RN-047：四个「测试」按钮原来都是"只写一行日志就 return" ─────────
+    # 用户看到的是**点了没反应** —— 分不清是没配、文件没了，还是软件坏了。
+    # UP-037 那一轮把其余各页都改了，这一页四个出口一个没改。
+    # ⭐ 外审 8 发截图里 7 发独立报「测试按钮点击无反应易被误认为软件故障」。
+    #   上一轮我把这类判成「现象真但机制已缓解（点了会给 toast）」——
+    #   那个裁定对**有 toast 的页**成立，对这一页不成立。
+    #   ⇒ 「已经修过」是按页成立的，不是按缺陷类型成立的。
+
+    def _report_preview(self, configured: str, effective: str, label: str) -> bool:
+        """没得播就报出来，返回 True 表示"已经报了、别再往下走"。"""
+        if str(configured or "0").strip() in ("", "0"):
+            report_preview_failure(self, PreviewFailure.NO_STYLE, label)
+            return True
+        if effective == "0":
+            report_preview_failure(self, PreviewFailure.STALE_STYLE,
+                                   f"{label} · {configured}")
+            return True
+        return False
+
     def _test_grenade_sound(self, grenade_type):
-        style = config.grenade_sound_styles.get(grenade_type, "0")
-        if style == "0":
-            self.logger.info(f"{grenade_type} 当前未启用音效")
+        configured = (config.grenade_sound_styles or {}).get(grenade_type, "0")
+        style = self._effective_grenade_styles().get(grenade_type, "0")
+        label = self.GRENADE_TYPES.get(grenade_type, grenade_type)
+        if self._report_preview(configured, style, label):
             return
 
         sound_key = f"grenade-{grenade_type}-{style}"
         self.logger.info(f"测试投掷物音效: {sound_key}")
-        self.audio_manager.play_sound(sound_key, channel_type="grenade_sound")
+        if not self.audio_manager.play_sound(sound_key, channel_type="grenade_sound"):
+            report_preview_failure(self, PreviewFailure.NO_FILE, f"{label} · {style}")
 
     def _on_c4_enabled_toggled(self, checked):
         config.c4_sound_enabled = bool(checked)
@@ -765,19 +890,22 @@ class SpecialSoundPage(QWidget):
 
     def _test_c4_sound(self, event=None):
         event = event or self.C4_EVENTS[0]
-        style = getattr(config, event.config_attr, "0")
-        if style == "0":
-            self.logger.info(f"{event.label}当前未启用音效")
+        configured = getattr(config, event.config_attr, "0")
+        style = self._effective_c4_styles().get(event.key, "0")
+        if self._report_preview(configured, style, event.label):
             return
 
         key = sound_key(event, style)
         self.logger.info(f"测试 {event.label}: {key}")
         # 拆除/爆炸可能在这个风格目录里找不到对应文件——那时 play_sound 会返回
         # False 并记一条 drop。这正是设计：宁可不响也不拿安放的音效顶替。
+        # 但"设计上不响"也必须**说给用户听**：原来这里只写日志，
+        # 于是用户点了拆除的测试、什么都没发生、也不知道该去改文件名。
         if not self.audio_manager.play_sound(key, channel_type="c4_sound"):
-            self.logger.info(
-                f"{event.label}没有匹配的素材（文件名需含 {' / '.join(event.filename_tokens[:2])}）"
-            )
+            report_preview_failure(
+                self, PreviewFailure.NO_FILE,
+                f"{event.label} · 风格「{style}」里没有文件名含 "
+                f"{' / '.join(event.filename_tokens[:2])} 的音频")
 
     def _on_health_enabled_toggled(self, checked):
         config.health_warning_enabled = bool(checked)
@@ -807,14 +935,15 @@ class SpecialSoundPage(QWidget):
         self.logger.info(f"血量警告样式已更新: {style}")
 
     def _test_health_warning(self):
-        style = getattr(config, "health_warning_style", "0")
-        if style == "0":
-            self.logger.info("血量警告当前未启用音效")
+        configured = getattr(config, "health_warning_style", "0")
+        style = self._effective_health_style()
+        if self._report_preview(configured, style, "低血量警告"):
             return
 
         sound_key = f"health-warning-{style}"
         self.logger.info(f"测试血量警告音效: {sound_key}")
-        self.audio_manager.play_sound(sound_key, channel_type="health_warning")
+        if not self.audio_manager.play_sound(sound_key, channel_type="health_warning"):
+            report_preview_failure(self, PreviewFailure.NO_FILE, f"低血量警告 · {style}")
 
     def _on_round_enabled_toggled(self, checked):
         config.round_sound_enabled = bool(checked)
@@ -845,15 +974,17 @@ class SpecialSoundPage(QWidget):
         if not meta:
             return
 
-        _display_name, _manager_attr, config_attr = meta
-        style = getattr(config, config_attr, "0")
-        if style == "0":
-            self.logger.info(f"{round_type} 当前未启用音效")
+        display_name, _manager_attr, config_attr = meta
+        configured = getattr(config, config_attr, "0")
+        style = self._effective_round_styles().get(round_type, "0")
+        if self._report_preview(configured, style, display_name):
             return
 
         sound_key = f"round-{round_type}-{style}"
         self.logger.info(f"测试回合音效: {sound_key}")
-        self.audio_manager.play_sound(sound_key, channel_type="round_sound")
+        if not self.audio_manager.play_sound(sound_key, channel_type="round_sound"):
+            report_preview_failure(self, PreviewFailure.NO_FILE,
+                                   f"{display_name} · {style}")
 
     def load_settings(self):
         for grenade_type, combo in self.grenade_combos.items():
@@ -877,65 +1008,79 @@ class SpecialSoundPage(QWidget):
 
     def _refresh_status_badge(self):
         enabled_modules = self._count_enabled_modules()
-        selected_count = count_enabled_styles(self._collect_style_values())
-        grenade_selected = count_enabled_styles((config.grenade_sound_styles or {}).values())
+
+        grenade_on = bool(getattr(config, "grenade_sound_enabled", False))
+        c4_on = bool(getattr(config, "c4_sound_enabled", False))
+        health_on = bool(getattr(config, "health_warning_enabled", False))
+        round_on = bool(getattr(config, "round_sound_enabled", False))
+
+        grenade_effective = self._effective_grenade_styles()
+        round_effective = self._effective_round_styles()
+        c4_effective = self._effective_c4_styles()
+        health_effective = self._effective_health_style()
+
+        grenade_selected = self._selected(grenade_effective)
+        round_selected = self._selected(round_effective)
+        c4_selected = self._selected(c4_effective)
+        selected_count = len([v for v in self._collect_effective_styles() if v != "0"])
+        stale_count = self._stale_total()
+        grenade_total = len(self.GRENADE_TYPES)
+        round_total = len(self.ROUND_TYPE_META)
+        c4_total = len(self.C4_EVENTS)
+
         grenade_available = sum(
             len(styles)
-            for styles in getattr(self.audio_manager, "grenade_sound_styles", {}).values()
-        )
-        round_selected = count_enabled_styles(
-            [
-                getattr(config, "round_start_style", "0"),
-                getattr(config, "round_action_style", "0"),
-                getattr(config, "round_win_style", "0"),
-                getattr(config, "round_lose_style", "0"),
-                getattr(config, "round_mvp_style", "0"),
-            ]
+            for styles in (getattr(self.audio_manager, "grenade_sound_styles", {}) or {}).values()
         )
         round_volume = int(round(float(getattr(config, "round_sound_volume", 1.0)) * 100))
         health_threshold = int(getattr(config, "health_warning_threshold", 20))
 
         health = collect_category_health(("grenade_sounds", "c4_sounds", "health_warning", "round_sounds"))
         detail_tooltip = build_health_detail_tooltip(health)
-        health_level = "success"
-        if not health["ok"]:
-            health_level = "danger"
-        elif health["empty"]:
-            health_level = "warn"
+
+        style_text = f"风格 · {selected_count}"
+        if stale_count:
+            style_level, style_text = "warn", f"{style_text} · {stale_count} 项失效"
+        else:
+            style_level = "success" if selected_count else "info"
+
+        # RN-053：第三颗徽章跟着当前页签走。
+        # 原状：无论在哪个页签上那颗都写着「回合音量 · 100%」——
+        # 在「血量警告」页签上它跟屏幕上的东西毫无关系。
+        # 外审两发独立报「将其他标签页的回合音量混在全局状态栏展示」。
+        # `gun_sound` 的「分类 · …」徽章早就是跟页签走的，照它做。
+        current_tab = (self.tab_widget.tabText(self.tab_widget.currentIndex())
+                       if hasattr(self, "tab_widget") and self.tab_widget.count() else "")
+        tab_badge = {
+            "投掷物": (grenade_on and grenade_selected,
+                     f"投掷物 · {grenade_selected}/{grenade_total}"),
+            "C4": (c4_on and c4_selected, f"C4 · {c4_selected}/{c4_total}"),
+            "血量警告": (health_on and health_effective != "0",
+                       f"阈值 · {health_threshold}"),
+            "回合": (round_on, f"回合音量 · {round_volume}%"),
+        }.get(current_tab, (enabled_modules, f"模块 · {enabled_modules}/4"))
 
         badges = [
             ("success" if enabled_modules else "warn", f"模块 · {enabled_modules}/4"),
-            ("success" if selected_count else "info", f"样式 · {selected_count}"),
-            (
-                "success" if getattr(config, "round_sound_enabled", False) else "info",
-                f"回合音量 · {round_volume}%",
-            ),
-            (
-                health_level,
-                "资源 · 正常"
-                if health["ok"]
-                else f"资源 · 异常 {health['issue_count']}",
-            ),
+            (style_level, style_text),
+            ("success" if tab_badge[0] else "info", tab_badge[1]),
+            # RN-035：分级收进 `resource_badge()` 一份 —— 七个音效页原先各抄一遍
+            # 这段，七份都把"素材目录还没建"（全新安装的样子）报成**红色异常**。
+            resource_badge(health),
         ]
         detail_lines = [
-            (
-                f"投掷物：{'已启用' if getattr(config, 'grenade_sound_enabled', False) else '已关闭'}，"
-                f"已选 {grenade_selected}/{len(self.GRENADE_TYPES)}"
-            ),
-            (
-                f"C4：{'已启用' if getattr(config, 'c4_sound_enabled', False) else '已关闭'}，"
-                f"样式 {self._style_summary(getattr(config, 'c4_sound_style', '0'))}"
-            ),
-            (
-                f"低血量：{'已启用' if getattr(config, 'health_warning_enabled', False) else '已关闭'}，"
-                f"阈值 {health_threshold}，"
-                f"样式 {self._style_summary(getattr(config, 'health_warning_style', '0'))}"
-            ),
-            (
-                f"回合：{'已启用' if getattr(config, 'round_sound_enabled', False) else '已关闭'}，"
-                f"音量 {round_volume}%，已选 {round_selected}/{len(self.ROUND_TYPE_META)}"
-            ),
+            (f"投掷物：{'已启用' if grenade_on else '已关闭'}，"
+             f"已选 {grenade_selected}/{grenade_total}"),
+            (f"C4：{'已启用' if c4_on else '已关闭'}，"
+             f"已选 {c4_selected}/{c4_total}"),
+            (f"低血量：{'已启用' if health_on else '已关闭'}，"
+             f"阈值 {health_threshold}，"
+             f"风格 {self._style_summary(health_effective)}"),
+            (f"回合：{'已启用' if round_on else '已关闭'}，"
+             f"音量 {round_volume}%，已选 {round_selected}/{round_total}"),
         ]
+        if stale_count:
+            detail_lines.append(f"有 {stale_count} 项配的风格已经不在了")
         if detail_tooltip:
             detail_lines.append(detail_tooltip)
 
@@ -944,45 +1089,57 @@ class SpecialSoundPage(QWidget):
         self.summary_label.setText(summary_text)
         self.summary_label.setToolTip(summary_text)
         self.status_card.setToolTip(summary_text)
+
+        stale_note = (f"（有 {stale_count} 项配的风格已被改名或删除，"
+                      "下面显示成「不启用」，重新选一个即可）") if stale_count else ""
+
         if hasattr(self, "grenade_summary_label"):
             self.grenade_summary_label.setText(
-                f"当前已选 {grenade_selected}/{len(self.GRENADE_TYPES)} 类 · "
-                f"{'模块已启用' if getattr(config, 'grenade_sound_enabled', False) else '模块已关闭'} · "
-                f"可用风格 {grenade_available} 个"
+                f"当前已选 {grenade_selected}/{grenade_total} 类 · 可用风格 {grenade_available} 个"
+                f"{self._module_state_note(grenade_on, grenade_selected)}"
             )
             self.grenade_summary_label.setToolTip(summary_text)
         if hasattr(self, "c4_summary_label"):
+            # RN-054：原文写「当前样式：X」，而 X 只是**安放**那一个事件的风格
+            # （`c4_sound_style` 是 planted 的 config_attr）。拆除/爆炸是 2.2.4
+            # 新增的两个独立事件，它们配了什么这行字从来没说。
             self.c4_summary_label.setText(
-                f"当前样式：{self._style_summary(getattr(config, 'c4_sound_style', '0'))} · "
-                f"{'模块已启用' if getattr(config, 'c4_sound_enabled', False) else '模块已关闭'}"
+                f"已选 {c4_selected}/{c4_total} 项"
+                f"{self._module_state_note(c4_on, c4_selected)}"
             )
             self.c4_summary_label.setToolTip(summary_text)
         if hasattr(self, "health_summary_label"):
             self.health_summary_label.setText(
-                f"阈值 {health_threshold} · "
-                f"当前样式：{self._style_summary(getattr(config, 'health_warning_style', '0'))} · "
-                f"{'模块已启用' if getattr(config, 'health_warning_enabled', False) else '模块已关闭'}"
+                f"阈值 {health_threshold} · 当前风格：{self._style_summary(health_effective)}"
+                f"{self._module_state_note(health_on, 1 if health_effective != '0' else 0)}"
             )
             self.health_summary_label.setToolTip(summary_text)
         if hasattr(self, "round_summary_label"):
             self.round_summary_label.setText(
-                f"音量 {round_volume}% · 已选 {round_selected}/{len(self.ROUND_TYPE_META)} · "
-                f"{'模块已启用' if getattr(config, 'round_sound_enabled', False) else '模块已关闭'}"
+                f"音量 {round_volume}% · 已选 {round_selected}/{round_total}"
+                f"{self._module_state_note(round_on, round_selected)}{stale_note}"
             )
             self.round_summary_label.setToolTip(summary_text)
-        if hasattr(self, "action_bar") and hasattr(self, "tab_widget"):
-            current_tab = self.tab_widget.tabText(self.tab_widget.currentIndex()) if self.tab_widget.count() else "特殊音效"
-            if current_tab == "投掷物":
-                action_message = f"当前标签：{current_tab} · 已选 {grenade_selected}/{len(self.GRENADE_TYPES)}，新增素材后可直接刷新风格列表。"
+        if hasattr(self, "action_bar"):
+            # RN-056：本页那颗主按钮叫「打开当前资源」，不叫「打开音频资源」
+            hint = resource_hint(health, open_label="打开当前资源")
+            if stale_count:
+                action_message = (f"有 {stale_count} 项配的风格已经不在了，"
+                                  "在对应行重新选一个即可。")
+            elif hint:
+                action_message = hint
+            elif current_tab == "投掷物":
+                action_message = f"当前标签：{current_tab} · 已选 {grenade_selected}/{grenade_total}。"
             elif current_tab == "C4":
-                action_message = f"当前标签：{current_tab} · 样式 {self._style_summary(getattr(config, 'c4_sound_style', '0'))}。"
+                action_message = f"当前标签：{current_tab} · 已选 {c4_selected}/{c4_total}。"
             elif current_tab == "血量警告":
-                threshold = int(getattr(config, "health_warning_threshold", 20))
-                action_message = f"当前标签：{current_tab} · 阈值 {threshold}，样式 {self._style_summary(getattr(config, 'health_warning_style', '0'))}。"
+                action_message = (f"当前标签：{current_tab} · 阈值 {health_threshold}，"
+                                  f"风格 {self._style_summary(health_effective)}。")
             elif current_tab == "回合":
-                action_message = f"当前标签：{current_tab} · 音量 {round_volume}%，已选 {round_selected}/{len(self.ROUND_TYPE_META)}。"
+                action_message = (f"当前标签：{current_tab} · 音量 {round_volume}%，"
+                                  f"已选 {round_selected}/{round_total}。")
             else:
-                action_message = "新增素材后可直接刷新风格列表，底部快捷入口会按当前标签页打开对应资源目录。"
+                action_message = "新增素材后可直接刷新风格列表。"
             self.action_bar.set_message(action_message)
 
     def resizeEvent(self, event):

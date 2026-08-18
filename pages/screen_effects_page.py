@@ -108,11 +108,10 @@ class ScreenEffectsPage(QWidget):
         status_row.addStretch()
         status_card_layout.addLayout(status_row)
 
-        self.summary_label = QLabel("")
-        self.summary_label.setObjectName("hintLabel")
-        self.summary_label.setWordWrap(True)
-        self.summary_label.hide()
-        status_card_layout.addWidget(self.summary_label)
+        # RN-009: 这里原先还有一个 `summary_label` —— 建出来就 `hide()`，
+        # 而全仓**没有任何一处**让它再显示（离屏实证：`isVisible()` 恒为 False，
+        # 文本却每次状态同步都照算照设）。同样的写法在 21 个页面里各有一份。
+        # 它想给的信息已经由状态胶囊的 tooltip 和整张卡片的 tooltip 给出了。
         layout.addWidget(self.status_card)
 
         overview_card, overview_layout = SettingsCard.make(
@@ -139,7 +138,10 @@ class ScreenEffectsPage(QWidget):
         self.enable_edge_flash_checkbox = QCheckBox("击杀触发屏幕边缘特效")
         trigger_column.addWidget(self.enable_edge_flash_checkbox)
 
-        trigger_tip = QLabel("底部工具栏会保留普通击杀和爆头预览，改完后可以直接验证观感。")
+        # ⚠ RN-011：原文写的是「底部工具栏**会保留**普通击杀和爆头预览」，
+        # 而实际上这个勾选框一取消，两个预览按钮就一起被禁用了（见 `_sync_enabled_state`）。
+        # 文案承诺了一件代码不做的事 —— 用户照着做完发现按钮是灰的，只会以为是 bug。
+        trigger_tip = QLabel("勾选后可用底部工具栏的两个预览按钮直接验证观感；取消勾选时预览会一并停用。")
         trigger_tip.setObjectName("hintLabel")
         trigger_tip.setWordWrap(True)
         trigger_column.addWidget(trigger_tip)
@@ -266,8 +268,6 @@ class ScreenEffectsPage(QWidget):
             f"保存方式：自动保存"
         )
         render_badges(self.status_badge_label, badges, detail_tooltip=detail_text)
-        self.summary_label.setText(detail_text)
-        self.summary_label.setToolTip(detail_text)
         self.status_card.setToolTip(detail_text)
         self._refresh_preset_overview()
 
@@ -372,16 +372,36 @@ class ScreenEffectsPage(QWidget):
             self.overlay_manager.update_settings_from_config()
 
         self.action_bar.set_message("已自动保存。")
+        # RN-010: `_sync_enabled_state()` 末尾自己就会调 `_sync_status_strip()`，
+        # 这里再调一次等于每次改设置都把状态区渲染两遍（含一次徽章重绘与
+        # 三处 tooltip 重设）。`_load_settings` 的 finally 里原先也是这么写的。
         self._sync_enabled_state()
-        self._sync_status_strip()
 
     def _preview_normal(self):
-        if self.overlay_manager:
-            self.overlay_manager.preview(is_headshot=False)
+        self._preview(is_headshot=False)
 
     def _preview_headshot(self):
-        if self.overlay_manager:
-            self.overlay_manager.preview(is_headshot=True)
+        self._preview(is_headshot=True)
+
+    def _preview(self, is_headshot: bool):
+        """RN-012：预览没有管理器时**必须说一声**，不许静默什么都不做。
+
+        `overlay_manager` 只在主窗构造特效管理器**失败**时才是 None
+        （见 `gui_widget` 里那个 try/except）—— 也就是说，恰恰在软件真出问题的
+        时候，用户点预览连个提示都没有，只能得出"这按钮是坏的"这个结论。
+        """
+        if self.overlay_manager is None:
+            self.action_bar.set_message(
+                "屏幕特效组件没能启动，预览不可用；重启软件仍不行的话，"
+                "请到「高级设置」里导出日志反馈。")
+            self.logger.warning("预览请求被跳过：overlay_manager 为 None")
+            return
+        try:
+            self.overlay_manager.preview(is_headshot=is_headshot)
+        except Exception:
+            # 同上：预览炸了也得让用户看见，别只留在日志里。
+            self.logger.exception("屏幕特效预览失败")
+            self.action_bar.set_message("预览播放失败，详情见日志。")
 
     def resizeEvent(self, event):
         super().resizeEvent(event)

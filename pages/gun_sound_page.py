@@ -39,9 +39,12 @@ from widgets.preview_feedback import PreviewFailure, report_preview_failure
 from pages.audio_status_badge import (
     build_health_detail_tooltip,
     collect_category_health,
-    count_enabled_styles,
     create_badge_label,
     render_badges,
+    resolve_style,
+    resource_badge,
+    resource_hint,
+    stale_style_name,
 )
 from ui_help_panel import PAGE_HELP_TEXTS, install_help_panel
 from widgets.page_header import PageHeader
@@ -81,7 +84,33 @@ class GunSoundPage(QWidget):
         return value
 
     def _get_profile_style(self, profile) -> str:
+        """配置里写着什么（只做别名归一，**不判风格还在不在**）。"""
         return resolve_gun_sound_style(getattr(config, profile.style_key, "0"))
+
+    # ── RN-046：三个口径统一到下面这一处 ────────────────────────────────
+    # 原状（探针实测，全新配置 + 两把枪配了已删除的风格）：
+    #   徽章「已配置 · 2/18」「分类 · 手枪 2/9」，而那两行的下拉框都显示「不启用」
+    #   —— 因为 `combo.findData("已被删除的风格")` 返回 -1，回落到第 0 项。
+    # ⇒ 计数数的是配置原始值，界面显示的是解析后的值，两边永久对不上，无人报错。
+    # 解析这件事本身走 `audio_status_badge.resolve_style()`（全仓唯一一份）。
+
+    def _effective_style(self, profile) -> str:
+        """这一行**真正在显示**的那个值。全页统计只准问它。"""
+        return resolve_style(self._get_profile_style(profile),
+                             self.weapon_styles.get(profile.gun_type, []))
+
+    def _effective_styles(self) -> dict[str, str]:
+        return {gun_type: self._effective_style(profile)
+                for gun_type, profile in self.weapon_configs.items()}
+
+    def _stale_names(self) -> list[str]:
+        """配过、但那个风格已经不在了的武器显示名。"""
+        names = []
+        for gun_type, profile in self.weapon_configs.items():
+            if stale_style_name(self._get_profile_style(profile),
+                               self.weapon_styles.get(gun_type, [])):
+                names.append(profile.display_name)
+        return names
 
     def _get_profile_duck_ratio(self, profile) -> float:
         value = getattr(
@@ -109,18 +138,18 @@ class GunSoundPage(QWidget):
             index = 0
         return self._tab_groups[index]
 
-    def _configured_count_for_weapons(self, weapon_types: tuple[str, ...] | list[str]) -> int:
-        count = 0
-        for weapon_type in weapon_types:
-            profile = self.weapon_configs.get(weapon_type)
-            if profile and self._get_profile_style(profile) != "0":
-                count += 1
-        return count
+    def _configured_count_for_weapons(self, weapon_types: tuple[str, ...] | list[str],
+                                      effective: dict[str, str] | None = None) -> int:
+        effective = self._effective_styles() if effective is None else effective
+        return sum(1 for weapon_type in weapon_types
+                   if effective.get(weapon_type, "0") != "0")
 
-    def _configured_preview_names(self, max_items: int = 3) -> list[str]:
+    def _configured_preview_names(self, max_items: int = 3,
+                                  effective: dict[str, str] | None = None) -> list[str]:
+        effective = self._effective_styles() if effective is None else effective
         names = []
         for weapon_type, profile in self.weapon_configs.items():
-            if self._get_profile_style(profile) != "0":
+            if effective.get(weapon_type, "0") != "0":
                 names.append(profile.display_name)
             if len(names) >= max_items:
                 break
@@ -182,6 +211,15 @@ class GunSoundPage(QWidget):
         self.summary_label.setWordWrap(True)
         self.summary_label.hide()
         status_card_layout.addWidget(self.summary_label)
+
+        # RN-049：真正会显示的那一行。`summary_label` 是 RN-009 那个"建出来就
+        # hide、全仓没人再显示"的死控件——往它写字等于没写（kill_sound 那轮
+        # 我已经栽过一次）。所以这里另立一个，**空文案时才隐藏**。
+        self.status_hint_label = QLabel("")
+        self.status_hint_label.setObjectName("hintLabel")
+        self.status_hint_label.setWordWrap(True)
+        self.status_hint_label.hide()
+        status_card_layout.addWidget(self.status_hint_label)
         layout.addWidget(self.status_card)
 
         self.tab_widget = QTabWidget()
@@ -222,120 +260,6 @@ class GunSoundPage(QWidget):
         scroll_layout.addStretch()
         scroll.setWidget(scroll_widget)
         layout.addWidget(scroll)
-
-    def _create_weapon_card(self, weapon_type: str, display_name: str, styles: list[str]):
-        card = QFrame()
-        card.setObjectName("card")
-
-        card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(12, 10, 12, 10)
-        card_layout.setSpacing(6)
-
-        title_row = QHBoxLayout()
-        title_row.setSpacing(10)
-        name_label = QLabel(display_name)
-        name_label.setFont(QFont("Microsoft YaHei", 14, QFont.Bold))
-        name_label.setMinimumWidth(96)
-        title_row.addWidget(name_label)
-        style_hint_label = QLabel("镜声风格:")
-        style_hint_label.setObjectName("hintLabel")
-        title_row.addWidget(style_hint_label)
-
-        style_frame = QFrame()
-        style_layout = QHBoxLayout(style_frame)
-        style_layout.setContentsMargins(0, 0, 0, 0)
-        style_layout.setSpacing(8)
-
-        style_layout.addWidget(QLabel("枪声风格:"))
-
-        style_combo = QComboBox()
-        style_combo.setMinimumWidth(220)
-        style_combo.setMinimumHeight(34)
-        style_combo.addItem(self.DISABLED_STYLE_TEXT, "0")
-        for style in styles:
-            style_combo.addItem(style, style)
-        style_combo.currentIndexChanged.connect(
-            lambda _index, weapon=weapon_type, combo=style_combo: self._on_weapon_style_changed(
-                weapon, combo.currentData()
-            )
-        )
-        style_layout.addWidget(style_combo)
-
-        test_btn = QPushButton("测试")
-        test_btn.setObjectName("secondaryButton")
-        test_btn.setFixedWidth(80)
-        test_btn.setMinimumHeight(34)
-        test_btn.clicked.connect(lambda: self._test_gun_sound(weapon_type))
-        style_layout.addWidget(test_btn)
-
-        style_layout.addStretch()
-        card_layout.addWidget(style_frame)
-
-        if not styles:
-            empty_hint = QLabel("当前没有检测到该武器的可用风格资源，建议先保持“不启用”。")
-            empty_hint.setObjectName("hintLabel")
-            empty_hint.setWordWrap(True)
-            card_layout.addWidget(empty_hint)
-
-        profile = self.weapon_configs[weapon_type]
-        duck_ratio = self._get_profile_duck_ratio(profile)
-        mute_duration = self._get_profile_mute_duration(profile)
-
-        tuning_frame = QFrame()
-        tuning_layout = QGridLayout(tuning_frame)
-        tuning_layout.setContentsMargins(0, 0, 0, 0)
-        tuning_layout.setHorizontalSpacing(12)
-        tuning_layout.setVerticalSpacing(8)
-
-        duck_row = QHBoxLayout()
-        duck_row.setSpacing(8)
-        duck_row.addWidget(QLabel("原声保留:"))
-
-        duck_slider = QSlider(Qt.Horizontal)
-        duck_slider.setMinimum(0)
-        duck_slider.setMaximum(100)
-        duck_slider.setValue(int(round(duck_ratio * 100)))
-        duck_slider.setFixedWidth(140)
-        duck_slider.valueChanged.connect(
-            lambda value, weapon=weapon_type: self._on_weapon_duck_ratio_changed(weapon, value)
-        )
-        duck_row.addWidget(duck_slider)
-
-        duck_value_label = QLabel(format_percent(duck_ratio))
-        duck_value_label.setFixedWidth(50)
-        duck_row.addWidget(duck_value_label)
-        duck_row.addStretch()
-        tuning_layout.addLayout(duck_row, 0, 0)
-
-        duration_row = QHBoxLayout()
-        duration_row.setSpacing(8)
-        duration_row.addWidget(QLabel("静音覆盖时长:"))
-
-        duration_slider = QSlider(Qt.Horizontal)
-        duration_slider.setMinimum(1)
-        duration_slider.setMaximum(10)
-        duration_slider.setValue(int(round(mute_duration * 10)))
-        duration_slider.setFixedWidth(140)
-        duration_slider.valueChanged.connect(
-            lambda value, weapon=weapon_type: self._on_mute_duration_changed(weapon, value)
-        )
-        duration_row.addWidget(duration_slider)
-
-        duration_value_label = QLabel(f"{mute_duration:.1f}秒")
-        duration_value_label.setFixedWidth(55)
-        duration_row.addWidget(duration_value_label)
-        duration_row.addStretch()
-        tuning_layout.addLayout(duration_row, 0, 1)
-        card_layout.addWidget(tuning_frame)
-
-        self.weapon_rows[weapon_type] = {
-            "style_combo": style_combo,
-            "duck_slider": duck_slider,
-            "duck_label": duck_value_label,
-            "duration_slider": duration_slider,
-            "duration_label": duration_value_label,
-        }
-        return card
 
     def _create_compact_weapon_card(self, weapon_type: str, display_name: str, styles: list[str]):
         card = QFrame()
@@ -379,11 +303,13 @@ class GunSoundPage(QWidget):
         header_row.addWidget(test_btn)
         card_layout.addLayout(header_row)
 
-        if not styles:
-            empty_hint = QLabel("当前还没有检测到这个武器的可用风格资源，建议先保持“不启用”。")
-            empty_hint.setObjectName("hintLabel")
-            empty_hint.setWordWrap(True)
-            card_layout.addWidget(empty_hint)
+        # RN-049：这里原来挂一句「当前还没有检测到这个武器的可用风格资源，
+        # 建议先保持"不启用"。」—— **每张卡一句，全新安装下就是 18 句**，
+        # 一屏能看到 3 句，翻完 4 个页签 18 句一字不差。而顶部状态卡同一屏
+        # 已经写着「素材 · 待添加」。
+        # ⭐ 与上一轮那句 50 字辩解同一个病：当初写它是因为**别处没说**；
+        # 别处说了，它就只是噪音。这次是 18 份。收到页级一条（见
+        # `_refresh_status_badge` 里的 `status_hint_label`）。
 
         profile = self.weapon_configs[weapon_type]
         duck_ratio = self._get_profile_duck_ratio(profile)
@@ -395,7 +321,15 @@ class GunSoundPage(QWidget):
         tuning_layout.setHorizontalSpacing(10)
         tuning_layout.setVerticalSpacing(6)
 
-        tuning_layout.addWidget(QLabel("原声保留:"), 0, 0)
+        # RN-052：这两个词是音频工程术语，界面上原先没有任何解释。
+        # 外审三发独立报「原声保留 / 静音覆盖 术语过于专业抽象，玩家无法直观
+        # 理解对开火听感的影响」。加说明不能靠往 18 张卡里各塞一行字
+        # （那正是 RN-049 刚删掉的东西），所以落在 tooltip 上：**零像素改动**。
+        duck_caption = QLabel("原声保留:")
+        duck_caption.setToolTip(
+            "开火时游戏原本的枪声保留多少音量。0% = 完全听不到原声，"
+            "只剩你换上的音效；调高就是两个声音叠在一起。")
+        tuning_layout.addWidget(duck_caption, 0, 0)
 
         duck_slider = QSlider(Qt.Horizontal)
         duck_slider.setMinimum(0)
@@ -411,7 +345,11 @@ class GunSoundPage(QWidget):
         duck_value_label.setFixedWidth(46)
         tuning_layout.addWidget(duck_value_label, 0, 2)
 
-        tuning_layout.addWidget(QLabel("静音覆盖:"), 0, 3)
+        duration_caption = QLabel("静音覆盖:")
+        duration_caption.setToolTip(
+            "每次开火后压住原声的时长。太短会听到原声的尾巴，"
+            "太长会盖掉下一枪；连发武器往短了调。")
+        tuning_layout.addWidget(duration_caption, 0, 3)
 
         duration_slider = QSlider(Qt.Horizontal)
         duration_slider.setMinimum(1)
@@ -587,9 +525,18 @@ class GunSoundPage(QWidget):
         if not profile:
             return
 
-        style = self._get_profile_style(profile)
-        if style == "0":
+        configured = self._get_profile_style(profile)
+        if configured == "0":
             report_preview_failure(self, PreviewFailure.NO_STYLE, weapon_type)
+            return
+
+        # RN-046：配过、但那个风格已经不在了 —— 原来这里会照旧去播一个不存在的
+        # 音效键，落到下面的 NO_FILE，用户被告知"风格里找不到音频文件"，
+        # 于是去翻那个目录 —— 而目录本身已经没了。RN-029 踩过一模一样的坑。
+        style = self._effective_style(profile)
+        if style == "0":
+            report_preview_failure(self, PreviewFailure.STALE_STYLE,
+                                   f"{profile.display_name} · {configured}")
             return
 
         sound_key = f"gun-{weapon_type}-{style}"
@@ -602,33 +549,32 @@ class GunSoundPage(QWidget):
 
     def _refresh_status_badge(self, *_args):
         enabled = bool(is_gun_sound_master_enabled(config))
-        style_values = [
-            self._get_profile_style(profile)
-            for profile in self.weapon_configs.values()
-        ]
-        selected_count = count_enabled_styles(style_values)
+        effective = self._effective_styles()
+        selected_count = sum(1 for value in effective.values() if value != "0")
+        stale_names = self._stale_names()
         current_tab_name, current_weapon_types = self._get_current_tab_info()
-        current_count = self._configured_count_for_weapons(current_weapon_types)
+        current_count = self._configured_count_for_weapons(current_weapon_types, effective)
 
         health = collect_category_health(("gun_sounds",))
         detail_tooltip = build_health_detail_tooltip(health)
-        health_level = "success"
-        if not health["ok"]:
-            health_level = "danger"
-        elif health["empty"]:
-            health_level = "warn"
+
+        configured_text = f"已配置 · {selected_count}/{len(self.weapon_configs)}"
+        if stale_names:
+            configured_level, configured_text = (
+                "warn", f"{configured_text} · {len(stale_names)} 项失效")
+        else:
+            configured_level = "success" if selected_count else "info"
 
         badges = [
             ("success" if enabled else "warn", f"开关 · {'已启用' if enabled else '未启用'}"),
-            ("success" if selected_count else "info", f"已配置 · {selected_count}/{len(self.weapon_configs)}"),
+            (configured_level, configured_text),
             (
                 "success" if current_count else "info",
                 f"分类 · {self._compact_text(current_tab_name)} {current_count}/{len(current_weapon_types)}",
             ),
-            (
-                health_level,
-                "资源 · 正常" if health["ok"] else f"资源 · 异常 {health['issue_count']}",
-            ),
+            # RN-035：分级收进 `resource_badge()` 一份 —— 七个音效页原先各抄一遍
+            # 这段，七份都把"素材目录还没建"（全新安装的样子）报成**红色异常**。
+            resource_badge(health),
         ]
 
         current_profiles = [self.weapon_configs[weapon] for weapon in current_weapon_types if weapon in self.weapon_configs]
@@ -651,6 +597,17 @@ class GunSoundPage(QWidget):
             detail_lines.append(detail_tooltip)
 
         summary_text = "\n".join(detail_lines)
+        # 屏幕上那一行：失效 > 资源状态。两者都没有就整行隐藏，不留空白。
+        if stale_names:
+            shown = "、".join(stale_names[:3])
+            more = f" 等 {len(stale_names)} 把" if len(stale_names) > 3 else ""
+            hint = (f"{shown}{more}配的风格已经不在了（被改名或删除），"
+                    "下面显示成「不启用」，重新选一个即可。")
+        else:
+            hint = resource_hint(health)
+        self.status_hint_label.setText(hint)
+        self.status_hint_label.setVisible(bool(hint))
+
         render_badges(self.status_badge_label, badges, detail_tooltip=summary_text)
         self.summary_label.setText(summary_text)
         self.summary_label.setToolTip(summary_text)

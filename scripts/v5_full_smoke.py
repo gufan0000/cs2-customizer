@@ -42,7 +42,8 @@ def main() -> int:
         pass
     win.show()
     for _ in range(8):
-        app.processEvents(); time.sleep(0.05)
+        app.processEvents()
+        time.sleep(0.05)
 
     tm = get_theme_manager()
     errors = []
@@ -56,20 +57,23 @@ def main() -> int:
             errors.append(("theme", theme_name, repr(e), traceback.format_exc()))
             continue
         for _ in range(4):
-            app.processEvents(); time.sleep(0.04)
+            app.processEvents()
+            time.sleep(0.04)
 
         for page in PAGES:
             try:
                 win.show_page(page, animated=False)
                 for _ in range(2):
-                    app.processEvents(); time.sleep(0.02)
+                    app.processEvents()
+                    time.sleep(0.02)
                 transitions += 1
             except Exception as e:
                 errors.append((theme_name, page, repr(e), traceback.format_exc()))
 
     win.close()
     for _ in range(4):
-        app.processEvents(); time.sleep(0.05)
+        app.processEvents()
+        time.sleep(0.05)
 
     print(f"\n[smoke] 总计 {len(THEMES)} 主题 × {len(PAGES)} 页 = {transitions} 次切换")
     print(f"[smoke] 错误: {len(errors)}")

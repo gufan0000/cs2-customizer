@@ -303,4 +303,9 @@ def test_audit_does_not_reach_the_network():
     CI 里也一样。那让结果依赖外网可达性，也把构造耗时绑在一次 HTTP 上。
     这里只守住中和开关还在（真发不发请求由那个开关决定）。
     """
-    assert audit.NEUTRALIZE.get("music", {}).get("music_default_song_added") is True
+    # RN-005：这张表搬到 `scripts/_audit_neutralize.py` 了（口径不变）。
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+    from _audit_neutralize import NEUTRALIZE
+    assert NEUTRALIZE.get("music", {}).get("music_default_song_added") is True

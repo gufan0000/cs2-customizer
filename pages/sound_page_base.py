@@ -116,6 +116,115 @@ class SoundPageBase:
         """试听。各页的实现名字不同（`_test_weapon_sound` / `_test_switch_sound` …）。"""
         raise NotImplementedError
 
+    # -------------------------------- 「配了、但那个风格已经不在了」（RN-026 / RN-033）
+    #
+    # 这一族页面天生有**两个口径**：
+    #   · 每一行下拉框显示的是 `_get_style_display_text()` —— 解析不出来就显示「不启用」；
+    #   · 而徽章 / 分类计数 / 已配置示例数的却是**配置里的原始值**。
+    # 于是风格目录一动（改名、删除、换机器、素材没跟着走），两边就永久对不上，
+    # **而没有任何东西报错** —— 没异常、没日志、没判据。
+    #
+    # 实测四页全中（2026-08-17）：造出「3 把枪配着已删除的风格」之后
+    #   kill_sound / kill_voice / switch_weapon / reload_sound
+    # 顶部一律写「已配置 · 3」，而下面三行**全部显示「不启用」**。
+    #
+    # ⭐ 所以这里是**单一真相源**：全页只准通过 `_resolved_style(s)` 问
+    # "这把枪现在到底生效什么"，统一到**用户眼睛看到的那一边**。
+    # 原先 kill_sound 自己写过一份，kill_voice 压根没修 —— 上提到基类，四页共用。
+
+    @staticmethod
+    def _is_style_enabled(style_value) -> bool:
+        """「这个值算配了吗」。**只认空串和 `"0"` 两种"没配"。**
+
+        ⚠ 故意**不用** `audio_status_badge.is_style_enabled()` —— 那一份的
+        `DISABLED_STYLE_VALUES` 还额外把 `none / off / disabled / 不启用 / 未启用`
+        算作没配。两份规则并存本身就是缺陷（`switch_weapon` / `reload_sound`
+        原先**同一页里两个口径各用一份**：`selected_count` 走宽的，
+        `_configured_count_for_weapons` 走窄的），但这里取窄的那一份，
+        因为 `kill_sound` / `kill_voice` 两页**已关档、已锁基线**，
+        换成宽的会改动它们的既有行为 —— 那就不是等价重构了。
+        """
+        return str(style_value or "").strip() not in {"", "0"}
+
+    def _get_all_weapons(self) -> list[str]:
+        weapons: list[str] = []
+        for category_weapons in self.CATEGORIES.values():
+            weapons.extend(category_weapons)
+        return weapons
+
+    def _resolved_style(self, weapon: str) -> str:
+        """这把枪**当前真正生效**的风格；配了但风格已经不在了就返回 `"0"`。"""
+        display = self._get_style_display_text(self._configured_style(weapon), weapon)
+        return "0" if display == self.DISABLED_STYLE_TEXT else display
+
+    def _resolved_styles(self) -> dict[str, str]:
+        """一次算出全部武器**当前真正生效**的风格。
+
+        ⚠ 存在的理由是**实测**：三个统计口径各自逐把调 `_resolved_style()`，
+        39 把枪就是 117 次解析，同机紧邻 A/B 量出建页 39.1 → 41.3ms（+5.6%）。
+        没超 10% 的线，但方向不对 —— 那一轮本来是在**删**重复工作。
+        算一次传下去就回到 39 次。
+        """
+        return {weapon: self._resolved_style(weapon) for weapon in self._get_all_weapons()}
+
+    def _configured_weapon_count(self, weapons: list[str] | None = None,
+                                 resolved: dict[str, str] | None = None) -> int:
+        target_weapons = weapons if weapons is not None else self._get_all_weapons()
+        if resolved is None:
+            return sum(1 for weapon in target_weapons
+                       if self._is_style_enabled(self._resolved_style(weapon)))
+        return sum(1 for weapon in target_weapons
+                   if self._is_style_enabled(resolved.get(weapon, "0")))
+
+    def _stale_weapon_count(self, resolved: dict[str, str] | None = None) -> int:
+        """配了、但那个风格已经不在了的武器数。
+
+        这个数以前是**隐形**的：它被算进「已配置」里，用户只看到一个对不上的数字，
+        看不到"有 N 项失效了"这件事本身 —— 而它恰恰是唯一可行动的信息（重新选风格）。
+        """
+        if resolved is None:
+            resolved = self._resolved_styles()
+        return sum(
+            1 for weapon in self._get_all_weapons()
+            if self._is_style_enabled(self._configured_style(weapon))
+            and not self._is_style_enabled(resolved.get(weapon, "0"))
+        )
+
+    def _configured_weapon_names(self, max_items: int = 4,
+                                 resolved: dict[str, str] | None = None) -> list[str]:
+        names: list[str] = []
+        for weapon in self._get_all_weapons():
+            style = (resolved.get(weapon, "0") if resolved is not None
+                     else self._resolved_style(weapon))
+            if self._is_style_enabled(style):
+                names.append(self.WEAPON_NAMES.get(weapon, weapon))
+            if len(names) >= max_items:
+                break
+        return names
+
+    def _configured_badge(self, selected_count: int, stale_count: int) -> tuple[str, str]:
+        """「已配置」那颗徽章。失效项要**说出来**，但文案必须短到能单行放下。
+
+        ⚠ 第一版写的是「已配置 · 0 · 37 项配置已失效」，芯片当场**换行**、
+        比同排另外四颗高一截，整排肉眼可见地错位 —— 而排版审计当时的三条判据
+        一条都没看见（换行既不溢出也不截断）。那次之后才加了第 4 条"同排芯片齐平"。
+        """
+        if stale_count:
+            return "warn", f"已配置 · {selected_count} · {stale_count} 项失效"
+        return ("success" if selected_count else "info", f"已配置 · {selected_count}")
+
+    def _stale_style_hint(self, stale_count: int) -> str:
+        """失效项的「怎么修」。**必须落在可见的控件上。**
+
+        ⚠ RN-009：`summary_label` 建出来就 `hide()`，全仓没有任何地方再显示它。
+        kill_sound 那轮我把这句话写进过它，等于没写 —— 外审复跑一句
+        「醒目报错却无修复引导，易让玩家误判为软件损坏」直接点破。
+        """
+        if not stale_count:
+            return ""
+        return (f"有 {stale_count} 把枪配的风格已经不在了（被改名或删除），"
+                "下面显示成「不启用」，重新选一个即可。")
+
     # ---------------------------------------------------------------- 文案
 
     @staticmethod

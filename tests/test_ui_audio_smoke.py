@@ -158,7 +158,7 @@ def test_special_sound_page_smoke(qapp, monkeypatch):
     before_chips = _visible_status_chip_texts(page.status_badge_label)
     assert len(before_chips) == 4
     assert "模块 · 0/4" in before_chips
-    assert "样式 · 4" in before_chips
+    assert "风格 · 4" in before_chips
     assert "资源 · 正常" in before_chips
 
     page._on_round_enabled_toggled(True)

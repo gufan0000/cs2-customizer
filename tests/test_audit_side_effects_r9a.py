@@ -86,14 +86,54 @@ def _constructs(src: str, name: str) -> bool:
     return False
 
 
+def _builds_pages_directly(src: str) -> bool:
+    """不建 `MainWindow`、直接建单个页类的脚本也算「会建页」。
+
+    ⚠ RN-072：这一条是补出来的，代价是量出来的 —— `bench_page_build.py`
+    用 `importlib.import_module("pages.xxx_page")` + `getattr` 动态构造页面，
+    **一次都没构造 MainWindow**，于是它整支落在探测器视野之外，
+    在真实的 `Steam/.../csgo/cfg/` 里写了 GSI cfg / cs2customizer.cfg / autoexec.cfg。
+    ⇒ 判据写完要问的不是"它绿不绿"，而是**"它的分母是多少"**。
+
+    两条信号（任一即算）：
+      · 源码里出现 `pages.` 这个模块命名空间（含字符串常量形式的动态 import）
+      · 构造了一个名字以 `Page` 结尾的类
+    """
+    try:
+        tree = ast.parse(src)
+    except SyntaxError:
+        return False
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str) \
+                and node.value.startswith("pages."):
+            return True
+        if isinstance(node, ast.ImportFrom) and (node.module or "").startswith("pages"):
+            return True
+        if isinstance(node, ast.Import) and any(
+                a.name.startswith("pages.") for a in node.names):
+            return True
+        if isinstance(node, ast.Call):
+            fn = node.func
+            name = fn.id if isinstance(fn, ast.Name) else (
+                fn.attr if isinstance(fn, ast.Attribute) else "")
+            if name.endswith("Page") and name != "Page":
+                return True
+    return False
+
+
 def _page_building_scripts() -> dict[str, str]:
-    """找出所有会构造 MainWindow 的脚本，返回 {文件名: 源码}。"""
+    """找出所有会建页的脚本，返回 {文件名: 源码}。
+
+    「会建页」= 构造 `MainWindow`（整窗）**或**直接构造单个页类（见
+    `_builds_pages_directly`）。后半条是 RN-072 补的：只认 MainWindow 时，
+    `bench_page_build.py` 这种动态建页的脚本是隐形的。
+    """
     out = {}
     for path in sorted(SCRIPTS.glob("*.py")):
         if path.name.startswith("_") or path.name in BROKEN_ALREADY:
             continue
         src = path.read_text(encoding="utf-8", errors="replace")
-        if _constructs(src, "MainWindow"):
+        if _constructs(src, "MainWindow") or _builds_pages_directly(src):
             out[path.name] = src
     return out
 
@@ -102,6 +142,18 @@ def test_there_are_page_building_scripts_to_check():
     """自检：如果这个探测器一个脚本都找不到，后面几条判据就是空转。"""
     found = _page_building_scripts()
     assert len(found) >= 8, f"只找到 {len(found)} 个建页脚本，探测器多半失灵了"
+
+
+def test_the_detector_also_sees_scripts_that_build_pages_without_mainwindow():
+    """RN-072：探测器必须能看见"不建整窗、只建单页"的脚本。
+
+    空转守卫写成**点名**的形式：`bench_page_build.py` 是那个出事的脚本，
+    它必须在名单里。只断言"总数够多"是不够的 —— 上一版就是那么绿的。
+    """
+    found = _page_building_scripts()
+    assert "bench_page_build.py" in found, (
+        "探测器看不见 bench_page_build.py（它动态构造单个页类，不建 MainWindow）—— "
+        "而它正是在用户真实 CS2 目录里写过文件的那一支（RN-072）")
 
 
 def _calls_sandbox(src: str) -> bool:

@@ -611,7 +611,12 @@ def test_viewmodel_page_status_strip_tracks_dirty_state(qapp, monkeypatch):
 
     page = viewmodel_page_module.ViewmodelPage()
 
-    assert page.summary_label.isHidden() is True
+    # ⚠ RN-009：这里原来是 `assert page.summary_label.isHidden() is True` ——
+    # **判据把缺陷钉在了原地**：它要求那个「建出来就 hide、全仓没人再显示」的死控件
+    # 必须存在、且必须是隐藏的。于是清理它反而会让判据变红。
+    # 改成断言那份详情**真的到了用户能看到的地方**（状态卡 tooltip）。
+    assert not hasattr(page, "summary_label")
+    assert "准星回正：已启用" in page.status_card.toolTip()
     chips = _visible_audio_status_chip_texts(page.status_badge_label)
     assert len(chips) == 5
     assert any(text == "CFG · 已同步" for text in chips)
@@ -716,7 +721,12 @@ def test_screen_effects_page_status_strip_tracks_auto_saved_state(qapp, monkeypa
     page.show()
     qapp.processEvents()
 
-    assert page.summary_label.isHidden() is True
+    # RN-009: 这里原先是 `assert page.summary_label.isHidden() is True` ——
+    # 断言一个永远看不见的控件保持看不见，等于给死代码发了张出生证
+    # （同样的写法在 13 条判据里各有一份）。那个控件已删；
+    # 状态详情真正的承载者是状态卡的 tooltip，改断它。
+    assert "总开关：已开启" in (page.status_card.toolTip() or ""), \
+        "状态详情没挂在状态卡的 tooltip 上——那是用户唯一看得到它的地方"
     chips = _visible_audio_status_chip_texts(page.status_badge_label)
     assert len(chips) == 4
     assert "总开关 · 开启" in chips
@@ -945,11 +955,28 @@ def test_special_sound_page_status_card_tracks_threshold_and_volume(qapp, monkey
     chips = _visible_audio_status_chip_texts(page.status_badge_label)
     assert len(chips) == 4
     assert any(text.startswith("模块 · 3/4") for text in chips)
-    assert any(text.startswith("样式 · 8") for text in chips)
-    assert any("65%" in text for text in chips)
-    assert "当前已选 2/6 类 · 模块已启用" in page.grenade_summary_label.text()
-    assert "当前样式：beacon · 模块已关闭" in page.c4_summary_label.text()
-    assert "阈值 18 · 当前样式：warning · 模块已启用" in page.health_summary_label.text()
+    assert any(text.startswith("风格 · 8") for text in chips)
+    # RN-053：第三颗徽章跟着当前页签走（原来无论在哪个页签都写「回合音量」）。
+    # 默认停在「投掷物」，所以这里该看到投掷物自己的数，看不到回合音量。
+    assert any(text.startswith("投掷物 · 2/6") for text in chips), chips
+    assert not any("回合音量" in text for text in chips), chips
+    for index in range(page.tab_widget.count()):
+        page.tab_widget.setCurrentIndex(index)
+        page._refresh_status_badge()
+        tab_chips = _visible_audio_status_chip_texts(page.status_badge_label)
+        name = page.tab_widget.tabText(index)
+        if name == "回合":
+            assert any("65%" in text for text in tab_chips), tab_chips
+        else:
+            assert not any("回合音量" in text for text in tab_chips), (name, tab_chips)
+    page.tab_widget.setCurrentIndex(0)
+    page._refresh_status_badge()
+    assert "当前已选 2/6 类" in page.grenade_summary_label.text()
+    assert "模块已启用" in page.grenade_summary_label.text()
+    # RN-054：C4 有三个事件（安放/拆除/爆炸），原文「当前风格：beacon」只说了安放那一个
+    assert "已选 1/3 项" in page.c4_summary_label.text()
+    assert "模块已关闭" in page.c4_summary_label.text()
+    assert "阈值 18 · 当前风格：warning · 模块已启用" in page.health_summary_label.text()
     assert f"音量 65% · 已选 4/{_ROUND_EVENT_COUNT} · 模块已启用" in page.round_summary_label.text()
     assert "阈值 18" in page.status_card.toolTip()
     grenade_index = page.grenade_grid.indexOf(page.grenade_cards[2])
@@ -965,9 +992,14 @@ def test_special_sound_page_status_card_tracks_threshold_and_volume(qapp, monkey
 
     chips = _visible_audio_status_chip_texts(page.status_badge_label)
     assert any(text.startswith("模块 · 4/4") for text in chips)
-    assert any("40%" in text for text in chips)
-    assert "当前样式：beacon · 模块已启用" in page.c4_summary_label.text()
-    assert "阈值 25 · 当前样式：warning · 模块已启用" in page.health_summary_label.text()
+    page.tab_widget.setCurrentIndex(
+        [page.tab_widget.tabText(i) for i in range(page.tab_widget.count())].index("回合"))
+    page._refresh_status_badge()
+    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    assert any("40%" in text for text in chips), chips
+    assert "已选 1/3 项" in page.c4_summary_label.text()
+    assert "模块已启用" in page.c4_summary_label.text()
+    assert "阈值 25 · 当前风格：warning · 模块已启用" in page.health_summary_label.text()
     assert f"音量 40% · 已选 4/{_ROUND_EVENT_COUNT} · 模块已启用" in page.round_summary_label.text()
     assert "阈值 25" in page.summary_label.toolTip()
     assert "音量 40%" in page.status_card.toolTip()
@@ -1581,9 +1613,9 @@ def test_death_sound_page_status_card_tracks_style_selection(qapp, monkeypatch):
     chips = _visible_audio_status_chip_texts(page.status_badge_label)
     assert len(chips) == 4
     assert any(text.startswith("开关 · 已启用") for text in chips)
-    assert any(text.startswith("样式 · styleDeath") for text in chips)
+    assert any(text.startswith("风格 · styleDeath") for text in chips)
     assert any(text.startswith("候选 · 2") for text in chips)
-    assert "当前样式：styleDeath" in page.status_card.toolTip()
+    assert "当前风格：styleDeath" in page.status_card.toolTip()
     assert "测试策略" in page.status_card.toolTip()
     assert page.style_overview_name_label.text() == "styleDeath"
     assert "候选 2 个" in page.style_overview_meta_label.text()
@@ -1595,7 +1627,7 @@ def test_death_sound_page_status_card_tracks_style_selection(qapp, monkeypatch):
     assert config.death_sound_style == "styleAlt"
     assert saved == [True]
     chips = _visible_audio_status_chip_texts(page.status_badge_label)
-    assert any(text.startswith("样式 · styleAlt") for text in chips)
+    assert any(text.startswith("风格 · styleAlt") for text in chips)
     assert page.style_overview_name_label.text() == "styleAlt"
 
     page.resize(900, 900)
@@ -1638,7 +1670,7 @@ def test_death_sound_page_action_bar_refresh_preserves_current_style(qapp, monke
 
     assert page.action_bar.secondary_btn.isHidden() is False
     assert page.action_bar.primary_btn.isHidden() is False
-    assert "当前样式" in page.action_bar.message_label.text()
+    assert "当前风格" in page.action_bar.message_label.text()
     assert page.style_combo.currentData() == "styleAlt"
 
     page._refresh_style_catalog()
@@ -1646,7 +1678,7 @@ def test_death_sound_page_action_bar_refresh_preserves_current_style(qapp, monke
 
     assert page.style_combo.currentData() == "styleAlt"
     assert page.style_combo.findData("styleNew") >= 0
-    assert "当前样式" in page.action_bar.message_label.text()
+    assert "当前风格" in page.action_bar.message_label.text()
 
     page.deleteLater()
     qapp.processEvents()
@@ -2192,7 +2224,9 @@ def test_flash_page_status_card_tracks_media_and_preview(qapp, tmp_path, monkeyp
     page.show()
     qapp.processEvents()
 
-    assert page.summary_label.isHidden() is True
+    # ⚠ RN-009：同上 —— 原来这一行要求死控件存在且隐藏。
+    # 本用例下面已经在断言 `status_card.toolTip()` 里有那几行详情，覆盖没丢。
+    assert not hasattr(page, "summary_label")
     assert page.basic_top_layout.direction() == QBoxLayout.LeftToRight
     assert page.basic_overview_title_label.text() == "红色背景 · 75%"
     assert page.basic_overview_meta_label.text() == "模糊 · 图像+音频 · 淡入开 / 淡出关"

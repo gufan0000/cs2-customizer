@@ -48,19 +48,33 @@ except Exception:
 # 必须在 import Qt / config 之前设好:离屏 + 隔离配置与日志目录,
 # 绝不碰用户真实数据(R1 的教训:测试曾误删 45 个历史日志)。
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-import tempfile  # noqa: E402
 
-_bench_tmp = Path(tempfile.gettempdir()) / "cs2customizer_bench"
-(_bench_tmp / "config").mkdir(parents=True, exist_ok=True)
-(_bench_tmp / "logs").mkdir(parents=True, exist_ok=True)
-os.environ.setdefault("CS2C_CONFIG_DIR", str(_bench_tmp / "config"))
-os.environ.setdefault("CS2C_LOG_DIR", str(_bench_tmp / "logs"))
+# RN-032：配置目录走共享工装。这条对耗时基线尤其要紧 ——
+# 个人配置里 37 把武器配着风格，建页要做的活比全新用户多得多，
+# 拿它当基线等于把"棘轮"钉在一个别人复现不出的数上。
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _pristine_config import use_pristine_config_dir  # noqa: E402
+
+_bench_tmp = use_pristine_config_dir("cs2customizer_bench")
 
 
-# 只测"构造时不起线程/设备/子进程"的页面。
-# 口径与 gui_widget._preload_skip_pages 对齐:那些页构造即起热键/音频设备/子进程,
+# 只测"构造时不起线程/设备/子进程"的页面。那些页构造即起热键/音频设备/子进程,
 # 在基准脚本里构造会真的占设备、注册全局热键——那就是"打扰前台"了。
-UNSAFE_PAGES = {"viewmodel", "magnifier", "flash", "voice_output", "kill_icon", "music"}
+# RN-005/RN-059：**能不能测**这件事由共享中和表说，不再等同于
+# `DEVICE_OWNING_PAGES`。这一处是那张表的**第 7 份副本**，
+# 后果是建页耗时基线里从来没有 flash / viewmodel / voice_output / music 的数。
+# `_audit_neutralize` 与 `core.page_traits` 一样不依赖 Qt，
+# 导入它不会把本脚本要测的东西提前捂热。
+from _audit_neutralize import (  # noqa: E402
+    apply as neutralize_apply,
+    block_modal_dialogs,
+    blocked_dialogs,
+    enable_audit_mode,
+    unsafe_pages,
+)
+from _audit_sandbox import sandbox_external_writes  # noqa: E402
+
+enable_audit_mode()   # 必须在 import 产品页面之前
 
 # (page_id, 模块路径, 类名)。与 gui_widget._load_page 的分支一一对应。
 PAGE_SPECS = [
@@ -81,24 +95,46 @@ PAGE_SPECS = [
     ("config_snapshot", "pages.config_snapshot_page", "ConfigSnapshotPage"),
     ("audio_health", "pages.audio_health_page", "AudioHealthPage"),
     ("audio_replay", "pages.audio_replay_page", "AudioReplayPage"),
+    # RN-061：以下 9 页以前**根本不在这份清单里** —— 于是建页耗时棘轮
+    # 长期只盯 18/28 页。前 6 页是设备页，RN-005/RN-059 解除盲区之后才测得了；
+    # 后 3 页纯粹是加页的时候漏了，而漏了不报错（判据在
+    # tests/test_audit_can_see_every_page.py 里补上了）。
+    ("flash", "pages.flash_page", "FlashPage"),
+    ("viewmodel", "pages.viewmodel_page", "ViewmodelPage"),
+    ("voice_output", "pages.voice_output_page", "VoiceOutputPage"),
+    ("music", "pages.music_page", "MusicPage"),
+    ("magnifier", "pages.magnifier_page", "MagnifierPage"),
+    ("kill_icon", "pages.kill_icon_page", "KillIconPage"),
+    ("fun_afterlife", "pages.fun_page", "FunPage"),
+    ("audio_import_wizard", "pages.audio_import_wizard_page", "AudioImportWizardPage"),
+    ("audio_task_panel", "pages.audio_task_panel_page", "AudioTaskPanelPage"),
 ]
+
+
+#: 少数页的构造函数要参数。**口径以 `gui_widget` 里真正的构造点为准**，
+#: 别照类签名猜 —— `MagnifierPage(self.config)` 传的是 config 单例本身。
+_CTOR_ARGS = {"magnifier": lambda: (__import__("config").config,)}
 
 
 def _ensure_app():
     from PySide6.QtWidgets import QApplication
 
     app = QApplication.instance()
-    return app if app is not None else QApplication([])
+    app = app if app is not None else QApplication([])
+    # RN-072：必须在构造任何页面之前。`advanced` 页构造期弹模态框，
+    # 离屏下不可见但照样阻塞 —— 本脚本整跑因此从来没跑完过。
+    block_modal_dialogs()
+    return app
 
 
-def _build_once(module_path: str, class_name: str):
+def _build_once(module_path: str, class_name: str, page_id: str = ""):
     """构造一个页面并返回耗时(ms)。构造失败返回 None。"""
     import importlib
 
     mod = importlib.import_module(module_path)
     cls = getattr(mod, class_name)
     t0 = time.perf_counter()
-    page = cls()
+    page = cls(*_CTOR_ARGS.get(page_id, tuple)())
     cost = (time.perf_counter() - t0) * 1000
     # 立刻销毁,避免累计占用影响后续测量
     try:
@@ -111,16 +147,30 @@ def _build_once(module_path: str, class_name: str):
 
 def run_bench(specs, repeat: int, warmup: bool = True) -> dict:
     _ensure_app()
+    # RN-073：第二层中和以前**只 import 了没调用** —— 表在这个脚本里等于没接上。
+    # 判据当时只验了 import，验不出这件事（见 test_audit_can_see_every_page）。
+    import config as _config_mod
+
+    neutralize_apply(_config_mod.config, {pid for pid, _, _ in specs})
+    # RN-072：本脚本以前**没有沙箱化游戏目录** —— 实测它在动用户真实的
+    # `Steam/.../csgo/cfg/`（GSI cfg / cs2customizer.cfg / autoexec.cfg 三个文件）。
+    # 成因：`advanced` 页构造期跑「首次运行自动配置」，而隔离配置里
+    # `csgo_dir` 永远是空的 ⇒ 探测器扫到真机上的 CS2 安装。
+    # ⚠ UP-090 的这套机制早就在了，只是 R9-A 那条判据**只认构造
+    # `MainWindow` 的脚本**，而本脚本是动态构造单个页类的 —— 判据的分母
+    # 不含出事的那个（同 RN-032 / RN-059 一模一样的病）。
+    sandbox_external_writes(verbose=False)
     results = {}
     for page_id, module_path, class_name in specs:
         samples = []
+        before = len(blocked_dialogs())
         try:
             if warmup:
                 # 第一次含模块 import 与各种一次性初始化,不计入——我们要测的是
                 # "构建这堆控件"本身,不是"第一次 import 这个模块"。
-                _build_once(module_path, class_name)
+                _build_once(module_path, class_name, page_id)
             for _ in range(repeat):
-                samples.append(_build_once(module_path, class_name))
+                samples.append(_build_once(module_path, class_name, page_id))
         except Exception as exc:
             results[page_id] = {"error": f"{type(exc).__name__}: {exc}"}
             continue
@@ -130,6 +180,10 @@ def run_bench(specs, repeat: int, warmup: bool = True) -> dict:
             "最大ms": round(max(samples), 1),
             "样本数": len(samples),
         }
+        # RN-072：构造期弹框是缺陷，不是噪声 —— 挡下来还要报出来是谁弹的。
+        popped = blocked_dialogs()[before:]
+        if popped:
+            results[page_id]["构造期模态框"] = sorted(set(popped))
     return results
 
 
@@ -150,6 +204,14 @@ def render(results: dict) -> str:
         lines.append("构造失败：")
         for pid, v in bad.items():
             lines.append(f"  - {pid}: {v['error']}")
+    # RN-072：这一段是**发现通道**。构造一个页面不该弹任何框——
+    # 离屏下它不可见但照样阻塞，整支脚本会挂死在这里。
+    popped = {pid: v["构造期模态框"] for pid, v in results.items() if v.get("构造期模态框")}
+    if popped:
+        lines.append("")
+        lines.append(f"⚠ 构造期弹了模态框（已被审计闸门挡下，{len(popped)} 页）：")
+        for pid, what in sorted(popped.items()):
+            lines.append(f"  - {pid}: {', '.join(what)}")
     return "\n".join(lines)
 
 
@@ -197,10 +259,10 @@ def main() -> int:
     specs = PAGE_SPECS
     if args.only:
         wanted = {s.strip() for s in args.only.split(",") if s.strip()}
-        unsafe = wanted & UNSAFE_PAGES
+        unsafe = wanted & unsafe_pages()
         if unsafe:
-            print(f"拒绝测量 {sorted(unsafe)}：这些页构造即起热键/音频设备/子进程，"
-                  f"会打扰前台。")
+            print(f"拒绝测量 {sorted(unsafe)}：目前没有可用的中和条件，会打扰前台。"
+                  f"在 scripts/_audit_neutralize.py 里给出条件后再来。")
             return 2
         specs = [s for s in PAGE_SPECS if s[0] in wanted]
         if not specs:

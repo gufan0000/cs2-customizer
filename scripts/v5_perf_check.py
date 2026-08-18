@@ -31,8 +31,8 @@ def measure_once() -> dict:
     from gui_widget import MainWindow
 
     process = psutil.Process()
-    rss_before = process.memory_info().rss
-
+    # 这里原先还测了一次「建 QApplication 之前的 RSS」，但从来没进过返回值 ——
+    # 报表里的三个内存数都是从 rss_after_init 起算的。留着只会让人以为量过。
     t0 = time.perf_counter()
     app = QApplication.instance() or QApplication(sys.argv)
     # UP-090: csgo_dir 是自动探测的，不沙箱化会把用户真实 CS2 目录里的

@@ -17,15 +17,14 @@ import argparse
 import json
 import os
 import sys
-import tempfile
 from pathlib import Path
 
 os.environ.setdefault("CS2C_SAFE_MODE_ACTIVE", "1")
-_tmp = Path(tempfile.gettempdir()) / "cs2customizer_fingerprint"
-(_tmp / "config").mkdir(parents=True, exist_ok=True)
-(_tmp / "logs").mkdir(parents=True, exist_ok=True)
-os.environ.setdefault("CS2C_CONFIG_DIR", str(_tmp / "config"))
-os.environ.setdefault("CS2C_LOG_DIR", str(_tmp / "logs"))
+# RN-032：配置目录走共享工装（挡住个人配置迁移，见 _pristine_config 的说明）
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _pristine_config import use_pristine_config_dir  # noqa: E402
+
+_tmp = use_pristine_config_dir("cs2customizer_fingerprint")
 os.environ.pop("QT_QPA_PLATFORM", None)  # 要真实字体,否则文案与几何失真(UP-068)
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -41,10 +40,20 @@ SOUND_PAGES = ("kill_sound", "kill_voice", "switch_weapon", "reload_sound",
                "death_sound", "special_sound")
 TARGET_PAGES = SOUND_PAGES
 
-# 构造即打扰前台的页面（口径同 layout_overflow_audit.UNSAFE_PAGES）。
-# magnifier 能靠配置开关中和，其余的拍不了就明说，不静默略过。
-UNSAFE_PAGES = {"viewmodel", "flash", "voice_output", "kill_icon", "music"}
-NEUTRALIZABLE = {"magnifier": {"magnifier_enabled": False}}
+# 构造即打扰前台的页面。magnifier 能靠配置开关中和，其余的拍不了就明说，不静默略过。
+# ⚠ 这里要的是「不安全**且**中和不掉」，所以**派生**而不是另抄一份名单——
+#   原先是手抄的 5 个字面量，产品名单一变它就悄悄错位（2026-08-17 判据实测已漂）。
+
+# RN-005：中和表全仓唯一一份（这段以前在 5 支脚本里各写一遍，内容 1~3 项不等，
+# 后果是 flash / viewmodel / voice_output 三页被全部 5 支跳过 —— 零覆盖）。
+from _audit_neutralize import (  # noqa: E402
+    apply as neutralize_apply,
+    describe as neutralize_describe,
+    enable_audit_mode,
+    unsafe_pages,
+)
+
+enable_audit_mode()   # 必须在 import 产品模块之前
 
 
 def _describe(widget, root):
@@ -118,12 +127,10 @@ def build(page_spec: str = "sound"):
     app.processEvents()
 
     if page_spec == "all":
-        for pid, overrides in NEUTRALIZABLE.items():
-            for attr, value in overrides.items():
-                setattr(config, attr, value)
+        neutralize_apply(config)
         total_pages = len(win._page_names)
-        targets = [p for p in win._page_names if p not in UNSAFE_PAGES]
-        skipped = sorted(p for p in win._page_names if p in UNSAFE_PAGES)
+        targets = [p for p in win._page_names if p not in unsafe_pages()]
+        skipped = sorted(p for p in win._page_names if p in unsafe_pages())
         # UP-096: 覆盖面每次都报。"21 页指纹一致"读起来像全覆盖，实际是 21/27，
         # 而没覆盖的那几页正是历轮缺陷的藏身处。
         if len(targets) == total_pages:
@@ -133,10 +140,25 @@ def build(page_spec: str = "sound"):
                   f"**未覆盖 {total_pages - len(targets)} 个**")
         if skipped:
             print(f"   跳过 {len(skipped)} 个构造即打扰前台的页面: {', '.join(skipped)}")
-        if NEUTRALIZABLE:
-            print(f"   已中和后纳入: {', '.join(NEUTRALIZABLE)}")
-    else:
+        if neutralize_describe():
+            print(f"   已中和后纳入: {neutralize_describe()}")
+    elif page_spec == "sound":
         targets = list(TARGET_PAGES)
+    else:
+        # 逐页翻新工程要按页取基线（总纲 §9.1 基线三件套）。
+        wanted = [p.strip() for p in page_spec.split(",") if p.strip()]
+        neutralize_apply(config, wanted)
+        blocked = [p for p in wanted if p in unsafe_pages()]
+        if blocked:
+            # **不静默跳过**：静默少拍会被读成"这几页也拍过了"（UP-096 的教训）。
+            print(f"!! 拒绝构造 {', '.join(blocked)} —— 构造即占设备/注册全局热键，"
+                  f"会打扰前台。这几页的基线要走设备页策略（各自档案里先定），不在这里硬拍。")
+            raise SystemExit(2)
+        unknown = [p for p in wanted if p not in win._page_names]
+        if unknown:
+            print(f"!! 没有这些页: {', '.join(unknown)}")
+            raise SystemExit(2)
+        targets = wanted
 
     out = {}
     for pid in targets:
@@ -190,8 +212,9 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="页面结构指纹")
     ap.add_argument("--save")
     ap.add_argument("--compare")
-    ap.add_argument("--pages", default="sound", choices=("sound", "all"),
-                    help="sound=只拍音效页(默认) ｜ all=拍全部安全页面(R9-C 用)")
+    ap.add_argument("--pages", default="sound",
+                    help="sound=只拍音效页(默认) ｜ all=拍全部安全页面(R9-C 用) ｜ "
+                         "逗号分隔的页面 id=按页取(翻新工程逐页基线用)")
     args = ap.parse_args()
 
     data = build(args.pages)

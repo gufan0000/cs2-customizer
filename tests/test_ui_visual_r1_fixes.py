@@ -302,6 +302,249 @@ def test_kill_icon_style_strip_viewport_fits_its_content(app):
         app.processEvents()
 
 
+def test_nav_button_nudge_does_not_trust_a_not_yet_laid_out_height(app):
+    """按钮还没被布局定高时，校正**不许**把它的高度当成 0。
+
+    这是 2026-08-17 CI 连红三次的最终成因，本机一次都复现不出。
+    判据每次带回来的数一模一样：`y=599 高=42 视口=623` ——
+    **599 正好等于 623 − 24**，也就是滚动只保证了按钮左上角那个点可见
+    （24 是 `ensureWidgetVisible` 的 ymargin），按钮自己那 42px 高度被当成了 0。
+    三个不同页面、三次红、同一个 y，这就不是偶发而是算式漏了高度。
+
+    判据**确定性地**造出那个局面：把按钮的高度按成 0 再调校正函数。
+    不去复现"布局恰好没落定"那一瞬 —— 那种判据在本机永远绿，等于没有。
+    """
+    from PySide6.QtCore import QPoint
+
+    _need_real_fonts(app)
+    win = _shown_window(app)
+    try:
+        scroll = win._sidebar_scroll
+        viewport = scroll.viewport()
+        bar = scroll.verticalScrollBar()
+        page_id = list(win._page_names.keys())[-1]
+        btn = win.nav_buttons.get(page_id)
+        assert btn is not None and btn.isVisible(), "拿不到导航按钮，判据在空转"
+
+        win.show_page(page_id, animated=False)
+        for _ in range(2):
+            app.processEvents()
+
+        # 造出 runner 上的局面：把按钮顶到"只有左上角在视口里"，且高度尚未定
+        hint_h = btn.sizeHint().height()
+        assert hint_h > 0, "sizeHint 高度为 0，判据自身失效"
+        bar.setValue(0)
+        app.processEvents()
+        # 把滚动值调到"按钮顶边距视口底 24px"——正是 CI 上那个 y
+        while (btn.mapTo(viewport, QPoint(0, 0)).y() > viewport.height() - 24
+               and bar.value() < bar.maximum()):
+            bar.setValue(bar.value() + 10)
+            app.processEvents()
+        # 造"布局还没给它定高"的状态。
+        # ⚠ 试过两种更直白的写法，都不行，别再走回头路：
+        #   · `btn.resize(w, 0)` —— 导航按钮有 QSS 最小高度，会被夹回 42；
+        #   · 先 resize 再 `processEvents()` —— 事件泵一转布局就把高度改回去，
+        #     校正拿到的又是正常值，判据空转成绿（回退验证当场逮到）。
+        # 所以用一个**只在 height() 上说谎**的替身，直接考校正的算式。
+        class _NotYetLaidOut:
+            def __init__(self, real):
+                self._real = real
+
+            def mapTo(self, *args):
+                return self._real.mapTo(*args)
+
+            def height(self):
+                return 0          # 布局还没给它定高
+
+            def sizeHint(self):
+                return self._real.sizeHint()
+
+        win._nudge_nav_button_fully_into_view(scroll, _NotYetLaidOut(btn))
+        app.processEvents()
+
+        y = btn.mapTo(viewport, QPoint(0, 0)).y()
+        assert y + hint_h <= viewport.height(), (
+            f"校正把没定高的按钮当成了 0 高：y={y} sizeHint高={hint_h} "
+            f"视口={viewport.height()} 滚动={bar.value()}/{bar.maximum()}")
+    finally:
+        win.close()
+        win.deleteLater()
+        app.processEvents()
+
+
+def test_nav_button_nudge_fixes_a_short_scroll(app):
+    """`ensureWidgetVisible` 少滚了一截时，必须有人把它补回来。
+
+    上面那条判据量的是"正常切页之后在不在视口里"，而它在**本机永远是绿的** ——
+    因为本机的布局在调用那一刻就已经落定了。真正会出事的是布局还没落定的机器：
+    2026-08-17 CI 上 `hud_color` 的导航项就停在了视口外，本机怎么跑都复现不出。
+
+    所以这条判据**不去复现那一瞬**，直接把滚动条按到一个故意不对的位置，
+    然后只调校正函数：补不回来就红。这样它在任何机器上都判得准。
+    """
+    from PySide6.QtCore import QPoint
+
+    _need_real_fonts(app)
+    win = _shown_window(app)
+    try:
+        scroll = win._sidebar_scroll
+        viewport = scroll.viewport()
+        bar = scroll.verticalScrollBar()
+        assert bar.maximum() > 0, "侧栏没溢出，这条判据在当前尺寸下证明不了任何事"
+
+        # 挑一个在折叠线外的导航项（列表末尾那个一定在）
+        page_id = list(win._page_names.keys())[-1]
+        btn = win.nav_buttons.get(page_id)
+        assert btn is not None and btn.isVisible(), "拿不到导航按钮，判据在空转"
+
+        win.show_page(page_id, animated=False)
+        for _ in range(2):
+            app.processEvents()
+
+        # 把滚动条按回顶部：现在这一项**一定**在视口外，等价于"少滚了一截"
+        bar.setValue(0)
+        app.processEvents()
+        y_before = btn.mapTo(viewport, QPoint(0, 0)).y()
+        assert y_before + btn.height() > viewport.height(), (
+            "没造出「露在视口外」的局面，判据在空转")
+
+        win._nudge_nav_button_fully_into_view(scroll, btn)
+        app.processEvents()
+
+        y_after = btn.mapTo(viewport, QPoint(0, 0)).y()
+        assert 0 <= y_after and y_after + btn.height() <= viewport.height(), (
+            f"校正之后 {page_id} 的导航项仍在视口外："
+            f"y={y_after} 高={btn.height()} 视口={viewport.height()}")
+    finally:
+        win.close()
+        win.deleteLater()
+        app.processEvents()
+
+
+def test_sidebar_recovers_when_content_grows_after_the_page_switch(app):
+    """侧栏内容**在切页之后**才变高时，当前项必须自己滚回可视区。
+
+    这是 2026-08-17 CI 连红三次的真正成因，本机怎么调窗口尺寸都复现不出：
+    切页那一刻算好了滚动位置，**之后**侧栏内容才变高（分组展开、图标换色、
+    字体度量在别的机器上不一样），上一次计算于是作废，当前项被挤出视口。
+    实测数据 `crosshair(y=599 高=42 视口=623 滚动=61/998)` ——
+    滚动条才 61/998，**明明有的是空间可滚，就是没人去滚**。
+
+    前两版修复都失败了，因为它们都在切页那一瞬间测量：
+    ① 只补一次 —— 和 `ensureWidgetVisible` 量的是同一份陈旧布局；
+    ② 加 0ms singleShot —— 内容是在那之后才变高的，一样赶不上。
+    真正管用的是**事件驱动**：盯住侧栏内容的 Resize，它说变完了才算数。
+
+    判据照着这个成因复现：切页 → **从当前项上方**把内容顶下来 → 它必须自己滚回来。
+    **不赌时序、不依赖机器快慢**，任何机器上判得一样准。
+
+    ⚠ 第一版是往容器**底部**加高度，回退验证当场判它假绿 —— 底部加空间时
+    上面各项的位置根本不变，当前项压根没离开过视口，那是在测一件永远不会
+    失败的事。要把它顶出去，必须撑高**它上面**的东西。
+    """
+    from PySide6.QtCore import QPoint
+    from PySide6.QtWidgets import QWidget
+
+    _need_real_fonts(app)
+    win = _shown_window(app)
+    try:
+        viewport = win._sidebar_scroll.viewport()
+        container = win._sidebar_nav_container
+        for page_id in ("hud_color", "about"):
+            btn = win.nav_buttons.get(page_id)
+            if btn is None or not btn.isVisible():
+                continue
+            win.show_page(page_id, animated=False)
+            for _ in range(2):
+                app.processEvents()
+
+            # 在最上面塞一块高度，把下面所有导航项一起往下顶
+            spacer = QWidget(container)
+            spacer.setFixedHeight(400)
+            container.layout().insertWidget(0, spacer)
+            for _ in range(3):
+                app.processEvents()
+
+            y = btn.mapTo(viewport, QPoint(0, 0)).y()
+            bar = win._sidebar_scroll.verticalScrollBar()
+            assert 0 <= y and y + btn.height() <= viewport.height(), (
+                f"侧栏内容变高之后，{page_id} 的导航项没有滚回可视区："
+                f"y={y} 高={btn.height()} 视口={viewport.height()} "
+                f"滚动={bar.value()}/{bar.maximum()}")
+    finally:
+        win.close()
+        win.deleteLater()
+        app.processEvents()
+
+
+def test_sidebar_keeps_active_nav_item_visible_when_viewport_shrinks(app):
+    """侧栏视口变矮之后，当前导航项必须**仍然**完整可见。—— RN-008 的根因判据
+
+    2026-08-17 CI 连红五轮、本机一次都复现不出的那条，根因在这儿：
+    切页时把当前项滚进了可视区，**之后**底部音乐控制条 `musicControlBar`（42px）
+    才出现，主窗从侧栏身上扣走这 42px，视口跟着矮 42px ——
+    刚滚好的那一项正好被挤到视口外，而**滚动内容的高度一点没变**，
+    于是装在 `nav_container` 上的再校正钩子根本收不到 Resize，没人来补救。
+
+    ⚠ 上一版判据（切页后逐页看可见性）**证不了这件事**：它只在切页那一刻量，
+    量到的是"刚滚完"的状态。视口是后来才缩的。所以那条绿了五轮也没拦住。
+    这条专量"视口缩了之后"，把 42px 这个具体数字换成"任意变矮"来证，
+    免得哪天音乐条改了高度判据就失效。
+    """
+    from PySide6.QtCore import QPoint
+
+    _need_real_fonts(app)
+    win = _shown_window(app)
+    try:
+        scroll = win._sidebar_scroll
+        viewport = scroll.viewport()
+        skip = set(getattr(win, "_preload_skip_pages", ()) or ())
+        # 挑一个**必须滚动才看得见**的导航项：贴着视口底的那种才检得出这个缺陷，
+        # 本来就在顶部的项怎么缩都还在视口里，拿它证等于空转。
+        target = None
+        for page_id in reversed(list(win._page_names.keys())):
+            if page_id in skip:
+                continue
+            btn = win.nav_buttons.get(page_id)
+            if btn is None:
+                continue
+            win.show_page(page_id, animated=False)
+            for _ in range(2):
+                app.processEvents()
+            if btn.isVisible() and scroll.verticalScrollBar().value() > 0:
+                target = page_id
+                break
+        assert target, "找不到一个需要滚动才可见的导航项，判据在空转"
+
+        btn = win.nav_buttons[target]
+        before = btn.mapTo(viewport, QPoint(0, 0)).y()
+        assert 0 <= before and before + btn.height() <= viewport.height(), (
+            f"前提就不成立：{target} 切过去之后本来就在视口外 "
+            f"(y={before} 高={btn.height()} 视口={viewport.height()})")
+
+        # 模拟音乐条出现：主窗矮一截，侧栏视口跟着矮。
+        # 取 42 是因为 `musicControlBar` 就是 42px —— 用真实数字，
+        # 免得取个大得离谱的值把一个只在小幅变化下暴露的缺陷放过去。
+        was = viewport.height()
+        win.setMinimumSize(1280, 100)
+        win.resize(1280, win.height() - 42)
+        for _ in range(3):
+            app.processEvents()
+        # 空转守卫：视口没真的变矮，下面那条断言就什么也没证明。
+        assert viewport.height() < was, (
+            f"视口没有变矮（{was} → {viewport.height()}），这条判据在空转")
+
+        y = btn.mapTo(viewport, QPoint(0, 0)).y()
+        bar = scroll.verticalScrollBar()
+        assert 0 <= y and y + btn.height() <= viewport.height(), (
+            f"侧栏视口从 {was} 缩到 {viewport.height()} 之后，{target} 的导航项"
+            f"被挤出了可视区：y={y} 高={btn.height()} 滚动={bar.value()}/{bar.maximum()}")
+    finally:
+        win.close()
+        win.deleteLater()
+        app.processEvents()
+
+
 def test_sidebar_scrolls_the_active_nav_item_into_view(app):
     """切页之后，当前页的导航项必须在侧栏可视区内。
 
@@ -337,7 +580,13 @@ def test_sidebar_scrolls_the_active_nav_item_into_view(app):
             checked += 1
             y = btn.mapTo(viewport, QPoint(0, 0)).y()
             if not (0 <= y and y + btn.height() <= viewport.height()):
-                out_of_view.append(f"{page_id}(y={y})")
+                # 诊断信息一次给全：这条判据两次红在别人的机器上，而只报一个 y
+                # 根本判不出是"没滚"还是"滚到头了还不够"。不带着数回来，
+                # 下一轮就只能继续猜。
+                bar = win._sidebar_scroll.verticalScrollBar()
+                out_of_view.append(
+                    f"{page_id}(y={y} 高={btn.height()} 视口={viewport.height()} "
+                    f"滚动={bar.value()}/{bar.maximum()})")
         # ⚠ 没有这一行，上面的 continue 会让整段空转成绿——回退验证抓到过。
         # 空转守卫：没有这一行，上面的两个 continue 会让整段静默跳过、绿得毫无意义。
         # 闭源版 28 页 − 6 页设备页 = 22；开源版少一个账号页 = 21。取 20 留一格余量，

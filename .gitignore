@@ -156,3 +156,6 @@ pyarmor_runtime*/
 credentials.json
 service_account*.json
 *.token
+
+# 回退验证被 timeout/Ctrl-C 杀掉时留下的原文快照（产品文件的旧副本）
+.revert_verify_snapshot/

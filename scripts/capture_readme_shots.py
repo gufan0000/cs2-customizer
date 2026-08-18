@@ -27,7 +27,6 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-import tempfile
 import time
 from pathlib import Path
 
@@ -45,9 +44,11 @@ sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
 # 必须在导入产品代码之前设：MainWindow 构造时就会读这些
 os.environ.setdefault("CS2C_SAFE_MODE_ACTIVE", "1")
-_tmp = Path(tempfile.mkdtemp(prefix="cs2c_readme_shots_"))
-os.environ.setdefault("CS2C_CONFIG_DIR", str(_tmp / "config"))
-os.environ.setdefault("CS2C_LOG_DIR", str(_tmp / "logs"))
+# ⚠ 自己写 CS2C_CONFIG_DIR 挡不住 migrate_old_config() 把开发机的个人配置
+# 复制进来（RN-031/032）——统一走 scripts/_pristine_config.py。
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _pristine_config import use_pristine_config_dir   # noqa: E402
+_tmp = Path(use_pristine_config_dir("cs2c_readme_shots_"))
 os.environ.pop("QT_QPA_PLATFORM", None)     # 要真实字体
 for sub in ("config", "logs"):
     (_tmp / sub).mkdir(parents=True, exist_ok=True)
@@ -67,7 +68,11 @@ SHOTS = [
 #: 主题条：同一页在几套主题下的对比。9 套全放太长，挑 4 套差异最大的。
 THEME_STRIP = ["dark", "light", "ocean", "rose"]
 
-UNSAFE_PAGES = {"viewmodel", "magnifier", "flash", "voice_output", "kill_icon", "music"}
+# 「跳过哪些页」这个决定全仓只许一个地方做：scripts/_audit_neutralize.py（RN-005）。
+# 直接读 core/page_traits 也不行 —— 那是**名单**的真源，不是**跳过策略**的真源。
+from _audit_neutralize import unsafe_pages   # noqa: E402
+
+UNSAFE_PAGES = unsafe_pages()
 
 
 def personal_tokens() -> list[str]:

@@ -206,6 +206,35 @@ def test_flush_cancels_pending_timer():
     assert put._flush_timer is None, "flush 后挂起的 timer 应当已被取消"
 
 
+def test_two_writes_in_one_timestamp_tick_are_not_masked_by_the_cache():
+    """同一个时间戳刻度内的第二次写入，**不许**被 `_load()` 的缓存挡在外面。
+
+    2026-08-17 由 CI 逮到（本机 14/14 绿、runner 上红）：
+    `reset()` 先写下 `{}`，紧接着夹具把新内容写进同一个文件——两次写落在
+    同一个 mtime 刻度里，`_load()` 于是认为"文件没变"，返回缓存里那份空的，
+    `top_pages()` 返空 → 下一行取 `top[0]` 直接 IndexError。
+
+    **这不是测试写坏，是产品缺陷**：用户「重置所有设置」之后马上做配置恢复
+    或快照回滚，恢复进来的统计会被这层缓存挡住，看起来就是"恢复没生效"。
+
+    判据**不赌磁盘速度**：写完之后用 `os.utime` 把时间戳强行按回和上一次
+    完全相同，确定性地造出"同一刻度内两次写"。
+    （靠 sleep 或靠机器快慢来复现的判据，在慢机器上会变成一条永远绿的摆设。）
+    """
+    put.reset()
+    path = put._store_path()
+    before = os.stat(path)
+
+    data = {"new_page": {"count": 4, "last_used": time.time()}}
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f)
+    os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns))
+
+    assert os.stat(path).st_mtime_ns == before.st_mtime_ns, "判据自身失效：时间戳没按回去"
+    assert put.top_pages(2) == ["new_page"], (
+        "同一时间戳刻度内的第二次写入被缓存挡住了——统计看起来凭空清零")
+
+
 def test_reset_invalidates_an_already_running_flush():
     """`reset()` 之后，**已经在跑**的那次 flush 不许再把旧数据写回磁盘。
 

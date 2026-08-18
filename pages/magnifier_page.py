@@ -543,7 +543,7 @@ class MagnifierPage(QWidget):
         """创建基本设置卡片"""
         card, card_layout = SettingsCard.make(
             "基础控制",
-            "把倍率、热键和偏移都收在一个面板里，调试时不需要来回滚动找入口。", spacing=10
+            "开镜放大多少倍、按哪个键触发、准心要不要偏一点。", spacing=10
         )
         parent_layout.addWidget(card)
 
@@ -552,7 +552,7 @@ class MagnifierPage(QWidget):
 
         sensitivity_card, sensitivity_layout = self._create_inner_panel_card(
             "倍率与灵敏度",
-            "倍率切换、灵敏度联动和当前档位提示都集中到一起，方便快速校准不同手感。",
+            "调放大倍率，并让鼠标灵敏度跟着一起变，放大后手感才不会发飘。",
         )
 
         zoom_layout = QHBoxLayout()
@@ -634,7 +634,7 @@ class MagnifierPage(QWidget):
 
         trigger_card, trigger_layout = self._create_inner_panel_card(
             "热键与触发",
-            "主武器、手枪和触发策略放在同一块，方便快速排查哪一组更顺手。",
+            "主武器和手枪各自指定放大热键，并选长按触发还是单击切换。",
         )
 
         primary_layout = QHBoxLayout()
@@ -721,7 +721,7 @@ class MagnifierPage(QWidget):
 
         offset_card, offset_layout = self._create_inner_panel_card(
             "偏移校准",
-            "输入精确值或用下方箭头微调，切换倍率后会保留各自的偏移记录。",
+            "放大后准心偏了就在这里校回来；每个倍率各自记住自己的偏移。",
         )
         
         offset_input_layout = QHBoxLayout()

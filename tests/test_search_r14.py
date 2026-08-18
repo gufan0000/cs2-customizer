@@ -225,28 +225,48 @@ def test_card_context_coverage_did_not_regress():
         "准心设置页（手写 _create_card）的卡片上下文又丢了")
 
 
-def test_unsafe_pages_get_card_titles_from_the_static_channel():
-    """运行时通道进不去的页（局内视角等），卡片名要由静态通道兜住。
+def test_every_page_with_cards_has_card_titles_in_the_index():
+    """源码里有 `SettingsCard.make(...)` 的页，索引里必须有卡片标题。
 
-    `SettingsCard.make(...)` 在 AST 里是 Attribute(attr='make')，
-    只看 `fn.attr` 会得到 'make' 什么都对不上——全仓 65 处卡片一个没收到。
+    ⚠ **这条判据的命题换过一次。** 原来它叫
+    `test_unsafe_pages_get_card_titles_from_the_static_channel`，守的是
+    「运行时通道进不去的页（局内视角等），卡片名要由静态通道兜住」，
+    靠 `INDEX["coverage"]["runtime_skipped"]` 拿那批页，并有一条空转守卫
+    「不安全页名单空了？那这条判据就没在量东西」。
+
+    RN-059 解除设备页盲区之后**没有页进不去了** ⇒ 那个集合空了 ⇒ 空转守卫红。
+    ⭐ 前提消失不等于判据该删：静态通道仍然是兜底的那条腿，只是不再有专属客户。
+    所以把覆盖面从「跳过的那几页」扩到**全部页** —— 这是加强，不是放宽。
+
+    `SettingsCard.make(...)` 在 AST 里是 `Attribute(attr='make')`，
+    只看 `fn.attr` 会得到 'make' 什么都对不上（全仓 65 处卡片一个收不到）——
+    那个坑由 `test_ast_recognizes_the_factory_form` 单独守着。
     """
-    skipped = set(INDEX["coverage"]["runtime_skipped"])
-    assert skipped, "不安全页名单空了？那这条判据就没在量东西"
-    # ⚠ 期望从**源码**里数出来，不是我拍的：music / voice_output 两页压根没用卡片，
-    #   硬要求它们有卡片标题，红的是判据不是产品。
+    # ⚠ page_id 不能按文件名猜：`pages/fun_page.py` 的 page_id 是 `fun_afterlife`。
+    #   从 `gui_widget` 的加载分支里把 (page_id, 模块名) 读出来 —— 那是真相源。
+    gui = (ROOT / "gui_widget.py").read_text(encoding="utf-8")
+    id_of_module = dict(re.findall(
+        r'page_id\s*==\s*[\'"]([a-z_]+)[\'"][^\n]*\n\s*from pages\.([a-z_]+) import',
+        gui))
+    module_to_id = {module: pid for pid, module in id_of_module.items()}
+
+    missing = []
     checked = 0
-    for pid in sorted(skipped):
-        src = (ROOT / "pages" / f"{pid}_page.py").read_text(encoding="utf-8")
-        expected = src.count("SettingsCard.make(")
+    for path in sorted((ROOT / "pages").glob("*_page.py")):
+        stem = path.stem                      # 例如 fun_page
+        pid = module_to_id.get(stem, stem[: -len("_page")])
+        expected = path.read_text(encoding="utf-8").count("SettingsCard.make(")
         if not expected:
             continue
         checked += 1
         cards = [i for i in ITEMS if i["page"] == pid and i["kind"] == "card"]
-        assert cards, (
-            f"{pid}_page.py 里有 {expected} 处 SettingsCard.make，"
-            f"索引里一条卡片标题都没有")
-    assert checked >= 2, f"只对上 {checked} 个页面，这条判据说明不了问题"
+        if not cards:
+            missing.append(f"{pid}（源码里 {expected} 处 SettingsCard.make）")
+    assert checked >= 8, (
+        f"只找到 {checked} 个用卡片的页 —— 识别规则可能失效了，先修规则再看结论")
+    assert not missing, (
+        f"这些页的卡片标题在索引里一条都没有：{missing}。"
+        f"⚠ 本条覆盖面 = 源码里用了 SettingsCard.make 的 {checked} 个页")
 
 
 def test_ast_recognizes_the_factory_form():

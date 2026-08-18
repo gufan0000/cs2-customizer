@@ -23,6 +23,7 @@ class PreviewFailure:
 
     NO_STYLE = "no_style"          # 这一项没启用/没选风格
     NO_FILE = "no_file"            # 配了风格但音频文件不在
+    STALE_STYLE = "stale_style"    # 配的那个风格整个不见了（被改名/删除）
     DECODE = "decode"              # 文件在但解码失败
     DEVICE = "device"              # 音频设备被占用/未就绪
     UNKNOWN = "unknown"
@@ -30,6 +31,9 @@ class PreviewFailure:
     _TEXT = {
         NO_STYLE: "这一项还没有启用音效，先在左侧选一个风格再试听。",
         NO_FILE: "选中的风格里找不到音频文件，可能被移动或删除了。",
+        # RN-029：这一条以前落进 DEVICE，用户被告知"音频设备不可用"，
+        # 于是去查声卡和驱动 —— 而真实原因是那个风格已经不在了。
+        STALE_STYLE: "这把枪配的风格已经不在了（可能被重命名或删除），请重新选一个。",
         DECODE: "音频文件无法解码，可能已损坏或格式不支持。",
         DEVICE: "音频设备不可用（可能被其他程序独占），检查系统声音设置后重试。",
         UNKNOWN: "试听未能播放。",
