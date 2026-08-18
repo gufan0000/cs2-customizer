@@ -68,11 +68,29 @@ def _tracked_files() -> list[str]:
     return [p for p in out.decode("utf-8").split("\0") if p]
 
 
-def test_no_legacy_brand_outside_allowlist():
-    """白名单之外的任何文件都不得出现旧品牌名。"""
+def _untracked_files() -> list[str]:
+    """还没 `git add` 的新文件。
+
+    ⚠ **这是 2026-08-19 用一次公开发布换来的**：`git ls-files` 只列**已跟踪**文件，
+    所以一个刚写出来、还没暂存的新文件对这条判据**根本不存在**。当天的顺序是
+    「写文件 → 跑门禁（绿）→ 提交 → 推送（公开）→ CI 变红」——
+    门禁那一步之所以绿，是因为它看不见那个文件。
+
+    ⭐ 可复用的问法：**判据是怎么拿到它的被检查清单的？那个清单会不会
+    正好把"刚出现的东西"排除在外？** 凡是靠版本库枚举的判据都有这个洞，
+    而新文件恰好是最需要被查的那一类。
+    """
+    out = subprocess.run(
+        ["git", "ls-files", "--others", "--exclude-standard", "-z"],
+        cwd=ROOT, capture_output=True, check=True,
+    ).stdout
+    return [p for p in out.decode("utf-8").split("\0") if p]
+
+
+def _scan_for_legacy(files) -> dict[str, list[str]]:
     pattern = re.compile("|".join(re.escape(t) for t in LEGACY_TOKENS), re.IGNORECASE)
     offenders: dict[str, list[str]] = {}
-    for rel in _tracked_files():
+    for rel in files:
         if rel in ALLOWLIST or Path(rel).suffix.lower() in BINARY_EXT:
             continue
         try:
@@ -86,11 +104,38 @@ def test_no_legacy_brand_outside_allowlist():
         ]
         if hits:
             offenders[rel] = hits[:3]
+    return offenders
+
+
+def test_no_legacy_brand_outside_allowlist():
+    """白名单之外的任何文件都不得出现旧品牌名。"""
+    offenders = _scan_for_legacy(_tracked_files() + _untracked_files())
     assert not offenders, (
         "这些文件里还有旧品牌名，改名那一轮漏了：\n"
         + "\n".join(f"  {f}\n    " + "\n    ".join(h) for f, h in offenders.items())
         + "\n（确实需要保留的，连同理由一起加进本文件的 ALLOWLIST）"
     )
+
+
+def test_a_brand_new_file_is_actually_seen():
+    """空转守卫：上面那条判据必须**真的**能看见还没 `git add` 的文件。
+
+    没有这条，`_untracked_files()` 写错（比如漏了 `--others`、或被
+    `--exclude-standard` 连同真该查的文件一起滤掉）就会静默恢复原来那个洞，
+    而判据照常全绿 —— 那正是 2026-08-19 那次公开发布出事的形状。
+    """
+    probe = ROOT / "tests" / "_brand_probe_tmp.py"
+    assert not probe.exists(), f"探针文件已存在，先删掉：{probe}"
+    probe.write_text("# 帆派助手\n", encoding="utf-8")
+    try:
+        untracked = _untracked_files()
+        rel = "tests/_brand_probe_tmp.py"
+        assert rel in untracked, (
+            f"未跟踪文件枚举看不见刚写出来的文件（拿到 {len(untracked)} 个）—— "
+            "上面那条判据对新文件是失效的")
+        assert rel in _scan_for_legacy(untracked), "扫到了文件却没报出里面的旧名"
+    finally:
+        probe.unlink()
 
 
 def test_allowlist_entries_still_exist():

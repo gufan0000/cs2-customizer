@@ -241,21 +241,47 @@ def find_alias_overriders(autoexec_text: str, read_cfg, our_cfg: str = "cs2custo
     return found
 
 
+#: 挪动之后留下的印记。**它同时是"我已经挪过一次了"的持久记录**——
+#: 存在 autoexec 自己身上，而不是软件配置里：换配置目录、重装、甚至换一台
+#: 机器复制 cfg 过去，这个事实都跟着文件走，而它约束的本来就是这个文件。
+MOVED_MARK = "CS2C-AUTOEXEC-ORDERED"
+
+
 def rewrite_autoexec_with_us_last(autoexec_text: str, our_cfg: str = "cs2customizer") -> str:
     """把 `exec cs2customizer.cfg` 挪到所有 exec 的**最后**，其余内容一字不动。
 
     只在我们确实不是最后一个 exec 时才改；已经在最后就原样返回
     （**别每次启动都重写用户的文件**）。
+
+    ⚠ **RN-099：最多只挪一次。** 2026-08-19 实测到的事故——
+    这段代码同步到开源版之后，**两个产品都会"把自己挪到最后"**，
+    于是谁最后启动谁赢，两边**永久互相争抢最后一位**，每次启动都静默改用户的文件。
+    我给 RN-095 写这条时只想着"要排在别人后面"，完全没想到**别人就是我们
+    自己的另一个产品，跑的还是同一份代码**。
+
+    ⭐ 这是 RN-095 那条教训只修了一半的证据：**alias 名字空间共用**这件事我认了，
+    但**"抢最后一位"这个策略也被共用了**这件事没认。
+    ⇒ 凡是往共享资源里写"我要占据某个唯一位置"的逻辑，都要先问一句：
+      **如果对面跑的是同一份代码，会发生什么？**
+
+    收敛规则：挪的时候留下 `MOVED_MARK` 印记；再看到自己不是最后一位时**不再挪**，
+    改为把冲突说出来（由 `cfg_utils.ensure_cs2customizer_exec_is_last` 记日志）。
+    这样每个产品最多挪一次，局面必定收敛——代价是"谁最后挪谁赢"，
+    但那比无限翻转好得多，而且用户能从日志里看到该自己删哪一行。
     """
     order = exec_order(autoexec_text)
     if our_cfg not in order or order[-1] == our_cfg:
         return autoexec_text
+    if MOVED_MARK in (autoexec_text or ""):
+        return autoexec_text        # 已经挪过一次，不参与抢位（RN-099）
 
     ours = re.compile(rf'^\s*exec\s+"?{re.escape(our_cfg)}(?:\.cfg)?"?\s*$', re.I)
     kept = [ln for ln in (autoexec_text or "").splitlines() if not ours.match(ln)]
     while kept and not kept[-1].strip():
         kept.pop()
     kept.append("")
-    kept.append("// CS2 Customizer ：本行必须排在其他 exec 之后 —— 同名 alias 后执行的生效")
+    kept.append(f"// CS2 Customizer ：本行必须排在其他 exec 之后 —— 同名 alias 后执行的生效 [{MOVED_MARK}]")
+    kept.append("// ⚠ 只会自动挪这一次。之后若又有别的 cfg 排到后面，软件只会在日志里提醒，")
+    kept.append("//   不再改这个文件 —— 否则两个都会挪的程序会永久互相抢最后一位（RN-099）。")
     kept.append(f"exec {our_cfg}.cfg")
     return "\n".join(kept) + "\n"

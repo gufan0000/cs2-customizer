@@ -1508,17 +1508,11 @@ REVERTS = [
         "只扫脚本是不够的：产品改回硬编码而脚本仍读真相源时，**两份都在还各说各话**，"
         "那是最坏的一种",
     ),
-    Revert(
-        "RN", "已关档页面的控件文案被悄悄改掉",
-        "pages/screen_effects_page.py",
-        'trigger_title = QLabel("触发开关")',
-        'trigger_title = QLabel("触发开关 ")',
-        "tests/test_renovation_baselines.py::"
-        "test_page_structure_matches_baseline[screen_effects]",
-        "翻新工程的结构基线要能逮住"
-        "「页面还是那一页、但控件/文案已经不是原来那些」——"
-        "这里只多打了一个空格，肉眼几乎看不出来，判据必须红",
-    ),
+    # 「已关档页面的控件文案被悄悄改掉」这条断点**在本仓库没有对应判据**：
+    # 结构基线数据（tests/baselines/renovation/）是上游的内部工程状态，没有同步过来，
+    # 于是那个参数化用例 id 在这里根本不存在 —— 断点会**一直空转**，
+    # 而空转的断点比没有断点更糟：它让人以为这块有人看着。
+    # 判据本身照常同步（没有基线目录时它自己 skip），排除的是数据不是判据。
     Revert(
         "RN", "统计文件的缓存又只认 mtime、不认字节数",
         "core/page_usage_tracker.py",
@@ -2443,6 +2437,33 @@ REVERTS = [
         "发布链路全程不报一声",
     ),
     Revert(
+        "RN", "侧栏对齐又只往上退（项高不齐时会切掉一整项）",
+        "gui_widget.py",
+        "        targets.sort(key=lambda t: abs(t - current))   # 就近优先",
+        "        targets = targets[:1]   # 只往上退",
+        "tests/test_nav_snap_picks_the_nearest_boundary.py::"
+        "test_it_picks_the_nearer_boundary_not_always_the_one_above",
+        "RN-100：**这条缺陷是在本仓库发现的，上游一直是绿的** —— 那边项高恰好统一 "
+        "43px，滚动值天然落在边界上，「只往上退」这条路根本没走过。本仓库项高是 "
+        "42/43/47 混着的，滚动值偏离边界 4px，只往上退的唯一候选要跳 38px、"
+        "当前项被挤出去 ⇒ 撤销 ⇒ 顶上那一项 40px 里被切掉 38，14 个页面中招。"
+        "⭐ 一个只在「恰好整齐」时正确的算法，在它正确的那个环境里是看不出来的",
+    ),
+    Revert(
+        "RN", "两个产品又会永久互相抢 autoexec 最后一位",
+        "core/crosshair_reset.py",
+        '    if MOVED_MARK in (autoexec_text or ""):\n'
+        '        return autoexec_text        # 已经挪过一次，不参与抢位（RN-099）',
+        '    pass',
+        "tests/test_autoexec_keeps_us_last.py::"
+        "test_we_only_reorder_once_so_two_products_do_not_fight",
+        "RN-099：本项目和上游产品跑的是同一份代码，两边都会把自己挪到最后，"
+        "用户机器上的 autoexec 每启动一次被翻一次 —— 2026-08-19 实测撞到，"
+        "把前一天刚修好的准星跟随又覆盖回去了。"
+        "⭐ RN-095 只修了一半：alias 名字空间共用认了，"
+        "**「抢最后一位」这个策略也被共用了**没认",
+    ),
+    Revert(
         "RN", "冒烟自动挑产物又会挑到安装包",
         "scripts/smoke_packaged.py",
         '                 and c.parent.name.lower() != "installer"',
@@ -2811,7 +2832,8 @@ def main() -> int:
                     help="只做失效体检（锚点是否还在、判据名是否还在），不改任何文件、不跑用例")
     args = ap.parse_args()
 
-    items = [r for r in REVERTS if not args.only or r.group == args.only]
+    items = [r for r in REVERTS
+             if not args.only or r.group == args.only or args.only in r.name]
 
     # ---- RN-093：先收拾上一轮没跑完留下的烂摊子 ----
     # ⚠ 必须在失效体检**之前**做：留在树上的改坏文件会让锚点变成"出现 0 次"，
