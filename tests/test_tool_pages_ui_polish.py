@@ -134,7 +134,10 @@ def test_advanced_page_action_bar_tracks_directory_state(qapp, monkeypatch, tmp_
 
     chips = _visible_audio_status_chip_texts(page.status_badge_label)
     assert "目录 · 已配置" in chips
-    assert page.action_bar.primary_btn.text() == "备份设置"
+    # RN-132：目录配好之后不再高亮任何主按钮（这一页设置改完立即生效，
+    # 没有「保存」这个动作）。这条断言原本钉的是旧设计 —— 改设计要连它一起改。
+    assert not page.action_bar.primary_btn.isVisibleTo(page), (
+        f"底栏又出现了主按钮「{page.action_bar.primary_btn.text()}」")
     assert "目录已配置" in page.action_bar.message_label.text()
     assert "主题 深色主题" in page.action_bar.message_label.text()
 

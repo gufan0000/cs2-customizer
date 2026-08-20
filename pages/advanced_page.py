@@ -121,7 +121,12 @@ class AdvancedPage(QWidget):
         layout.addWidget(directory_card)
 
         # v5 Phase 7: "内部测试"和"界面主题"原本横排但密度悬殊,改为垂直堆叠各占全宽.
+        # RN-133：调试卡片收进专家模式。本仓库这里没有密码框（见下面调试小节的说明），
+        # 但「排错入口占据主区域」这件事一样成立。
+        # ⚠ 卡片照常建、只是不显示 —— 不建的话 `_update_debug_status` /
+        # `_load_settings` 全都会撞上 AttributeError。
         self._create_debug_section(layout)
+        self._debug_panel.setVisible(bool(getattr(config, "ui_expert_mode", False)))
         self._create_theme_section(layout)
         self._create_system_integration_section(layout)
         self._create_osd_section(layout)
@@ -188,7 +193,10 @@ class AdvancedPage(QWidget):
 
         self.action_bar.configure_secondary("选择目录", self._browse_for_csgo_dir, visible=True)
         if dir_valid:
-            self.action_bar.configure_primary("备份设置", self._backup_settings, visible=True)
+            # RN-132：目录配好之后**不设主按钮**。这一页的设置改完立即生效，
+            # 没有「保存」这个动作，而原来高亮的是低频的「备份设置」——
+            # 全页最抢眼的位置指向玩家最不需要按的东西。备份仍在卡片里。
+            self.action_bar.configure_primary("", None, visible=False)
             action_message = (
                 f"当前目录已配置 · 主题 {self._current_theme_text()} · 调试模式"
                 f"{'已启用' if self.debug_mode else '未启用'}，建议大改前先备份设置。"
@@ -289,6 +297,7 @@ class AdvancedPage(QWidget):
             "内部调试",
             "仅在排查异常或联动问题时使用，平时保持关闭即可。",
         )
+        self._debug_panel = panel      # RN-133：显示与否由专家模式决定
 
         self.debug_status_label = QLabel()
         self.debug_status_label.setObjectName("statusLabel")

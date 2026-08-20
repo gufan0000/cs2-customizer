@@ -48,9 +48,10 @@ QT_OVERRIDES = {
 #: 12 → 10：M3 开 crosshair 页时清掉本页那两个。
 #: 10 → 8：M3 开 kill_icon 页时清掉那两个「老接口」（`_preview_settings` /
 #:         `_test_kill_icon`，全仓零调用，功能早已被现在的试播路径取代）。
-#: 剩下的 8 个分布在 advanced / music / utility / viewmodel 四页，
+#: 8 → 6：M3 开 advanced 页时清掉本页那份 badge 工厂副本。
+#: 剩下的 6 个分布在 music / utility / viewmodel 三页，
 #: 归各自页面的档案 —— 本工程的纪律是**只在开档的页里动刀**。
-MAX_REMAINING = 8
+MAX_REMAINING = 6
 
 
 def _corpus() -> list[Path]:
@@ -159,7 +160,7 @@ def test_dead_private_method_count_only_shrinks():
 
 def test_the_page_being_renovated_is_clean():
     """已经翻新过的页必须是 0 —— 棘轮只保证不涨，不保证清过的页不复发。"""
-    cleaned = {"crosshair_page.py", "kill_icon_page.py"}
+    cleaned = {"crosshair_page.py", "kill_icon_page.py", "advanced_page.py"}
     dead = [d for d in find_dead_private_methods() if d[0] in cleaned]
     assert not dead, f"已清理过的页又长出死方法：{dead}"
 

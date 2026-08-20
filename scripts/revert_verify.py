@@ -2464,6 +2464,17 @@ REVERTS = [
         "**「抢最后一位」这个策略也被共用了**没认",
     ),
     Revert(
+        "RN", "高级设置又把「备份设置」高亮成主按钮",
+        "pages/advanced_page.py",
+        '            self.action_bar.configure_primary("", None, visible=False)',
+        '            self.action_bar.configure_primary("备份设置", self._backup_settings, visible=True)',
+        "tests/test_advanced_page_action_bar_and_debug.py::"
+        "test_no_primary_button_once_the_directory_is_set",
+        "RN-132：这一页的设置**改完立即生效**，没有「保存」这个动作 —— "
+        "而全页最抢眼的紫色按钮却指向低频的「备份设置」。外审两档 4 发都在说"
+        "新手会把它当成保存/生效去点。⭐ 没有主路径动作时，就不要造一个出来",
+    ),
+    Revert(
         "RN", "写 CFG 失败后页面又显示「已保存」",
         "pages/hud_color_page.py",
         "            config.save_config()\n\n"
