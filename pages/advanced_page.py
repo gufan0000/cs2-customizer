@@ -150,19 +150,6 @@ class AdvancedPage(QWidget):
         self.action_bar.primary_btn.setMinimumWidth(132)
         outer.addWidget(self.action_bar, 0)
 
-    def _create_badge_label(self):
-        badge = QLabel()
-        badge.setObjectName("badgeLabel")
-        badge.setAlignment(Qt.AlignCenter)
-        return badge
-
-    def _set_badge_state(self, label, text, tone="info"):
-        label.setText(text)
-        label.setProperty("tone", tone)
-        label.style().unpolish(label)
-        label.style().polish(label)
-        label.update()
-
     def _is_valid_csgo_dir(self, directory):
         if not directory:
             return False
