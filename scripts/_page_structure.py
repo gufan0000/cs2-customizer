@@ -15,9 +15,20 @@
 `page_fingerprint.py` 在模块级 `os.environ.pop("QT_QPA_PLATFORM")`（它要真实字体），
 判据要是导了它，离屏就被掀掉了 —— 窗口会真的弹到用户脸上。**这就是为什么不复用它。**
 
-**故意不收 `visible`**：它跟父窗口有没有 show、滚动区怎么排都有关，
-在 CI 上容易抖成假红。可见性的事交给本机的像素基线与完整指纹去管 ——
-判据宁可少管一样，也不要变成一条会随机变红的判据（那种判据最后都会被无视）。
+**收 `visible`，但只收 `isVisibleTo(page)`**（RN-134 补）。
+
+原先这里**一条可见性都不收**，理由是"`isVisible()` 跟父窗口有没有 show 有关，
+CI 上会抖成假红"。那个理由对**那个函数**成立，但它把整件事一起否掉了 ——
+于是「把某块藏起来 / 放出来」这类改动**结构判据完全看不见**：
+RN-133 我把调试卡片收进专家模式，改完前后两份投影**一模一样**。
+
+`isVisibleTo(page)` 问的是另一个问题：**"要是这一页显示出来，它会不会出现"**。
+它只沿着控件树往上查显式 hide 标记，**不问顶层窗口有没有 show** ——
+所以它既能逮住 hide/show，又不会因为"窗口没映射到屏幕"而假红。
+同一条教训在 `advanced` 的判据上刚踩过：`isVisible()` 在没 show 过的页上恒假，
+那句断言等于没断；换 `isVisibleTo` 才真的管住了事。
+
+⭐ **"这个具体做法会假红"不等于"这件事不该管"** —— 先换做法，再谈放弃。
 """
 from __future__ import annotations
 
@@ -61,12 +72,15 @@ _ENV_DEPENDENT_TEXT = (
 _ENV_DEPENDENT_ENABLED_TEXT = ("以管理员身份重启",)
 
 
-def _entry(widget) -> dict:
+def _entry(widget, root=None) -> dict:
     out = {
         "type": type(widget).__name__,
         "name": widget.objectName(),
         "enabled": widget.isEnabled(),
     }
+    if root is not None:
+        # 不是 `isVisible()`：那个要顶层窗口 show 过才为真，离屏取样恒假（见模块头）。
+        out["visible"] = bool(widget.isVisibleTo(root))
     for attr in _TEXT_GETTERS:
         getter = getattr(widget, attr, None)
         if not callable(getter):
@@ -94,10 +108,11 @@ def structure(page) -> list[dict]:
     """把一页拍成与字体无关的结构清单，顺序稳定可直接逐条比对。"""
     from PySide6.QtWidgets import QWidget
 
-    items = [_entry(page)]
-    items.extend(_entry(child) for child in page.findChildren(QWidget))
+    items = [_entry(page, page)]
+    items.extend(_entry(child, page) for child in page.findChildren(QWidget))
     # 不按位置排（位置是字体相关的），按内容排——同样稳定，且跨机器一致。
-    items.sort(key=lambda e: (e["type"], e["name"], e.get("text", ""), e["enabled"]))
+    items.sort(key=lambda e: (e["type"], e["name"], e.get("text", ""),
+                              str(e["enabled"]), str(e.get("visible", ""))))
     return items
 
 

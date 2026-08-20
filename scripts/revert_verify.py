@@ -2525,6 +2525,71 @@ REVERTS = [
         "而「一直跑」在界面上和「播得很流畅」长得一模一样，只有判据看得出来",
     ),
     Revert(
+        "RN", "锚点条又给藏起来的卡片留一颗点不动的 chip",
+        "pages/advanced_page.py",
+        "                and c.isVisibleTo(self)",
+        "                and True",
+        "tests/test_advanced_page_action_bar_and_debug.py::"
+        "test_a_hidden_card_gets_no_anchor_chip",
+        "RN-138：RN-133 把「内部调试」卡片收进专家模式，锚点条却照样按标题扫出"
+        "一颗「调试」—— 点下去 `ensureWidgetVisible` 作用在隐藏控件上，**画面纹丝不动**。"
+        "普通用户看到的是一颗坏掉的按钮。"
+        "⭐ **把一块内容藏起来，指向它的东西不会跟着藏**",
+    ),
+    Revert(
+        "RN", "又跟看不见调试卡片的人报调试状态",
+        "pages/advanced_page.py",
+        "        if self._debug_surface_visible():\n"
+        "            badges.append(",
+        "        if True:\n"
+        "            badges.append(",
+        "tests/test_advanced_page_action_bar_and_debug.py::"
+        "test_normal_users_are_not_told_about_a_feature_they_cannot_see",
+        "RN-138：挂一颗「调试 · 未启用」给看不到调试卡片的人，"
+        "等于告诉他有个东西关着，却既不说那是什么、也没有任何地方能打开它。"
+        "⭐ 一个「要不要露出来」的条件，凡是有第二处要问它，**就得有名字** —— "
+        "RN-133 那次它只是一句就地写死的 `getattr(config, ...)`，"
+        "于是另外三处指向同一块内容的东西一处都没跟上",
+    ),
+    Revert(
+        "RN", "截图脚本又自己把专家模式打开",
+        "scripts/ui_shot_capture.py",
+        "    _ui_mode.apply(config, args.expert)",
+        "    config.ui_expert_mode = True",
+        "tests/test_ui_mode_sampling.py::"
+        "test_visual_harnesses_sample_the_product_default",
+        "RN-134：产品默认是普通模式，工装写死成专家视图 ⇒ **整批视觉结论审的是另一个软件**。"
+        "十七轮外审、十六页像素基线全建立在这上面，"
+        "而 RN-133「把调试卡片收进专家模式」改完复跑外审照报不误。"
+        "⭐ 这条断点瞄的是「取样对象」而不是「结论对不对」——"
+        "**取样错了的时候，每一条结论都长得很正常**",
+    ),
+    Revert(
+        "RN", "工装换页又不带 force，专家页会静默拍成上一页",
+        "scripts/ui_shot_capture.py",
+        "            _ui_mode.goto(win, pid)",
+        "            win.show_page(pid, animated=False)",
+        "tests/test_ui_mode_sampling.py::"
+        "test_visual_harnesses_reach_pages_without_relying_on_the_mode",
+        "RN-134 的另一半：普通模式下 6 个专家页没有导航入口，`show_page` 直接 return —— "
+        "工装于是拿着**上一页**的窗口接着拍，**不报错**，只是图张冠李戴。"
+        "⭐ 可达性和视图本来是两件事，全仓 16 处 show_page 都靠「开专家模式」一起兜着，"
+        "**所以那行 `= True` 谁也质疑不了**：拿掉它当场少拍 6 页",
+    ),
+    Revert(
+        "RN", "结构投影又看不见「这块被藏起来了」",
+        "scripts/_page_structure.py",
+        '        out["visible"] = bool(widget.isVisibleTo(root))',
+        "        pass",
+        "tests/test_structure_baseline_has_no_machine_facts.py::"
+        "test_hiding_a_widget_shows_up_in_the_projection",
+        "RN-134：投影原先一条可见性都不收，理由是「`isVisible()` 会因窗口没 show 而假红」。"
+        "代价是 RN-133 把调试卡片藏起来之后，**改动前后两份投影一模一样** —— "
+        "hide/show 这类改动结构判据完全看不见。"
+        "⭐ **「这个具体做法会假红」不等于「这件事不该管」**：`isVisibleTo(page)` 不问顶层窗口，"
+        "既逮得住 hide/show 又不会离屏假红。先换做法，再谈放弃",
+    ),
+    Revert(
         "RN", "死方法扫描的语料又缩回「只看本文件」",
         "tests/test_no_dead_private_methods_in_pages.py",
         "            related = descendants(cls.name) | ancestors(cls.name)",

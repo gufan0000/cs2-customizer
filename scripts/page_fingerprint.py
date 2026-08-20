@@ -98,7 +98,7 @@ def fingerprint(page, root):
     return items
 
 
-def build(page_spec: str = "sound"):
+def build(page_spec: str = "sound", expert: bool = False):
     from PySide6.QtCore import Qt
     from PySide6.QtGui import QFontDatabase
     from PySide6.QtWidgets import QApplication, QSystemTrayIcon
@@ -115,7 +115,11 @@ def build(page_spec: str = "sound"):
 
     sandbox_external_writes()
 
-    config.ui_expert_mode = True
+    import _ui_mode
+
+    # RN-134：默认按产品默认的普通模式取指纹。指纹与结构投影是一套基线的
+    # 两半，两半的界面模式必须一致，否则谁也说不清差异是改动还是口径。
+    _ui_mode.apply(config, expert)
     import gui_widget
 
     win = gui_widget.MainWindow(auto_background_preload=False)
@@ -164,7 +168,7 @@ def build(page_spec: str = "sound"):
     for pid in targets:
         if pid not in win._page_names:
             continue
-        win.show_page(pid, animated=False)
+        _ui_mode.goto(win, pid)
         app.processEvents()
         page = win.pages.get(pid)
         if page is None:
@@ -215,9 +219,12 @@ def main() -> int:
     ap.add_argument("--pages", default="sound",
                     help="sound=只拍音效页(默认) ｜ all=拍全部安全页面(R9-C 用) ｜ "
                          "逗号分隔的页面 id=按页取(翻新工程逐页基线用)")
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import _ui_mode
+    _ui_mode.add_expert_argument(ap)
     args = ap.parse_args()
 
-    data = build(args.pages)
+    data = build(args.pages, expert=args.expert)
     for pid, items in data.items():
         print(f"  {pid:<16} {len(items):>4} 个控件")
 

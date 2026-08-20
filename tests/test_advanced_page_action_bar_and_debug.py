@@ -126,3 +126,81 @@ def test_the_debug_card_is_there_in_expert_mode(qapp, monkeypatch):
     finally:
         page.deleteLater()
         qapp.processEvents()
+
+
+# ------------------------------------------------------------------- RN-138
+
+
+def _anchor_texts(page, qapp) -> list[str]:
+    """锚点 chip 是 `singleShot(0)` 建的，要转一次事件循环才拿得到。"""
+    from PySide6.QtWidgets import QPushButton
+
+    qapp.processEvents()
+    return [b.text().strip() for b in page.findChildren(QPushButton)
+            if b.objectName() == "anchorChip"]
+
+
+def test_a_hidden_card_gets_no_anchor_chip(qapp, monkeypatch):
+    """普通模式下不许有指向「内部调试」的锚点。
+
+    RN-138：RN-133 把卡片藏了，锚点条却照样按标题扫出一颗「调试」——
+    点下去 `ensureWidgetVisible` 作用在一个隐藏控件上，**画面纹丝不动**。
+    普通用户看到的是一颗坏掉的按钮。
+    ⭐ **把一块内容藏起来，指向它的东西不会跟着藏。**
+    """
+    page = _make_page(monkeypatch, expert=False, dir_valid=True)
+    try:
+        chips = _anchor_texts(page, qapp)
+        assert chips, "一颗锚点都没建出来 —— 这条判据会空转，先修锚点条本身"
+        assert "调试" not in chips, (
+            f"普通模式下还有一颗指向隐藏卡片的锚点：{chips}")
+    finally:
+        page.deleteLater()
+        qapp.processEvents()
+
+
+def test_the_anchor_chip_comes_back_in_expert_mode(qapp, monkeypatch):
+    """反面守卫：专家模式下那颗锚点必须还在，否则是把导航修没了。"""
+    page = _make_page(monkeypatch, expert=True, dir_valid=True)
+    try:
+        assert "调试" in _anchor_texts(page, qapp), (
+            "专家模式下反而没有「调试」锚点了 —— 卡片在、跳不过去")
+    finally:
+        page.deleteLater()
+        qapp.processEvents()
+
+
+def test_normal_users_are_not_told_about_a_feature_they_cannot_see(qapp, monkeypatch):
+    """状态徽章与底部提示都不许提「调试模式」。
+
+    挂一颗「调试 · 未启用」给看不到调试卡片的人，等于告诉他有个东西关着，
+    却既不说那是什么、也没有任何地方能打开它。
+    """
+    page = _make_page(monkeypatch, expert=False, dir_valid=True)
+    try:
+        from PySide6.QtWidgets import QLabel
+
+        texts = [lb.text() for lb in page.findChildren(QLabel)
+                 if lb.objectName() == "audioStatusChip"]
+        assert texts, "一颗状态徽章都没有 —— 这条判据会空转"
+        assert not any("调试" in t for t in texts), f"徽章里还在报调试状态：{texts}"
+        assert "调试" not in page.action_bar.message_label.text(), (
+            f"底部提示里还在报调试状态：{page.action_bar.message_label.text()}")
+    finally:
+        page.deleteLater()
+        qapp.processEvents()
+
+
+def test_expert_users_still_see_the_debug_state(qapp, monkeypatch):
+    """反面守卫：专家模式下状态还得报 —— 不然开没开都看不出来。"""
+    page = _make_page(monkeypatch, expert=True, dir_valid=True)
+    try:
+        from PySide6.QtWidgets import QLabel
+
+        texts = [lb.text() for lb in page.findChildren(QLabel)
+                 if lb.objectName() == "audioStatusChip"]
+        assert any("调试" in t for t in texts), (
+            f"专家模式下也不报调试状态了 —— 开没开全靠猜：{texts}")
+    finally:
+        page.deleteLater()
+        qapp.processEvents()

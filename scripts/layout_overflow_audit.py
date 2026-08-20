@@ -68,6 +68,7 @@ os.environ.setdefault("CS2C_SAFE_MODE_ACTIVE", "1")
 # 个人配置下页面全是"已配置"的样子，而**全新用户的空状态文案完全不同**
 # （更长、更多、还多出几行提示），审计长期没看过那一档。
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _ui_mode as _um  # noqa: E402  界面模式（普通/专家）的唯一真相源，见 RN-134
 from _pristine_config import use_pristine_config_dir  # noqa: E402
 
 _tmp = use_pristine_config_dir("cs2customizer_layout_audit")
@@ -314,6 +315,7 @@ def main():
                     help="字体库为空时直接失败(退出码 2)。CI 必开：无字体环境下"
                          "文字度量全失真，跑出来的绿是**假绿**，"
                          "而一个会假绿的门禁比没有门禁更坏。")
+    _um.add_expert_argument(ap)
     args = ap.parse_args()
 
     base_w, base_h = COMPACT_SIZE if args.compact else FULL_SIZE
@@ -358,8 +360,10 @@ def main():
 
     sandbox_external_writes()
 
-    # 专家页一并检测
-    config.ui_expert_mode = True
+    # RN-134：默认按**产品默认的普通模式**审 —— 这里原来写死 `= True`，
+    # 理由写的是"专家页一并检测"，可那件事现在由 `_ui_mode.goto()` 的 force 兜着，
+    # 不必再把每一页都换成专家视图。审专家视图请显式 `--expert`。
+    _um.apply(config, args.expert)
 
     # UP-100: 必须在 MainWindow 构造**之前**设。`MainWindow.__init__` 一进来就
     # `self._compact_mode = getattr(config, 'compact_mode', False)` 并据此定最小尺寸，
@@ -415,7 +419,7 @@ def main():
             app.processEvents()
             for pid in page_ids:
                 try:
-                    win.show_page(pid, animated=False)
+                    _um.goto(win, pid)
                     app.processEvents()
                     page = win.pages.get(pid)
                     if page is None:

@@ -83,10 +83,20 @@ def _refuse_device_pages(pages: list[str]) -> None:
         raise SystemExit(2)
 
 
-def structure_of(pages: list[str]) -> dict:
+def structure_of(pages: list[str], expert: bool = False) -> dict:
     """**只在专用子进程里调**（见 `_structure_via_subprocess`）。
 
     离屏建页取结构投影 —— 这一份不需要真实字体。
+
+    `expert` 默认 **False**，跟产品默认一致（RN-134）：基线要锁的是
+    **用户看见的那一页**。6 个专家页靠 `_ui_mode.goto()` 的 force 够着，
+    不再靠"把整个软件切成专家视图"来兜可达性。
+
+    `pages == ["all"]` 时页面清单**从窗口自己拿**（`win._page_names`），
+    免得判据里再抄一份会过期的 27 页名单。
+    ⚠ 这一条路会先跑 `neutralize_apply`（否则设备页构造即占设备、打扰前台），
+    因此**不适合用来采基线** —— 中和过的配置不是全新用户的配置。
+    它只用于"同一批页面、两种界面模式"这种自己跟自己比的场合。
     """
     import os
 
@@ -126,8 +136,10 @@ def structure_of(pages: list[str]) -> dict:
     QSystemTrayIcon.isSystemTrayAvailable = staticmethod(lambda: False)
     sandbox_external_writes()
 
+    import _ui_mode
+
     from config import config
-    config.ui_expert_mode = True
+    _ui_mode.apply(config, expert)
     import gui_widget
 
     win = gui_widget.MainWindow(auto_background_preload=False)
@@ -141,10 +153,16 @@ def structure_of(pages: list[str]) -> dict:
     win.setMinimumSize(1200, 800)
     win.resize(1200, 800)
     app.processEvents()
+    if list(pages) == ["all"]:
+        import _audit_neutralize
+        pages = [p for p in win._page_names
+                 if p not in _audit_neutralize.unsafe_pages()]
+        _audit_neutralize.apply(config, pages)
+
     out = {}
     try:
         for pid in pages:
-            win.show_page(pid, animated=False)
+            _ui_mode.goto(win, pid)
             app.processEvents()
             page = win.pages.get(pid)
             if page is None:
@@ -161,7 +179,7 @@ def structure_of(pages: list[str]) -> dict:
 _EMIT_MARKER = "===STRUCTURE-JSON==="
 
 
-def _structure_via_subprocess(pages: list[str]) -> dict:
+def _structure_via_subprocess(pages: list[str], expert: bool = False) -> dict:
     """**取结构投影的唯一正门。**
 
     非得起个子进程，是因为配置目录必须在 `import config` **之前**钉死，
@@ -172,8 +190,10 @@ def _structure_via_subprocess(pages: list[str]) -> dict:
     顺带一个好处：判据和取基线的工具**走的是同一条路径**，不会出现
     "基线那么采的、判据这么采的"这种谁也说不清的差异。
     """
-    code, out = _run(["scripts/renovation_baseline.py",
-                      "--emit-structure", ",".join(pages)])
+    argv = ["scripts/renovation_baseline.py", "--emit-structure", ",".join(pages)]
+    if expert:
+        argv.append("--expert")
+    code, out = _run(argv)
     if code != 0 or _EMIT_MARKER not in out:
         raise AssertionError(
             f"取结构投影失败（退出码 {code}）：\n{out[-3000:]}")
@@ -313,12 +333,15 @@ def main() -> int:
                     help="改版获批后覆盖既有基线（B 堆专用，A 堆绝不该用到）")
     ap.add_argument("--emit-structure", metavar="PAGES",
                     help="内部用：在全新默认配置下吐出结构投影 JSON（见 _structure_via_subprocess）")
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import _ui_mode
+    _ui_mode.add_expert_argument(ap)
     args = ap.parse_args()
 
     if args.emit_structure:
         pages = [p.strip() for p in args.emit_structure.split(",") if p.strip()]
         _refuse_device_pages(pages)
-        data = structure_of(pages)
+        data = structure_of(pages, expert=args.expert)
         print(_EMIT_MARKER)
         print(json.dumps(data, ensure_ascii=False))
         return 0

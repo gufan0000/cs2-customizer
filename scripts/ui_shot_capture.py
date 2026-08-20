@@ -38,6 +38,7 @@ os.environ.setdefault("CS2C_SAFE_MODE_ACTIVE", "1")
 # `migrate_old_config()` 把仓库根那份未跟踪的个人 config.json 复制进来 ——
 # 实测本脚本抓出来的图长期是**开发机配置**的样子，不是全新用户的样子。
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _ui_mode  # noqa: E402  界面模式（普通/专家）的唯一真相源，见 RN-134
 from _pristine_config import use_pristine_config_dir  # noqa: E402
 
 _tmp = use_pristine_config_dir("cs2customizer_ui_shots")
@@ -140,6 +141,7 @@ def main() -> int:
                     help="连同构造即起热键/音频设备的页一起拍——会打扰前台，慎用")
     ap.add_argument("--tabs", action="store_true",
                     help="有页签的页逐个页签各拍一张（默认只拍当前页签）")
+    _ui_mode.add_expert_argument(ap)
     args = ap.parse_args()
 
     width, height = COMPACT_SIZE if args.compact else FULL_SIZE
@@ -164,7 +166,9 @@ def main() -> int:
     from _audit_sandbox import sandbox_external_writes
 
     sandbox_external_writes()
-    config.ui_expert_mode = True
+    # RN-134：默认按**产品默认的普通模式**取样 —— 这里原来写死 `= True`，
+    # 于是十七轮外审看的全是专家视图（连"已经收进专家模式"的卡片都照拍不误）。
+    _ui_mode.apply(config, args.expert)
     # 必须在 MainWindow 构造**之前**设：__init__ 一进来就据此定最小尺寸，
     # 构造完再改只会得到"尺寸像紧凑、外壳是完整"的四不像（UP-100）。
     config.compact_mode = bool(args.compact)
@@ -203,7 +207,7 @@ def main() -> int:
     extra_tabs = 0
     for pid in page_ids:
         try:
-            win.show_page(pid, animated=False)
+            _ui_mode.goto(win, pid)
             for _ in range(3):
                 app.processEvents()
             # 拍**整窗**而不是页面控件：用户看到的是含侧边栏/顶栏的整体，
@@ -219,7 +223,9 @@ def main() -> int:
             failed.append(pid)
 
     apply_font_scale(1.0)
-    print(f"\n== {mode} 模式 {width}x{height} 主题 {args.theme} 字号 {args.scale} ==")
+    # 界面模式必须写进报告：不写，读图的人（和外审）会默认这是普通视图（RN-134）
+    print(f"\n== {mode} 模式 {width}x{height} 主题 {args.theme} 字号 {args.scale}"
+          f" · 界面 {_ui_mode.describe(args.expert)} ==")
     print(f"   出图 {ok} 张 → {out}"
           + (f"（另 {extra_tabs} 张来自逐页签）" if extra_tabs else ""))
     # 覆盖面每次都要报：静默少拍会被读成"全都看过了"（UP-096 的教训）

@@ -126,7 +126,7 @@ class AdvancedPage(QWidget):
         # ⚠ 卡片照常建、只是不显示 —— 不建的话 `_update_debug_status` /
         # `_load_settings` 全都会撞上 AttributeError。
         self._create_debug_section(layout)
-        self._debug_panel.setVisible(bool(getattr(config, "ui_expert_mode", False)))
+        self._debug_panel.setVisible(self._debug_surface_visible())
         self._create_theme_section(layout)
         self._create_system_integration_section(layout)
         self._create_osd_section(layout)
@@ -184,9 +184,14 @@ class AdvancedPage(QWidget):
             # 没有「保存」这个动作，而原来高亮的是低频的「备份设置」——
             # 全页最抢眼的位置指向玩家最不需要按的东西。备份仍在卡片里。
             self.action_bar.configure_primary("", None, visible=False)
+            # RN-138：这句里的「调试模式…」看不见调试卡片的用户就不该看到。
+            debug_part = (
+                f" · 调试模式{'已启用' if self.debug_mode else '未启用'}"
+                if self._debug_surface_visible() else ""
+            )
             action_message = (
-                f"当前目录已配置 · 主题 {self._current_theme_text()} · 调试模式"
-                f"{'已启用' if self.debug_mode else '未启用'}，建议大改前先备份设置。"
+                f"当前目录已配置 · 主题 {self._current_theme_text()}{debug_part}，"
+                "建议大改前先备份设置。"
             )
         else:
             self.action_bar.configure_primary("重试自动检测", self._try_auto_detect_cs2, visible=True)
@@ -215,14 +220,17 @@ class AdvancedPage(QWidget):
         else:
             source_badge = ("warning", "来源 · 待设置")
 
-        debug_badge = (
-            ("positive", "调试 · 已启用")
-            if self.debug_mode
-            else ("info", "调试 · 未启用")
-        )
         theme_badge = ("info", f"主题 · {self._current_theme_text()}")
 
-        badges = [dir_badge, source_badge, debug_badge, theme_badge]
+        badges = [dir_badge, source_badge]
+        # RN-138：调试徽章只在**这个用户看得见调试卡片**时才报。
+        # 普通模式下卡片已按 RN-133 收起来了，再挂一颗「调试 · 未启用」，
+        # 等于告诉他有个东西关着、却既不说那是什么、也没有任何地方能打开它。
+        if self._debug_surface_visible():
+            badges.append(
+                ("positive", "调试 · 已启用") if self.debug_mode
+                else ("info", "调试 · 未启用"))
+        badges.append(theme_badge)
 
         if dir_valid:
             if self._auto_detected:
@@ -390,6 +398,17 @@ class AdvancedPage(QWidget):
         config.save_config()
         self.logger.info(f"常用分组: {'开启' if checked else '关闭'}(重启生效)")
 
+    def _debug_surface_visible(self) -> bool:
+        """这个用户看不看得见「内部调试」那一块（RN-133 收进专家模式）。
+
+        ⭐ **单独抽出来，是因为指着这块内容的东西不止一处**：卡片本身、锚点条上
+        的「调试」chip、顶部状态徽章、底部那句操作提示 —— 四处。
+        RN-133 只藏了卡片，另外三处照旧，于是普通用户看到一颗点了没反应的锚点、
+        和两句在说一个他根本看不到的东西的状态文案（RN-138）。
+        ⇒ **一个"要不要露出来"的条件，凡是有第二处要问它，就得有名字。**
+        """
+        return bool(getattr(config, "ui_expert_mode", False))
+
     def _build_anchor_chips(self):
         """扫描页内 SettingsCard 标题,生成一行跳转 chips(点击滚动定位)。"""
         try:
@@ -403,6 +422,7 @@ class AdvancedPage(QWidget):
             cards = [
                 c for c in self.findChildren(SettingsCard)
                 if getattr(c, "title_label", None) is not None
+                and c.isVisibleTo(self)
             ]
             seen = set()
             for card in cards:
