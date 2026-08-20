@@ -2525,6 +2525,60 @@ REVERTS = [
         "而「一直跑」在界面上和「播得很流畅」长得一模一样，只有判据看得出来",
     ),
     Revert(
+        "RN", "样式应用器又把「我是一行」的提示改成折行",
+        "ui_style_applier.py",
+        "            if not widget.property(self.KEEP_WRAP_PROPERTY):\n"
+        "                widget.setWordWrap(True)",
+        "            widget.setWordWrap(True)",
+        "tests/test_single_line_hints_stay_single_line.py::"
+        "test_the_hint_is_still_one_line_after_the_page_is_fully_built",
+        "RN-121：`fix_text_display()` 在页面构造**之后**无条件给每个 QLabel 开换行，"
+        "把调用方的意图整个冲掉，而且**悄无声息**。代价：折行的 QLabel 在横排里会把"
+        "自己的宽度报小，crosshair 标题行那句提示只拿到 120px（需要 156px），"
+        "而同一行空着 928px ⇒ 断在「统 / 一」中间。"
+        "⭐ **折行往往不是「空间不够」的结果，是「我说我能折行」的结果** —— "
+        "所以它躲得过一切「有没有溢出/截断」的判据。"
+        "⚠ 同样的教训正上方 UP-018 已经写过一遍（那条修的是尺寸），隔壁分支没跟上",
+    ),
+    Revert(
+        "RN", "滚动区又只提示「上面还有」",
+        "ui_effects.py",
+        "    scroll_area._scroll_shadow_bottom = ScrollShadow(\n"
+        "        scroll_area, ScrollShadow.EDGE_BOTTOM)",
+        "    pass",
+        "tests/test_scroll_edge_indicator.py::"
+        "test_the_bottom_one_lights_up_before_the_user_scrolls",
+        "RN-120：原来只装顶部那一条，而且只在 `value > 0`（**用户已经滚过了**）之后才亮 —— "
+        "可玩家要知道的是「下面还有没有」，在他滚动**之前**。"
+        "外审 crosshair 6 发、advanced 3/3 票都在报「缺乏滚动提示」，而指示器一直装在那儿。"
+        "⭐ **一个装了却没人受益的提示，跟没装的区别只在于：它会让人以为已经装过了**",
+    ),
+    Revert(
+        "RN", "滚动渐隐带又不用背景色",
+        "ui_effects.py",
+        "        c = QColor(theme.colors.bg_primary) if theme is not None else QColor(0, 0, 0)",
+        "        c = QColor(0, 0, 0)",
+        "tests/test_scroll_edge_indicator.py::"
+        "test_the_mask_fades_into_the_background_in_every_theme",
+        "RN-120：渐变原先写死 `QColor(0,0,0,30)` —— 深色背景上叠黑色。"
+        "实算九套主题：深色五套合成后对比 **1.000~1.030**，"
+        "其中纯黑主题（`bg_primary=#000000`）是 **1.000 —— 一个像素都没变**。"
+        "现在渐隐带取 `bg_primary` 本身，让贴边的字**淡出**而不是被切断；"
+        "颜色要是不跟着主题走，深色主题上会出现一条浅色横带，**比不画更糟**。"
+        "⭐ 这条断点自己也腐烂过一次：我把做法从「画线」改成「渐隐」，"
+        "锚点那行代码就没了 —— **改了修法要顺手把断点也改到新的失效方式上**",
+    ),
+    Revert(
+        "RN", "滚动指示又错过「还没滚动」那一刻",
+        "ui_effects.py",
+        "            vbar.rangeChanged.connect(self._on_range_changed)",
+        "            pass",
+        "tests/test_scroll_edge_indicator.py::test_the_range_signal_is_connected",
+        "RN-120：只连 `valueChanged` 的话，页面刚建好时 value 恒为 0、"
+        "而 `maximum` 是布局排完才定的 ⇒ **「还没滚动、下面有内容」这个最要紧的时刻"
+        "根本不会触发任何一次更新**。而它失效时毫无声响：指示条只是一直灭着",
+    ),
+    Revert(
         "RN", "界面模式又能在测试文件之间漏过去",
         "tests/conftest.py",
         '    _want = {"csgo_dir": _cs2customizer_game_sandbox, "ui_expert_mode": False}',

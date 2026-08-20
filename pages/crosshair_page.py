@@ -14,6 +14,7 @@ from widgets.page_header import PageHeader
 from widgets.page_action_bar import PageActionBar
 import os
 import json
+from ui_style_applier import keep_single_line
 
 
 #: 样式的中文名——**这是本文件里唯一一份**。
@@ -272,6 +273,13 @@ class CrosshairPage(QWidget):
         )
         hint_label = QLabel("显示开关由基础设置统一控制")
         hint_label.setObjectName("hintLabel")
+        # RN-121：标题行右侧的一行提示，不许折行。
+        # 实测它只拿到 120px（需要 156px），于是断在「统 / 一」中间 ——
+        # 而同一行还空着 900 多 px。⭐ 折行的 QLabel 在横排里会自己把宽度报小，
+        # 布局就照那个窄宽给它：**折行往往不是"空间不够"，是"我说我能折行"。**
+        # ⚠ 只 `setWordWrap(False)` 是**没用的** —— `fix_text_display()` 会在页面
+        # 构造完之后把它无条件改回 True（运行时打桩逮到的）。必须走 keep_single_line。
+        keep_single_line(hint_label)
         header.add_title_action(hint_label)
 
         self.page_lead_label = header.description_label

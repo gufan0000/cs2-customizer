@@ -28,6 +28,8 @@ from PySide6.QtWidgets import (
     QFrame, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
 )
 
+from ui_style_applier import keep_single_line
+
 #: 缩略图画布尺寸。卡片宽度由它 + 边距决定。
 THUMB_BOX = (104, 66)
 
@@ -236,6 +238,12 @@ class KillIconStyleStrip(QWidget):
 
         self.empty_label = QLabel("还没有任何风格，点右边的「＋ 导入」装一套。")
         self.empty_label.setObjectName("hintLabel")
+        # RN-121：这是**横排里的一行提示**，不许折行。
+        # 折行的 QLabel 在 QHBoxLayout 里报的宽度很窄，布局就照那个窄宽给它 ——
+        # 实测这一条只拿到 232px（需要 256px），而同一排还空着 700 多 px。
+        # ⭐ 折行不是"空间不够"的结果，很多时候是**"我说我能折行"的结果**。
+        # ⚠ 走 keep_single_line：光 setWordWrap(False) 会被 fix_text_display 改回去。
+        keep_single_line(self.empty_label)
         self.empty_label.hide()
         self._layout.insertWidget(0, self.empty_label)
 

@@ -314,8 +314,21 @@ class StyleApplier:
                     widget.setMinimumHeight(min_height)
 
         elif isinstance(widget, QLabel):
-            # 确保标签有足够的空间
-            widget.setWordWrap(True)
+            # RN-121：**调用方明确说过"我不折行"的，不碰。**
+            #
+            # 这里原本无条件 `setWordWrap(True)`，把调用方的意图整个冲掉 ——
+            # 与正上方 UP-018 那条一模一样的错，只是那条修的是尺寸、这条是换行，
+            # 当时没顺手看一眼隔壁分支。
+            #
+            # 代价：折行的 QLabel 在**横排**布局里会把自己的宽度报小，布局就照那个
+            # 窄宽给它。实测 crosshair 标题行的提示只拿到 120px（需要 156px），
+            # 而同一行还空着 928px —— 于是断在「统 / 一」中间。
+            # ⭐ **折行往往不是"空间不够"的结果，是"我说我能折行"的结果**，
+            # 所以它躲得过一切"有没有溢出/有没有截断"的判据。
+            #
+            # opt-out 沿用本类既有的动态属性做法（见 KEEP_STYLE_PROPERTY）。
+            if not widget.property(self.KEEP_WRAP_PROPERTY):
+                widget.setWordWrap(True)
             widget.adjustSize()
 
         elif isinstance(widget, (QLineEdit, QComboBox)):
@@ -341,6 +354,9 @@ class StyleApplier:
     
     # UP-019: 带这个动态属性的控件，其内联样式不会被清掉。
     KEEP_STYLE_PROPERTY = "fp_keep_style"
+
+    # RN-121: 带这个动态属性的 QLabel，`fix_text_display` 不会替它开启换行。
+    KEEP_WRAP_PROPERTY = "fp_keep_wrap"
 
     def clear_all_styles(self, widget: QWidget, clear_root: bool = True):
         """
@@ -413,6 +429,24 @@ def apply_unified_styles(widget: QWidget):
     """
     applier = get_style_applier()
     applier.apply_complete_system(widget)
+
+
+def keep_single_line(label) -> "QLabel":
+    """标记「这个标签是一行，别替我开换行」（RN-121）。
+
+    `fix_text_display()` 会在页面构造完成后给每个 QLabel `setWordWrap(True)` ——
+    **调用方自己设的 False 会被它冲掉，而且悄无声息**。
+    代价见 `fix_text_display` 里那段说明：折行的标签在横排里会把宽度报小，
+    于是明明还空着 900 多 px，提示却断在词中间。
+
+    ⚠ 只调 `label.setWordWrap(False)` 是**没用的**，必须连这个标记一起给 ——
+    本函数两件一起做，省得下次又只做一半。
+
+    返回 label 本身，方便链式写法。
+    """
+    label.setProperty(StyleApplier.KEEP_WRAP_PROPERTY, True)
+    label.setWordWrap(False)
+    return label
 
 
 def keep_inline_style(widget: QWidget) -> QWidget:
