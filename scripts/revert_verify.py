@@ -2464,6 +2464,29 @@ REVERTS = [
         "**「抢最后一位」这个策略也被共用了**没认",
     ),
     Revert(
+        "RN", "准心页又把参数排到样式前面",
+        "pages/crosshair_page.py",
+        "        controls_column_layout.addWidget(style_color_grid)\n"
+        "        controls_column_layout.addWidget(size_thickness_card)",
+        "        controls_column_layout.addWidget(size_thickness_card)\n"
+        "        controls_column_layout.addWidget(style_color_grid)",
+        "tests/test_crosshair_page_layout_and_preview.py::"
+        "test_style_and_color_come_before_the_numeric_parameters",
+        "RN-115：这一页最核心的选择「准心样式」原本在首屏之外（完整档视口 546px、"
+        "样式卡从 y=630 起），玩家进来只看得到滑块。外审两档 10 发都指着这块，"
+        "但措辞全是「被截断/被遮挡」—— ⭐ 拿它的位置当线索，别拿它的机制当结论",
+    ),
+    Revert(
+        "RN", "预览示意又变成常驻定时器",
+        "pages/crosshair_page.py",
+        "        if self._burst_elapsed_ms >= self.PREVIEW_BURST_MS:",
+        "        if False:",
+        "tests/test_crosshair_page_layout_and_preview.py::"
+        "test_the_burst_stops_by_itself_when_time_is_up",
+        "RN-116：用户裁定明确否决了常驻定时器（只要 1.5 秒示意）。少了这个出口它就一直跑，"
+        "而「一直跑」在界面上和「播得很流畅」长得一模一样，只有判据看得出来",
+    ),
+    Revert(
         "RN", "死方法扫描的语料又缩回「只看本文件」",
         "tests/test_no_dead_private_methods_in_pages.py",
         "            related = descendants(cls.name) | ancestors(cls.name)",

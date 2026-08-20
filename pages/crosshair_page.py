@@ -3,7 +3,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                                QSlider, QRadioButton, QComboBox, QPushButton,
                                QFrame, QScrollArea, QButtonGroup, QDialog,
                                QMessageBox, QFileDialog, QSizePolicy, QCheckBox)
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QMouseEvent
 from config import config, get_app_data_dir
 from core.utils.logger import get_logger
@@ -208,7 +208,11 @@ class CrosshairEditorDialog(QDialog):
 
 class CrosshairPage(QWidget):
     """准心设置页面"""
-    
+
+    #: RN-116：换动画之后预览示意多久（毫秒）。**有限**是这条设计的全部要害——
+    #: 用户裁定里明确否决了"常驻定时器"那个方案。
+    PREVIEW_BURST_MS = 1500
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.logger = get_logger("CrosshairPage")
@@ -221,7 +225,18 @@ class CrosshairPage(QWidget):
         self.grid_cells = 30
         self.cell_size = self.canvas_size / self.grid_cells
         self.active_cells = set()
-        
+
+        # RN-116（用户裁定 2026-08-19：**要示意，但不要常驻定时器**）：
+        # 换动画/击杀联动时把预览播一小段再停回静止。预览本来按相位 0 出图，
+        # 也就是各动画的**静止形态** —— 换句话说改了动画预览一个像素都不变，
+        # 玩家只能盲选。
+        # ⚠ 定时器只在这一小段里活着：`_stop_preview_burst` 与 `hideEvent` 各有一条出口。
+        self.preview_burst_timer = QTimer(self)
+        self.preview_burst_timer.setInterval(50)          # 20fps 够看清动效了
+        self.preview_burst_timer.timeout.connect(self._tick_preview_burst)
+        self._burst_elapsed_ms = 0
+        self._burst_animator = None
+
         self._init_ui()
         self.load_settings()
 
@@ -283,18 +298,29 @@ class CrosshairPage(QWidget):
         # v5 Phase 7: 重新分配空间.原 280-340px 限制让预览太瘦,改为 Expanding 让 4:5 stretch.
         preview_card.setMinimumWidth(360)
         preview_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
-        size_thickness_card = self._create_size_thickness_card()
-        size_thickness_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+        # ⚠ **创建顺序 = Tab 焦点顺序**，所以它必须跟着版面顺序走。
+        # RN-115 把「样式/颜色」提到「大小与粗细」前面之后，这里如果还按老顺序建，
+        # 焦点就会先跳到下面的滑块再跳回上面的单选钮 ——
+        # `tests/test_tab_order_model_r8d.py` 当场逮住（要 3 步才能排成阅读顺序）。
+        # ⇒ 改版面时**同时**问一句：键盘走一遍还是这个顺序吗？
         style_card = self._create_style_card()
         color_card = self._create_color_card()
-        style_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
-        color_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+        animation_card = self._create_animation_card()
+        kill_effect_card = self._create_kill_effect_card()
+        size_thickness_card = self._create_size_thickness_card()
+        for _card in (style_card, color_card, animation_card,
+                      kill_effect_card, size_thickness_card):
+            _card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
 
         controls_column = QWidget()
+        # ⚠ 这个 objectName 不是样式钩子，是给**焦点巡检**用的：
+        # Tab 是一列一列走的，而审计默认把并排两列的卡片按 y 交错成"阅读序"，
+        # 于是本页被判"焦点错位 3 处"（RN-122）。标出"我是一列"之后，
+        # 审计按它自己写着的原则「读完左列再读右列」分组，与键盘实际行为一致。
+        controls_column.setObjectName("layoutColumn")
         controls_column_layout = QVBoxLayout(controls_column)
         controls_column_layout.setContentsMargins(0, 0, 0, 0)
         controls_column_layout.setSpacing(12)
-        controls_column_layout.addWidget(size_thickness_card)
 
         # UP-067(R5): 原本是写死的两列 QHBoxLayout。QHBoxLayout 的最小宽度是
         # 两张卡最小宽之和,于是"样式+颜色"这一行把 controls_column 顶到 600px,
@@ -306,24 +332,34 @@ class CrosshairPage(QWidget):
         style_color_grid = ResponsiveGrid(breakpoints=[(560, 2), (0, 1)], spacing=12)
         style_color_grid.addItem(style_card)
         style_color_grid.addItem(color_card)
+
+        # RN-115（用户裁定 2026-08-19）：**先让人选准心，再让人调参数。**
+        # 原顺序是「大小与粗细」在前、「样式/颜色」在后，于是这一页最核心的选择
+        # 落在首屏之外（完整档视口 546px，样式卡从 y=630 起；紧凑档视口只有 386px）。
+        # 外审两档 10 发都指着这块，措辞是"被截断/被遮挡"——实测机制是**可滚的首屏之外**。
         controls_column_layout.addWidget(style_color_grid)
+        controls_column_layout.addWidget(size_thickness_card)
         controls_column_layout.addStretch(1)
 
+        # RN-114：预览卡只有 239px 高，而右边这一列 570px —— 差出来的部分在完整档里
+        # 就是左半列一块 455×203、什么都没有的方块。把两张效果卡挪进左列填上。
+        preview_column = QWidget()
+        preview_column.setObjectName("layoutColumn")     # 同上（RN-122）
+        preview_column_layout = QVBoxLayout(preview_column)
+        preview_column_layout.setContentsMargins(0, 0, 0, 0)
+        preview_column_layout.setSpacing(12)
+        preview_column_layout.addWidget(preview_card)
+        preview_column_layout.addWidget(animation_card)
+        preview_column_layout.addWidget(kill_effect_card)
+        preview_column_layout.addStretch(1)
+        self.preview_column = preview_column
+
         # v5 Phase 7: 4:5 stretch 让预览和控件区接近 50/50
-        top_tools_row.addWidget(preview_card, 4, Qt.AlignTop)
+        top_tools_row.addWidget(preview_column, 4, Qt.AlignTop)
         top_tools_row.addWidget(controls_column, 5)
         scroll_layout.addLayout(top_tools_row)
 
-        effect_row = QHBoxLayout()
-        effect_row.setSpacing(12)
-        animation_card = self._create_animation_card()
-        kill_effect_card = self._create_kill_effect_card()
-        animation_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
-        kill_effect_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
-        effect_row.addWidget(animation_card, 1)
-        effect_row.addWidget(kill_effect_card, 1)
-        scroll_layout.addLayout(effect_row)
-        
+
         # 自定义准心操作卡片
         custom_card = self._create_custom_card()
         custom_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
@@ -337,6 +373,7 @@ class CrosshairPage(QWidget):
         self.action_bar.secondary_btn.setMinimumWidth(116)
         self.action_bar.primary_btn.setMinimumWidth(132)
         main_layout.addWidget(self.action_bar, 0)
+
 
     def _format_style_text(self, style_value):
         return CROSSHAIR_STYLE_LABELS.get(
@@ -957,14 +994,24 @@ class CrosshairPage(QWidget):
         draw_btn.clicked.connect(self._open_custom_editor)
         btn_layout.addWidget(draw_btn)
 
-        import_export_hint = QLabel("导入 / 导出在页面底部操作栏。")
-        import_export_hint.setObjectName("hintLabel")
-        btn_layout.addWidget(import_export_hint)
-
         btn_layout.addStretch()
         layout.addLayout(btn_layout)
 
+        # RN-119（用户裁定 2026-08-19）：说清楚导入到底收什么。
+        # 玩家手里的准心几乎都是 CS2 官方分享码（CSGO-xxxxx-…），而这里只认
+        # 本软件导出的 json —— 不写明就是"点了才发现不支持"。
+        # ⚠ 措辞不许承诺没做的事：分享码解码没实现，就写"暂不支持"，
+        #   判据 test_the_copy_does_not_promise_share_code_support 盯着这件事。
+        self.custom_hint_label = QLabel(
+            "导入 / 导出在页面底部操作栏，只认本软件导出的 .json；"
+            "CS2 官方分享码（CSGO-…）暂不支持。"
+        )
+        self.custom_hint_label.setObjectName("hintLabel")
+        self.custom_hint_label.setWordWrap(True)
+        layout.addWidget(self.custom_hint_label)
+
         return card
+
     def _on_size_changed(self, value):
         """准心大小改变"""
         self.size_value_label.setText(str(value))
@@ -1060,6 +1107,7 @@ class CrosshairPage(QWidget):
         config.save_config()
         self._update_crosshair_system()
         self._sync_overview_status()
+        self._start_preview_burst()      # RN-116：让玩家在选之前看见它长什么样
         self.logger.info(f"准心动画更新: {animation_text} -> {animation_value}")
     
     def _on_kill_effect_changed(self):
@@ -1070,6 +1118,7 @@ class CrosshairPage(QWidget):
         config.save_config()
         self._update_crosshair_system()
         self._sync_overview_status()
+        self._start_preview_burst()      # RN-116：同上
         self.logger.info(f"击杀联动更新: {effect_text} -> {effect_value}")
     
     def _test_kill_effect(self):
@@ -1119,6 +1168,44 @@ class CrosshairPage(QWidget):
         }
         return effect_map.get(effect_text, "none")
     
+    # ------------------------------------------------------------ RN-116 示意播放
+    def _start_preview_burst(self):
+        """换了动画/联动之后，把预览播 `PREVIEW_BURST_MS` 毫秒再停回静止。"""
+        try:
+            from crosshair_overlay import CrosshairAnimator
+        except Exception:
+            self.logger.exception("预览示意启动失败（不影响设置本身）")
+            return
+        self._burst_animator = CrosshairAnimator()
+        self._burst_elapsed_ms = 0
+        if not self.preview_burst_timer.isActive():
+            self.preview_burst_timer.start()
+        self._update_preview()
+
+    def _tick_preview_burst(self):
+        self._burst_elapsed_ms += self.preview_burst_timer.interval()
+        if self._burst_elapsed_ms >= self.PREVIEW_BURST_MS:
+            self._stop_preview_burst()
+            return
+        self._update_preview()
+
+    def _stop_preview_burst(self):
+        """示意结束：停表、回到静止形态。
+
+        ⚠ 这个方法有两个调用点（到点、离开页面），**两个都不能省**：
+        少了前者它就成了常驻定时器，少了后者它就成了"藏起来的常驻定时器"。
+        """
+        if self.preview_burst_timer.isActive():
+            self.preview_burst_timer.stop()
+        self._burst_animator = None
+        self._burst_elapsed_ms = 0
+        self._update_preview()
+
+    def hideEvent(self, event):
+        """页面被切走时停掉示意 —— 看不见的动画只是在烧 CPU。"""
+        self._stop_preview_burst()
+        super().hideEvent(event)
+
     def _update_preview(self):
         """更新准心预览——**直接调渲染层，不再自己画一遍**。
 
@@ -1159,7 +1246,12 @@ class CrosshairPage(QWidget):
                 alpha=max(0, min(255, int(getattr(config, "crosshair_alpha", 255) or 255))),
             )
             # now=0.0 且动画器是全新的 → 相位 0 = 各动画的静止形态，结果确定
-            frame = CrosshairAnimator().advance(state, 0.0)
+            # RN-116：示意播放期间沿用**同一个** animator 并推进相位，
+            # 这样看到的就是动画本身，而不是它的静止形态。
+            if self.preview_burst_timer.isActive() and self._burst_animator is not None:
+                frame = self._burst_animator.advance(state, self._burst_elapsed_ms / 1000.0)
+            else:
+                frame = CrosshairAnimator().advance(state, 0.0)
 
             # UP-033: 按设备像素比出图。frame 的坐标是**物理像素**，所以画布就按
             # CANVAS_PX 个物理像素建，再把 dpr 标回图上让 Qt 缩到对应的逻辑尺寸——

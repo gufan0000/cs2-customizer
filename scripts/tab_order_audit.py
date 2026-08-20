@@ -173,7 +173,13 @@ def _restore(previous):
 
 
 #: 「块」= 读的时候会被当成一个整体、读完再读下一个的东西。
-BLOCK_NAMES = {"card", "settingsCard", "pageActionBar"}
+#: ⚠ `layoutColumn` 不是一种卡片，是**并排的列容器**（RN-122，2026-08-19）。
+#: 本模块的定论一直是「读完左列再读中列再读右列」，UP-101 也已经为**裸布局**做的列
+#: 加过这条分组。但列如果是一个**控件**（`QWidget` + `QVBoxLayout`），
+#: `_outermost_block_under` 只会认到里面那张卡，两列的卡片于是被按 y 交错成"阅读序"，
+#: 而键盘实际是一列走到底 —— 判出来的"错位"是假的。
+#: ⇒ 列容器自己也要算一个块。产品侧给这种容器起这个 objectName（无样式含义）。
+BLOCK_NAMES = {"card", "settingsCard", "pageActionBar", "layoutColumn"}
 BLOCK_TYPES = {"SettingsCard", "PageActionBar", "QScrollArea", "QTabWidget"}
 
 
