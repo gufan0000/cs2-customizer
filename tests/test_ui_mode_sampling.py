@@ -221,14 +221,31 @@ def _baseline_module():
     return mod
 
 
+#: **同一种模式下复跑就会变**的页 —— 它们的差异跟界面模式无关，不能算数。
+#: 每条都要写清"为什么它不稳"，否则这张名单会变成一个方便的垃圾桶。
+NONDETERMINISTIC_PAGES = {
+    "audio_health": "页面内容来自一次**异步音频体检扫描**；扫描完成得比快照早还是晚，"
+                    "决定了它显示的是「扫描中」还是结果列表。本机测不出来（这里扫得快），"
+                    "CI 上稳定复现（2026-08-20 实测 18 条差异）。",
+}
+
+
 @pytest.fixture(scope="module")
 def _both_modes():
+    """取三份：普通 ×2 + 专家 ×1。
+
+    ⭐ **第三份是噪声地板。** 第一版只取两份，默认"两份不一样 = 模式造成的" ——
+    结果 CI 当场红在 `audio_health` 上（本机 0 条、CI 18 条），
+    而那一页压根不看界面模式，只是它的内容来自一次异步扫描。
+    ⇒ **拿两个样本比出来的差异，先得知道同一个条件下复跑本身能差多少。**
+    """
     sys.path.insert(0, str(SCRIPTS))
     rb = _baseline_module()
     normal = rb._structure_via_subprocess(["all"], expert=False)
+    normal_again = rb._structure_via_subprocess(["all"], expert=False)
     expert = rb._structure_via_subprocess(["all"], expert=True)
     assert normal and expert, "两种模式都得取到东西，否则下面两条判据全是空转"
-    return normal, expert
+    return normal, normal_again, expert
 
 
 def _pages_that_differ(normal, expert):
@@ -243,12 +260,36 @@ def _pages_that_differ(normal, expert):
     return out
 
 
+def test_noise_is_confined_to_the_pages_that_declared_it(_both_modes):
+    """先钉噪声地板：**同一种模式复跑就会变的页，只许是申报过的那几个。**
+
+    这条排在前面不是顺序问题 —— 下面那条判据的全部有效性都建立在
+    "同条件复跑不会变"上。噪声一旦扩散，它就会开始把噪声报成模式差异，
+    或者反过来被噪声盖住真差异。
+    """
+    normal, normal_again, _expert = _both_modes
+    noisy = _pages_that_differ(normal, normal_again)
+    undeclared = {p: len(d) for p, d in noisy.items()
+                  if p not in NONDETERMINISTIC_PAGES}
+    assert not undeclared, (
+        f"这些页**同一种模式下复跑就变了**，却没申报：{undeclared}\n"
+        "在弄清楚它们为什么不稳之前，下面那条「随模式变」的判据对它们无效。\n"
+        "要么把不确定性修掉，要么写进 NONDETERMINISTIC_PAGES 并说清原因。")
+
+
 def test_only_declared_pages_look_different_in_expert_mode(_both_modes):
-    """③ 两种模式下只有申报过的页长得不一样。"""
-    normal, expert = _both_modes
+    """③ 两种模式下只有申报过的页长得不一样（**已扣掉噪声**）。"""
+    normal, normal_again, expert = _both_modes
+    noisy = set(_pages_that_differ(normal, normal_again))
     differ = _pages_that_differ(normal, expert)
+    # 两处都要减：
+    #   · `noisy` 抓的是**这一次跑出来的**不稳（能发现新冒出来的）；
+    #   · `NONDETERMINISTIC_PAGES` 是**无条件**排除 —— 不稳的东西两次抽样可能
+    #     碰巧一致，那时 `noisy` 是空的，光靠它会漏。
     undeclared = {p: len(d) for p, d in differ.items()
-                  if p not in MODE_SENSITIVE_PAGES}
+                  if p not in MODE_SENSITIVE_PAGES
+                  and p not in noisy
+                  and p not in NONDETERMINISTIC_PAGES}
     assert not undeclared, (
         f"这些页在两种界面模式下长得不一样，却没申报：{undeclared}\n"
         "基线只锁了普通模式那一份 —— 没申报就意味着这一页的专家视图**没有任何人看着**。\n"
@@ -262,7 +303,7 @@ def test_the_probe_can_actually_tell_the_two_modes_apart(_both_modes):
     子进程悄悄两趟都跑成同一个模式，差异集永远是空，它照样通过。
     所以这里正面钉住：申报过的那两页**必须真的看得出差别**。
     """
-    normal, expert = _both_modes
+    normal, _normal_again, expert = _both_modes
     differ = _pages_that_differ(normal, expert)
     blind = sorted(set(MODE_SENSITIVE_PAGES) - set(differ))
     assert not blind, (
