@@ -2525,6 +2525,21 @@ REVERTS = [
         "而「一直跑」在界面上和「播得很流畅」长得一模一样，只有判据看得出来",
     ),
     Revert(
+        "RN", "界面模式又能在测试文件之间漏过去",
+        "tests/conftest.py",
+        '    _want = {"csgo_dir": _cs2customizer_game_sandbox, "ui_expert_mode": False}',
+        '    _want = {"csgo_dir": _cs2customizer_game_sandbox}',
+        "tests/test_test_config_does_not_leak_between_files.py::"
+        "test_a_polluted_seed_does_not_change_what_the_next_process_sees",
+        "RN-142：测试的配置目录是**固定路径、跨文件跨轮次累积**的，而 run_tests 逐文件"
+        "起独立进程 —— 前一个文件把 `ui_expert_mode=True` 存了盘，后一个文件就接着用。"
+        "实测代价：`test_advanced_page_ui_polish`（字母序靠前）看到初始值，CI 当场红；"
+        "`test_ui_visual_r1_fixes`（字母序靠后）的空转守卫要求 ≥20 项导航，"
+        "**一直靠前面那些文件的污染才绿**。"
+        "⭐ **一条不钉前置状态的判据，绿不绿取决于同一次运行里前面跑过谁** —— "
+        "这比「本机绿 CI 红」更难查：同一台机器上单跑绿、全量红，或者反过来",
+    ),
+    Revert(
         "RN", "锚点条又给藏起来的卡片留一颗点不动的 chip",
         "pages/advanced_page.py",
         "                and c.isVisibleTo(self)",

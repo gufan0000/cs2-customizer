@@ -111,6 +111,10 @@ def test_advanced_page_action_bar_tracks_directory_state(qapp, monkeypatch, tmp_
     (valid_dir / "game" / "csgo" / "cfg").mkdir(parents=True, exist_ok=True)
 
     monkeypatch.setattr(advanced_page_module, "find_cfg_path", lambda: "")
+    # RN-141：调试徽章按界面模式显示（RN-138）。这条判据断言 4 颗，
+    # 就必须自己把模式钉住 —— 否则它绿不绿取决于**同一次运行里前面跑过谁**
+    # （共享配置目录跨文件累积，好几支测试会把专家模式存盘）。
+    monkeypatch.setattr(config, "ui_expert_mode", True, raising=False)
     monkeypatch.setattr(config, "save_config", lambda: None, raising=False)
     monkeypatch.setattr(config, "csgo_dir", "", raising=False)
     monkeypatch.setattr(config, "ui_theme", "dark", raising=False)

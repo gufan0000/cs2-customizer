@@ -45,8 +45,18 @@ try:
     if os.path.exists(_cs2customizer_test_cfg_file):
         with open(_cs2customizer_test_cfg_file, encoding="utf-8") as _fp:
             _seed = _json.load(_fp)
-    if _seed.get("csgo_dir") != _cs2customizer_game_sandbox:
-        _seed["csgo_dir"] = _cs2customizer_game_sandbox
+    # RN-141：**界面模式也要按死在产品默认上。**
+    # 上面这个配置目录是**固定路径、跨轮次累积**的（为了 csgo_dir 可复现）。
+    # 代价是本机跑久了它会攒下一堆设置，而 CI 每次都是全新配置 ——
+    # 于是「不钉前置状态的判据」在两边给出不同结论：
+    # `test_advanced_page_ui_polish` 断言 4 颗状态徽章，本机（攒成专家模式）绿、
+    # CI（普通模式，RN-138 之后只剩 3 颗）当场红，而红的原因跟被判的改动无关。
+    #
+    # ⭐ 判据的前置状态要么它自己钉，要么这里统一钉死；**不许"看命"**。
+    # 需要专家模式的判据自己 monkeypatch 打开（本仓已有数条这么写）。
+    _want = {"csgo_dir": _cs2customizer_game_sandbox, "ui_expert_mode": False}
+    if any(_seed.get(k) != v for k, v in _want.items()):
+        _seed.update(_want)
         with open(_cs2customizer_test_cfg_file, "w", encoding="utf-8") as _fp:
             _json.dump(_seed, _fp, ensure_ascii=False, indent=1)
 except Exception:

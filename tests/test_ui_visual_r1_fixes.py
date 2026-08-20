@@ -555,6 +555,14 @@ def test_sidebar_scrolls_the_active_nav_item_into_view(app):
     from PySide6.QtCore import QPoint
 
     _need_real_fonts(app)
+    # RN-142：**这条判据一直隐含要求专家模式，只是从没说出来。**
+    # 下面那个空转守卫写的是「28 页 − 6 设备页 = 22」，而普通模式下导航只有 22 项，
+    # 减掉设备页只剩 16 —— 它以前之所以绿，是因为同一次运行里**排在前面的某支测试
+    # 把专家模式存进了共享配置目录**（那个目录跨文件累积）。
+    # ⭐ 于是这条判据绿不绿，取决于测试文件的**字母顺序**。现在自己钉住。
+    from config import config as _cfg
+    _saved_expert = getattr(_cfg, "ui_expert_mode", False)
+    _cfg.ui_expert_mode = True
     win = _shown_window(app)
     try:
         viewport = win._sidebar_scroll.viewport()
@@ -597,6 +605,8 @@ def test_sidebar_scrolls_the_active_nav_item_into_view(app):
         assert not out_of_view, (
             f"切到这些页面后，它们的导航项仍在侧栏可视区外: {', '.join(out_of_view)}")
     finally:
+        # 自己改了全局就自己还原 —— 不还原正是 RN-142 那个病本身。
+        _cfg.ui_expert_mode = _saved_expert
         win.close()
         win.deleteLater()
         app.processEvents()
