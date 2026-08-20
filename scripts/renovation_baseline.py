@@ -230,6 +230,18 @@ def capture(pages: list[str], accept: bool) -> int:
             json.dumps(items, ensure_ascii=False, indent=1), encoding="utf-8")
         print(f"   {pid:<18} {len(items):>4} 个控件")
 
+    # RN-140：把「这份几何是在什么环境下量出来的」一并入库。
+    # 指纹的 pos/size 由文字排出来，换台机器就不可比 —— 判据靠这份签名
+    # 判断"该不该拿这份基线来判"，而不是靠"有没有字体"这种看起来正常就放行的条件。
+    code, out = _run(["scripts/page_fingerprint.py", "--emit-env"])
+    from page_fingerprint import ENV_MARKER  # noqa: E402  取标记的唯一真相源
+    if code == 0 and ENV_MARKER in out:
+        (BASELINE_DIR / "_env.json").write_text(
+            out.split(ENV_MARKER, 1)[1].strip() + "\n", encoding="utf-8")
+        print(f"   环境签名: {out.split(ENV_MARKER, 1)[1].strip()}")
+    else:
+        print(f"   !! 环境签名没取到（退出码 {code}）—— 指纹判据会一直 skip，记进档案")
+
     print("③ 两档像素（本机，不进 CI）")
     shots = BASELINE_DIR / "_shots"
     for compact in (False, True):

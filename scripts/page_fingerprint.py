@@ -212,8 +212,42 @@ def _diff_page(pid: str, old: list, new: list) -> list[str]:
     return out
 
 
+ENV_MARKER = "===FINGERPRINT-ENV==="
+
+
+def env_signature() -> dict:
+    """**这份指纹是在什么环境下量出来的** —— 几何可不可比，只看这一样（RN-140）。
+
+    指纹里的 `pos` / `size` 是文字排出来的，换台机器字体不同、缩放不同，数就不同。
+    所以"能不能拿这份基线来判"这个问题，问的**不是"有没有字体"，是"是不是同一套字体"**。
+
+    ⚠ 这条是 CI 逼出来的：RN-136 的判据原先写「字体库为空就 skip」，
+    而 GitHub 的 windows runner **字体多得很** —— 于是它没 skip，
+    拿 runner 的字体去比我这台机器采的几何，当场红，
+    而红的原因跟被判的那次改动毫无关系。
+    ⭐ 一条判据的 skip 条件要描述的是**"样本可不可比"**，
+    不是"环境看起来正不正常"。
+    """
+    import hashlib
+
+    from PySide6.QtGui import QFontDatabase, QGuiApplication
+
+    fams = sorted(QFontDatabase.families())
+    app = QGuiApplication.instance()
+    screen = app.primaryScreen() if app is not None else None
+    return {
+        "font_count": len(fams),
+        "font_hash": hashlib.sha1(
+            "|".join(fams).encode("utf-8")).hexdigest()[:16],
+        "dpi": round(screen.logicalDotsPerInch(), 2) if screen else None,
+        "dpr": round(screen.devicePixelRatio(), 4) if screen else None,
+    }
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="页面结构指纹")
+    ap.add_argument("--emit-env", action="store_true",
+                    help="只吐出环境签名（字体集 / DPI / 缩放），供判据判断可比性")
     ap.add_argument("--save")
     ap.add_argument("--compare")
     ap.add_argument("--pages", default="sound",
@@ -223,6 +257,13 @@ def main() -> int:
     import _ui_mode
     _ui_mode.add_expert_argument(ap)
     args = ap.parse_args()
+
+    if args.emit_env:
+        from PySide6.QtWidgets import QApplication
+        QApplication.instance() or QApplication([])
+        print(ENV_MARKER)
+        print(json.dumps(env_signature(), ensure_ascii=False))
+        return 0
 
     data = build(args.pages, expert=args.expert)
     for pid, items in data.items():

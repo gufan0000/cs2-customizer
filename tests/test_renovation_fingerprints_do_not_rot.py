@@ -32,8 +32,16 @@
 所以它只在**有真实字体的本机**跑；`build_tools/run_tests.py` 是推送前的门禁，
 它跑得到，这就够了。
 
-⚠ 字体库为空时本判据 **skip**。skip 是有代价的（跳过就等于没判），
-所以下面第二条判据正面钉住"skip 只能因为没字体"，不许因为别的原因静默跳过。
+⚠ 本判据只在**采基线的那台机器**上跑，别处 skip。
+
+⭐⭐ 第一版的 skip 条件写的是「字体库为空就跳过」，**当天就被 CI 打脸**：
+GitHub 的 windows runner **字体多得很**，于是它没 skip，
+拿 runner 的字体去比我这台机器采的几何 —— 当场红，
+而红的原因跟被判的那次改动毫无关系（RN-140）。
+
+⇒ skip 条件要描述的是**「样本可不可比」**，不是「环境看起来正不正常」。
+现在采基线时一并存下环境签名（字体集哈希 / DPI / 缩放，见 `_env.json`），
+判据先比签名：**不是同一套环境就 skip，是同一套就必须判。**
 """
 from __future__ import annotations
 
@@ -101,15 +109,49 @@ def _capture_now(pages: list[str], tmp_path: Path):
     return json.loads(out.read_text(encoding="utf-8")), proc
 
 
+ENV_FILE = BASELINE_DIR / "_env.json"
+
+
+def _env_now(tmp_path) -> dict | None:
+    """当下这台机器的环境签名。取不到就返回 None。"""
+    # 标记只能抄字面量：那支脚本**模块级就有副作用**（pop 掉 QT_QPA_PLATFORM
+    # 去拿真实字体），真 import 会把判据进程的离屏掀掉，窗口弹到用户脸上。
+    # 抄了就得钉住，否则它改个名，本判据会**一直 skip 而不报错**。
+    marker = "===FINGERPRINT-ENV==="
+    src = (SCRIPTS / "page_fingerprint.py").read_text(encoding="utf-8")
+    assert f'ENV_MARKER = "{marker}"' in src, (
+        "`page_fingerprint.ENV_MARKER` 的字面量变了，本判据取不到签名会一直 skip —— "
+        "两边要一起改。")
+
+    env = dict(os.environ)
+    for var in ("CS2C_CONFIG_DIR", "CS2C_LOG_DIR"):
+        env.pop(var, None)
+    proc = subprocess.run([sys.executable, "scripts/page_fingerprint.py", "--emit-env"],
+                   cwd=REPO, capture_output=True, text=True, env=env,
+                   encoding="utf-8", errors="replace", timeout=300)
+    blob = (proc.stdout or "") + (proc.stderr or "")
+    if proc.returncode != _OK or marker not in blob:
+        return None
+    return json.loads(blob.split(marker, 1)[1].strip().splitlines()[0])
+
+
 def test_archived_pages_still_match_their_fingerprint(tmp_path):
     """已关档页的完整指纹不许悄悄漂。"""
     pages = _pages_with_fingerprint()
     if not pages:
         pytest.skip("翻新工程尚未取任何指纹基线")
 
+    if not ENV_FILE.exists():
+        pytest.skip(f"基线里没有环境签名（{ENV_FILE.name}），重取一次基线就有了")
+    want = json.loads(ENV_FILE.read_text(encoding="utf-8"))
+    got = _env_now(tmp_path)
+    if got != want:
+        # ⚠ 这不是"环境坏了"，是"这台机器量出来的几何跟基线不可比"。
+        pytest.skip(f"不是采基线的那台机器，几何不可比：基线 {want} / 本机 {got}")
+
     now, proc = _capture_now(pages, tmp_path)
     if now is None:
-        pytest.skip("字体库为空（多半是 CI），几何不可信 —— 指纹这条腿只在本机判")
+        pytest.skip("字体库为空 —— 几何不可信")
 
     from _page_structure import diff
 
@@ -136,8 +178,8 @@ def test_archived_pages_still_match_their_fingerprint(tmp_path):
         "就是逼着「已关档的页被碰歪了」这件事当场说出来。")
 
 
-def test_the_only_reason_to_skip_is_missing_fonts(tmp_path):
-    """skip 只准因为没字体 —— 反面守卫。
+def test_the_skip_switch_itself_still_works(tmp_path):
+    """skip 只准因为"不是这台机器" —— 反面守卫。
 
     ⭐ 上一条是「没有坏消息就算过」的判据，而它还带一个 skip 分支。
     这种判据最省事的死法不是变红，是**永远 skip**：
@@ -152,6 +194,10 @@ def test_the_only_reason_to_skip_is_missing_fonts(tmp_path):
     assert _pages_with_fingerprint(), (
         "基线目录在，里面却一页指纹都没有 —— 上一条判据会直接 skip，"
         "等于翻新工程少了一条腿而没人知道。")
+
+    assert ENV_FILE.exists(), (
+        f"基线目录在，却没有 {ENV_FILE.name} —— 上一条判据会永远 skip。"
+        "重跑一次 `renovation_baseline.py --capture <页> --accept` 就会补上。")
 
     src = (SCRIPTS / "page_fingerprint.py").read_text(encoding="utf-8")
     assert "raise SystemExit(2)" in src, (

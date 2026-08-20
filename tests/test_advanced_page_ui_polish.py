@@ -47,6 +47,12 @@ def test_advanced_page_overview_badges_sync(qapp, tmp_path, monkeypatch):
     monkeypatch.setattr(config, "csgo_dir", str(cs2_root), raising=False)
     monkeypatch.setattr(config, "debug_mode", False, raising=False)
     monkeypatch.setattr(config, "ui_theme", "dark", raising=False)
+    # RN-138：调试徽章现在只在**看得见调试卡片**时才挂（专家模式）。
+    # ⚠ 这一行不是可有可无的：原先本条判据不钉界面模式，于是它读的是
+    # **conftest 那个跨文件跨轮次累积的配置目录**里恰好留下的值 ——
+    # 本机（累积成专家模式）4 颗徽章绿，CI（全新配置）3 颗当场红。
+    # ⭐ **一条不钉前置状态的判据，绿不绿取决于前面跑过谁。**
+    monkeypatch.setattr(config, "ui_expert_mode", True, raising=False)
     monkeypatch.setattr(config, "save_config", lambda: None, raising=False)
     monkeypatch.setattr(advanced_page_module, "find_cfg_path", lambda: None)
 
