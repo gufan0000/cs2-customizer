@@ -71,12 +71,45 @@ class HudColorPage(QWidget):
         self._load_settings()
         self.logger.info("HUD 统一规则页面初始化完成")
 
-    def _create_color_combo(self):
+    @staticmethod
+    def _color_swatch(hex_color: str):
+        """一枚 16×16 的色块图标。
+
+        RN-127：色号对应的十六进制**本来就在** `HUD_COLORS` 里，
+        只是从来没画出来 —— 一个挑颜色的下拉框只写「默认 (0)」这种代号，
+        玩家没法预判游戏里会是什么颜色（外审两档 4 发都在说这件事）。
+        """
+        from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
+
+        pm = QPixmap(16, 16)
+        pm.fill(Qt.transparent)
+        painter = QPainter(pm)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setBrush(QColor(hex_color))
+        painter.setPen(QColor(0, 0, 0, 90))
+        painter.drawRoundedRect(0, 0, 15, 15, 3, 3)
+        painter.end()
+        return QIcon(pm)
+
+    def _create_color_combo(self, allow_disabled=False):
+        """颜色下拉。
+
+        RN-128（用户裁定 2026-08-20）：**开关只有一个。** 数字键那一组原来
+        既有复选框、又在下拉里放一个「不启用」——两套开关重叠，玩家不知道点哪个，
+        而两者不一致时的行为从来没人定义过。现在下拉只管颜色，开关只管开关；
+        未勾选时把下拉置灰（否则"改了也不生效"没有任何提示）。
+        """
         combo = QComboBox()
         combo.setFixedWidth(130)
         combo.setFixedHeight(32)
         for name, value in COLOR_OPTIONS:
-            combo.addItem(name, value)
+            if value < 0 and not allow_disabled:
+                continue
+            item_icon = self._color_swatch(HUD_COLORS[value][1]) if value in HUD_COLORS else None
+            if item_icon is None:
+                combo.addItem(name, value)
+            else:
+                combo.addItem(item_icon, name, value)
         return combo
 
     def _create_effect_combo(self):
@@ -222,12 +255,13 @@ class HudColorPage(QWidget):
             c = ((idx - 1) % 3) * 2
             enable_box = QCheckBox(f"键 {idx}")
             enable_box.setFixedWidth(60)
-            color_combo = self._create_color_combo()
+            color_combo = self._create_color_combo()      # RN-128：不带「不启用」
+            color_combo.setEnabled(enable_box.isChecked())
+            enable_box.toggled.connect(color_combo.setEnabled)
             key_layout.addWidget(enable_box, r, c)
             key_layout.addWidget(color_combo, r, c + 1)
             self.key_widgets[str(idx)] = {"enabled": enable_box, "color": color_combo}
         key_card_layout.addLayout(key_layout)
-        layout.addWidget(key_card)
 
         event_card, event_card_layout = SettingsCard.make(
             "事件响应",
@@ -244,7 +278,9 @@ class HudColorPage(QWidget):
             cb = QCheckBox(label)
             row_layout.addWidget(cb)
             row_layout.addWidget(QLabel("颜色:"))
-            color_combo = self._create_color_combo()
+            color_combo = self._create_color_combo()      # RN-128：同上，开关只由复选框管
+            color_combo.setEnabled(cb.isChecked())
+            cb.toggled.connect(color_combo.setEnabled)
             row_layout.addWidget(color_combo)
             row_layout.addWidget(QLabel("效果:"))
             effect_combo = self._create_effect_combo()
@@ -259,7 +295,14 @@ class HudColorPage(QWidget):
         event_tip.setObjectName("hintLabel")
         eg.addWidget(event_tip)
         event_card_layout.addLayout(eg)
+
+        # RN-126（用户裁定 2026-08-20）：**核心在前。**
+        # 这一页的主功能是「局内事件变色」，而它原来排在 9 个数字键（265px）之后：
+        # 完整档视口折线 725、事件卡从 y=717 起 —— 只露 8px；紧凑档完全在首屏之外。
+        # 外审两档 3/3 都在说「首屏全被数字键占满，核心功能主次颠倒」。
+        # ⚠ 加进布局的顺序同时就是 Tab 焦点顺序（RN-122 的教训），两者在这里一致。
         layout.addWidget(event_card)
+        layout.addWidget(key_card)
 
         layout.addStretch()
         page_scroll.setWidget(page_widget)
@@ -458,7 +501,10 @@ class HudColorPage(QWidget):
 
         self._apply_rules_to_ui(profile, preset_rules)
         self._set_dirty(True)
-        QMessageBox.information(self, "预设已应用", "预设效果已加载，点击保存后生效。")
+        # RN-129（用户裁定 2026-08-20）：**别弹确认框。**
+        # 一个模态框在玩家眼里就是"这一步完成了"，而真正写进游戏的是底栏那个保存 ——
+        # 外审两档 4 发都在问「应用预设之后到底还要不要点保存」。
+        # 现在只留下"有未保存修改"这个状态（底栏那句提示由 `_refresh_dirty_ui` 负责）。
 
     def _build_rules_from_ui(self):
         profile = normalize_profile(self.profile_combo.currentData())
@@ -527,10 +573,11 @@ class HudColorPage(QWidget):
             config.hud_color_low_health_threshold = rules["event_rules"]["low_health"].get("threshold", 20)
 
             config.save_config()
-            self._set_dirty(False)
-            self._sync_status_strip()
 
             if not config.csgo_dir:
+                # 没配游戏目录：软件配置这一半确实存住了，这就是这条路径的全部承诺。
+                self._set_dirty(False)
+                self._sync_status_strip()
                 QMessageBox.warning(self, "提示", "规则已保存到软件配置，请先在高级设置中配置 CS2 目录后再写入 CFG。")
                 return True
 
@@ -549,6 +596,14 @@ class HudColorPage(QWidget):
                 setup_autoexec(config.csgo_dir)
             except Exception as e:
                 self.logger.warning(f"Setup autoexec failed: {e}")
+
+            # ⚠ RN-130：**"未保存"标志要等到 CFG 真的写完了才清。**
+            # 原来它清在 `save_config()` 之后、写 CFG 之前 —— 于是写 CFG 抛异常时，
+            # 用户看到一个报错框、关掉，页面却显示"没有未保存修改"，切页也不再拦他。
+            # 软件配置存住了、游戏里的 CFG 没写成，而界面上没有任何痕迹说明这件事。
+            # ⇒ **"我干完了"这个标志，必须置在动作成功之后，不是动作开始时。**
+            self._set_dirty(False)
+            self._sync_status_strip()
 
             if show_success_dialog:
                 cfg_path, _ = get_cfg_paths(config.csgo_dir)

@@ -2464,6 +2464,21 @@ REVERTS = [
         "**「抢最后一位」这个策略也被共用了**没认",
     ),
     Revert(
+        "RN", "写 CFG 失败后页面又显示「已保存」",
+        "pages/hud_color_page.py",
+        "            config.save_config()\n\n"
+        "            if not config.csgo_dir:",
+        "            config.save_config()\n"
+        "            self._set_dirty(False)\n\n"
+        "            if not config.csgo_dir:",
+        "tests/test_page_hud_color_baseline.py::"
+        "test_a_failed_save_leaves_the_page_dirty",
+        "RN-130：把脏标志的清除挪回写 CFG **之前**（原状）。写 CFG 失败时标志照样被清 —— "
+        "用户看到报错框、关掉，页面却显示「没有未保存修改」，切页不再拦他。"
+        "**软件配置存住了、游戏里的 CFG 没写成，而界面上没有任何痕迹说明这件事。**"
+        "⭐ 「我干完了」这个标志必须置在动作**成功之后**，不是动作开始时",
+    ),
+    Revert(
         "RN", "风格库空着时又不显示引导",
         "widgets/kill_icon_style_strip.py",
         "        self._order = None",
