@@ -2466,10 +2466,10 @@ REVERTS = [
     Revert(
         "RN", "死方法扫描的语料又缩回「只看本文件」",
         "tests/test_no_dead_private_methods_in_pages.py",
-        "            scope = {p} | {class_file[d] for d in descendants(cls.name) if d in class_file}",
-        "            scope = {p}",
+        "            related = descendants(cls.name) | ancestors(cls.name)",
+        "            related = descendants(cls.name)",
         "tests/test_no_dead_private_methods_in_pages.py::"
-        "test_a_method_called_only_by_a_subclass_is_not_dead",
+        "test_a_hook_overridden_in_a_subclass_is_not_dead",
         "RN-103：调用面缩到本文件时，`SoundPageBase` 那 5 个被 4 个子类页调着的方法"
         "会被整批判成死码 —— 其中 `_build_sound_page_ui` **91 行**。"
         "⭐ 断点故意瞄准「语料/调用面」而不是「计数对不对」：**"
