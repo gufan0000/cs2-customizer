@@ -2464,6 +2464,18 @@ REVERTS = [
         "**「抢最后一位」这个策略也被共用了**没认",
     ),
     Revert(
+        "RN", "风格库空着时又不显示引导",
+        "widgets/kill_icon_style_strip.py",
+        "        self._order = None",
+        "        self._order = []",
+        "tests/test_kill_icon_empty_state_ki8.py::"
+        "test_a_brand_new_strip_that_gets_no_styles_shows_the_hint",
+        "RN-124：`set_styles` 开头有一句「列表没变就早退」，而 `_order` 的初始值写成 "
+        "`[]` 时，**第一次拿到空列表也算「没变」** —— 于是「还没有任何风格，点右边的"
+        "「＋ 导入」装一套。」这句写好的引导永远走不到。全新用户看到的是一片纯黑。"
+        "⭐ 这条引导唯一存在的理由，正好是它唯一到不了的那个分支",
+    ),
+    Revert(
         "RN", "准心页又把参数排到样式前面",
         "pages/crosshair_page.py",
         "        controls_column_layout.addWidget(style_color_grid)\n"

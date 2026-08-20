@@ -215,7 +215,12 @@ class KillIconStyleStrip(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.cards = {}
-        self._order = []
+        #: ⚠ 哨兵值，**不能是 `[]`**（RN-124）。`set_styles` 开头有一句
+        #: 「列表没变就早退」，而初始值写成 `[]` 时，**第一次拿到空列表也算"没变"**
+        #: —— 于是下面那句 `empty_label.setVisible(not styles)` 永远走不到，
+        #: 全新用户（风格库本来就是空的）看到的是一片纯黑，没有任何引导。
+        #: ⭐ 「没变化就早退」这类优化，第一次调用必须算"有变化"。
+        self._order = None
         self._pending = []
         self._thumbnail_loader = None
         self._selected = ""

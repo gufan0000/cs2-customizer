@@ -85,9 +85,18 @@ def _no_modal_dialogs(monkeypatch):
     ⚠ 不是"图省事"：`_save_fps_settings` 结束时会弹一个模态框，测试进程里
     没人去点它，用例会**永久挂住**（不是失败，是卡死，整个 pytest 停在那儿）。
     而且模态框是真的会画到用户屏幕上的——测试不该打扰前台。
+
+    ⚠ **钩子挂在 Qt 类本身，不挂在"页面模块里那个名字"上**（2026-08-20）：
+    原来写的是 `page_module.QMessageBox`，于是这道防线的前提变成了
+    「页面必须 import 这个名字」。删掉页里最后一处 QMessageBox 用法（那两个
+    全仓零调用的老接口）之后，`ruff` 让我顺手摘掉了 import —— 16 个用例当场
+    `AttributeError`。**防线挂在一个可以被无关改动拿掉的东西上。**
+    ⇒ 拦某一类行为，就挂在那类行为的**出口**上，别挂在某个调用者的引用上。
     """
+    from PySide6.QtWidgets import QMessageBox
+
     for name in ("information", "warning", "critical", "question"):
-        monkeypatch.setattr(page_module.QMessageBox, name,
+        monkeypatch.setattr(QMessageBox, name,
                             staticmethod(lambda *a, **k: 0), raising=False)
 
 

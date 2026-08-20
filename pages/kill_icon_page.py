@@ -27,7 +27,7 @@
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QCheckBox,
-    QSlider, QFrame, QScrollArea, QMessageBox, QFileDialog, QProgressBar,
+    QSlider, QFrame, QScrollArea, QFileDialog, QProgressBar,
     QSizePolicy
 )
 from PySide6.QtCore import Qt, QTimer
@@ -1018,17 +1018,3 @@ class KillIconPage(QWidget):
             self.kill_icon_player.preview_position_and_scale(level, 3)
             self.logger.info("当前风格没有素材，改为预览落点")
 
-    def _preview_settings(self):
-        """老接口：只画落点，不播动画。"""
-        if self.kill_icon_player:
-            self.kill_icon_player.preview_position_and_scale(self._preview_level, 3)
-        else:
-            QMessageBox.warning(self, "提示", "图标播放器未初始化")
-
-    def _test_kill_icon(self, kills):
-        """老接口：试播指定等级。"""
-        if self.kill_icon_player:
-            self._preview_level = int(kills)
-            self.kill_icon_player.play_icon(int(kills))
-        else:
-            self._show_notice("图标播放器未初始化。")
