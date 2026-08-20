@@ -46,6 +46,11 @@ KNOWN_UNLISTED = {
     "core.usage_reporter", "core.utils", "crosshair_overlay",
     "flash_process_manager", "gsi_handler_music", "gsi_handler_utility",
     "music_player", "page_theme_helper", "screen_effect_overlay",
+    # 开源版这边它一度不在页面链上（账号/官网入口都去掉了），所以曾被摘出去。
+    # `pages/kill_icon_page.py` 现在会 `try: from service_urls import ...`
+    # 拿社区图标库地址（开源版没有 ⇒ 走 except 退成空串），
+    # 它又成了页面链的静态根 —— PyInstaller 收得到，登记挂账即可。
+    "service_urls",
     "theme_manager", "ui_design_system", "ui_help_panel",
     "ui_osd", "ui_style_applier", "ui_toast", "voice_output_manager",
 }

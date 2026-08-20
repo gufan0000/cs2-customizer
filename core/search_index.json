@@ -691,6 +691,14 @@
   },
   {
    "page": "reload_sound",
+   "text": "去总开关",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "reload_sound",
    "text": "新建风格",
    "card": "",
    "tab": "",
@@ -839,6 +847,14 @@
    "card": "血量警告",
    "tab": "血量警告",
    "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "crosshair",
+   "text": "去总开关",
+   "card": "",
+   "tab": "",
+   "kind": "button",
    "src": "runtime"
   },
   {
@@ -1127,14 +1143,6 @@
    "card": "当前图标",
    "tab": "",
    "kind": "label",
-   "src": "runtime"
-  },
-  {
-   "page": "kill_icon",
-   "text": "在屏幕上试播",
-   "card": "当前图标",
-   "tab": "",
-   "kind": "button",
    "src": "runtime"
   },
   {
@@ -2407,6 +2415,14 @@
    "card": "预设工作台",
    "tab": "",
    "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "screen_effects",
+   "text": "去总开关",
+   "card": "",
+   "tab": "",
+   "kind": "button",
    "src": "runtime"
   },
   {

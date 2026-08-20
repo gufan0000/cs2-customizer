@@ -10,6 +10,7 @@ from core.utils.logger import get_logger
 from pages.audio_status_badge import create_badge_label, render_badges
 from ui_help_panel import install_help_panel, PAGE_HELP_TEXTS
 from page_theme_helper import style_as_primary_button, style_as_secondary_button
+from widgets.master_switch_link import make_master_switch_button
 from widgets.page_header import PageHeader
 from widgets.page_action_bar import PageActionBar
 import os
@@ -580,6 +581,11 @@ class CrosshairPage(QWidget):
         title.setObjectName("statusLabel")
         status_row.addWidget(title)
         status_row.addStretch()
+        # RN-144：状态里有「显示 · 未启用」，而总开关不在这一页 ——
+        # 外审 6/6 票「玩家调完准心进游戏不显示，会以为软件坏了」。
+        self.master_switch_btn = make_master_switch_button(
+            self, "crosshair_enabled", "准心")
+        status_row.addWidget(self.master_switch_btn)
 
         layout.addLayout(status_row)
 

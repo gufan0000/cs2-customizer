@@ -2326,8 +2326,12 @@ REVERTS = [
     Revert(
         "RN", "首页开关卡又变回「写了没人读」",
         "gui_widget.py",
-        "        switch_id = self._switch_id_by_config_key.get(config_key)",
-        '        switch_id = getattr(self, "_switch_id_by_config_key", {}).get(config_key)',
+        # ⚠ 2026-08-21：这段查表抽成了 `_find_feature_switch()`（RN-144 要用同一段），
+        # 锚点跟着搬过去。原来那一行在源码里出现了 2 次，`--stale-only` 当场报失效。
+        "        switch_id = self._switch_id_by_config_key.get(config_key)\n"
+        "        return self.switches.get(switch_id) if switch_id else None",
+        '        switch_id = getattr(self, "_switch_id_by_config_key", {}).get(config_key)\n'
+        '        return getattr(self, "switches", {}).get(switch_id) if switch_id else None',
         "tests/test_flash_viewmodel_truth.py::"
         "test_the_home_switch_card_is_actually_readable_from_elsewhere",
         "RN-089：`self.switches` 原本 **1 处 Store、1 处下标赋值、0 个真读者**（AST 实测）。"
@@ -2777,11 +2781,159 @@ REVERTS = [
         "**紧凑档从此永远绿**。这是我加这道门时差一点犯的错",
     ),
     Revert(
+        "RN", "回写这条链在抽函数之后断了",
+        "gui_widget.py",
+        "        toggle = self._find_feature_switch(config_key)\n"
+        "        if toggle is None:\n"
+        "            return False\n"
+        "        value = bool(getattr(self.config, config_key, False))",
+        "        toggle = None\n"
+        "        if toggle is None:\n"
+        "            return False\n"
+        "        value = bool(getattr(self.config, config_key, False))",
+        "tests/test_flash_viewmodel_truth.py::"
+        "test_the_home_switch_card_is_actually_readable_from_elsewhere",
+        "RN-144：把查表抽成 `_find_feature_switch()` 之后，"
+        "**两个函数各自看着都很正常**，只是 `sync_feature_switch` 不再走到它 —— "
+        "首页那颗开关又停在旧值上（RN-089 的原状）。"
+        "⭐ 抽函数会把一条链拆成两段，而判据如果只盯其中一段，另一段断了没人知道",
+    ),
+    Revert(
+        "RN", "社区地址又变成一个必需的顶层 import",
+        "pages/kill_icon_page.py",
+        "except ImportError:          # pragma: no cover - 只有开源版会走到\n"
+        '    COMMUNITY_KILL_ICON_URL = ""',
+        "except ValueError:           # 抓错异常类型，等于没抓\n"
+        '    COMMUNITY_KILL_ICON_URL = ""',
+        "tests/test_kill_icon_empty_library_guidance.py::"
+        "test_the_page_imports_even_when_service_urls_has_no_community",
+        "RN-145：开源版的 `service_urls.py` **归它自己所有**，里面没有社区站。"
+        "一个必需的顶层 import 会让**整页 import 不进去** —— "
+        "而同步管道的机械步骤完全看不出来（它只比文件差异），"
+        "闭源版这边全绿。⭐ 跨仓差异要让代码自己容得下，别指望补丁替你兜",
+    ),
+    # ==================================== RN-145：空图标库的引导（不内置素材）
+    Revert(
+        "RN", "引导按钮又被播放器就绪状态灰掉",
+        "pages/kill_icon_page.py",
+        "                self.test_btn.setEnabled(True)",
+        "                self.test_btn.setEnabled(player_ready)",
+        "tests/test_kill_icon_empty_library_guidance.py::"
+        "test_the_guidance_button_is_not_greyed_out_by_the_player",
+        "RN-145：那颗按钮空库时是「去拿一套图标包」，不是「试播」。"
+        "拿 `player_ready` 灰它 = 用一个**跟它无关的条件**把全新用户唯一的出路封死。"
+        "⭐ 一颗按钮换了含义，门禁条件要跟着换 —— 页面照常渲染、文案照常正确，"
+        "只是那颗大按钮点不动，且没有任何报错",
+    ),
+    Revert(
+        "RN", "空库时主按钮又回去试播一套不存在的风格",
+        "pages/kill_icon_page.py",
+        "            self._open_icon_library()",
+        "            self._test_current()",
+        "tests/test_kill_icon_empty_library_guidance.py::"
+        "test_clicking_it_actually_opens_the_icon_library",
+        "RN-145：按钮照常写着「去拿一套图标包」、照常能点、照常有反应，"
+        "只是**什么也不会发生**（没有素材可播）。"
+        "⭐ 文案对了不等于接线对了 —— 这类退化在截图里完全看不出来",
+    ),
+    Revert(
+        "RN", "副标题抽取器又漏掉模块常量这条通路",
+        "tests/test_no_layout_self_talk_sitewide.py",
+        '                elif t.id.endswith("_LEAD_TEXT"):\n'
+        '                    out.append((node.value.lineno, node.value.value, "LEAD_TEXT"))',
+        '                elif False:\n'
+        '                    pass',
+        "tests/test_no_layout_self_talk_sitewide.py::"
+        "test_the_extractor_actually_sees_the_module_lead_constants",
+        "RN-145：页头文案一旦有两种说法，`description=` 收的就是名字不是字面量，"
+        "**这一页当场从全站文案扫描里掉出去**，而总量守卫只少一条、照样绿。"
+        "⭐ 这是改动自己造出来的盲区 —— 把字面量收成常量的那一刻就发生了，没有任何东西会响",
+    ),
+    # ==================================== RN-144：功能页上那颗「去总开关」
+    Revert(
+        "RN", "直达跳转又退回按文案模糊匹配",
+        "gui_widget.py",
+        "        row = toggle.parentWidget()\n"
+        "        self._reveal_widget(page, row if row is not None else toggle)",
+        "        self._highlight_search_target(MASTER_SWITCH_PAGE_ID, config_key)",
+        "tests/test_master_switch_link.py::test_the_link_lands_on_the_right_switch_row",
+        "RN-144：页面照常跳到基础设置、照常有一处亮起来，"
+        "只是**亮的不是那颗开关** —— 拿字符串去 17 颗开关的页面上模糊找，"
+        "命中的可能是另一处同名文案。⭐ 定位错行比不定位更糟：用户会照着高亮去改错东西",
+    ),
+    Revert(
+        "RN", "基类又不去读那个总开关钩子",
+        "pages/sound_page_base.py",
+        "        if self.MASTER_SWITCH_KEY:",
+        "        if False:",
+        "tests/test_master_switch_link.py::"
+        "test_the_sound_family_page_really_builds_the_button",
+        "RN-144：换弹音效页的类属性照样填着 `MASTER_SWITCH_KEY`，"
+        "**按钮却一颗都没建出来**。只判类属性的判据在这一刻是绿的 —— "
+        "⭐ 配置对不等于配置被读了",
+    ),
+    Revert(
+        "RN", "「去总开关」被顺手接到另外三个音效页上",
+        "pages/kill_sound_page.py",
+        '    HELP_KEY = "kill_sound"',
+        '    HELP_KEY = "kill_sound"\n    MASTER_SWITCH_KEY = "kill_sound_enabled"',
+        "tests/test_master_switch_link.py::"
+        "test_the_sound_family_only_wires_the_page_the_ruling_covered",
+        "RN-144 的裁定只覆盖 crosshair / screen_effects / reload_sound 三页。"
+        "顺手把同族四页一起改了，另外三页就**跳过了各自的开档流程、基线和外审** —— "
+        "⭐ 改动范围要和裁定范围对得上，这不是洁癖：基线一旦在没人看过的情况下被改，"
+        "下一轮就没有可比的东西了",
+    ),
+    # ==================================== RN-139：基础设置页的首屏主按钮
+    Revert(
+        "RN", "首屏主按钮又指回「载入音频」",
+        "gui_widget.py",
+        '            "载入音频",\n'
+        "            self._reload_audio,\n"
+        "            # RN-139：从主按钮降为普通按钮。",
+        '            "载入音频",\n'
+        "            self._reload_audio,\n"
+        "            primary=True,\n"
+        "            # RN-139：从主按钮降为普通按钮。",
+        "tests/test_basic_page_primary_action.py::"
+        "test_there_is_exactly_one_primary_button",
+        "RN-139：两颗紫的等于零颗 —— 「主」是相对的。"
+        "这条退化**不报错、不溢出、不截断**，排版审计一路绿灯，"
+        "只是产品替用户排的那个序作废了",
+    ),
+    Revert(
+        "RN", "引导按钮降级回普通按钮",
+        "gui_widget.py",
+        "            # 用户裁定（2026-08-21）：只换首屏主按钮，不动导航顺序。\n"
+        "            primary=True,",
+        "            # 用户裁定（2026-08-21）：只换首屏主按钮，不动导航顺序。",
+        "tests/test_basic_page_primary_action.py::"
+        "test_the_only_purple_button_is_the_onboarding_guide",
+        "RN-139：入口还在、还能点、还接在共用的引导上，"
+        "只是它不再是这一屏上最抢眼的那颗 —— 而外审 advanced 6/6、basic 5/6 票"
+        "说的就是「新手第一步就走错」。⭐ 视觉主次的退化没有任何一条既有判据看得见",
+    ),
+    Revert(
+        "RN", "空库时状态又去报 config 里那个用不了的风格名",
+        "pages/kill_icon_page.py",
+        '        style_text = "还没有" if empty else self._compact_text(self._current_style(), "未设置")',
+        '        style_text = self._compact_text(self._current_style(), "未设置")',
+        "tests/test_kill_icon_empty_library_guidance.py::"
+        "test_the_status_strip_does_not_name_a_style_that_is_not_installed",
+        "RN-145：`_current_style()` 读的是 config 存的名字，跟「这台机器上有没有这套风格」是两回事。"
+        "全新用户 config 里留着「默认」⇒ 徽章写「风格 · 默认」，"
+        "而同一张卡上另一行写着「共 0 套可选」——**一屏之内自相矛盾**（同 RN-107 族）。"
+        "⭐ 这条是改完看图才发现的：我修好了预览占位却漏了另外三处同样读它的地方",
+    ),
+    Revert(
         "RN", "副标题抽取器又漏掉 PAGE_LEAD 这条通路",
         "tests/test_no_layout_self_talk_sitewide.py",
-        '                        and isinstance(node.value.value, str) and node.value.value):\n'
+        # ⚠ 2026-08-21 改锚点：RN-145 把这个分支重排成 `if t.id == "PAGE_LEAD" / elif`，
+        # 老锚点（`and isinstance(...)` 那两行）在源码里变成 0 次 —— 断点当场空转，
+        # 是 `--stale-only` 逮住的。⭐ **重构不会告诉你哪些判据的锚点被你挪走了。**
+        '                if t.id == "PAGE_LEAD":\n'
         '                    out.append((node.value.lineno, node.value.value, "PAGE_LEAD"))',
-        '                        and isinstance(node.value.value, str) and node.value.value):\n'
+        '                if False:\n'
         '                    pass',
         "tests/test_no_layout_self_talk_sitewide.py::"
         "test_the_extractor_actually_sees_the_page_lead_constants",

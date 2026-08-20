@@ -18,6 +18,7 @@ from config import config
 from core.utils.logger import get_logger
 from pages.audio_status_badge import create_badge_label, render_badges
 from screen_effect_overlay import DEFAULT_SCREEN_EFFECT_PRESET, SCREEN_EFFECT_PRESETS
+from widgets.master_switch_link import make_master_switch_button
 from widgets.page_action_bar import PageActionBar
 from widgets.settings_card import SettingsCard
 from widgets.page_header import PageHeader
@@ -106,6 +107,11 @@ class ScreenEffectsPage(QWidget):
         self.status_badge_label = create_badge_label()
         status_row.addWidget(self.status_badge_label, 1)
         status_row.addStretch()
+        # RN-144：状态里有「特效 · 未启用」，而总开关不在这一页 ——
+        # 把动作摆在状态旁边，别让玩家自己去 22 项导航里翻。
+        self.master_switch_btn = make_master_switch_button(
+            self, "screen_effects_enabled", "屏幕特效")
+        status_row.addWidget(self.master_switch_btn)
         status_card_layout.addLayout(status_row)
 
         # RN-009: 这里原先还有一个 `summary_label` —— 建出来就 `hide()`，

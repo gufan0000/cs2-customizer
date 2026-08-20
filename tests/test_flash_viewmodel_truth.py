@@ -217,16 +217,33 @@ def test_the_home_switch_card_is_actually_readable_from_elsewhere():
     assert sync is not None, (
         "`gui_widget` 少了 `sync_feature_switch()` —— 没有它，页面改配置就没法回写首页开关。")
 
+    # ⚠ 2026-08-21（RN-144）：这段查表被抽成了 `_find_feature_switch()`，
+    # 因为「跳过去指给他看」那条路要问同一个问题。判据跟着改成**两段**：
+    #   ① 那个查表函数里必须有真的属性读；
+    #   ② `sync_feature_switch()` 必须真的走到它（不然抽出来等于断链）。
+    # ⭐ 判据盯的是**性质**（`switches` 有真读者、回写这条链是通的），
+    #    不是"这些字必须出现在这个函数体里" —— 后者会把一次正当的重构判成缺陷。
+    finder = next((n for n in ast.walk(tree)
+                   if isinstance(n, ast.FunctionDef) and n.name == "_find_feature_switch"), None)
+    assert finder is not None, (
+        "`gui_widget` 少了 `_find_feature_switch()` —— 首页开关的查表没有落点了。")
+
     reads_switches = any(
         isinstance(n, ast.Attribute) and n.attr == "switches"
-        for n in ast.walk(sync))
+        for n in ast.walk(finder))
     reads_map = any(
         isinstance(n, ast.Attribute) and n.attr == "_switch_id_by_config_key"
-        for n in ast.walk(sync))
+        for n in ast.walk(finder))
     assert reads_switches and reads_map, (
-        "`sync_feature_switch()` 没有真的去读 `self.switches` / "
+        "`_find_feature_switch()` 没有真的去读 `self.switches` / "
         "`self._switch_id_by_config_key` —— 那它就是个空壳，"
         "`switches` 还是「写了没人读」的状态。")
+
+    assert any(isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+               and n.func.attr == "_find_feature_switch"
+               for n in ast.walk(sync)), (
+        "`sync_feature_switch()` 没有走到 `_find_feature_switch()` —— "
+        "回写这条链断了，而两个函数各自看着都很正常。")
 
     callers = [n for n in ast.walk(ast.parse(
         (REPO / "pages" / "flash_page.py").read_text(encoding="utf-8")))

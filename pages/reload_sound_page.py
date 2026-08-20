@@ -165,6 +165,10 @@ class ReloadSoundPage(SoundPageBase, QWidget):
     PAGE_LEAD = "换弹时播放你自己的音效。逐把枪选风格，点「测试」试听；总开关在「基础设置」里。"
     HELP_KEY = "reload_sound"
     STYLE_TOOLS_MENU = False
+    # RN-144：PAGE_LEAD 里那句「总开关在「基础设置」里」是**陈述**，
+    # 玩家还是得自己去 22 项导航里翻。这颗按钮把那句话变成一个动作。
+    MASTER_SWITCH_KEY = "reload_sound_enabled"
+    MASTER_SWITCH_NAME = "换弹音效"
 
     def _init_ui(self):
         self._build_sound_page_ui()

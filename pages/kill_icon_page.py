@@ -30,7 +30,8 @@ from PySide6.QtWidgets import (
     QSlider, QFrame, QScrollArea, QFileDialog, QProgressBar,
     QSizePolicy
 )
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QUrl
+from PySide6.QtGui import QDesktopServices
 
 from config import config
 from resource_manager import ResourceManager
@@ -39,6 +40,15 @@ from core.utils.logger import get_logger
 from core.utils.format_utils import format_percent
 from kill_icon_overlay import load_level_animation
 from pages.audio_status_badge import create_badge_label, render_badges
+try:
+    # ⚠ **结构上可选**，不靠同步管道打补丁：开源版（cs2-customizer）的
+    # `service_urls.py` 归它自己所有，里面没有社区站 —— 那是闭源商业版的运营资产。
+    # 一个顶层 import 失败会让**整页 import 不进去**，而那是"公开仓构建直接坏掉"
+    # 级别的后果，而且同步管道的机械步骤**完全看不出来**（它只比文件差异）。
+    # ⭐ 跨仓差异要让代码自己容得下，别指望补丁替你兜 —— 补丁的上下文窗口会漂。
+    from service_urls import COMMUNITY_KILL_ICON_URL
+except ImportError:          # pragma: no cover - 只有开源版会走到
+    COMMUNITY_KILL_ICON_URL = ""
 from ui_help_panel import install_help_panel, PAGE_HELP_TEXTS
 from widgets.drop_import_mixin import enable_file_drop
 from widgets.kill_icon_import_task import KillIconImportTask
@@ -52,6 +62,33 @@ from widgets.settings_card import SettingsCard
 #: 试播用哪一个等级。5 杀（ACE）通常是一套风格里最好看的那一张；
 #: 没有素材时会自动往下找，见 `_test_level`。
 DEFAULT_TEST_LEVEL = 5
+
+#: 空库时首屏主按钮的文案（RN-145）。软件**不内置任何图标素材**，
+#: 所以全新用户的第一动作不是"试播"，是"先弄一套回来"。
+#:
+#: 两种说法，取决于**这个版本有没有社区站可去**（开源版没有）：
+#: 有社区 ⇒ 主路径是"去拿"；没有 ⇒ 主路径退回"把手上的 zip 导进来"。
+#: ⭐ 一个功能在另一个发行版里不存在时，**别把按钮留在那儿指向空地址** ——
+#: 那比没有按钮更糟（同 RN-144：把状态摆出来而不给动作）。
+EMPTY_PRIMARY_TEXT = "去拿一套图标包"
+EMPTY_PRIMARY_TEXT_NO_LIBRARY = "导入图标包…"
+#: 非空时的文案，就是原来那颗按钮。首屏那颗带 ▶，底栏那颗不带 ——
+#: 这是 KI-7 就有的差别，只把词根收成一份，不改样子。
+PRIMARY_TEST_TEXT = "在屏幕上试播"
+NORMAL_PRIMARY_TEXT = f"▶ {PRIMARY_TEST_TEXT}"
+
+#: 页头副标题的两种说法。空库时那句"挑一套图标"是**假的**（没得挑），
+#: 所以这一句也跟着换。两句都放这儿是为了**只有一份**：建页时用一句、
+#: 同步时用另一句，抄成两处早晚会改漏一处（跨页主题 RN-102）。
+NORMAL_LEAD_TEXT = "挑一套图标、放到顺眼的位置，就完事了。想自己做素材再去工坊。"
+EMPTY_LEAD_TEXT = (
+    "还没有任何图标 —— 本软件不带素材。先去社区拿一套图标包，"
+    "下好的 zip 拖到这一页就装上了；想自己做就去素材工坊。"
+)
+EMPTY_LEAD_TEXT_NO_LIBRARY = (
+    "还没有任何图标 —— 本软件不带素材。把别人做的 zip 图标包拖到这一页就装上了；"
+    "想自己做就去素材工坊。"
+)
 
 
 class KillIconPage(QWidget):
@@ -114,7 +151,7 @@ class KillIconPage(QWidget):
 
         header = PageHeader(
             "击杀图标设置",
-            description="挑一套图标、放到顺眼的位置，就完事了。想自己做素材再去工坊。",
+            description=NORMAL_LEAD_TEXT,
             title_font_size=None,
             spacing=12,
         )
@@ -229,13 +266,15 @@ class KillIconPage(QWidget):
         button_row = QHBoxLayout()
         button_row.setSpacing(8)
 
-        self.test_btn = QPushButton("▶ 在屏幕上试播")
+        self.test_btn = QPushButton(NORMAL_PRIMARY_TEXT)
         self.test_btn.setObjectName("actionButton")
         self.test_btn.setFixedHeight(34)
         # 写下限不写死宽：中文文案 + 字号缩放 = 截断（UP-094 的教训）。
         self.test_btn.setMinimumWidth(140)
         self.test_btn.setToolTip("按当前设置在屏幕上真播一次，位置和大小所见即所得")
-        self.test_btn.clicked.connect(self._test_current)
+        # RN-145：空库时这颗按钮换成「去拿一套图标包」。文案与可用性在
+        # `_sync_status_strip` 里同步，接线只在这儿做一次（见 `_on_primary_clicked`）。
+        self.test_btn.clicked.connect(self._on_primary_clicked)
         button_row.addWidget(self.test_btn)
 
         self.adjust_toggle_btn = QPushButton("调整位置和大小 ⌄")
@@ -489,6 +528,71 @@ class KillIconPage(QWidget):
         style = getattr(self, "_selected_style", None)
         return style or getattr(config, "kill_icon_style", "")
 
+    # -------------------------------------------------- 空库（RN-145）
+
+    def _library_is_empty(self) -> bool:
+        """风格库一套都没有 —— 也就是**全新用户**看到的状态。
+
+        软件不内置任何图标素材（体积 + 素材授权，用户 2026-08-21 裁定
+        「不内置，改成引导」）。所以这不是异常，是**默认状态**，页面得按它
+        来说话：副标题说的"挑一套图标"这时候没得挑，首屏主按钮"试播"
+        这时候没得播。
+
+        ⭐ 这个条件有 5 处要问它，所以**它得有名字**（RN-138 的教训：
+        RN-133 把一个同样的条件写成就地的 `getattr`，指向那块内容的另外
+        三处一处都没跟上）。
+        """
+        return not self.available_icon_styles
+
+    @staticmethod
+    def _icon_library_url() -> str:
+        """这个发行版有没有社区图标库可去。开源版没有，返回空串。"""
+        return COMMUNITY_KILL_ICON_URL
+
+    def _empty_primary_text(self) -> str:
+        return (EMPTY_PRIMARY_TEXT if self._icon_library_url()
+                else EMPTY_PRIMARY_TEXT_NO_LIBRARY)
+
+    def _empty_lead_text(self) -> str:
+        return (EMPTY_LEAD_TEXT if self._icon_library_url()
+                else EMPTY_LEAD_TEXT_NO_LIBRARY)
+
+    def _on_primary_clicked(self):
+        """首屏主按钮 / 底栏主按钮共用的一个槽。
+
+        ⚠ 刻意**不**在两个状态之间 connect/disconnect 换回调 —— 那样按钮
+        的行为就由"上一次同步跑没跑到"决定；断连失败一次就是点了没反应、
+        或者点一下触发两次。**接线只做一次，分支放在这里。**
+        """
+        if not self._library_is_empty():
+            self._test_current()
+        elif self._icon_library_url():
+            self._open_icon_library()
+        else:
+            # 没有社区站的发行版（开源版）：唯一走得通的第一步是"把手上的包导进来"。
+            self._choose_file_to_import()
+
+    def _open_icon_library(self):
+        """打开社区的击杀图标分类，让"没得挑"变成一条走得通的路。"""
+        QDesktopServices.openUrl(QUrl(self._icon_library_url()))
+
+    @staticmethod
+    def _set_primary_look(button, primary: bool) -> None:
+        """在「主按钮」与「普通动作按钮」两档外观之间切。
+
+        ⚠ 换 `objectName` 之后**必须 unpolish/polish**：QSS 的选择器是在
+        polish 那一刻定下的，光改名字样式不会跟着变 —— 那会得到一颗
+        "名字对了但还长着旧样子"的按钮，而且**不报错**。
+        """
+        wanted = "primaryButton" if primary else "actionButton"
+        if button.objectName() == wanted:
+            return
+        button.setObjectName(wanted)
+        style = button.style()
+        style.unpolish(button)
+        style.polish(button)
+        button.update()
+
     def _ready_levels(self, style=None):
         """这套风格有几个等级有素材。**读磁盘**，不读播放器缓存。
 
@@ -508,7 +612,25 @@ class KillIconPage(QWidget):
 
         style_text = self._current_style()
         self.action_bar.configure_secondary("打开素材工坊", self._open_workshop, visible=True)
-        self.action_bar.configure_primary("在屏幕上试播", self._test_current, visible=True)
+
+        if self._library_is_empty():
+            # RN-145：空库时原来这一行报的是「当前风格：未设置 · 素材 0/5 ·
+            # 位置 0/0 · 大小 100%」—— 四个数**全是在描述一套并不存在的风格**。
+            #
+            # ⚠ 底栏的主按钮**收掉**：外审 6/6 票（两档）说
+            # 「「去拿一套图标包」在页面出现 3 次，缺乏唯一明确的首步行动点」。
+            # 我第一版把同一颗按钮同时放进首屏和底栏（这一页 KI-7 起就是这么
+            # 复述的，RN-102 那条跨页主题），空状态下这个复述直接变成噪声。
+            # ⭐ **空状态最需要的不是"多给几个入口"，是"只给一个"。**
+            # 留下的那一颗在首屏「当前图标」卡里 —— 也就是**空白发生的地方**，
+            # 而不是页尾的工具条（网站那轮的原话：解释放在困惑发生之后 = 没放）。
+            self.action_bar.configure_primary("", None, visible=False)
+            # 这一行也不复述页头那段引导，只报状态。
+            self.action_bar.set_message("风格库是空的，还没有任何图标可用。")
+            return
+
+        self.action_bar.configure_primary(
+            PRIMARY_TEST_TEXT, self._on_primary_clicked, visible=True)
         self.action_bar.set_message(
             f"当前风格：{self._compact_text(style_text, '未设置', 16)}"
             f" · 素材 {len(self._ready_levels())}/{len(LEVELS)}"
@@ -523,7 +645,15 @@ class KillIconPage(QWidget):
         素材的人才关心**的数也摆在了首屏。它们现在要么进了工坊，要么退到
         下面这段详情文案里（鼠标停在状态条上能看到）。
         """
-        style_text = self._compact_text(self._current_style(), "未设置")
+        # ⚠ RN-145：`_current_style()` 读的是 **config 里存的名字**，跟"这台机器上
+        # 到底有没有这套风格"是两回事。全新用户的 config 里留着出厂默认名「默认」，
+        # 于是徽章会写「风格 · 默认」、详情会写「当前风格：默认」，
+        # 而同一张卡上另一行写着「共 0 套可选」—— **一屏之内自相矛盾**。
+        # 这是我改完之后看图才发现的：修好了预览的占位文案，却漏了另外三处
+        # 同样读 `_current_style()` 的地方。⭐ 同一个错误来源，改一处不算改。
+        empty = self._library_is_empty()
+        style_text = "还没有" if empty else self._compact_text(self._current_style(), "未设置")
+        style_detail = "（风格库是空的）" if empty else (self._current_style() or "未设置")
         position_text = f"{getattr(config, 'kill_icon_offset_x', 0)}/{getattr(config, 'kill_icon_offset_y', 0)}"
         scale_text = format_percent(getattr(config, "kill_icon_scale", 1.0), hi=2.0)
         player_ready = self.kill_icon_player is not None
@@ -533,7 +663,8 @@ class KillIconPage(QWidget):
         badges = [
             ("positive" if enabled else "warning", f"总开关 · {'已开启' if enabled else '未开启'}"),
             (
-                "positive" if self._current_style() not in ("", "0") else "warning",
+                "positive" if (not empty and self._current_style() not in ("", "0"))
+                else "warning",
                 f"风格 · {style_text}",
             ),
             ("positive" if len(ready_levels) == len(LEVELS) else "warning",
@@ -544,7 +675,7 @@ class KillIconPage(QWidget):
         missing = [k for k in LEVELS if k not in ready_levels]
         detail_text = (
             f"总开关：{'已开启' if enabled else '未开启（开启后击杀才会出图标）'}\n"
-            f"当前风格：{self._current_style() or '未设置'}\n"
+            f"当前风格：{style_detail}\n"
             f"可用风格：{len(self.available_icon_styles)} 项\n"
             f"已备素材：{len(ready_levels)}/{len(LEVELS)} 个等级"
             f"{'（缺 ' + '、'.join(f'{k} 杀' for k in missing) + '）' if missing else ''}\n"
@@ -559,6 +690,11 @@ class KillIconPage(QWidget):
 
         if hasattr(self, "style_summary_label"):
             self.style_summary_label.setText(
+                # 空库时不许再报那三个数：它们描述的是一套不存在的风格。
+                # 这里**只陈述事实**，怎么办已经在页头说完了 —— 一屏之内
+                # 把同一句引导说三遍，比说一遍还难读。
+                "风格库是空的。"
+                if empty else
                 f"当前风格：{self._current_style() or '未设置'}"
                 f" · 素材 {len(ready_levels)}/{len(LEVELS)} 个等级"
                 f" · 共 {len(self.available_icon_styles)} 套可选"
@@ -573,11 +709,36 @@ class KillIconPage(QWidget):
             self.adjust_summary_label.setToolTip(detail_text)
 
         if hasattr(self, "test_btn"):
-            # 播放器没接上时试播是个空动作，灰掉比点了没反应强
-            self.test_btn.setEnabled(player_ready)
-            self.test_btn.setToolTip(
-                "按当前设置在屏幕上真播一次，位置和大小所见即所得"
-                if player_ready else "图标播放器还没就绪"
+            if self._library_is_empty():
+                # ⚠ 空库时这颗按钮**不是**试播，所以不许再拿 `player_ready` 灰它 ——
+                # 那样"去拿一套"这条唯一的出路会因为一个跟它无关的条件被封死。
+                # ⭐ 一颗按钮换了含义，**门禁条件要跟着换**，否则就是 RN-138 那种
+                # "指向它的东西没跟上"。
+                self.test_btn.setText(self._empty_primary_text())
+                self.test_btn.setEnabled(True)
+                # 空库时它是这一页**唯一**的行动点（底栏那颗已经收掉），
+                # 所以给它主按钮的分量。`actionButton` 是描边档，在一片空白里
+                # 跟旁边的「调整位置和大小」看着一样重。
+                self._set_primary_look(self.test_btn, True)
+                url = self._icon_library_url()
+                self.test_btn.setToolTip(
+                    f"打开社区的击杀图标分类，下一个 zip 拖回这一页就装上了（{url}）"
+                    if url else
+                    "选一个 zip 图标包 / 动图 / 帧序列文件夹装进来"
+                )
+            else:
+                # 播放器没接上时试播是个空动作，灰掉比点了没反应强
+                self.test_btn.setText(NORMAL_PRIMARY_TEXT)
+                self.test_btn.setEnabled(player_ready)
+                self._set_primary_look(self.test_btn, False)
+                self.test_btn.setToolTip(
+                    "按当前设置在屏幕上真播一次，位置和大小所见即所得"
+                    if player_ready else "图标播放器还没就绪"
+                )
+
+        if getattr(self, "page_lead_label", None) is not None:
+            self.page_lead_label.setText(
+                self._empty_lead_text() if self._library_is_empty() else NORMAL_LEAD_TEXT
             )
 
         if hasattr(self, "style_strip"):
@@ -656,9 +817,19 @@ class KillIconPage(QWidget):
             except Exception as exc:
                 self.logger.error(f"预览素材装载失败: {exc}")
         if hasattr(self, "hero_preview"):
+            # RN-145：空库时原来这块写「先导入一套风格」—— 说的是**手法**，
+            # 不是**来源**。全新用户手上根本没有 zip，"导入"这个词对他不成立。
             self.hero_preview.set_animation(
                 animation,
-                "这套风格还没有素材，拖一个图标包进来" if style else "先导入一套风格",
+                # ⚠ 判据走 `_library_is_empty()` 而不是 `style` ——
+                # 库空了但 config 里还留着上一套的名字时，`style` 是**真的**，
+                # 于是会给出"这套风格还没有素材"这种指着一套已经不存在的风格说的话。
+                # ⚠ 这句话**不点按钮的名字**：外审 6/6 票说同一句「去拿一套图标包」
+                # 在这一屏出现了三次。占位文案的本职是说"这儿为什么是空的"，
+                # 那颗按钮就在它右边 20px，不需要再指一次。
+                "还没有图标" if self._library_is_empty()
+                else ("这套风格还没有素材，拖一个图标包进来" if style
+                      else "先导入一套风格"),
             )
         if animation is not None and hasattr(self, "position_map"):
             self.position_map.set_target(

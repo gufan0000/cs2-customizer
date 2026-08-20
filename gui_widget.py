@@ -1846,6 +1846,14 @@ class MainWindow(QMainWindow):
             # 不叫「重新上手引导」：对第一次用的人来说「重新」是个反向暗示。
             "打开上手引导",
             self._reopen_onboarding_guide,
+            # RN-139：这一页**唯一**的紫色主按钮就是它。
+            # 原来那颗紫的是「载入音频」——外审 advanced 6/6、basic 5/6 票一致说
+            # "新手会卡在这里 / 第一步就走错"：首次使用必需的「CS2 目录」被埋在
+            # 侧栏倒数第二项「高级设置」里，而首屏最抢眼的按钮指向的是一个
+            # **装完就已经做过了**的动作（音频在启动时就载入了）。
+            # ⭐ 主按钮该指向"还没做的下一步"，不是"随时可以再做一次的动作"。
+            # 用户裁定（2026-08-21）：只换首屏主按钮，不动导航顺序。
+            primary=True,
             tooltip="重新打开首次启动时的三步引导：选 CS2 目录 / 写入 GSI 配置 / 去试听",
         )
         # ⚠ 必须带 AlignRight：`secondaryButton` 的水平策略是 Minimum（**可以长大**），
@@ -1914,7 +1922,8 @@ class MainWindow(QMainWindow):
         self.home_reload_audio_btn = self._create_home_tool_button(
             "载入音频",
             self._reload_audio,
-            primary=True,
+            # RN-139：从主按钮降为普通按钮。**功能一点没动** ——
+            # 换的只是"这一页最想让你点哪一颗"。
             tooltip="重新载入音频资源与配置",
         )
         primary_tools_layout.addWidget(self.home_reload_audio_btn)
@@ -2884,6 +2893,65 @@ class MainWindow(QMainWindow):
         label.style().unpolish(label)
         label.style().polish(label)
 
+    def _find_feature_switch(self, config_key: str):
+        """按 config 键找首页「功能开关」卡里那颗开关；找不到回 None。
+
+        RN-144 把这段查表从 `sync_feature_switch` 里抽出来单独成名 ——
+        「跳过去指给他看」那条路要问同一个问题。⭐ 一段查表只要有第二处要用它，
+        它就得有名字；抄一份的即时代价是 **RN-089 那条 AST 判据的锚点从
+        1 处变成 2 处、当场失效**（`revert_verify --stale-only` 逮住的）。
+        ⇒ **复制粘贴不只是重复，它还会悄悄把看着这段代码的判据弄瞎。**
+
+        ⚠ 这里刻意**不写** `getattr(self, "switches", {})` —— 那样写虽然更防御，
+        但读操作就变成了一个字符串，AST 判据看不见它，
+        「switches 有没有真读者」这条判据会退化成查子串（RN-073 那条假绿的写法）。
+        存在性用 hasattr 单独守，读本身保持成真正的属性访问。
+        """
+        if not hasattr(self, "switches") or not hasattr(self, "_switch_id_by_config_key"):
+            return None
+        switch_id = self._switch_id_by_config_key.get(config_key)
+        return self.switches.get(switch_id) if switch_id else None
+
+    def reveal_feature_switch(self, config_key: str) -> bool:
+        """跳到首页并把那颗总开关**指给用户看**（RN-144）。
+
+        缺陷长这样：准心 / 屏幕特效 / 换弹音效三页都把总开关的状态摆在首屏
+        （「显示 · 未启用」），**却既不能在本页开、也没有任何入口**。
+        外审 6/6 票：「玩家调完准心进游戏不显示，会以为软件坏了」。
+        ⭐ **把状态摆出来而不给动作，比不摆更糟** —— 它制造了一个玩家
+        解决不了的问题。
+
+        与 RN-108 同一片区但机制不同：那条修的是「基础设置」在侧栏里找不到，
+        这条说的是**状态在这儿、开关不在这儿**。
+
+        ⚠ 刻意**不**走 `_highlight_search_target` 那条按文案模糊匹配的路：
+        这里手上有的是 `self.switches` 里那颗控件对象本身，直接定位它就行。
+        拿"准心"这两个字去页面上找，命中的可能是另一处同名文案 ——
+        **定位错行比不定位更糟**。
+
+        回报 True 表示真的找到并定位了那颗开关（调用方据此判断有没有空转）。
+        """
+        toggle = self._find_feature_switch(config_key)
+        if toggle is None:
+            return False
+
+        # ⚠ 就地 import，**不放模块顶部**：开源同步管道对 `gui_widget.py`
+        # 的整块 import 打了一个语义补丁（删掉账号那几行），往那个区间里插一行
+        # 会让补丁的上下文当场对不上、`git apply` 整个文件失败。
+        # 本文件本来就有一批"重量级组件延迟导入"，这里跟着同一个写法。
+        from widgets.master_switch_link import MASTER_SWITCH_PAGE_ID
+
+        self.ensure_page_loaded(MASTER_SWITCH_PAGE_ID)
+        self.show_page(MASTER_SWITCH_PAGE_ID, force=True)
+        page = self.pages.get(MASTER_SWITCH_PAGE_ID)
+        if page is None:
+            return False
+        # 高亮**整行**（标签 + 开关），不是光高亮那颗小开关 ——
+        # 单高亮一个 24px 的控件用户看不出范围（UP-041 的原话）。
+        row = toggle.parentWidget()
+        self._reveal_widget(page, row if row is not None else toggle)
+        return True
+
     def sync_feature_switch(self, config_key: str) -> bool:
         """把 `config.<config_key>` 的当前值回写到首页那个开关上。
 
@@ -2895,14 +2963,7 @@ class MainWindow(QMainWindow):
 
         回报 True 表示真的找到并同步了那颗开关（调用方可以据此判断有没有空转）。
         """
-        # ⚠ 这里刻意**不写** `getattr(self, "switches", {})` —— 那样写虽然更防御，
-        # 但读操作就变成了一个字符串，AST 判据看不见它，
-        # 「switches 有没有真读者」这条判据会退化成查子串（RN-073 那条假绿的写法）。
-        # 存在性用 hasattr 单独守，读本身保持成真正的属性访问。
-        if not hasattr(self, "switches") or not hasattr(self, "_switch_id_by_config_key"):
-            return False
-        switch_id = self._switch_id_by_config_key.get(config_key)
-        toggle = self.switches.get(switch_id) if switch_id else None
+        toggle = self._find_feature_switch(config_key)
         if toggle is None:
             return False
         value = bool(getattr(self.config, config_key, False))
@@ -3887,8 +3948,6 @@ class MainWindow(QMainWindow):
         （红线禁重动效）。边框只换颜色不换宽度，所以不会引起重排跳动。
         """
         try:
-            from PySide6.QtCore import QTimer
-
             from core.settings_search import text_matches
             from widgets.settings_card import SettingsCard
 
@@ -3925,31 +3984,45 @@ class MainWindow(QMainWindow):
                 headers = page.findChildren(PageHeader)
                 target = headers[0] if headers else page
 
-            # 滚动到目标(若在滚动区内)
-            try:
-                from PySide6.QtWidgets import QScrollArea
-
-                scroll = page.findChild(QScrollArea)
-                if scroll is not None and target is not page:
-                    scroll.ensureWidgetVisible(target, 0, 48)
-            except Exception:
-                pass
-
-            # 先撤上一次的高亮，再接管（连续搜索时不会留下一堆亮着的卡）
-            self._clear_search_highlight()
-            self._search_hit_target = target
-            # QSS 背景色要在非 QFrame 的目标（如 PageHeader）上生效，
-            # 必须显式打开 styled background，否则属性设了也不画。
-            try:
-                target.setAttribute(Qt.WA_StyledBackground, True)
-            except Exception:
-                pass
-            self._step_search_highlight(target, "true")
-            QTimer.singleShot(1200, lambda t=target: self._step_search_highlight(t, "fade"))
-            QTimer.singleShot(1600, lambda t=target: self._step_search_highlight(t, None))
+            self._reveal_widget(page, target)
         except Exception:
             # 高亮纯属锦上添花,任何异常都不能影响跳转本身
             pass
+
+    def _reveal_widget(self, page, target):
+        """把 `target` 滚进视口并走一遍「强 → 弱 → 撤」的高亮（UP-041 那一套）。
+
+        RN-144 把这一段从 `_highlight_search_target` 里抽出来单独成名：
+        「跳过去并指给他看」现在有**第二个**调用方（功能页上那颗「去总开关」），
+        而那一路**不该**再走一次按文案模糊匹配 —— 它手上有的是控件对象本身。
+        ⭐ 一段行为只要有第二处要用它，它就得有名字（RN-138 的教训）；
+        抄一份的代价这里特别具体：高亮的三档时序、`WA_StyledBackground`、
+        以及"先撤上一次"这条，抄漏任何一条都是**不报错的**退化。
+        """
+        from PySide6.QtCore import QTimer
+
+        # 滚动到目标(若在滚动区内)
+        try:
+            from PySide6.QtWidgets import QScrollArea
+
+            scroll = page.findChild(QScrollArea)
+            if scroll is not None and target is not page:
+                scroll.ensureWidgetVisible(target, 0, 48)
+        except Exception:
+            pass
+
+        # 先撤上一次的高亮，再接管（连续搜索时不会留下一堆亮着的卡）
+        self._clear_search_highlight()
+        self._search_hit_target = target
+        # QSS 背景色要在非 QFrame 的目标（如 PageHeader）上生效，
+        # 必须显式打开 styled background，否则属性设了也不画。
+        try:
+            target.setAttribute(Qt.WA_StyledBackground, True)
+        except Exception:
+            pass
+        self._step_search_highlight(target, "true")
+        QTimer.singleShot(1200, lambda t=target: self._step_search_highlight(t, "fade"))
+        QTimer.singleShot(1600, lambda t=target: self._step_search_highlight(t, None))
 
     # ---------------- 系统集成：托盘 / 关闭策略 / 窗口几何（对标主流） ----------------
 

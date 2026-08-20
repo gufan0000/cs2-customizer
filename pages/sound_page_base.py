@@ -88,6 +88,16 @@ class SoundPageBase:
     #: True  = 下拉菜单（新建 / 管理），kill_sound / kill_voice
     #: False = 单个「新建风格」按钮，switch_weapon / reload_sound
     STYLE_TOOLS_MENU: bool = False
+    #: 这一页的总开关在 config 里叫什么、在界面上叫什么（RN-144）。
+    #: 给状态卡上那颗「去总开关」用；**留空就不建那颗按钮**。
+    #:
+    #: ⚠ 现在只有 `reload_sound` 填了。另外三页（kill_sound / kill_voice /
+    #: switch_weapon）**是同一个机制**（总开关也在基础设置），但 RN-144 的
+    #: 裁定只覆盖了 crosshair / screen_effects / reload_sound 三页 ——
+    #: 它们各自在自己那一轮里补，见登记册 RN-147。
+    #: ⭐ 一个钩子留着不填，比顺手把三页一起改了更诚实：**改动范围要和裁定范围对得上**。
+    MASTER_SWITCH_KEY: str = ""
+    MASTER_SWITCH_NAME: str = ""
 
     # ---------------------------------------------------------------- 钩子
     # 这四个就是「风格模型不统一」的全部落点。除此之外两个大方法逐行相同。
@@ -326,6 +336,14 @@ class SoundPageBase:
         self.status_badge_label = create_badge_label()
         status_header.addWidget(self.status_badge_label, 1)
         status_header.addStretch()
+        if self.MASTER_SWITCH_KEY:
+            # RN-144：状态里写着总开关开没开，而开关不在这一页。
+            from widgets.master_switch_link import make_master_switch_button
+
+            self.master_switch_btn = make_master_switch_button(
+                self, self.MASTER_SWITCH_KEY,
+                self.MASTER_SWITCH_NAME or self.PAGE_TITLE)
+            status_header.addWidget(self.master_switch_btn)
         status_card_layout.addLayout(status_header)
 
         self.summary_label = QLabel("")

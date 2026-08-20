@@ -80,10 +80,20 @@ def _subtitle_literals(path: Path) -> list[tuple[int, str]]:
         # ① 类常量通路：`PAGE_LEAD = "..."`（音效家族经基类转递给页头）
         if isinstance(node, ast.Assign):
             for t in node.targets:
-                if (isinstance(t, ast.Name) and t.id == "PAGE_LEAD"
-                        and isinstance(node.value, ast.Constant)
+                if not (isinstance(node.value, ast.Constant)
                         and isinstance(node.value.value, str) and node.value.value):
+                    continue
+                if not isinstance(t, ast.Name):
+                    continue
+                if t.id == "PAGE_LEAD":
                     out.append((node.value.lineno, node.value.value, "PAGE_LEAD"))
+                # ③ 模块常量通路：`XXX_LEAD_TEXT = "..."`（RN-145）。
+                # 页头文案有两种说法（库空 / 库不空）时，`description=` 收的就不再是
+                # 字面量而是一个名字 —— 抽取器的实参通路当场**看不见这一页**，
+                # 而总量守卫照样绿（少一条而已）。这正是 RN-091 那条教训的第二次现身。
+                # ⭐ 顺带把**空状态那一句**也纳入扫描：它以前从来没被扫过。
+                elif t.id.endswith("_LEAD_TEXT"):
+                    out.append((node.value.lineno, node.value.value, "LEAD_TEXT"))
             continue
         # ② 实参通路：SettingsCard / 私有卡片工厂 / PageHeader
         if not isinstance(node, ast.Call):
@@ -177,6 +187,26 @@ def test_the_extractor_actually_sees_the_page_lead_constants():
         f"各分支实际出货：{by_branch}。 "
         "音效家族至少 4 页（kill_sound / kill_voice / reload_sound / switch_weapon）"
         "用这个写法，少于 4 说明抽取器又瞎了一条腿。")
+
+
+def test_the_extractor_actually_sees_the_module_lead_constants():
+    """空转守卫④：**模块常量那条通路**必须真的在出货（RN-145）。
+
+    `kill_icon_page` 的页头文案有两种说法（风格库空 / 不空），所以
+    `PageHeader(description=...)` 收的是一个名字而不是字面量。
+    实参通路对它是瞎的，而总量守卫只会少一条、照样绿。
+
+    ⭐ 这条守卫是**改动自己造出来的盲区**——我把一句字面量收成常量的那一刻，
+    这一页就从全站文案扫描里掉出去了，没有任何东西会响。
+    """
+    by_branch: dict[str, int] = {}
+    for path in _copy_sources():
+        for _lineno, _text, branch in _subtitle_literals(path):
+            by_branch[branch] = by_branch.get(branch, 0) + 1
+    assert by_branch.get("LEAD_TEXT", 0) >= 2, (
+        f"`*_LEAD_TEXT` 这条通路只出了 {by_branch.get('LEAD_TEXT', 0)} 条。 "
+        f"各分支实际出货：{by_branch}。 "
+        "`kill_icon_page` 的 NORMAL_LEAD_TEXT / EMPTY_LEAD_TEXT 至少 2 条。")
 
 
 #: 指向**窗口级导航**的方位说法。这是唯一真正会翻车的一类：
