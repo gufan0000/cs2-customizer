@@ -338,19 +338,6 @@ class CrosshairPage(QWidget):
         self.action_bar.primary_btn.setMinimumWidth(132)
         main_layout.addWidget(self.action_bar, 0)
 
-    def _create_badge_label(self):
-        badge = QLabel()
-        badge.setObjectName("badgeLabel")
-        badge.setAlignment(Qt.AlignCenter)
-        return badge
-
-    def _set_badge_state(self, label, text, tone="info"):
-        label.setText(text)
-        label.setProperty("tone", tone)
-        label.style().unpolish(label)
-        label.style().polish(label)
-        label.update()
-
     def _format_style_text(self, style_value):
         return CROSSHAIR_STYLE_LABELS.get(
             str(style_value or ""), CROSSHAIR_STYLE_LABELS[DEFAULT_STYLE]

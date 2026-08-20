@@ -2464,6 +2464,18 @@ REVERTS = [
         "**「抢最后一位」这个策略也被共用了**没认",
     ),
     Revert(
+        "RN", "死方法扫描的语料又缩回「只看本文件」",
+        "tests/test_no_dead_private_methods_in_pages.py",
+        "            scope = {p} | {class_file[d] for d in descendants(cls.name) if d in class_file}",
+        "            scope = {p}",
+        "tests/test_no_dead_private_methods_in_pages.py::"
+        "test_a_method_called_only_by_a_subclass_is_not_dead",
+        "RN-103：调用面缩到本文件时，`SoundPageBase` 那 5 个被 4 个子类页调着的方法"
+        "会被整批判成死码 —— 其中 `_build_sound_page_ui` **91 行**。"
+        "⭐ 断点故意瞄准「语料/调用面」而不是「计数对不对」：**"
+        "「没人用」这个结论的可信度，等于那个「所有人」的定义有多准**",
+    ),
+    Revert(
         "RN", "冒烟自动挑产物又会挑到安装包",
         "scripts/smoke_packaged.py",
         '                 and c.parent.name.lower() != "installer"',
