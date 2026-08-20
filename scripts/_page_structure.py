@@ -40,6 +40,27 @@ def _scrub_machine_paths(text: str) -> str:
     return _ABS_PATH.sub("<路径>", text)
 
 
+#: 文案**和启用态**都由"这台机器怎么样"决定的控件（RN-135）。
+#:
+#: ⚠ 2026-08-20 由 CI 逼出来的第二次，和上面那条抹路径是同一族：
+#: `advanced` 页的权限卡片写着「当前权限：管理员」还是「当前权限：普通用户（推荐）」，
+#: 旁边那颗「以管理员身份重启」是亮的还是灰的 —— **全看跑它的进程有没有管理员权限**。
+#: CI runner 是管理员，我这台不是，于是这一页的结构判据**在两边永远对不上**，
+#: 而红的原因和被判的改动毫无关系。
+#:
+#: ⭐ 这类"基线把环境事实拍了进去"的缺陷有个共同形状：
+#: **它不在第一次采基线时暴露，要等到换一台机器才炸**，
+#: 而那时人往往正在查一个完全无关的改动。
+#: ⇒ 采基线之前先问一句：**这一页有没有哪个控件是在描述「这台机器」而不是「这个软件」？**
+#:
+#: 只归一这几条、不归一别的：文案变了本来就该红，那正是这条判据的用途。
+_ENV_DEPENDENT_TEXT = (
+    (re.compile(r"^当前权限："), "当前权限：<环境相关>"),
+)
+#: 上面那些控件**同一张卡片里**、启用态也随环境变的按钮。
+_ENV_DEPENDENT_ENABLED_TEXT = ("以管理员身份重启",)
+
+
 def _entry(widget) -> dict:
     out = {
         "type": type(widget).__name__,
@@ -56,7 +77,15 @@ def _entry(widget) -> dict:
             continue
         if isinstance(val, (str, int, float)) and str(val) != "":
             # 先抹路径再截断：不然截断点会正好落在路径中间，抹了也白抹。
-            out["text"] = _scrub_machine_paths(str(val))[:120]
+            text = _scrub_machine_paths(str(val))[:120]
+            for pattern, replacement in _ENV_DEPENDENT_TEXT:
+                if pattern.search(text):
+                    text = replacement
+                    break
+            out["text"] = text
+            if text in _ENV_DEPENDENT_ENABLED_TEXT:
+                # 这颗按钮亮不亮取决于本进程有没有管理员权限（RN-135）
+                out["enabled"] = "<环境相关>"
         break
     return out
 
