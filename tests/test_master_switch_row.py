@@ -68,6 +68,10 @@ EXPECTED_KEYS = {
     "crosshair": "crosshair_enabled",
     "screen_effects": "screen_effects_enabled",
     "kill_icon": "kill_icon_enabled",
+    # RN-162（批 4）：批 1 当时**故意留下**的那一页。理由是它已关档、已锁基线，
+    # 顺手改会让那一轮失去可比的基线。⭐ 但「以后补」只有真的补了才算数 ——
+    # 这一行就是那笔账被结清的证据。
+    "hud_color": "hud_rules_enabled",
 }
 
 
@@ -445,18 +449,26 @@ def test_no_page_with_its_own_switch_still_sends_the_user_away():
 
     ⚠ 判据故意扫的是「基础设置」这个**页面名**而不是某句具体的话 ——
     扫具体句子的话，换个说法就绕过去了。
+
+    ⚠⚠ **页面清单原来是手抄的七页，2026-08-22（批 4）改成从 `EXPECTED_KEYS` 推导。**
+    RN-162 给 `hud_color` 装上就地开关时，那一页那句
+    「总开关在"基础设置 -> 动态HUD"」**原封不动地活着**，而这条判据看不见它 ——
+    因为它不在那份手抄清单里。回退验证当场判这条断点**假绿**。
+    ⭐⭐ **一份"哪些页适用"的手抄清单，就是一个会随着加页而扩大的盲区** ——
+    而它扩大的时候不报错。清单必须跟"谁真的有开关"长在同一个地方。
     """
     offenders = []
-    for name in ("crosshair_page.py", "screen_effects_page.py", "kill_icon_page.py",
-                 "kill_sound_page.py", "kill_voice_page.py",
-                 "switch_weapon_page.py", "reload_sound_page.py"):
-        path = REPO / "pages" / name
+    for page_id in sorted(EXPECTED_KEYS):
+        path = REPO / "pages" / f"{page_id}_page.py"
+        assert path.exists(), (
+            f"{page_id} 推不出页面文件（{path.name} 不存在）—— "
+            "页面 id 和文件名对不上时这一页会被静默跳过，判据对它就是瞎的")
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
                 continue
             if link.MASTER_SWITCH_PAGE_NAME in node.value:
-                offenders.append((name, node.lineno, node.value[:50]))
+                offenders.append((path.name, node.lineno, node.value[:50]))
     assert not offenders, (
         f"这些页有自己的总开关了，文案却还在把用户支去「{link.MASTER_SWITCH_PAGE_NAME}」：\n"
         + "\n".join(f"  {n}:{ln}  {t}" for n, ln, t in offenders)

@@ -612,9 +612,21 @@ class KillIconPage(QWidget):
             return
 
         style_text = self._current_style()
-        self.action_bar.configure_secondary("打开素材工坊", self._open_workshop, visible=True)
+        # ⚠ RN-171（2026-08-22）：这一行原来是**无条件** `visible=True`。
+        # 空库时主按钮已经被 RN-145 收掉了，于是底栏唯一还亮着的按钮就是它 ——
+        # 一个全新用户看到的是：卡里主推「去拿一套图标包」（现成的），
+        # 而页尾在推「打开素材工坊」（自己做，门槛最高）。外审 **6/6 票**（两档各 3）
+        # 判「行动冲突与误导」。
+        # ⭐⭐ 这是 RN-154 那条的又一次现身：**修一个问题时留下的旧形态，
+        # 会变成下一个问题** —— RN-145 收掉了三份「去拿一套」的重复，
+        # 反而让剩下这一份「打开素材工坊」升格成了空状态下的主张。
+        # ⚠ 收掉它**不减少任何能力**：「自己做一套」卡里那一颗还在，
+        # 而那里正是"我想自己做"这个念头产生的地方。
+        empty = self._library_is_empty()
+        self.action_bar.configure_secondary(
+            "打开素材工坊", self._open_workshop, visible=not empty)
 
-        if self._library_is_empty():
+        if empty:
             # RN-145：空库时原来这一行报的是「当前风格：未设置 · 素材 0/5 ·
             # 位置 0/0 · 大小 100%」—— 四个数**全是在描述一套并不存在的风格**。
             #

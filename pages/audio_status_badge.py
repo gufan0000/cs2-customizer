@@ -222,18 +222,24 @@ def resource_badge(health: dict) -> Tuple[str, str]:
     return "success", "资源 · 正常"
 
 
-def resource_hint(health: dict, open_label: str = "打开音频资源") -> str:
+def resource_hint(health: dict) -> str:
     """屏幕上要说的那句人话；健康就返回空串。**七页共用。**
 
-    ⭐ `open_label` 是拿血换来的参数（RN-056）。这句话里点名了一个按钮，
-    而**按钮名是按页不同的**：六个音效页那颗叫「打开音频资源」，
-    `special_sound` 那颗叫「打开当前资源」（它按当前页签开不同目录）。
-    我把这个共享提示搬到 special_sound 上之后，页面就在指挥用户去点一个
-    **本页不存在的按钮** —— 改完复跑外审，8 发里 **4 发独立**报
-    「引导文案提示点击『打开音频资源』，而右下角实际按钮是『打开当前资源』」。
-    ⇒ **单一真相源不等于文案可以照搬。**一句话只要提到界面上的某个东西，
-      那个东西就得跟着调用方走，否则"收敛"就制造出了新的不一致。
-    判据：`test_gun_special_sound_truth.py::test_hint_only_names_buttons_that_exist`。
+    ⚠ **2026-08-22（RN-168）：`open_label` 参数已删。**
+    它是 RN-056 拿血换来的（那句话点名了一个按钮，而按钮名按页不同：
+    六个音效页那颗叫「打开音频资源」，`special_sound` 那颗叫「打开当前资源」），
+    但 **RN-153 把这句话改成不再点名任何按钮之后，它就没有读者了** ——
+    而 `special_sound_page` 还在一本正经地传它，docstring 还在讲它多重要，
+    甚至还有一条回退断点在守它。
+    ⭐⭐ **一个参数可以活成纪念碑**：传进去、没人读、没有任何东西报错。
+    它是被**回退验证判假绿**才暴露的 —— 那条断点模拟的缺陷早就造不出来了。
+    ⇒ 假绿的断点不只是"少了一道防线"，它还是**一根指向死代码的指针**。
+
+    RN-056 那条教训本身仍然成立，只是不再由这个参数承载：
+    **单一真相源不等于文案可以照搬** —— 一句话只要提到界面上的某个东西，
+    那个东西就得跟着调用方走。现在改由「不点名按钮」来保证。
+    判据：`test_gun_special_sound_truth.py::test_hint_only_names_buttons_that_exist`
+    仍在（它是通用的），另加 `test_no_dead_parameters_in_the_shared_badge_helpers`。
 
     RN-035 的另一半：徽章只有 6 个字的位置，说不清"接下来该干什么"。
     而原先唯一的解释在 tooltip 里，且内容是一条绝对路径 —— 对玩家毫无意义。

@@ -252,3 +252,53 @@ def test_flash_only_guides_on_the_two_asset_tabs():
     assert len(starters) == 2, (
         "flash 的「启用自定闪光 / 启动」入口不见了 —— "
         "那是全页唯一能让功能真正跑起来的按钮（RN-079）")
+
+
+def test_kill_icon_empty_state_offers_exactly_one_call_to_action(qapp, monkeypatch):
+    """⭐⭐ 空库时，`kill_icon` 的底栏不许再劝人「自己做一套」。
+
+    RN-171（2026-08-22，外审 **6/6 票**，两档各 3 发）：
+
+    > 空状态下底部主按钮导向了最高门槛的「打开素材工坊」（自制），
+    > 与中间主推的「去拿一套图标包」产生行动冲突与误导。
+
+    机制：RN-145 已经把底栏**主**按钮在空库时收掉了，于是底栏唯一还亮着的
+    就成了**次**按钮「打开素材工坊」——一个全新用户，卡里被告诉去社区拿现成的，
+    页尾却在推自己做。
+
+    ⭐⭐ 这是 RN-154 那条的又一次现身：**修一个问题时留下的旧形态，
+    会变成下一个问题。** RN-145 收掉三份重复，反而让剩下这一份升格成了主张。
+
+    ⚠ 顺带记一条工艺：**这条只有"整页无折线"的截图才看得见**（RN-170）——
+    两颗互相冲突的按钮以前从来没有同时出现在一张图里，
+    而**外审看不见的东西不会报**。
+    """
+    from PySide6.QtCore import Qt
+
+    from pages.kill_icon_page import KillIconPage
+
+    page = KillIconPage()
+    page.setAttribute(Qt.WA_DontShowOnScreen, True)
+    monkeypatch.setattr(page, "_library_is_empty", lambda: True)
+    page._sync_action_bar()
+    qapp.processEvents()
+    try:
+        # ⚠ 用 `isHidden()` 不用 `isVisible()`：这个页面是离屏建的（铁律），
+        # 而**离屏窗口的子控件 `isVisible()` 恒为 False** —— 拿它做断言的话
+        # 「空库时不可见」这一条**不管代码怎么写都成立**，判据当场变空转。
+        # `isHidden()` 反映的是**显式隐藏状态**，不受祖先可见性影响。
+        assert page.action_bar.primary_btn.isHidden(), (
+            "空库时底栏主按钮又回来了（RN-145 收掉的那颗）")
+        assert page.action_bar.secondary_btn.isHidden(), (
+            f"空库时底栏还亮着「{page.action_bar.secondary_btn.text()}」—— "
+            "全新用户此时唯一该看到的行动是「去拿一套图标包」，"
+            "而它在首屏那张卡里（空白发生的地方）。")
+
+        # 反面：**库不空的时候它必须回来**。少了这一条，"把按钮删掉"也能过关。
+        monkeypatch.setattr(page, "_library_is_empty", lambda: False)
+        page._sync_action_bar()
+        qapp.processEvents()
+        assert not page.action_bar.secondary_btn.isHidden(), (
+            "库不空了，「打开素材工坊」却没回来 —— 这一页少了做素材的入口")
+    finally:
+        page.deleteLater()

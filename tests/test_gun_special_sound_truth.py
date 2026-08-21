@@ -432,8 +432,172 @@ def test_special_sound_status_chip_follows_current_tab(qapp, monkeypatch):
         f"血量警告页签上没有本页签自己的信息：{health_chips}")
 
 
+#: `resource_hint()` 的三条分支，各造一份最小的 health 让它真的说话。
+#: ⭐ 不这么造的话它返回空串 —— 见下面那条判据的说明。
+_HINT_STATES = [
+    ("素材目录缺失", {"missing": ["kill_sound"]}),
+    ("目录是空的", {"empty": ["kill_sound"]}),
+    ("配置指向的素材没了", {"invalid": [("kill_sound", "旧风格")]}),
+]
+
+#: 共用那句提示的**全部七页**。少一页 = 那一页的按钮名没人对过。
+_HINT_CONSUMERS = [
+    ("kill_sound", "pages.kill_sound_page", "KillSoundPage"),
+    ("kill_voice", "pages.kill_voice_page", "KillVoicePage"),
+    ("death_sound", "pages.death_sound_page", "DeathSoundPage"),
+    ("switch_weapon", "pages.switch_weapon_page", "SwitchWeaponPage"),
+    ("reload_sound", "pages.reload_sound_page", "ReloadSoundPage"),
+    ("gun_sound", "pages.gun_sound_page", "GunSoundPage"),
+    ("special_sound", "pages.special_sound_page", "SpecialSoundPage"),
+]
+
+
+#: 「文案共用件」—— 多页共用一句话的地方。死参数在这儿最难被发现：
+#: 调用方一本正经地传，函数体里根本没人读，而**没有任何东西会报错**。
+_SHARED_COPY_HELPERS = [
+    "pages/audio_status_badge.py",
+    "widgets/community_library.py",
+]
+
+
+def test_no_dead_parameters_in_the_shared_copy_helpers():
+    """共用文案件里的函数，**每个参数都要有人读**。
+
+    ⭐⭐ RN-168：`resource_hint(health, open_label=...)` 的 `open_label`
+    在 RN-153 之后就没有读者了（那句话改成不再点名按钮），可是
+    `special_sound_page` 还在传它、docstring 还在讲它「是拿血换来的参数」、
+    还有一条回退断点在守它 —— **传进去、没人读、无人报错，整整三批。**
+
+    ⭐ 它是被**回退验证判假绿**才暴露的：那条断点模拟的缺陷早就造不出来了。
+    ⇒ **假绿的断点不只是少了一道防线，它还是一根指向死代码的指针。**
+
+    ⚠ 只扫共用文案件，不扫全仓 —— 全仓扫会撞上接口一致性、重载、回调签名
+    这些**故意不读**的参数，把判据逼成噪音（RN-072 / RN-163 那条教训：
+    判据的扫描面要正好等于缺陷能长的地方）。
+    """
+    offenders = []
+    for rel in _SHARED_COPY_HELPERS:
+        path = REPO / rel
+        assert path.exists(), f"{rel} 不在了 —— 判据在空转"
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for func in ast.walk(tree):
+            if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            a = func.args
+            names = [
+                arg.arg
+                for arg in (a.posonlyargs + a.args + a.kwonlyargs)
+                if arg.arg not in ("self", "cls", "_")
+            ]
+            if not names:
+                continue
+            # 函数体里读到的所有名字（docstring 里提到不算 —— 那正是 RN-168 的骗局）
+            used = {
+                node.id
+                for stmt in func.body
+                for node in ast.walk(stmt)
+                if isinstance(node, ast.Name)
+            }
+            for name in names:
+                if name not in used:
+                    offenders.append(f"{rel}:{func.lineno} {func.name}() 的 `{name}`")
+    assert not offenders, (
+        "共用文案件里有**没人读**的参数：\n  " + "\n  ".join(offenders)
+        + "\n⭐ 一个参数可以活成纪念碑：调用方照传、函数体不读、无人报错。"
+        "\n要么把它真正用起来，要么连同所有调用点一起删掉。")
+
+
+#: 提示里点名的**导航目的地**（不是本页按钮）。写成「分组 - 页名」。
+#: ⚠ 它们不该混进按钮判据 —— 但也不能因此不管：页名一改这句话同样变成假的。
+#: 所以下面给它单独一条判据，去真正的导航注册表里查。
+_NAV_DESTINATIONS = {"工具与系统 - 音频体检"}
+
+
+def test_the_shared_hint_points_at_real_navigation_destinations(qapp):
+    """提示里写的「分组 - 页名」必须在**真正的导航注册表**里存在。
+
+    ⭐ 这条是写按钮判据时顺出来的：`invalid` 那支说
+    「也可以到「工具与系统 - 音频体检」看明细」——
+    它既不是按钮，也不是随便一句话，而是一条**指路**。
+    页名或分组名一改，这句话就变成假的，且**没有任何东西会响**
+    （RN-163 / RN-167 同一个形状）。
+    """
+    import gui_widget
+
+    source = (Path(gui_widget.__file__).read_text(encoding="utf-8"))
+    missing = []
+    for dest in sorted(_NAV_DESTINATIONS):
+        group, _, page_name = dest.partition(" - ")
+        for part in (group, page_name):
+            if f'"{part}"' not in source:
+                missing.append(f"{dest} 里的「{part}」在导航注册表里找不到")
+    assert not missing, (
+        "提示文案指向了不存在的导航位置：\n  " + "\n  ".join(missing)
+        + "\n⇒ 页名 / 分组名一改，指路文案不会跟着改，也不会报错。")
+
+
+def test_the_shared_hint_names_no_button_that_is_missing_on_some_page(qapp):
+    """⭐⭐ 那句**七页共用**的提示，点名的按钮必须在**每一页**上都有。
+
+    这条判据补的是下面 `test_hint_only_names_buttons_that_exist` 的一个大洞：
+    那条扫的是「当前可见的 QLabel」，而 `resource_hint()` 在健康状态下
+    **返回空串** —— 于是页面上根本没有那句话，判据从来没看见过它要防的东西。
+
+    ⚠ 实测（2026-08-22 / RN-168）：我把那句提示故意改成点名
+    「打开音频资源」（`special_sound` 上那颗叫「打开当前资源」，本页并不存在），
+    下面那条判据**照样是绿的**。
+    ⭐⭐ **一条只看"碰巧可见的东西"的判据，看不见"只在特定状态下才出现的文案"** ——
+    而缺陷恰恰只在那个状态下才现身。⇒ 判据必须自己**把那个状态造出来**。
+
+    这也正是 RN-056 那条教训的载体：**单一真相源不等于文案可以照搬。**
+    """
+    import importlib
+    import re as _re
+
+    from PySide6.QtWidgets import QPushButton
+
+    from pages.audio_status_badge import resource_hint
+
+    quoted: list[tuple[str, str]] = []
+    for state_name, health in _HINT_STATES:
+        text = resource_hint(health)
+        assert text, f"「{state_name}」这条分支返回了空串 —— 判据在空转"
+        for name in _re.findall(r"[「『]([^」』]{2,16})[」』]", text):
+            # 导航目的地不是本页按钮，由上面那条判据单独管。
+            if name in _NAV_DESTINATIONS:
+                continue
+            quoted.append((state_name, name))
+    assert quoted, "三条分支一个按钮都没点名 —— 抽取器瞎了，判据在空转"
+
+    problems = []
+    for page_id, module_path, cls_name in _HINT_CONSUMERS:
+        page = getattr(importlib.import_module(module_path), cls_name)()
+        try:
+            buttons = {
+                b.text().strip() for b in page.findChildren(QPushButton) if b.text().strip()
+            }
+            assert buttons, f"{page_id} 一颗按钮都没抓到 —— 判据对这一页在空转"
+            for state_name, name in quoted:
+                if name not in buttons:
+                    problems.append(
+                        f"{page_id}：「{state_name}」那句提示点名「{name}」，"
+                        f"而本页按钮是 {sorted(buttons)}")
+        finally:
+            page.deleteLater()
+
+    assert not problems, (
+        "共用提示点名了某些页上**不存在**的按钮：\n" + "\n".join(problems)
+        + "\n⇒ 要么别在共用文案里点名按钮（RN-153 就是这么改的），"
+        "要么让每一页把自己那颗按钮的名字传进来。")
+
+
 def test_hint_only_names_buttons_that_exist(qapp, monkeypatch):
     """提示文案里点名的按钮，必须真的是本页那颗按钮上的字。
+
+    ⚠ **这条只扫"当前可见"的标签，因此对 `resource_hint()` 是瞎的**
+    （健康状态下那句话是空串，压根不在页面上）。
+    真正盯它的是上面那条 `test_the_shared_hint_names_no_button_that_is_missing_on_some_page`。
+    这条留着，是因为它对**其他**写死在页面上的提示文案仍然有效。
 
     ⭐ RN-056，本轮**改完复跑外审逮住的、我自己引入的**缺陷（连续第三轮）：
     我把共享的 `resource_hint()` 搬到 `special_sound` 上，那句话写着

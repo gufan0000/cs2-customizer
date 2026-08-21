@@ -1172,8 +1172,10 @@ class SpecialSoundPage(QWidget):
             )
             self.round_summary_label.setToolTip(summary_text)
         if hasattr(self, "action_bar"):
-            # RN-056：本页那颗主按钮叫「打开当前资源」，不叫「打开音频资源」
-            hint = resource_hint(health, open_label="打开当前资源")
+            # ⚠ RN-168：这里原来传 `open_label="打开当前资源"`（RN-056 的遗产）。
+            # RN-153 把那句提示改成**不再点名任何按钮**之后，这个参数就没人读了，
+            # 而它照样传了三批没人发现 —— 是回退验证判它假绿才暴露的。
+            hint = resource_hint(health)
             if stale_count:
                 action_message = (f"有 {stale_count} 项配的风格已经不在了，"
                                   "在对应行重新选一个即可。")

@@ -677,7 +677,12 @@ def test_hud_color_page_status_strip_tracks_dirty_state(qapp, monkeypatch):
     assert page.summary_label.isHidden() is True
     chips = _visible_audio_status_chip_texts(page.status_badge_label)
     assert len(chips) == 5
-    assert "总开关 · 开启" in chips
+    # RN-162（批 4）：开关搬进同一张卡之后这条徽章改说功能词。
+    # ⚠ 徽章不许再叫「总开关 · …」—— 那颗开关就在同一张卡上，
+    # 一行里说两遍（RN-163 在 kill_icon / screen_effects 上逮到的同一条）。
+    assert "生效 · 规则已启用" in chips
+    assert not any(text.startswith("总开关 · ") for text in chips), (
+        f"徽章又在复述那颗就在同一张卡上的开关：{chips}")
     assert "保存 · 已同步" in chips
     initial_event_badge = next(text for text in chips if text.startswith("事件 · "))
     assert "当前预设：" in page.preset_summary_label.text()

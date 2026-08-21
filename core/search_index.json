@@ -2252,6 +2252,14 @@
   },
   {
    "page": "hud_color",
+   "text": "已开启",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "hud_color",
    "text": "效果预设",
    "card": "",
    "tab": "",

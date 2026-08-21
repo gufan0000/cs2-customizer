@@ -359,7 +359,35 @@ def test_nav_button_nudge_does_not_trust_a_not_yet_laid_out_height(app):
             def sizeHint(self):
                 return self._real.sizeHint()
 
-        win._nudge_nav_button_fully_into_view(scroll, _NotYetLaidOut(btn))
+        # ⭐⭐ 空转守卫（2026-08-22 / RN-169 补）：先证明**那个坏局面真的造出来了**。
+        # 上面那个 while 循环有两个出口，其中一个是「滚到底了」——
+        # 走那个出口时按钮很可能**本来就完整可见**，于是后面那条断言
+        # 无论校正算得对不对都成立，判据变成一句永远为真的话。
+        # ⚠ 回退验证正是这么判它假绿的：把 `max(height(), sizeHint())` 退回
+        # `height()`（那条 CI 连红三次的真缺陷），它**照样绿**。
+        # ⭐ **一条判据必须先证明自己看得见缺陷，再去断言缺陷不在。**
+        before_y = btn.mapTo(viewport, QPoint(0, 0)).y()
+        assert before_y + hint_h > viewport.height(), (
+            f"判据在空转：校正之前这颗按钮就已经完整可见了"
+            f"（y={before_y} 高={hint_h} 视口={viewport.height()} "
+            f"滚动={bar.value()}/{bar.maximum()}），"
+            "后面那条断言不管校正对不对都会成立。\n"
+            "多半是侧栏内容或窗口尺寸变了，最后一项不再落在视口边缘 —— "
+            "要重新挑一个**确实会被切到**的导航项。")
+
+        # ⭐⭐ 把 RN-060 那层「对齐到项边界」暂时摘掉，再考这条算式。
+        # 它是 2026-08-17 后加的，`keep_visible=btn` 会**顺手把按钮推回可视区** ——
+        # 于是上面那个高度算错了也看不出来（回退验证判这条断点假绿，根因就是它）。
+        # ⚠ 这不是说那层多余：它修的是另一件事（视口上边缘落在某一项中间）。
+        # ⭐ **两条机制盖住同一个现象时，先坏掉的那条不会报错** ——
+        # 所以判据必须一次只考一条，不能靠"最终效果对不对"来反推。
+        original_snap = win.__class__._snap_nav_scroll_to_item_boundary
+        win.__class__._snap_nav_scroll_to_item_boundary = staticmethod(
+            lambda *a, **k: None)
+        try:
+            win._nudge_nav_button_fully_into_view(scroll, _NotYetLaidOut(btn))
+        finally:
+            win.__class__._snap_nav_scroll_to_item_boundary = original_snap
         app.processEvents()
 
         y = btn.mapTo(viewport, QPoint(0, 0)).y()

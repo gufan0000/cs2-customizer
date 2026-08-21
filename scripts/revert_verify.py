@@ -2087,17 +2087,24 @@ REVERTS = [
         "把头部卡挪进了滚动区。描述版面的文案会随版面腐烂，描述功能的不会",
     ),
     Revert(
-        "RN", "提示又去指一个本页不存在的按钮",
-        "pages/special_sound_page.py",
-        'hint = resource_hint(health, open_label="打开当前资源")',
-        'hint = resource_hint(health)',
+        "RN", "共用提示又去点名某些页上没有的按钮",
+        "pages/audio_status_badge.py",
+        '        return "还没有素材：放入音频后点「刷新风格列表」就能用。"',
+        '        return "还没有素材：放入音频后点「打开音频资源」就能用。"',
         "tests/test_gun_special_sound_truth.py::"
-        "test_hint_only_names_buttons_that_exist",
-        "RN-056：本页那颗主按钮叫「打开当前资源」，而共享提示写的是"
-        "「打开音频资源」。单一真相源不等于"
-        "文案可以照搬——"
-        "这条是改完复跑外审、"
-        "8 发里 4 发独立报出来的",
+        "test_the_shared_hint_names_no_button_that_is_missing_on_some_page",
+        "RN-056：七页共用这一句，而 `special_sound` 那颗按钮叫「打开当前资源」"
+        "—— 写「打开音频资源」就是在指挥用户点一颗本页没有的按钮。"
+        "⭐ **单一真相源不等于文案可以照搬。**\n"
+        "⚠⚠ 这条断点 2026-08-22（RN-168）**重新指过**：原来它锚在 "
+        "`resource_hint(health, open_label=...)` 上，而 RN-153 把那句提示改成"
+        "不再点名按钮之后，那个参数就没有读者了 —— 断点变成假绿，"
+        "顺带暴露出一个**活成纪念碑的死参数**（传进去、没人读、无人报错）。"
+        "更要命的是它当时指的那条判据 `test_hint_only_names_buttons_that_exist` "
+        "**本身就是半空转的**：它只扫「当前可见的 QLabel」，而这句提示在健康状态下"
+        "是空串，压根不在页面上 —— 我把文案改成明确错误的名字，它照样绿。"
+        "⭐⭐ **只看「碰巧可见的东西」的判据，看不见「只在特定状态下才出现的文案」**，"
+        "而缺陷恰恰只在那个状态下现身。新判据自己把三种状态造出来",
     ),
     Revert(
         "RN", "血量警告三行又被摊成通栏，紧凑档顶出可视区",
@@ -2852,6 +2859,89 @@ REVERTS = [
         "RN-145：页头文案一旦有两种说法，`description=` 收的就是名字不是字面量，"
         "**这一页当场从全站文案扫描里掉出去**，而总量守卫只少一条、照样绿。"
         "⭐ 这是改动自己造出来的盲区 —— 把字面量收成常量的那一刻就发生了，没有任何东西会响",
+    ),
+    # ==================================== RN-167 / RN-162 / RN-168 / RN-171（批 4）
+    Revert(
+        "RN", "空库时底栏又去劝人「自己做一套」",
+        "pages/kill_icon_page.py",
+        '            "打开素材工坊", self._open_workshop, visible=not empty)',
+        '            "打开素材工坊", self._open_workshop, visible=True)',
+        "tests/test_empty_library_covers_every_page.py::"
+        "test_kill_icon_empty_state_offers_exactly_one_call_to_action",
+        "RN-171（外审 6/6 票，两档各 3）：RN-145 已经把底栏**主**按钮在空库时收掉了，"
+        "于是唯一还亮着的成了**次**按钮「打开素材工坊」—— 卡里主推「去社区拿现成的」，"
+        "页尾却在推「自己做」（门槛最高的那条路）。"
+        "⭐⭐ RN-154 那条的又一次现身：**修一个问题时留下的旧形态，会变成下一个问题**。"
+        "⚠ 工艺记一笔：这条**只有整页无折线的截图才看得见**（RN-170）—— "
+        "两颗互相冲突的按钮以前从没同时出现在一张图里，而**外审看不见的东西不会报**",
+    ),
+    Revert(
+        "RN", "共用文案件又长出一个没人读的参数",
+        "pages/audio_status_badge.py",
+        "def resource_hint(health: dict) -> str:",
+        'def resource_hint(health: dict, open_label: str = "打开音频资源") -> str:',
+        "tests/test_gun_special_sound_truth.py::"
+        "test_no_dead_parameters_in_the_shared_copy_helpers",
+        "⭐⭐ RN-168：`open_label` 在 RN-153 之后就没有读者了，可是调用方照传、"
+        "docstring 照讲、连回退断点都还在守它 —— **传进去、没人读、无人报错，整整三批**。"
+        "⭐ 它是被回退验证判假绿才暴露的 ⇒ "
+        "**假绿的断点不只是少了一道防线，它还是一根指向死代码的指针**",
+    ),
+    Revert(
+        "RN", "帮助面板又去教用户勾一颗已经删掉的 checkbox",
+        "ui_help_panel.py",
+        '        "1. 打开这一页的「总开关」<br>"',
+        '        "1. 勾上「开启击杀图标」<br>"',
+        "tests/test_help_copy_names_real_controls.py::"
+        "test_every_named_control_actually_exists",
+        "⭐⭐ RN-167：这一条**是批 1 自己弄坏的** —— RN-161 把那颗 QCheckBox 换成了 "
+        "MasterSwitchRow，而描述它的那句帮助文案住在 `ui_help_panel.py`，"
+        "改按钮的人根本不会打开那个文件。批 1/2/3 三轮全绿。"
+        "⭐ **一处改动不会去通知描述它的文案**（RN-138 / RN-163 同一个形状的第三次现身）",
+    ),
+    Revert(
+        "RN", "帮助文案又点名一个不存在的按钮名",
+        "ui_help_panel.py",
+        '        "1. 点「立即体检」，软件会扫描各功能的资源目录<br>"',
+        '        "1. 点「开始体检」，软件会扫描各功能的资源目录<br>"',
+        "tests/test_help_copy_names_real_controls.py::"
+        "test_every_named_control_actually_exists",
+        "RN-167：按钮叫「立即体检」，文案写「开始体检」—— 差两个字，"
+        "而用户会在页面上**找不到文案说的那颗按钮**。"
+        "⭐ 这条判据比「不许写方位」有用得多：RN-167 引用的那次真实失效"
+        "（`audio_status_badge` 指着被换掉的按钮）**删方位词根本防不住**",
+    ),
+    Revert(
+        "RN", "hud_color 的就地总开关又被拆掉",
+        "pages/hud_color_page.py",
+        "        status_card_layout.addWidget(self.master_switch_row)",
+        "        pass  # 不装就地总开关",
+        "tests/test_master_switch_row.py::"
+        "test_every_page_that_shows_master_state_offers_the_switch[hud_color]",
+        "RN-162：批 1 当时**故意不扩**到这一页（它已关档已锁基线，顺手改会毁掉可比基线）。"
+        "⭐ 范围按理由走不按顺手走 —— 但「以后补」只有真的补了才算数",
+    ),
+    Revert(
+        "RN", "hud_color 的徽章又去复述同一张卡上的那颗开关",
+        "pages/hud_color_page.py",
+        '             "生效 · 规则已启用" if master_enabled else "生效 · 规则未启用"),',
+        '             "总开关 · 开启" if master_enabled else "总开关 · 关闭"),',
+        "tests/test_tool_pages_ui_polish.py::"
+        "test_hud_color_page_status_strip_tracks_dirty_state",
+        "RN-163 那条的第二种形态：开关搬进同一张卡之后，"
+        "「总开关 · 开启」就是**一行里把一件事说两遍**",
+    ),
+    Revert(
+        "RN", "hud_color 又把用户支去基础设置",
+        "pages/hud_color_page.py",
+        '                "总开关没开：规则会继续保留，但不会在游戏里生效。")',
+        '                "总开关在「基础设置」里，关闭时规则会继续保留。")',
+        "tests/test_master_switch_row.py::"
+        "test_no_page_with_its_own_switch_still_sends_the_user_away",
+        "⭐⭐ 这句是 RN-163 那 13 处指路文案的**第 14 处**，"
+        "在批 1 之后又活了整整三批 —— 因为那条判据是「**有自己开关的页**才查」，"
+        "而这一页当时没有开关，条件不成立就直接绕过去了。"
+        "⭐ **条件式判据会在条件不成立的地方留下盲区，而盲区不报错。**",
     ),
     # ==================================== RN-165（批 3：剩余四页）
     Revert(

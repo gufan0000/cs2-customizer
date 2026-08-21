@@ -1,0 +1,325 @@
+# -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""RN-167：文案点名的控件**必须真的存在**。
+
+⭐ **这条判据推翻了它自己的立案说法。**
+RN-167 立案时写的是「文案不该说控件在哪」（~6 处「点右上角「?」看用法」）。
+但把它引用的那次**真实失效**翻出来看：`audio_status_badge` 那句
+「点右下角「打开音频资源」」坏掉，坏的是**按钮被换成了别的**（空库时那颗
+按钮已经变成「去社区拿一套…」）—— 就算当初写成无方位的
+「点「打开音频资源」」，**它照样是错的**。
+⇒ **删方位词防不住那次失效。** 真正的缺陷是「点名了一个不存在的控件」。
+
+而方位词那一刀，`test_no_layout_self_talk_sitewide.py` 里已经量过并且否掉了
+（一刀切当场判红 24 处，大半是对的：OSD 角落是**选项值**，
+「点右上角「?」」在两档里都是实话）。⇒ 这一轮**不动那 12 处文案**，
+改成给「点名的控件存不存在」配一条棘轮。
+
+**首跑的收成（4 条真缺陷，全在共用助手里）**：
+
+| 文案写的 | 实际控件 |
+|---|---|
+| 勾上「开启击杀图标」 | **已不存在** —— 批 1（RN-161）把那颗 checkbox 换成了 `MasterSwitchRow`（「总开关」）|
+| 点击「保存设置到CFG」 | 「保存到CFG」|
+| 点「开始体检」 | 「立即体检」|
+| 可用「一键保守修复」 | 「一键修复（保守）」|
+
+⭐ 第一条是**批 1 自己弄坏的**，而批 1/2/3 的判据一条都没看见 ——
+RN-138 / RN-163 那个形状的第三次现身：**一处改动不会去通知描述它的文案**，
+而这次描述它的文案住在 `ui_help_panel.py`，改按钮的人根本不会打开那个文件。
+"""
+from __future__ import annotations
+
+import ast
+import re
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+
+#: 「点/按/勾上…「X」」—— 只在**动作语境**里的引号才是在点名控件。
+#: 中文的「」既用来点名按钮，也用来强调普通词（「为什么这个音效不响」、
+#: 「用在几杀」、「没放文件」）。不带动词就分不开这两种，会把强调判成缺陷。
+#:
+#: ⚠ 动词表放宽过一次：第一版没有「用」，于是
+#: 「可用「一键保守修复」」**整条漏掉**（分母 35 → 39，多逮出一条真缺陷）。
+#: 和 `LAYOUT_WORDS` 一样，这是**拦已知形状的棘轮，不是发现通道** ——
+#: 别把「扫过了」读成「没有了」。
+CLICK_CONTEXT = re.compile(
+    r"(点击|点|按下|按|勾上|勾选|打开|切到|进入|使用|可用|用|选中|回到|去)"
+    r"\s*[「]([^「」]{1,24})[」]"
+)
+
+#: 比对前先脱掉**装饰符**。
+#: ⚠ 这一条也是踩出来的：击杀图标那张导入卡把「＋」和「导入」拆成**两个
+#: QLabel**（`widgets/kill_icon_style_strip.KillIconStyleAddCard`），
+#: 用户看到的是「＋ 导入」，而源码里找不到这个字面量。
+#: ⇒ 不归一化就会把一条**完全正确**的文案判成缺陷。
+DECORATION = re.compile(r"[＋+…\.⌄▾▸·\s（）()「」\"']")
+
+#: **被点名的根本不是本软件的控件** —— 判据没有任何办法自己看出这一点。
+#: ⚠ 白名单只收这一类，不收「这条红了但我不想改」。每一条都写清它到底是什么。
+NOT_OUR_CONTROLS = {
+    ("screen_effects", "无边框窗口"): "CS2 游戏里的显示模式，不是本软件的控件",
+    # ⚠ 键是 `fun` 不是 `fun_afterlife`：这一页的**注册 id 和文件名对不上**
+    # （注册表里叫 fun_afterlife，文件叫 `pages/fun_page.py`）。
+    # 写错的那一版判据当场把这条正确文案判红 —— 见下面那条族映射守卫。
+    ("fun", "全屏窗口化"): "同上，CS2 的显示模式",
+    ("about", "疑难杂症解决包"): "「 CS2 Customizer 疑难杂症解决包」是另一个独立程序，不是本页控件",
+}
+
+#: 每一页都能用到的共用控件来源（底栏、状态徽章、空库引导、主窗）。
+SHARED_SOURCES = [
+    REPO / "pages" / "sound_page_base.py",
+    REPO / "pages" / "audio_status_badge.py",
+    REPO / "widgets" / "community_library.py",
+    REPO / "widgets" / "master_switch_link.py",
+    REPO / "gui_widget.py",
+]
+
+#: ⚠ `dialogs` 是**补上去的**，而漏掉它的代价是当场造出一条假缺陷：
+#: 「保存播放设置」只存在于 `dialogs/kill_icon_workshop.py:173`，
+#: 族映射里没有这个目录 ⇒ 判据报「这个按钮不存在」。
+#: ⭐ 分母不够的判据不是"少抓几条"，是**会反过来诬告正确的代码**。
+FAMILY_DIRS = ["pages", "widgets", "core", "dialogs"]
+
+
+def _norm(text: str) -> str:
+    return DECORATION.sub("", text)
+
+
+def _string_literals(path: Path) -> set[str]:
+    if not path.exists():
+        return set()
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except (SyntaxError, UnicodeDecodeError):
+        return set()
+    return {
+        _norm(node.value)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    }
+
+
+def _family_files(page_id: str) -> list[Path]:
+    """一页的**控件来源**：它自己 + 全仓文件名里带它的 + 共用件。"""
+    out = [REPO / "pages" / f"{page_id}_page.py"]
+    for folder in FAMILY_DIRS:
+        base = REPO / folder
+        if base.exists():
+            out += [p for p in base.rglob("*.py") if page_id in p.name]
+    return out + SHARED_SOURCES
+
+
+def _control_labels(page_id: str) -> set[str]:
+    labels: set[str] = set()
+    for path in _family_files(page_id):
+        labels |= _string_literals(path)
+    return labels
+
+
+def _non_docstring_strings(path: Path) -> list[tuple[int, str]]:
+    """只看**用户读得到**的字面量。docstring 一律不看。
+
+    RN-072 / RN-163 都栽在这上面：判据连注释和 docstring 一起扫，
+    结果被自己的说明性文字判红，然后人就会去改那段**本来是对的**说明。
+    """
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except (SyntaxError, UnicodeDecodeError):
+        return []
+    docstrings = {
+        id(node.body[0].value)
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.body
+        and isinstance(node.body[0], ast.Expr)
+        and isinstance(node.body[0].value, ast.Constant)
+        and isinstance(node.body[0].value.value, str)
+    }
+    return [
+        (node.lineno, node.value)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and id(node) not in docstrings
+    ]
+
+
+def _help_panel_sections() -> list[tuple[str, str]]:
+    """帮助面板按 `page_id` 分段 —— 每段文案只该点名**那一页**的控件。"""
+    text = (REPO / "ui_help_panel.py").read_text(encoding="utf-8")
+    keys = [
+        (m.start(), m.group(3))
+        for m in re.finditer(r"^(\s*)([\"'])([a-z_0-9]+)\2\s*:", text, re.M)
+    ]
+    out = []
+    for i, (start, page_id) in enumerate(keys):
+        end = keys[i + 1][0] if i + 1 < len(keys) else len(text)
+        out.append((page_id, text[start:end]))
+    return out
+
+
+def _named_controls() -> list[tuple[str, str, str]]:
+    """全部「被文案点名的控件」：(出处, page_id, 控件名)。
+
+    两条通路：**帮助面板**（按 page_id 分段）和**页面自己的文案**。
+    ⚠ 少一条通路就少一片分母 —— 页面通路是后补的，一补就多逮出两条。
+    """
+    found: list[tuple[str, str, str]] = []
+    for page_id, body in _help_panel_sections():
+        for _verb, name in CLICK_CONTEXT.findall(body):
+            found.append((f"ui_help_panel.py[{page_id}]", page_id, name))
+    for path in sorted((REPO / "pages").glob("*_page.py")):
+        page_id = path.stem[: -len("_page")]
+        for lineno, literal in _non_docstring_strings(path):
+            for _verb, name in CLICK_CONTEXT.findall(literal):
+                found.append((f"{path.name}:{lineno}", page_id, name))
+    return found
+
+
+def _resolves(name: str, labels: set[str]) -> bool:
+    """控件名要么整个对上，要么是某个标签的**主干**（允许标签多带几个尾巴）。
+
+    留 6 个字的余量是给「导入图标包…」这类**带后缀的按钮**用的；
+    再宽就会把「保存」匹到「保存播放设置」上，那等于放弃判别力。
+    """
+    target = _norm(name)
+    return any(
+        target == label or (target in label and len(label) <= len(target) + 6)
+        for label in labels
+    )
+
+
+def _offenders() -> list[tuple[str, str, str]]:
+    out = []
+    for source, page_id, name in _named_controls():
+        if (page_id, name) in NOT_OUR_CONTROLS:
+            continue
+        if not _resolves(name, _control_labels(page_id)):
+            out.append((source, page_id, name))
+    return out
+
+
+def test_every_named_control_actually_exists():
+    """文案点名的每一颗控件都要能在**那一页自己的**源码里找到。
+
+    ⭐ 为什么是「那一页自己的」而不是全仓：拿全仓比对时，
+    一个在别处日志里偶然出现的同名字符串就能让缺陷蒙混过关。
+    判据的比对面要**正好等于用户能点到的东西**。
+    """
+    bad = _offenders()
+    assert not bad, (
+        f"{len(bad)} 处文案点名了一颗**不存在的控件**：\n"
+        + "\n".join(f"  {src}  →「{name}」（{pid} 页里没有这颗）" for src, pid, name in bad)
+        + "\n\n控件被改名或删掉时，描述它的文案不会跟着变，也不会有任何东西报错"
+        "（RN-138 / RN-163 / RN-167 同一个形状）。\n"
+        "把文案改成控件**现在真正的名字**；如果它根本不是本软件的控件"
+        "（游戏设置、外部程序），加进 NOT_OUR_CONTROLS 并写清它是什么。"
+    )
+
+
+def test_the_extractor_actually_sees_enough_named_controls():
+    """空转守卫①：分母还在数量级上。
+
+    54 是 2026-08-22 的实测数。抽取器（正则、分段、docstring 过滤）
+    一旦瞎掉，上面那条会**全绿通过**而什么都没检查。
+    """
+    total = len(_named_controls())
+    assert total >= 40, (
+        f"只抽到 {total} 处点名控件的文案，实测应有 50+ —— "
+        "抽取器瞎了，上面那条判据在空转。"
+    )
+
+
+def test_both_extraction_paths_are_shipping():
+    """空转守卫②：**两条通路各自**都要在出货。
+
+    ⚠ 只看总数是拦不住的：页面通路（后补的那条）整个归零时，
+    帮助面板一条腿照样能顶出 39 条，总量守卫过关。
+    这正是 `test_no_layout_self_talk_sitewide` 里那条教训的又一次现身 ——
+    **每加一条通路就要配一条只盯它自己的守卫。**
+    """
+    by_path: dict[str, int] = {}
+    for source, _pid, _name in _named_controls():
+        key = "帮助面板" if source.startswith("ui_help_panel") else "页面文案"
+        by_path[key] = by_path.get(key, 0) + 1
+    assert by_path.get("帮助面板", 0) >= 25, f"帮助面板通路只出了 {by_path.get('帮助面板', 0)} 条：{by_path}"
+    assert by_path.get("页面文案", 0) >= 8, f"页面文案通路只出了 {by_path.get('页面文案', 0)} 条：{by_path}"
+
+
+def test_the_family_map_reaches_the_dialogs_folder():
+    """空转守卫③：族映射必须够到 **`dialogs/`**。
+
+    ⭐ 这条守卫是本轮**踩出来的**，而且它拦的不是漏报是**诬告**：
+    「保存播放设置」只存在于 `dialogs/kill_icon_workshop.py`，
+    第一版族映射只有 pages / widgets / core ⇒ 判据当场报
+    「击杀图标页没有这颗按钮」，而那句帮助文案**完全正确**。
+    ⇒ 分母不够的判据会**反过来让人去改对的东西**。
+    """
+    labels = _control_labels("kill_icon")
+    assert _norm("保存播放设置") in labels, (
+        "「保存播放设置」找不到了 —— 它住在 `dialogs/kill_icon_workshop.py`。 "
+        f"FAMILY_DIRS 现在是 {FAMILY_DIRS}，少了 dialogs 就会把正确文案判成缺陷。"
+    )
+
+
+def test_every_page_id_reaches_its_own_source_files():
+    """空转守卫④：每个 page_id 都要够得到**它自己的**源文件。
+
+    ⭐ 这是这条判据最阴的一种坏法：`_family_files()` 找不到任何页面文件时
+    **不会报错**，只是把比对面悄悄退化成「只剩共用件」——
+    那一页从此变成"点名什么都算存在"，而判据一片绿。
+
+    ⚠ 触发过一次：`fun_afterlife` 这一页的**注册 id 和文件名对不上**
+    （文件是 `pages/fun_page.py`）。这类错配以后每加一页都可能再来一次。
+    """
+    degraded = []
+    for _source, page_id, _name in _named_controls():
+        own = [
+            p for p in _family_files(page_id)
+            if p not in SHARED_SOURCES and p.exists()
+        ]
+        if not own:
+            degraded.append(page_id)
+    assert not degraded, (
+        f"这些 page_id 找不到任何属于自己的源文件：{sorted(set(degraded))}\n"
+        "它们的控件名比对已经退化成「只跟共用件比」—— 判据对这几页是半空转的。\n"
+        "多半是页面 id 和文件名对不上（如 fun_afterlife / fun_page.py）。"
+    )
+
+
+def test_the_whitelist_does_not_become_a_rubber_stamp():
+    """白名单不许长成橡皮图章。
+
+    它只收「这根本不是本软件的控件」这一类（游戏设置、外部程序）。
+    这一类天然极少 —— 一旦开始增长，说明有人在用它**关掉判据**而不是修文案。
+    """
+    assert len(NOT_OUR_CONTROLS) <= 5, (
+        f"NOT_OUR_CONTROLS 已经有 {len(NOT_OUR_CONTROLS)} 条。"
+        "它只该收「不是本软件控件」的那一类，超过 5 条基本可以确定被当成消音开关用了。"
+    )
+    for (page_id, name), why in NOT_OUR_CONTROLS.items():
+        assert why and len(why) >= 8, f"({page_id}, {name}) 没写清它到底是什么东西"
+
+
+def test_the_master_switch_help_line_follows_the_control():
+    """⭐ 批 1 那条被改坏的帮助文案，配一条只盯它的判据。
+
+    `kill_icon` 的启用方式在 RN-161 里从一颗 `QCheckBox`(「开启击杀图标」)
+    换成了 `MasterSwitchRow`。帮助面板那句 `勾上「开启击杀图标」`
+    在那一刻起就指着一颗**不存在的控件**，而批 1/2/3 全绿。
+
+    上面那条通用判据已经能拦住它了 —— 这条是**回归锚**：
+    通用判据将来若被放宽（正则、白名单、余量），这一条会先响。
+    """
+    from widgets.master_switch_link import ROW_LABEL_TEXT
+
+    body = dict(_help_panel_sections())["kill_icon"]
+    assert "开启击杀图标" not in body, (
+        "帮助面板又在教用户去勾一颗 RN-161 已经删掉的 checkbox。"
+    )
+    assert f"「{ROW_LABEL_TEXT}」" in body, (
+        f"`kill_icon` 的帮助文案里没有提到那颗真正的开关（「{ROW_LABEL_TEXT}」）—— "
+        "三步引导的第一步就断了。"
+    )

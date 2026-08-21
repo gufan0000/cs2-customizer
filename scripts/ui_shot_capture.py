@@ -90,6 +90,76 @@ def _safe_name(text: str) -> str:
     return "".join(keep)
 
 
+def _capture_whole(app, win, pid: str, out: Path, mode: str, failed: list) -> int:
+    """内容比视口高的页，**另拍一张没有折线的整页图**（RN-170）。
+
+    ⚠⚠ 这补的是一个存在了 24 轮外审的盲区：`_save()` 渲染的是**窗口**
+    （1280×800 / 860×640），所以每一页**折线以下的部分从来没被看过**。
+    页签盲区（`_capture_tabs`）解除之后，这是同一个形状的第二条腿。
+
+    ⭐⭐ 而它同时在**污染审查工具本身**：长页面在折线处永远有一个被切一半的
+    元素，而外审**稳定地把它读成"这个容器坏了"**。2026-08-22 实测，
+    12 发里 9 发非 NONE 全是这一条，且每一发都点名一个容器断言它损坏：
+
+        「「+ 导入」卡片超出容器底边导致底部文字被裁切」（full，3/3）
+        「「风格库」标题容器高度被严重挤压」（compact，3/3）
+        「颜色选项被卡片底部边缘截断」（crosshair compact，3/3）
+
+    三条**实测全是假的**：导入卡 127px 在 160px 容器里（富余 34px）、
+    风格库标题 21px = sizeHint、颜色选项底部距父容器还有 78px。
+
+    ⭐ 所以修法不是「让它别报」，是**别再给它一张注定会被误读的图**。
+
+    ⚠⚠ **第一版是「滚到底再拍一张窗口」，实测不行**：那样只是把折线从下边
+    搬到了上边 —— 同一批图复跑，外审改口报「顶部被裁切」「标题文字上半部分
+    被容器上边缘裁切」，21 发里 12 发，一模一样的假象镜像了一遍。
+    ⭐⭐ **补一张"另一半"解决不了折线，因为折线跟着视口走，不跟着内容走。**
+    ⇒ 现在渲染的是**滚动区里那个内容控件本身、按它的完整高度** ——
+    一张**根本没有折线**的图。
+
+    ⚠ 它**不替代**整窗那张：整窗那张要看的是导航区与内容区的关系
+    （见 `_save` 的调用处注释），这一张只看内容自己有没有真的坏。
+    两张各有各的问题域，缺一不可。
+    """
+    from PySide6.QtWidgets import QScrollArea
+
+    page = getattr(win, "pages", {}).get(pid)
+    if page is None:
+        return 0
+    # ⚠ 只认**看得见的**滚动区。第一版没这一条，于是把 `helpScrollArea`
+    # （帮助面板，一个默认隐藏的浮层）也算进来了 —— 它自己也会溢出。
+    # ⚠ 而且不能只拍"滚动区里的内容控件"：`kill_icon` 的页头和状态卡
+    #   **在滚动区外面**，那样拍会丢掉半页（实测拍出来 634px，比视口还矮）。
+    # ⇒ 改成**把整个窗口撑高到不需要滚动**再拍整窗：既没有折线，
+    #   又保住了「导航区与内容区的关系」这个只有整窗图才看得见的问题域。
+    overflow = max(
+        (s.verticalScrollBar().maximum()
+         for s in page.findChildren(QScrollArea) if s.isVisible()),
+        default=0,
+    )
+    if overflow <= 0:
+        return 0
+
+    original = win.size()
+    original_min = win.minimumSize()
+    try:
+        win.setMinimumSize(0, 0)
+        win.resize(original.width(), original.height() + overflow)
+        for _ in range(4):
+            app.processEvents()
+        if _save(win, out / f"{mode}_{pid}__whole.png"):
+            return 1
+        failed.append(f"{pid}(whole)")
+        return 0
+    finally:
+        # ⚠ 必须复位：不复位的话后面几页会按这个撑高的尺寸拍，
+        # 而基线/对比立的是标准视口的样子（同 `_capture_tabs` 的复位理由）。
+        win.setMinimumSize(original_min)
+        win.resize(original)
+        for _ in range(4):
+            app.processEvents()
+
+
 def _capture_tabs(app, win, pid: str, out: Path, mode: str, failed: list) -> int:
     """有页签的页，每个页签各拍一张。
 
@@ -141,6 +211,10 @@ def main() -> int:
                     help="连同构造即起热键/音频设备的页一起拍——会打扰前台，慎用")
     ap.add_argument("--tabs", action="store_true",
                     help="有页签的页逐个页签各拍一张（默认只拍当前页签）")
+    ap.add_argument("--whole", action="store_true",
+                    help="内容比视口高的页，**另拍一张没有折线的整页图**（RN-170）。"
+                         "不给的话每一页折线以下的部分永远没人看过，"
+                         "而折线处那个被切一半的元素会被外审读成「容器坏了」")
     _ui_mode.add_expert_argument(ap)
     args = ap.parse_args()
 
@@ -205,6 +279,7 @@ def main() -> int:
     mode = "compact" if args.compact else "full"
     ok, failed = 0, []
     extra_tabs = 0
+    extra_whole = 0
     for pid in page_ids:
         try:
             _ui_mode.goto(win, pid)
@@ -216,6 +291,8 @@ def main() -> int:
                 ok += 1
             else:
                 failed.append(pid)
+            if args.whole:
+                extra_whole += _capture_whole(app, win, pid, out, mode, failed)
             if args.tabs:
                 extra_tabs += _capture_tabs(app, win, pid, out, mode, failed)
         except Exception as exc:
@@ -226,8 +303,16 @@ def main() -> int:
     # 界面模式必须写进报告：不写，读图的人（和外审）会默认这是普通视图（RN-134）
     print(f"\n== {mode} 模式 {width}x{height} 主题 {args.theme} 字号 {args.scale}"
           f" · 界面 {_ui_mode.describe(args.expert)} ==")
-    print(f"   出图 {ok} 张 → {out}"
-          + (f"（另 {extra_tabs} 张来自逐页签）" if extra_tabs else ""))
+    extras = []
+    if extra_tabs:
+        extras.append(f"{extra_tabs} 张来自逐页签")
+    if extra_whole:
+        extras.append(f"{extra_whole} 张整页无折线")
+    print(f"   出图 {ok} 张 → {out}" + (f"（另 {'、'.join(extras)}）" if extras else ""))
+    if args.whole and not extra_whole:
+        # 静默少拍会被读成"全都看过了"（UP-096 的教训）
+        print("   ⚠ 给了 --whole 但一张都没多拍：这几页内容都没超过视口？"
+              "还是滚动区取错了？—— 别把它读成「下半截没问题」")
     # 覆盖面每次都要报：静默少拍会被读成"全都看过了"（UP-096 的教训）
     print(f"   覆盖面: {len(page_ids)}/{total} 页"
           + (f"，跳过构造即起设备的 {len(skipped)} 页: {', '.join(skipped)}" if skipped else "（全覆盖）"))

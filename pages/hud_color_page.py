@@ -159,6 +159,16 @@ class HudColorPage(QWidget):
         status_card_layout.setContentsMargins(14, 12, 14, 12)
         status_card_layout.setSpacing(8)
 
+        # RN-162：这一页的总开关**也**收进来（批 1 那七页同一个机制）。
+        # ⚠ 批 1 当时**故意没扩到这一页** —— 它已关档、已锁基线，顺手改会让
+        # 那一轮失去可比的基线。⭐ 范围按理由走，不按顺手走；
+        # 而"以后补"这件事只有真的补了才算数。
+        from widgets.master_switch_link import make_master_switch_row
+
+        self.master_switch_row = make_master_switch_row(
+            self, "hud_rules_enabled", "动态HUD")
+        status_card_layout.addWidget(self.master_switch_row)
+
         status_row = QHBoxLayout()
         status_row.setSpacing(10)
         status_title = QLabel("当前状态")
@@ -345,6 +355,14 @@ class HudColorPage(QWidget):
             f"数字键 {self._count_enabled_key_rules()} 项 · 事件 {self._count_enabled_events()} 项"
         )
 
+    def on_master_switch_synced(self):
+        """总开关被别处拨动后，把本页那条状态文案重算一遍。
+
+        ⭐ 全仓统一的钩子名（`widgets/master_switch_link` 调它）。
+        少了这一下，开关动了而徽章不动 —— 同屏两处说法不一致，RN-107 族。
+        """
+        self._sync_status_strip()
+
     def _sync_status_strip(self):
         profile_text = self._compact_text(
             self.profile_combo.currentText() if hasattr(self, "profile_combo") else "",
@@ -360,7 +378,11 @@ class HudColorPage(QWidget):
         master_enabled = bool(getattr(config, "hud_rules_enabled", False))
 
         badges = [
-            ("positive" if master_enabled else "warning", f"总开关 · {'开启' if master_enabled else '关闭'}"),
+            # ⚠ 这条原来写「总开关 · 开启」。开关搬进同一张卡之后，
+            # 那就是**同一行里把一件事说两遍**（RN-163 在 kill_icon /
+            # screen_effects 上逮到的那一条）。改成功能词。
+            ("positive" if master_enabled else "warning",
+             "生效 · 规则已启用" if master_enabled else "生效 · 规则未启用"),
             ("info", f"预设 · {profile_text}"),
             ("positive" if key_count else "info", f"数字键 · {key_count} 项"),
             ("positive" if event_count else "info", f"事件 · {event_count} 项"),
@@ -390,7 +412,12 @@ class HudColorPage(QWidget):
             master_enabled = bool(getattr(config, "hud_rules_enabled", False))
 
         if not master_enabled:
-            self.context_hint_label.setText("总开关在“基础设置 -> 动态HUD”，关闭时规则会继续保留，但不会在游戏里生效。")
+            # ⚠ 这句原来写「总开关在"基础设置 -> 动态HUD"」—— RN-163 那 13 处
+            # 指路文案的**第 14 处**，只因为这一页当时还没有自己的开关，
+            # 那条判据（"有自己开关的页才查"）就绕过去了。
+            # ⭐ **条件式判据会在条件不成立的地方留下盲区**，而盲区不报错。
+            self.context_hint_label.setText(
+                "总开关没开：规则会继续保留，但不会在游戏里生效。")
             self.context_hint_label.show()
             return
 
@@ -467,6 +494,10 @@ class HudColorPage(QWidget):
         rules = normalize_hud_rules(config.hud_rules, profile=profile)
         self._apply_rules_to_ui(profile, rules)
         self._set_dirty(False)
+        # ⚠ 回读 config 的**实际值**再定开关的样子。总开关可能是在别处
+        # （首页那颗、或 config 热重载）改的，本页那一颗不会自己知道。
+        if hasattr(self, "master_switch_row"):
+            self.master_switch_row.refresh()
         self._sync_status_strip()
 
     def can_leave_page(self):
