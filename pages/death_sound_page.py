@@ -282,6 +282,10 @@ class DeathSoundPage(QWidget):
         # 操作条钉在滚动区外——跟着内容滚走的话，页面一长就找不到主操作了
         self.action_bar = PageActionBar(self)
         self.action_bar.configure_extra("新建风格", self._open_style_creator, visible=True)
+        # RN-165：记下 extra 的原样，空库态要借用这个位置。
+        self._extra_default = (self.action_bar.extra_btn.text(),
+                               self.action_bar._extra_callback,
+                               self.action_bar.extra_btn.menu())
         self.action_bar.configure_secondary("刷新风格列表", self._refresh_style_catalog, visible=True)
         self.action_bar.configure_primary("打开音频资源", self._open_audio_resource_root, visible=True)
         self.action_bar.extra_btn.setMinimumWidth(120)
@@ -429,6 +433,47 @@ class DeathSoundPage(QWidget):
         if not self.audio_manager.play_sound(sound_key):
             report_preview_failure(self, PreviewFailure.DEVICE, style_value)
 
+    #: 这一页在社区站的资源分类（RN-165，机制与 RN-153 的音效家族四页同源）。
+    COMMUNITY_CATEGORY_KEY = "death_sound"
+
+    def _library_is_empty(self) -> bool:
+        """一个可用风格都没有——这才叫空库（不是"没配"，是"根本没得配"）。
+
+        ⚠ 「没配」是用户的选择，「没得配」是软件不带素材 ——
+        两者的修法完全相反：没配 ⇒ 去配；没得配 ⇒ 先去拿素材。
+        """
+        return not self.death_styles
+
+    def _sync_community_guidance(self) -> None:
+        """空库时把底栏换成一条走得通的路（RN-165）。
+
+        ⭐ **"打开一个空文件夹"不是一条路** —— 用户手上没有文件。
+        空了该长什么样**全仓只有一份**（`widgets/community_library`）：
+        这一页只回答「我空不空」，不自己决定空状态的样子。
+        """
+        bar = getattr(self, "action_bar", None)
+        if bar is None:
+            return
+        from widgets import community_library
+
+        applied = community_library.guide_empty_library(
+            bar,
+            empty=self._library_is_empty(),
+            category_key=self.COMMUNITY_CATEGORY_KEY,
+            cta_text="去社区拿一套被击杀音效",
+            keep_text="打开音频资源",
+            keep_callback=self._open_audio_resource_root,
+            message=community_library.empty_library_message("风格"),
+        )
+        if not applied:
+            # ⚠ **借了要还**：空库态借用了 extra 那个位置。
+            bar.configure_primary("打开音频资源", self._open_audio_resource_root,
+                                  visible=True)
+            text, callback, menu = getattr(
+                self, "_extra_default", ("新建风格", None, None))
+            bar.configure_extra(text, callback, visible=True)
+            bar.extra_btn.setMenu(menu)
+
     def _refresh_status_badge(self, *_args):
         enabled = bool(getattr(config, "death_sound_enabled", False))
         # RN-033：这里原来直接读配置的原始值当"当前样式"，而下拉框读的是解析后的值。
@@ -490,6 +535,8 @@ class DeathSoundPage(QWidget):
                     "可先打开资源目录补充音频，再回来刷新。"
                 )
             self.action_bar.set_message(action_message)
+        # RN-165：空库引导（逻辑在 community_library，只有一份）
+        self._sync_community_guidance()
 
     def _refresh_style_overview(self, enabled: bool, style_enabled: bool, current_style: str,
                                 available_count: int, stale_style: str = "",

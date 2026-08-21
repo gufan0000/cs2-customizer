@@ -233,6 +233,10 @@ class GunSoundPage(QWidget):
         layout.addWidget(self.tab_widget, 1)
 
         self.action_bar = PageActionBar(self)
+        # RN-165：记下 extra 的原样，空库态要借用这个位置。
+        self._extra_default = (self.action_bar.extra_btn.text(),
+                               self.action_bar._extra_callback,
+                               self.action_bar.extra_btn.menu())
         self.action_bar.configure_secondary("刷新风格列表", self._refresh_style_catalog, visible=True)
         self.action_bar.configure_primary("打开音频资源", self._open_audio_resource_root, visible=True)
         self.action_bar.secondary_btn.setMinimumWidth(148)
@@ -547,6 +551,47 @@ class GunSoundPage(QWidget):
             self.logger.warning(f"测试枪声播放失败: {sound_key}")
             report_preview_failure(self, PreviewFailure.NO_FILE, f"{weapon_type} · {style}")
 
+    #: 这一页在社区站的资源分类（RN-165，机制与 RN-153 的音效家族四页同源）。
+    COMMUNITY_CATEGORY_KEY = "gun_sound"
+
+    def _library_is_empty(self) -> bool:
+        """**一把枪都没有可用风格**——这才叫空库（不是"没配"，是"根本没得配"）。
+
+        ⚠ 「没配」是用户的选择，「没得配」是软件不带素材 ——
+        两者的修法完全相反：没配 ⇒ 去配；没得配 ⇒ 先去拿素材。
+        """
+        return not any(self.weapon_styles.values())
+
+    def _sync_community_guidance(self) -> None:
+        """空库时把底栏换成一条走得通的路（RN-165）。
+
+        ⭐ **"打开一个空文件夹"不是一条路** —— 用户手上没有文件。
+        空了该长什么样**全仓只有一份**（`widgets/community_library`）：
+        这一页只回答「我空不空」，不自己决定空状态的样子。
+        """
+        bar = getattr(self, "action_bar", None)
+        if bar is None:
+            return
+        from widgets import community_library
+
+        applied = community_library.guide_empty_library(
+            bar,
+            empty=self._library_is_empty(),
+            category_key=self.COMMUNITY_CATEGORY_KEY,
+            cta_text="去社区拿一套枪声",
+            keep_text="打开音频资源",
+            keep_callback=self._open_audio_resource_root,
+            message=community_library.empty_library_message("风格"),
+        )
+        if not applied:
+            # ⚠ **借了要还**：空库态借用了 extra 那个位置。
+            bar.configure_primary("打开音频资源", self._open_audio_resource_root,
+                                  visible=True)
+            text, callback, menu = getattr(
+                self, "_extra_default", ("新建风格", None, None))
+            bar.configure_extra(text, callback, visible=True)
+            bar.extra_btn.setMenu(menu)
+
     def _refresh_status_badge(self, *_args):
         enabled = bool(is_gun_sound_master_enabled(config))
         effective = self._effective_styles()
@@ -621,3 +666,5 @@ class GunSoundPage(QWidget):
             else:
                 action_message = "总开关当前关闭，这里的映射会保留；如新增资源，可先刷新风格列表再去「基础设置」打开总开关。"
             self.action_bar.set_message(action_message)
+        # RN-165：空库引导（逻辑在 community_library，只有一份）
+        self._sync_community_guidance()

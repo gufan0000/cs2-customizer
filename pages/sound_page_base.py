@@ -58,12 +58,6 @@ from core.audio.audio_file_utils import DEFAULT_AUDIO_EXTENSIONS
 
 #: 空库时主按钮的兜底文案（子类没写 `EMPTY_PRIMARY_TEXT` 时用）。
 DEFAULT_EMPTY_PRIMARY_TEXT = "去社区拿一套"
-#: 空库时底栏那句话。⭐ 第一件事是**承认软件本来就不带素材** ——
-#: 不说的话用户会以为是自己装坏了（RN-145 的原话）。
-EMPTY_LIBRARY_MESSAGE = (
-    "还没有任何可用风格 —— 本软件不带素材。三步：去社区拿一个包 → "
-    "「打开音频资源」把音频放进去 → 点「刷新风格列表」。"
-)
 
 
 class SoundPageBase:
@@ -143,35 +137,30 @@ class SoundPageBase:
 
         from widgets import community_library
 
-        empty = self._library_is_empty()
-        reachable = community_library.has_category(self.COMMUNITY_CATEGORY_KEY)
-        if empty and reachable:
-            bar.configure_primary(
-                self.EMPTY_PRIMARY_TEXT or DEFAULT_EMPTY_PRIMARY_TEXT,
-                self._open_community_library, visible=True)
-            # ⚠ **第一版把「打开音频资源」整个换掉了，那是把链路砍断了一半。**
-            # 外审当场两发独立点破：「文案提示『放进资源目录』却没有打开目录的入口，
-            # 从社区下载后卡在找路径环节」。
-            # ⭐ 我修好了第一步（去哪儿拿），却顺手删掉了第二步（放哪儿去）——
-            # **一条三步的路，只把第一步做顺是走不通的。**
-            # ⇒ 空库态的三颗按钮就是那三步：拿 → 放 → 刷新。
-            #   「新建风格」在没有素材时本来就没用，把位置让出来。
-            bar.extra_btn.setMenu(None)
-            bar.configure_extra("打开音频资源", self._open_audio_resource_root,
-                                visible=True)
-            bar.set_message(EMPTY_LIBRARY_MESSAGE)
-        else:
-            bar.configure_primary("打开音频资源", self._open_audio_resource_root,
-                                  visible=True)
-            text, callback, menu = getattr(
-                self, "_extra_default", ("新建风格", None, None))
-            bar.configure_extra(text, callback, visible=True)
-            bar.extra_btn.setMenu(menu)
+        # ⭐ **空库时该长什么样，全仓只有一份**（`community_library`）——
+        # 八个页面「库空不空」各问各的（数据结构完全不同），
+        # 但"空了给什么"必须同一份，否则八页会长出八个略有差别的空状态。
+        applied = community_library.guide_empty_library(
+            bar,
+            empty=self._library_is_empty(),
+            category_key=self.COMMUNITY_CATEGORY_KEY,
+            cta_text=self.EMPTY_PRIMARY_TEXT or DEFAULT_EMPTY_PRIMARY_TEXT,
+            keep_text="打开音频资源",
+            keep_callback=self._open_audio_resource_root,
+            message=community_library.empty_library_message("风格"),
+        )
+        if applied:
+            return
 
-    def _open_community_library(self) -> None:
-        from widgets import community_library
-
-        community_library.open_category(self.COMMUNITY_CATEGORY_KEY)
+        # 有素材（或这个发行版没有社区站）：原样恢复。
+        # ⚠ **借了要还** —— 空库态借用了 extra 那个位置放「打开音频资源」，
+        # 不还回去就是一次静默的功能丢失：用户再也建不了风格，而没有任何一处报错。
+        bar.configure_primary("打开音频资源", self._open_audio_resource_root,
+                              visible=True)
+        text, callback, menu = getattr(
+            self, "_extra_default", ("新建风格", None, None))
+        bar.configure_extra(text, callback, visible=True)
+        bar.extra_btn.setMenu(menu)
 
     def on_master_switch_synced(self):
         """总开关被别处拨动后，把状态徽章重算一遍。

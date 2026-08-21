@@ -425,6 +425,10 @@ class SpecialSoundPage(QWidget):
         self._create_round_tab()
 
         self.action_bar = PageActionBar(self)
+        # RN-165：记下 extra 的原样，空库态要借用这个位置。
+        self._extra_default = (self.action_bar.extra_btn.text(),
+                               self.action_bar._extra_callback,
+                               self.action_bar.extra_btn.menu())
         self.action_bar.configure_secondary("刷新风格列表", self._refresh_style_catalog, visible=True)
         self.action_bar.configure_primary("打开当前资源", self._open_current_resource_root, visible=True)
         self.action_bar.secondary_btn.setMinimumWidth(148)
@@ -1006,6 +1010,53 @@ class SpecialSoundPage(QWidget):
 
         self.logger.info("特殊音效设置加载完成")
 
+    #: 这一页在社区站的资源分类（RN-165，机制与 RN-153 的音效家族四页同源）。
+    COMMUNITY_CATEGORY_KEY = "special_sound"
+
+    def _library_is_empty(self) -> bool:
+        """四大类（投掷物 / 回合 / C4 / 血量）**一个可用风格都没有**才叫空库。
+
+        ⚠ 「没配」是用户的选择，「没得配」是软件不带素材 ——
+        两者的修法完全相反：没配 ⇒ 去配；没得配 ⇒ 先去拿素材。
+        """
+        families = [self._available_styles(g, grenade=True)
+                    for g in self.GRENADE_TYPES]
+        families += [self._available_styles(meta[1])
+                     for meta in self.ROUND_TYPE_META.values()]
+        families.append(self._available_styles("c4_sound_styles"))
+        families.append(self._available_styles("health_warning_styles"))
+        return not any(families)
+
+    def _sync_community_guidance(self) -> None:
+        """空库时把底栏换成一条走得通的路（RN-165）。
+
+        ⭐ **"打开一个空文件夹"不是一条路** —— 用户手上没有文件。
+        空了该长什么样**全仓只有一份**（`widgets/community_library`）：
+        这一页只回答「我空不空」，不自己决定空状态的样子。
+        """
+        bar = getattr(self, "action_bar", None)
+        if bar is None:
+            return
+        from widgets import community_library
+
+        applied = community_library.guide_empty_library(
+            bar,
+            empty=self._library_is_empty(),
+            category_key=self.COMMUNITY_CATEGORY_KEY,
+            cta_text="去社区拿一套特殊音效",
+            keep_text="打开当前资源",
+            keep_callback=self._open_current_resource_root,
+            message=community_library.empty_library_message("风格"),
+        )
+        if not applied:
+            # ⚠ **借了要还**：空库态借用了 extra 那个位置。
+            bar.configure_primary("打开当前资源", self._open_current_resource_root,
+                                  visible=True)
+            text, callback, menu = getattr(
+                self, "_extra_default", ("新建风格", None, None))
+            bar.configure_extra(text, callback, visible=True)
+            bar.extra_btn.setMenu(menu)
+
     def _refresh_status_badge(self):
         enabled_modules = self._count_enabled_modules()
 
@@ -1141,6 +1192,8 @@ class SpecialSoundPage(QWidget):
             else:
                 action_message = "新增素材后可直接刷新风格列表。"
             self.action_bar.set_message(action_message)
+        # RN-165：空库引导（逻辑在 community_library，只有一份）
+        self._sync_community_guidance()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)

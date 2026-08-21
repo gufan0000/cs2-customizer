@@ -2853,6 +2853,49 @@ REVERTS = [
         "**这一页当场从全站文案扫描里掉出去**，而总量守卫只少一条、照样绿。"
         "⭐ 这是改动自己造出来的盲区 —— 把字面量收成常量的那一刻就发生了，没有任何东西会响",
     ),
+    # ==================================== RN-165（批 3：剩余四页）
+    Revert(
+        "RN", "某一页又自己拼一份空状态底栏",
+        "widgets/community_library.py",
+        "    bar.configure_primary(cta_text, lambda: open_category(category_key), visible=True)",
+        "    return False  # 共用件被掏空，各页只能自己拼",
+        "tests/test_empty_library_covers_every_page.py::"
+        "test_the_shared_helper_is_the_only_place_that_opens_the_category",
+        "⭐ RN-165：八页「库空不空」各问各的（数据结构完全不同），"
+        "但**空了该长什么样只能有一份** —— 否则八页会各自演化成八个略有差别的空状态，"
+        "而没有任何东西会发现它们不一样了",
+    ),
+    Revert(
+        "RN", "共用件又把第二步删掉",
+        "widgets/community_library.py",
+        "    bar.configure_extra(keep_text, keep_callback, visible=True)",
+        "    pass  # 不保第二步",
+        "tests/test_empty_library_covers_every_page.py::"
+        "test_the_shared_helper_is_the_only_place_that_opens_the_category",
+        "⭐⭐ RN-153 的血教训：第一版把「打开资源目录」整个换掉了，"
+        "而底栏文案还在说「放进资源目录」—— **指着一个不存在的按钮**。"
+        "我修好了第一步（去哪儿拿），却顺手删掉了第二步（放哪儿去）",
+    ),
+    Revert(
+        "RN", "flash 的启动入口被空库引导顶掉",
+        "pages/flash_page.py",
+        '                self.action_bar.configure_primary("启用自定闪光", self._enable_and_start, visible=True)',
+        '                self._guide_empty_library(True, "去社区拿一套自定闪光", "打开图片文件夹", self._open_flash_images_folder, "刷新样式列表")',
+        "tests/test_empty_library_covers_every_page.py::"
+        "test_flash_only_guides_on_the_two_asset_tabs",
+        "⭐ flash 的主按钮本来就是个状态机。引导插到「启用/启动」那一支，"
+        "就等于**把全页唯一能让功能真正跑起来的按钮换成了逛社区**（RN-079 刚修好的那颗）",
+    ),
+    Revert(
+        "RN", "special_sound 又漏掉空库引导的调用点",
+        "pages/special_sound_page.py",
+        "        self._sync_community_guidance()",
+        "        pass  # self._sync_community_guidance()",
+        "tests/test_empty_library_covers_every_page.py::"
+        "test_every_page_actually_calls_the_guidance[special_sound_page.py]",
+        "RN-165：逻辑共用，但**调用点每页一行** —— 抄漏一处那一页的空库引导就是死的，"
+        "而不会有任何一处报错（同 RN-138 / RN-163 那个形状）",
+    ),
     # ==================================== RN-153 / RN-148（批 2）
     Revert(
         "RN", "结构投影又直接 json.loads 标记后的全部内容",
@@ -2870,9 +2913,12 @@ REVERTS = [
 
     Revert(
         "RN", "空库时主按钮又把用户送去空文件夹",
-        "pages/sound_page_base.py",
-        "        if empty and reachable:",
-        "        if False:",
+        # ⚠ 2026-08-21（RN-165）：这段逻辑**搬进共用件了**
+        # （`widgets/community_library.guide_empty_library`）——
+        # 八页共用同一份空状态。锚点跟着搬。
+        "widgets/community_library.py",
+        "    if not empty or not has_category(category_key):",
+        "    if True:",
         "tests/test_empty_library_points_at_the_community.py::"
         "test_an_empty_library_swaps_the_primary_button",
         "RN-153：全新安装时底栏最抢眼的那颗按钮是「打开音频资源」，"
@@ -2881,9 +2927,12 @@ REVERTS = [
     ),
     Revert(
         "RN", "有素材了还一直显示社区引导",
+        # ⚠ 2026-08-21（RN-165）：这段逻辑**搬进共用件了**
+        # （`widgets/community_library.guide_empty_library`）——
+        # 八页共用同一份空状态。锚点跟着搬。
         "pages/sound_page_base.py",
-        "        empty = self._library_is_empty()",
-        "        empty = True",
+        "            empty=self._library_is_empty(),",
+        "            empty=True,",
         "tests/test_empty_library_points_at_the_community.py::"
         "test_a_stocked_library_keeps_the_original_primary",
         "RN-153 的反面守卫：**永远显示引导**也能让正面那几条全绿，"
@@ -2903,9 +2952,12 @@ REVERTS = [
     ),
     Revert(
         "RN", "没有社区站的发行版留下一颗指向空地址的按钮",
-        "pages/sound_page_base.py",
-        "        reachable = community_library.has_category(self.COMMUNITY_CATEGORY_KEY)",
-        "        reachable = True",
+        # ⚠ 2026-08-21（RN-165）：这段逻辑**搬进共用件了**
+        # （`widgets/community_library.guide_empty_library`）——
+        # 八页共用同一份空状态。锚点跟着搬。
+        "widgets/community_library.py",
+        "    if not empty or not has_category(category_key):",
+        "    if not empty:",
         "tests/test_empty_library_points_at_the_community.py::"
         "test_a_build_without_the_community_falls_back_to_a_real_path",
         "RN-157 的教训：开源版的 `service_urls` 归它自己所有，没有社区站。"

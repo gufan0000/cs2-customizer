@@ -183,6 +183,41 @@ class FlashPage(QWidget):
             self._init_flash_process()
         self._sync_overview_status()
 
+    #: 这一页在社区站的资源分类（RN-165）。
+    COMMUNITY_CATEGORY_KEY = "flash"
+
+    def _image_library_is_empty(self) -> bool:
+        combo = getattr(self, "image_style_combo", None)
+        return combo is not None and combo.count() == 0
+
+    def _audio_library_is_empty(self) -> bool:
+        combo = getattr(self, "audio_style_combo", None)
+        return combo is not None and combo.count() == 0
+
+    def _guide_empty_library(self, empty, cta_text, keep_text, keep_callback,
+                             refresh_label) -> bool:
+        """空库时把底栏换成一条走得通的路。回报有没有改。
+
+        ⚠ **这一页和别的页不一样**：它的主按钮本来就是个状态机
+        （按页签在「打开文件夹 / 预览 / 启用 / 启动 / 前往预览」之间切）。
+        所以引导只插在「图片设置 / 音频设置」两个页签上 ——
+        那两个页签的主按钮正是 RN-165 要治的那种"打开一个空文件夹"。
+        ⭐ 空了该长什么样仍然**只有一份**（`widgets/community_library`），
+        这一页只决定"什么时候算空、原来那颗按钮是哪一颗"。
+        """
+        from widgets import community_library
+
+        return community_library.guide_empty_library(
+            self.action_bar,
+            empty=bool(empty),
+            category_key=self.COMMUNITY_CATEGORY_KEY,
+            cta_text=cta_text,
+            keep_text=keep_text,
+            keep_callback=keep_callback,
+            message=community_library.empty_library_message(
+                "素材", refresh_label),
+        )
+
     def _sync_action_bar(self):
         if not hasattr(self, "action_bar"):
             return
@@ -199,6 +234,13 @@ class FlashPage(QWidget):
                 f"当前页面：{current_tab} · 图片样式 {self._current_image_style_text()} / 媒体 {media_text}"
                 f" · 运行状态 {runtime_text}。"
             )
+            # RN-165：一张图都没有的时候，「打开图片文件夹」点开是个空目录。
+            if self._guide_empty_library(self._image_library_is_empty(),
+                                         "去社区拿一套自定闪光",
+                                         "打开图片文件夹",
+                                         self._open_flash_images_folder,
+                                         "刷新样式列表"):
+                return
         elif current_tab == "音频设置":
             self.action_bar.configure_secondary("刷新音频列表", self._refresh_audio_styles, visible=True)
             self.action_bar.configure_primary("打开音频文件夹", self._open_flash_audio_folder, visible=True)
@@ -206,6 +248,12 @@ class FlashPage(QWidget):
                 f"当前页面：{current_tab} · 音频 {'已启用' if bool(getattr(config, 'flash_audio_enabled', False)) else '未启用'}"
                 f" / {self._current_audio_style_text()} · 运行状态 {runtime_text}。"
             )
+            if self._guide_empty_library(self._audio_library_is_empty(),
+                                         "去社区拿一套自定闪光",
+                                         "打开音频文件夹",
+                                         self._open_flash_audio_folder,
+                                         "刷新音频列表"):
+                return
         elif current_tab == "效果预览":
             self.action_bar.configure_secondary("50%预览", lambda: self._quick_preview(50), visible=True)
             self.action_bar.configure_primary("自定义强度预览", self._preview_flash, visible=True)
