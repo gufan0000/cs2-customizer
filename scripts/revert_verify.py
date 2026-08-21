@@ -1440,7 +1440,7 @@ REVERTS = [
         "V", "页面说明又写回版面决策",
         "pages/kill_sound_page.py",
         '    PAGE_LEAD = "击杀敌人时播放你自己的音效，逐把枪选风格；一个风格里自带 1~5 连杀的不同音效。'
-        '点「测试」可以按连杀档位试听；总开关在「基础设置」里。"',
+        '点「测试」可以按连杀档位试听；总开关管它开不开。"',   # ⚠ 2026-08-21 随 RN-163 改过文案
         '    PAGE_LEAD = "击杀音效页保持列表式效率，把分类切换和快速试听留在一屏里。"',
         "tests/test_page_copy_is_user_facing.py::test_page_copy_has_no_layout_jargon",
         "副标题讲的是界面怎么排而不是功能是什么，玩家读完不知道该干嘛"
@@ -1449,7 +1449,8 @@ REVERTS = [
     Revert(
         "V", "文案又指向不存在的「首页」",
         "pages/kill_sound_page.py",
-        "再去「基础设置」打开总开关。",
+        # ⚠ 2026-08-21（RN-163）：总开关搬进本页，这句指路已删。锚点改到现在这句上。
+        "再拨开总开关。",
         "再回首页启用。",
         "tests/test_page_copy_is_user_facing.py::"
         "test_page_copy_does_not_point_at_a_nonexistent_page",
@@ -1937,7 +1938,7 @@ REVERTS = [
     Revert(
         "RN", "副标题又无条件命令用户去开一个可能已经开着的开关",
         "pages/switch_weapon_page.py",
-        '    PAGE_LEAD = "切换武器时播放你自己的音效。逐把枪选风格，点「测试」试听；总开关在「基础设置」里。"',
+        '    PAGE_LEAD = "切换武器时播放你自己的音效。逐把枪选风格，点「测试」试听；总开关管它开不开。"',
         '    PAGE_LEAD = "切换武器时播放你自己的音效。先去「基础设置」打开总开关，再逐把枪选风格，点「测试」试听。"',
         "tests/test_sound_family_status_tells_the_truth.py::"
         "test_no_page_orders_the_user_to_flip_a_switch_that_may_already_be_on",
@@ -2849,40 +2850,111 @@ REVERTS = [
         "**这一页当场从全站文案扫描里掉出去**，而总量守卫只少一条、照样绿。"
         "⭐ 这是改动自己造出来的盲区 —— 把字面量收成常量的那一刻就发生了，没有任何东西会响",
     ),
-    # ==================================== RN-144：功能页上那颗「去总开关」
+    # ============== RN-144 升级版：功能页上那颗**就地**总开关（含 RN-147 / RN-155）
     Revert(
-        "RN", "直达跳转又退回按文案模糊匹配",
+        "RN", "就地开关又退回只改样子、不发信号",
         "gui_widget.py",
-        "        row = toggle.parentWidget()\n"
-        "        self._reveal_widget(page, row if row is not None else toggle)",
-        "        self._highlight_search_target(MASTER_SWITCH_PAGE_ID, config_key)",
-        "tests/test_master_switch_link.py::test_the_link_lands_on_the_right_switch_row",
-        "RN-144：页面照常跳到基础设置、照常有一处亮起来，"
-        "只是**亮的不是那颗开关** —— 拿字符串去 17 颗开关的页面上模糊找，"
-        "命中的可能是另一处同名文案。⭐ 定位错行比不定位更糟：用户会照着高亮去改错东西",
+        "            toggle.toggle()        # 与鼠标点它是同一条路",
+        "            toggle.setChecked(bool(enabled))",
+        "tests/test_master_switch_row.py::"
+        "test_flipping_the_page_switch_runs_the_real_side_effects",
+        "⭐⭐ RN-144 升级版最贵的一条：`ToggleSwitch` 的文件头写着「与 QCheckBox "
+        "API 兼容」，但它的 `setChecked()` **不发 `toggled`**（只有 `toggle()` 发）。"
+        "写成 setChecked 之后，页内开关**看着拨过去了，副作用一条都没跑** —— "
+        "叠加层不同步、素材不预热、config 不落盘，而且没有任何一处会报错。"
+        "⭐ 「API 兼容」是关于方法名的说法，不是关于**信号语义**的保证",
+    ),
+    Revert(
+        "RN", "就地开关自己写 config，绕开那条唯一链路",
+        "widgets/master_switch_link.py",
+        "        if not window.set_feature_enabled(self.config_key, bool(checked)):",
+        "        if not setattr(__import__('config').config, self.config_key, bool(checked)):",
+        "tests/test_master_switch_row.py::"
+        "test_flipping_the_page_switch_runs_the_real_side_effects",
+        "RN-144 升级版：自己 setattr 拿到的是「界面显示已开、功能根本没起」。"
+        "⭐ 同一件事只能有一条链路；第二条链路一定会缺东西，而缺的那部分不报错",
+    ),
+    Revert(
+        "RN", "开不起来的功能，页内开关不弹回去",
+        "widgets/master_switch_link.py",
+        "        # ⭐ 回读实际值，**不信任刚写进去的那个**：",
+        "        return\n        # ⭐ 回读实际值，**不信任刚写进去的那个**：",
+        "tests/test_master_switch_row.py::"
+        "test_the_row_snaps_back_when_nothing_actually_happened",
+        "RN-144 升级版：拨了但根本没生效时，开关必须自己弹回去 —— "
+        "⭐ 写进去的值不等于实际的值。"
+        "⚠ 这条断点原来指向 `..._snaps_the_page_switch_back`（准心缺 pywin32 那个场景），"
+        "**回退验证当场 0/1**：我给那条回滚分支也加了一次广播，"
+        "于是「自己回读」被广播兜住了，砍掉它判据照样绿。"
+        "⭐ **两条路互为兜底时，单独砍掉任何一条，判据都逮不住** —— "
+        "冗余是好设计，但它会让判据失去分辨力。⇒ 已改指一条「只有自己回读能救」的场景",
+    ),
+    Revert(
+        "RN", "首页拨了开关，功能页那颗不跟上",
+        "gui_widget.py",
+        "        self._sync_master_switch_rows(config_key)\n\n        # 卡片边框闪烁反馈",
+        "        # 卡片边框闪烁反馈",
+        "tests/test_master_switch_row.py::"
+        "test_flipping_the_home_switch_moves_the_page_switch",
+        "RN-144 升级版：双向同步少了广播这一半。用户在首页关掉、切回功能页，"
+        "会看到一颗停在「开」的开关。⭐ 同屏两处说法不一致（RN-107 族）",
+    ),
+    Revert(
+        "RN", "总开关动了，页面那条状态文案不重算",
+        "widgets/master_switch_link.py",
+        "        self._notify_page()\n\n    def _notify_page(self)",
+        "        pass\n\n    def _notify_page(self)",
+        "tests/test_master_switch_row.py::"
+        "test_the_badge_follows_the_switch_it_describes",
+        "RN-144 升级版：开关拨过去了，「总开关 · 未开启」那条徽章还停在旧文案。"
+        "⭐ 一个「值没变就早退」的优化，会把「别人还没同步过」这件事一起早退掉",
     ),
     Revert(
         "RN", "基类又不去读那个总开关钩子",
         "pages/sound_page_base.py",
         "        if self.MASTER_SWITCH_KEY:",
         "        if False:",
-        "tests/test_master_switch_link.py::"
-        "test_the_sound_family_page_really_builds_the_button",
+        "tests/test_master_switch_row.py::"
+        "test_every_page_that_shows_master_state_offers_the_switch[reload_sound]",
         "RN-144：换弹音效页的类属性照样填着 `MASTER_SWITCH_KEY`，"
-        "**按钮却一颗都没建出来**。只判类属性的判据在这一刻是绿的 —— "
+        "**开关行却一行都没建出来**。只判类属性的判据在这一刻是绿的 —— "
         "⭐ 配置对不等于配置被读了",
     ),
     Revert(
-        "RN", "「去总开关」被顺手接到另外三个音效页上",
+        "RN", "RN-147 那三个音效页又掉出去",
         "pages/kill_sound_page.py",
-        '    HELP_KEY = "kill_sound"',
-        '    HELP_KEY = "kill_sound"\n    MASTER_SWITCH_KEY = "kill_sound_enabled"',
-        "tests/test_master_switch_link.py::"
-        "test_the_sound_family_only_wires_the_page_the_ruling_covered",
-        "RN-144 的裁定只覆盖 crosshair / screen_effects / reload_sound 三页。"
-        "顺手把同族四页一起改了，另外三页就**跳过了各自的开档流程、基线和外审** —— "
-        "⭐ 改动范围要和裁定范围对得上，这不是洁癖：基线一旦在没人看过的情况下被改，"
-        "下一轮就没有可比的东西了",
+        '    MASTER_SWITCH_KEY = "kill_sound_enabled"',
+        '    MASTER_SWITCH_KEY = ""',
+        "tests/test_master_switch_row.py::"
+        "test_every_page_that_shows_master_state_offers_the_switch[kill_sound]",
+        "RN-147：音效家族四页是同一个机制，本轮一起收的。"
+        "⚠ 断点方向与第一版**相反** —— 那时守的是「别顺手扩大范围」，"
+        "现在守的是「别把已经进来的三页丢回去」。"
+        "⭐ 范围变了，守卫的方向也要跟着翻，不能留着上一版的守卫装样子",
+    ),
+    Revert(
+        "RN", "击杀图标的总开关又混回子选项堆里",
+        "pages/kill_icon_page.py",
+        '            self, "kill_icon_enabled", "击杀图标")',
+        '            self, "kill_icon_headshot_enabled", "击杀图标")',
+        "tests/test_master_switch_row.py::"
+        "test_the_config_key_each_page_declares_really_exists_at_home[kill_icon-kill_icon_enabled]",
+        "RN-155：填错一个键的后果是**静默空转** —— 开关照样画得出来、点得动，"
+        "只是拨的是另一个功能。⭐ 这条判据把「填错」从运行时变成红灯",
+    ),
+    Revert(
+        "RN", "击杀图标的素材预热又只挂在页面那一侧",
+        "gui_widget.py",
+        '        if config_key == "kill_icon_enabled":\n'
+        '            player = getattr(self, "kill_icon_player", None)',
+        '        if False:\n'
+        '            player = getattr(self, "kill_icon_player", None)',
+        "tests/test_master_switch_row.py::"
+        "test_the_kill_icon_player_is_driven_from_the_one_chain",
+        "⭐ 这一段补的是一个**既有的不对称**：页内那颗复选框一直会调 "
+        "`enable_kill_icons()`，而首页同名的总开关只写 config。"
+        "同一个开关从两个地方拨，效果不一样，谁都不报错 —— "
+        "**同一件事有两条链路时，短的那条一定缺东西**",
     ),
     # ==================================== RN-139：基础设置页的首屏主按钮
     Revert(

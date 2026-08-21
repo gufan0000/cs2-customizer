@@ -165,6 +165,15 @@ class KillIconPage(QWidget):
         status_card_layout.setContentsMargins(14, 12, 14, 12)
         status_card_layout.setSpacing(8)
 
+        # RN-155 + RN-144 升级版（第二稿）：总开关**独占卡片第一行、贴左边**。
+        # 第一稿塞在状态行右端，外审 84 发里 12 发说"藏在角落"、15 发说"极易漏开"。
+        # ⭐ 左上角是这张卡的第一个扫视落点。
+        from widgets.master_switch_link import make_master_switch_row
+
+        self.master_switch_row = make_master_switch_row(
+            self, "kill_icon_enabled", "击杀图标")
+        status_card_layout.addWidget(self.master_switch_row)
+
         status_row = QHBoxLayout()
         status_row.setSpacing(10)
         status_title = QLabel("当前状态")
@@ -240,12 +249,6 @@ class KillIconPage(QWidget):
 
         right = QVBoxLayout()
         right.setSpacing(8)
-
-        self.enabled_check = QCheckBox("开启击杀图标")
-        self.enabled_check.setToolTip("关掉之后击杀不会出图标，这一页的其他设置照常保存")
-        self.enabled_check.setChecked(bool(getattr(config, "kill_icon_enabled", False)))
-        self.enabled_check.stateChanged.connect(self._on_enabled_changed)
-        right.addWidget(self.enabled_check)
 
         self.fade_check = QCheckBox("入场淡入 / 收尾渐隐")
         self.fade_check.setToolTip(
@@ -638,6 +641,14 @@ class KillIconPage(QWidget):
             f" · 大小 {format_percent(getattr(config, 'kill_icon_scale', 1.0), hi=2.0)}。"
         )
 
+    def on_master_switch_synced(self):
+        """总开关被别处拨动后，把本页那条状态文案重算一遍。
+
+        ⭐ 全仓统一的钩子名（`widgets/master_switch_link` 调它）。
+        少了这一下，开关动了而徽章不动 —— 同屏两处说法不一致，RN-107 族。
+        """
+        self._sync_status_strip()
+
     def _sync_status_strip(self):
         """状态条只留四条：开没开 · 用哪套 · 素材齐不齐 · 放在哪儿。
 
@@ -661,7 +672,11 @@ class KillIconPage(QWidget):
         ready_levels = self._ready_levels()
 
         badges = [
-            ("positive" if enabled else "warning", f"总开关 · {'已开启' if enabled else '未开启'}"),
+            # ⚠ 这颗徽章原来写「总开关 · …」，而 RN-144 升级版之后**同一行的
+            # 右端就是那颗总开关**，「总开关」三个字一行里出现两次。
+            # 改用和 crosshair 一致的功能词「显示」——徽章说状态、开关给动作，
+            # 两者不再复述同一个词。⭐ 同屏重复不只是啰嗦，它让人以为是两件事。
+            ("positive" if enabled else "warning", f"显示 · {'已开启' if enabled else '未开启'}"),
             (
                 "positive" if (not empty and self._current_style() not in ("", "0"))
                 else "warning",
@@ -767,8 +782,8 @@ class KillIconPage(QWidget):
             self.style_strip.set_styles(self.available_icon_styles, current)
             self._sync_strip_height()
 
-            if hasattr(self, "enabled_check"):
-                self.enabled_check.setChecked(bool(getattr(config, "kill_icon_enabled", False)))
+            if hasattr(self, "master_switch_row"):
+                self.master_switch_row.refresh()
 
             self.logger.debug("加载击杀图标设置完成")
         finally:
@@ -1077,18 +1092,6 @@ class KillIconPage(QWidget):
         self.adjust_frame.setVisible(bool(checked))
         self.adjust_toggle_btn.setText(
             "调整位置和大小 ⌃" if checked else "调整位置和大小 ⌄")
-
-    def _on_enabled_changed(self, _state=None):
-        if self._loading:
-            return
-        config.kill_icon_enabled = bool(self.enabled_check.isChecked())
-        config.save_config()
-        if self.kill_icon_player:
-            if config.kill_icon_enabled:
-                self.kill_icon_player.enable_kill_icons()
-            else:
-                self.kill_icon_player.disable_kill_icons()
-        self._sync_status_strip()
 
     def _on_fade_changed(self, _state=None):
         if self._loading:

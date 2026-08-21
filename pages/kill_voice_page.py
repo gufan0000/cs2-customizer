@@ -176,10 +176,14 @@ class KillVoicePage(SoundPageBase, QWidget):
     PAGE_TITLE = "击杀语音设置"
     # RN-034：原文无条件写「先去「基础设置」打开总开关」，而徽章上同时写着
     # 「开关 · 已启用」—— 自相矛盾。改成陈述总开关在哪。
-    PAGE_LEAD = "击杀时播报一句语音，连杀会递进（Double Kill、Triple Kill）。逐把枪选风格，点「测试」试听；总开关在「基础设置」里。"
+    PAGE_LEAD = "击杀时播报一句语音，连杀会递进（Double Kill、Triple Kill）。逐把枪选风格，点「测试」试听；总开关管它开不开。"
     HELP_KEY = "kill_voice"
     TEST_LEVELS = [1, 2, 3, 4, 5]
     STYLE_TOOLS_MENU = True
+    # RN-147：与 reload_sound 同一个机制——状态卡上写着总开关开没开，
+    # 而开关在「基础设置」。RN-144 升级为就地开关时一并收进来。
+    MASTER_SWITCH_KEY = "kill_voice_enabled"
+    MASTER_SWITCH_NAME = "击杀语音"
 
     def _init_ui(self):
         self._build_sound_page_ui()
@@ -439,5 +443,5 @@ class KillVoicePage(SoundPageBase, QWidget):
                     "新增资源后可直接刷新风格列表。"
                 )
             else:
-                action_message = "总开关当前关闭，这里的映射会保留；如新增资源，可先刷新风格列表再去「基础设置」打开总开关。"
+                action_message = "总开关当前关闭，这里的映射会保留；如新增资源，可先刷新风格列表，再拨开总开关。"
             self.action_bar.set_message(action_message)

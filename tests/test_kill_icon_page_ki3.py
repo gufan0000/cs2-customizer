@@ -123,17 +123,26 @@ def page(qapp, monkeypatch):
 
 
 def test_enable_switch_lives_on_the_page(page, monkeypatch):
-    """开关必须能在这一页开——原来它只在主界面的功能列表里。"""
-    player = _StubPlayer()
-    page.set_kill_icon_player(player)
+    """开关必须能在这一页开——原来它只在主界面的功能列表里。
 
-    page.enabled_check.setChecked(True)
-    assert config.kill_icon_enabled is True
-    assert player.enabled[-1] is True
+    ⚠ **2026-08-21（RN-155）换了形态**：它原本是 `enabled_check`，一个
+    普通 `QCheckBox`，夹在「入场淡入」「爆头用专属图标」两个**子选项**中间。
+    外审 5/6 票「导入素材后极易因没开开关而在局内失效」⇒ 提到状态卡上，
+    与它显示的那条状态并排，用的是和首页那 17 颗**同一个** `ToggleSwitch`。
 
-    page.enabled_check.setChecked(False)
-    assert config.kill_icon_enabled is False
-    assert player.enabled[-1] is False
+    ⭐ 这条判据守的东西没变（"这一页要能开"），只是**它现在守的是位置和分量**：
+    单页夹具起不出主窗口，而就地开关**故意**要经主窗口那条唯一链路
+    （副作用全挂在那儿）—— 所以"拨了会怎样"挪到
+    `tests/test_master_switch_row.py` 去判，那儿有真的主窗口。
+    ⚠ 别为了让这条判据能跑就给组件加一条"没有主窗口就自己写 config"的退路：
+    那正是这次要消灭的第二条链路。
+    """
+    row = getattr(page, "master_switch_row", None)
+    assert row is not None, "击杀图标页没有总开关行 —— 又只能去首页开了"
+    assert row.config_key == "kill_icon_enabled", (
+        f"总开关行拨的是 {row.config_key!r}，不是击杀图标的总开关")
+    assert page.status_card.isAncestorOf(row), (
+        "总开关不在状态卡里 —— 状态在一处、动作在另一处，等于没修")
 
 
 def test_status_strip_says_when_the_master_switch_is_off(page):
@@ -173,10 +182,15 @@ def test_the_page_keeps_the_controls_a_normal_user_needs(page):
     只验"控件在不在"是不够的——单验存在的判据挡不住"控件还在但没接线"。
     接线由本文件里各自的行为判据管（开关、滑条、试播、拖拽）。
     """
-    for kept in ("enabled_check", "fade_check", "headshot_check",
+    # ⚠ `enabled_check` 于 2026-08-21（RN-155）换成了状态卡上的
+    # `master_switch_row` —— **是搬家不是删除**，所以这里换名字继续钉。
+    for kept in ("master_switch_row", "fade_check", "headshot_check",
                  "test_btn", "adjust_toggle_btn", "style_strip",
                  "x_slider", "y_slider", "scale_slider", "position_map"):
         assert hasattr(page, kept), f"设置页丢了 {kept}"
+    assert not hasattr(page, "enabled_check"), (
+        "「开启击杀图标」那个旧复选框又回来了 —— 它和总开关行是同一个功能的"
+        "两个开关（RN-107 族）")
 
 
 # ==================================================== 3. 页内预览

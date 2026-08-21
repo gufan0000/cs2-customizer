@@ -18,7 +18,7 @@ from config import config
 from core.utils.logger import get_logger
 from pages.audio_status_badge import create_badge_label, render_badges
 from screen_effect_overlay import DEFAULT_SCREEN_EFFECT_PRESET, SCREEN_EFFECT_PRESETS
-from widgets.master_switch_link import make_master_switch_button
+from widgets.master_switch_link import make_master_switch_row
 from widgets.page_action_bar import PageActionBar
 from widgets.settings_card import SettingsCard
 from widgets.page_header import PageHeader
@@ -98,6 +98,12 @@ class ScreenEffectsPage(QWidget):
         status_card_layout.setContentsMargins(14, 12, 14, 12)
         status_card_layout.setSpacing(8)
 
+        # RN-144 升级版（第二稿）：总开关**独占卡片第一行、贴左边**。
+        # 第一稿塞在状态行右端，外审 84 发里 12 发说"藏在角落"、15 发说"极易漏开"。
+        self.master_switch_row = make_master_switch_row(
+            self, "screen_effects_enabled", "屏幕特效")
+        status_card_layout.addWidget(self.master_switch_row)
+
         status_row = QHBoxLayout()
         status_row.setSpacing(10)
         status_title = QLabel("当前状态")
@@ -107,11 +113,6 @@ class ScreenEffectsPage(QWidget):
         self.status_badge_label = create_badge_label()
         status_row.addWidget(self.status_badge_label, 1)
         status_row.addStretch()
-        # RN-144：状态里有「特效 · 未启用」，而总开关不在这一页 ——
-        # 把动作摆在状态旁边，别让玩家自己去 22 项导航里翻。
-        self.master_switch_btn = make_master_switch_button(
-            self, "screen_effects_enabled", "屏幕特效")
-        status_row.addWidget(self.master_switch_btn)
         status_card_layout.addLayout(status_row)
 
         # RN-009: 这里原先还有一个 `summary_label` —— 建出来就 `hide()`，
@@ -260,7 +261,9 @@ class ScreenEffectsPage(QWidget):
         )
 
         badges = [
-            ("positive" if master_enabled else "warning", f"总开关 · {'开启' if master_enabled else '关闭'}"),
+            # ⚠ 同 kill_icon：同一行右端现在就是那颗总开关，别在徽章里
+            # 把「总开关」再说一遍。徽章说状态、开关给动作。
+            ("positive" if master_enabled else "warning", f"特效 · {'开启' if master_enabled else '关闭'}"),
             ("positive" if edge_enabled else "info", f"边缘特效 · {'开启' if edge_enabled else '关闭'}"),
             ("info", f"预设 · {preset_text}"),
             ("info", f"模式 · {mode_text}"),
@@ -338,6 +341,14 @@ class ScreenEffectsPage(QWidget):
             self._sync_enabled_state()
             self._sync_status_strip()
 
+    def on_master_switch_synced(self):
+        """总开关被别处拨动后，把本页那条状态文案重算一遍。
+
+        ⭐ 全仓统一的钩子名（`widgets/master_switch_link` 调它）。
+        少了这一下，开关动了而徽章不动 —— 同屏两处说法不一致，RN-107 族。
+        """
+        self.refresh_master_state()
+
     def refresh_master_state(self):
         self._sync_enabled_state()
 
@@ -346,7 +357,7 @@ class ScreenEffectsPage(QWidget):
         edge_enabled = master_enabled and self.enable_edge_flash_checkbox.isChecked()
 
         if not master_enabled:
-            self.master_state_label.setText("总开关已关闭，请先到基础设置开启“屏幕特效”。")
+            self.master_state_label.setText("总开关已关闭 —— 一拨就生效。")
             self.master_state_label.show()
             self.action_bar.set_message("总开关已关闭，当前页面设置不会生效。")
         elif not self.enable_edge_flash_checkbox.isChecked():

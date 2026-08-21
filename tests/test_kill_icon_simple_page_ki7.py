@@ -193,7 +193,9 @@ def test_the_status_strip_is_four_chips_not_seven(page):
     page._sync_status_strip()
     chips = _chip_texts(page.status_badge_label)
     assert len(chips) == 4, f"状态条上有 {len(chips)} 条：{chips}"
-    assert any(c.startswith("总开关 · ") for c in chips)
+    # ⚠ 2026-08-21（RN-144 升级版）：这颗徽章从「总开关 · …」改名成
+    # 「显示 · …」——**同一行的右端现在就是那颗总开关**，一行里说两遍。
+    assert any(c.startswith("显示 · ") for c in chips)
     assert any(c.startswith("风格 · ") for c in chips)
     assert any(c.startswith("素材 · ") for c in chips)
     assert any(c.startswith("位置 · ") for c in chips)

@@ -162,11 +162,12 @@ class ReloadSoundPage(SoundPageBase, QWidget):
     # 明明写着「开关 · 已启用」—— 自相矛盾，外审六发里四发独立点出这一条。
     # 改成陈述总开关在哪，不再命令用户去做一件可能已经做完的事；
     # "现在到底开没开"由徽章和底部操作条按状态说（那两处本来就是条件文案）。
-    PAGE_LEAD = "换弹时播放你自己的音效。逐把枪选风格，点「测试」试听；总开关在「基础设置」里。"
+    PAGE_LEAD = "换弹时播放你自己的音效。逐把枪选风格，点「测试」试听；总开关管它开不开。"
     HELP_KEY = "reload_sound"
     STYLE_TOOLS_MENU = False
-    # RN-144：PAGE_LEAD 里那句「总开关在「基础设置」里」是**陈述**，
-    # 玩家还是得自己去 22 项导航里翻。这颗按钮把那句话变成一个动作。
+    # RN-144 升级版：PAGE_LEAD 里那句「总开关在「基础设置」里」是**陈述**，
+    # 玩家还是得自己去 22 项导航里翻。第一版给的是一颗跳过去的按钮，
+    # 外审两轮 15/15 判"跳转仍然割裂"⇒ 现在直接把开关摆在状态卡上。
     MASTER_SWITCH_KEY = "reload_sound_enabled"
     MASTER_SWITCH_NAME = "换弹音效"
 
@@ -393,5 +394,5 @@ class ReloadSoundPage(SoundPageBase, QWidget):
                     "新增资源后可直接刷新风格列表。"
                 )
             else:
-                action_message = "总开关当前关闭，这里的映射会保留；如新增资源，可先刷新风格列表再去「基础设置」打开总开关。"
+                action_message = "总开关当前关闭，这里的映射会保留；如新增资源，可先刷新风格列表，再拨开总开关。"
             self.action_bar.set_message(action_message)

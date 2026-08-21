@@ -88,16 +88,27 @@ class SoundPageBase:
     #: True  = 下拉菜单（新建 / 管理），kill_sound / kill_voice
     #: False = 单个「新建风格」按钮，switch_weapon / reload_sound
     STYLE_TOOLS_MENU: bool = False
-    #: 这一页的总开关在 config 里叫什么、在界面上叫什么（RN-144）。
-    #: 给状态卡上那颗「去总开关」用；**留空就不建那颗按钮**。
+    #: 这一页的总开关在 config 里叫什么、在界面上叫什么（RN-144 升级版）。
+    #: 给状态卡上那一行「总开关」用；**留空就不建那一行**。
     #:
-    #: ⚠ 现在只有 `reload_sound` 填了。另外三页（kill_sound / kill_voice /
-    #: switch_weapon）**是同一个机制**（总开关也在基础设置），但 RN-144 的
-    #: 裁定只覆盖了 crosshair / screen_effects / reload_sound 三页 ——
-    #: 它们各自在自己那一轮里补，见登记册 RN-147。
-    #: ⭐ 一个钩子留着不填，比顺手把三页一起改了更诚实：**改动范围要和裁定范围对得上**。
+    #: ⚠ 第一版只有 `reload_sound` 填了 —— 那时的裁定只覆盖三页，
+    #: 另外三个音效页挂在 RN-147 等自己那一轮。本轮（RN-144 升级为就地开关）
+    #: 把 RN-147 一起收了：**既然要把跳转换成开关，就没有理由让另外三页
+    #: 先补一颗马上要拆掉的跳转按钮** —— 那是一次注定要返工的改动。
+    #: ⭐ 改动范围要和裁定范围对得上；范围变了就把范围写下来，别让钩子空着装诚实。
     MASTER_SWITCH_KEY: str = ""
     MASTER_SWITCH_NAME: str = ""
+
+    def on_master_switch_synced(self):
+        """总开关被别处拨动后，把状态徽章重算一遍。
+
+        ⭐ 全仓统一的钩子名（`widgets/master_switch_link` 调它）。
+        少了这一下，开关动了而「开关 · 未启用」不动 —— 同屏两处说法
+        不一致，RN-107 族。放在基类：四页共用一个骨架，别各写一份。
+        """
+        refresh = getattr(self, "_refresh_status_badge", None)
+        if callable(refresh):
+            refresh()
 
     # ---------------------------------------------------------------- 钩子
     # 这四个就是「风格模型不统一」的全部落点。除此之外两个大方法逐行相同。
@@ -328,6 +339,17 @@ class SoundPageBase:
         status_card_layout.setContentsMargins(14, 12, 14, 12)
         status_card_layout.setSpacing(8)
 
+        if self.MASTER_SWITCH_KEY:
+            # RN-144 升级版（第二稿）：**总开关独占卡片第一行、贴左边**。
+            # 第一稿把它塞在状态行右端，外审 84 发里 12 发说"藏在角落"、
+            # 15 发说"配完极易漏开"——七页全中。⭐ 左上角是这张卡的第一个扫视落点。
+            from widgets.master_switch_link import make_master_switch_row
+
+            self.master_switch_row = make_master_switch_row(
+                self, self.MASTER_SWITCH_KEY,
+                self.MASTER_SWITCH_NAME or self.PAGE_TITLE)
+            status_card_layout.addWidget(self.master_switch_row)
+
         status_header = QHBoxLayout()
         status_header.setSpacing(10)
         status_title = QLabel("当前状态")
@@ -336,14 +358,6 @@ class SoundPageBase:
         self.status_badge_label = create_badge_label()
         status_header.addWidget(self.status_badge_label, 1)
         status_header.addStretch()
-        if self.MASTER_SWITCH_KEY:
-            # RN-144：状态里写着总开关开没开，而开关不在这一页。
-            from widgets.master_switch_link import make_master_switch_button
-
-            self.master_switch_btn = make_master_switch_button(
-                self, self.MASTER_SWITCH_KEY,
-                self.MASTER_SWITCH_NAME or self.PAGE_TITLE)
-            status_header.addWidget(self.master_switch_btn)
         status_card_layout.addLayout(status_header)
 
         self.summary_label = QLabel("")

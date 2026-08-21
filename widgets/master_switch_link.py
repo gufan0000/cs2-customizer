@@ -1,86 +1,217 @@
 # -*- coding: utf-8 -*-
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""功能页上那颗「去总开关」（RN-144）。
+"""功能页上那颗**就地总开关**（RN-144 升级版 / RN-147 / RN-155）。
 
 ## 它要修的是什么
 
-准心 / 屏幕特效 / 换弹音效三页都把总开关的**状态**摆在首屏
-（「显示 · 未启用」「特效 · 未启用」），**却既不能在本页开、也没有入口**。
-外审两档 6/6 票：「玩家调完准心进游戏不显示，会以为软件坏了」。
+准心 / 屏幕特效 / 音效家族四页 / 击杀图标，首屏都写着总开关开没开
+（「显示 · 未启用」「特效 · 未启用」「总开关 · 未开启」），
+**而开关不在这一页** —— 它在「基础设置」那张「功能开关」卡里，
+22 项导航里的一项、17 颗开关里的一颗。
 
 ⭐ **把状态摆出来而不给动作，比不摆更糟。** 不摆的话玩家至少不知道有这回事；
-摆出来 = 明确告诉他"有个东西没开"，然后让他自己去 22 项导航里翻。
+摆出来 = 明确告诉他"有个东西没开"，然后让他自己去翻。
 
-与 RN-108 同一片区但机制不同：RN-108 修的是「基础设置」在侧栏里找不到
-（已单独成组置顶），这条说的是**状态在这儿、开关不在这儿**。
+## 为什么推翻了第一版的「去总开关」跳转
 
-## 为什么是一个共用模块而不是各页抄一份
+第一版给的是一颗跳过去的按钮。改完复跑，外审两轮合计 **15 发 15 中**反对：
 
-三页要的是同一件事，而这件事里有三样抄漏了**不会报错**的东西：
-去哪一页（`basic`）、那一页叫什么（「基础设置」，写进文案里）、
-以及跳过去之后要不要指给他看。RN 里已经有一条现成的教训：
-**文案里点名的目标名要跟真正的目标走**，抄成字面量早晚对不上。
+    「本页无法直接开启功能，必须跳转至「基础设置」开启总开关，操作流程割裂。」
 
-## 失败时不许一声不吭
+⚠ 后 6 发**看的是已经装好那颗按钮的画面** —— 它不是没看见跳转，
+是看见了仍然判"这不够"。⭐ **一致性到这个量级就不再是怀疑清单，是结论。**
 
-`reveal_master_switch` 回报 bool。但更要紧的是**结构上的兜底**：
-按钮的 tooltip **永远**写着手动路径（「基础设置」→「功能开关」），
-所以哪怕跳转这条路整条坏掉，用户手上也还有一条能走的路。
-⇒ 引导的兜底不该是"失败了弹一句话"，而是"这句话本来就一直在"。
+## 这个组件里唯一难的地方：**不许自己写 config**
+
+`MainWindow._on_switch_changed` 上挂着一长串副作用 —— 准心的 pywin32 前置检查
+与显隐、开镜放大的启停、死亡刷短视频的预热/收尾、屏幕特效的叠加层同步、
+`sync_legacy_gun_sound_flags`、`save_config`、卡片边框闪烁。
+
+**页内开关只要自己 `setattr(config, key, value)`，这些一个都拿不到。**
+拿到的是"界面显示已开、功能根本没起"，而这件事**不会有任何一处报错**。
+
+⇒ 所以它做的事是**去拨首页那颗开关**（`MainWindow.set_feature_enabled`），
+让信号照常发出去、副作用照常跑完。
+⭐ **同一件事只能有一条链路；第二条链路一定会缺东西，而缺的那部分不报错。**
+
+## 第二个坑：写进去的值不等于实际的值
+
+准心在缺 pywin32 时会把值**回滚**并提前 `return` —— 走不到函数末尾的广播。
+所以拨完之后必须**回读 `config` 的实际值**再定自己的显示，
+不能信任"我刚写进去的是 True"。这条同时也是判据盯的行为。
 """
 from __future__ import annotations
 
-from PySide6.QtWidgets import QPushButton
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QWidget
 
 from core.utils.logger import get_logger
 
-#: 总开关住在哪一页。三页共用一个真源 —— 页面 id 改了只改这里。
+#: 总开关**也**住在哪一页。各页共用一个真源 —— 页面 id 改了只改这里。
 MASTER_SWITCH_PAGE_ID = "basic"
-#: 那一页在导航里叫什么。写进按钮文案与 tooltip，别在各页抄字面量。
+#: 那一页在导航里叫什么。写进 tooltip，别在各页抄字面量。
 MASTER_SWITCH_PAGE_NAME = "基础设置"
 #: 总开关那张卡叫什么（`gui_widget._create_basic_page` 里的「功能开关」）。
 MASTER_SWITCH_CARD_NAME = "功能开关"
-#: 按钮文案。刻意**不随开关状态改文案** —— 它是这一页的一条常驻事实
-#: （"总开关不在这儿"），不是一条只在关着时才成立的提示。
-LINK_TEXT = "去总开关"
+#: 开关行左边那个标签。刻意**不随状态改文案** —— 「这是总开关」是一条常驻事实，
+#: 不是只在关着时才成立的提示。状态由开关自己的样子表达。
+ROW_LABEL_TEXT = "总开关"
+#: 开关旁边那个状态词。⭐ 一颗孤立的开关看不出是开还是关（没有对照物），
+#: 一个词把它钉死；同时也让读屏软件读得出来。
+STATE_ON_TEXT = "已开启"
+STATE_OFF_TEXT = "未开启"
 
-_logger = get_logger("MasterSwitchLink")
-
-
-def manual_path_text(feature_name: str) -> str:
-    """手动路径那句话。tooltip 和任何降级文案都从这里取，只有一份。"""
-    return (f"「{feature_name}」的总开关在「{MASTER_SWITCH_PAGE_NAME}」页的"
-            f"「{MASTER_SWITCH_CARD_NAME}」里。点这里直接跳过去并高亮它。")
+_logger = get_logger("MasterSwitchRow")
 
 
-def reveal_master_switch(page, config_key: str) -> bool:
-    """跳到总开关那一页并高亮对应的那一行。
+def same_switch_text(feature_name: str) -> str:
+    """「这颗和首页那颗是同一个」这句话，只有一份。
 
-    回报 True 表示真的定位到了。定位不到时**只记日志、不弹框** ——
-    tooltip 里那条手动路径一直在，用户不会没路可走。
+    ⭐ 必须说清楚。不说的话用户会把它读成"本页专用开关"，
+    而它其实是全局的 —— 在这儿关掉，首页那颗也跟着关。
     """
-    window = page.window() if page is not None else None
-    reveal = getattr(window, "reveal_feature_switch", None)
-    if not callable(reveal):
-        _logger.warning(f"主窗口没有 reveal_feature_switch，{config_key} 的直达跳转空转")
-        return False
-    try:
-        ok = bool(reveal(config_key))
-    except Exception as exc:
-        _logger.error(f"跳转到总开关失败（{config_key}）: {exc}")
-        return False
-    if not ok:
-        _logger.warning(f"没有找到 {config_key} 对应的总开关，直达跳转空转")
-    return ok
+    return (f"「{feature_name}」的总开关。这一颗和「{MASTER_SWITCH_PAGE_NAME}」页"
+            f"「{MASTER_SWITCH_CARD_NAME}」里的那一颗是**同一个**，改哪边都一样。")
 
 
-def make_master_switch_button(page, config_key: str, feature_name: str) -> QPushButton:
-    """建一颗「去总开关」，接线一次接好。"""
-    button = QPushButton(LINK_TEXT)
-    button.setObjectName("secondaryButton")
-    # 写下限不写死宽：中文文案 + 字号缩放 = 截断（UP-094 的教训）。
-    button.setMinimumWidth(96)
-    button.setFixedHeight(26)
-    button.setToolTip(manual_path_text(feature_name))
-    button.clicked.connect(lambda: reveal_master_switch(page, config_key))
-    return button
+class MasterSwitchRow(QWidget):
+    """状态卡上的「总开关」一行：标签 + 与首页同款的 ToggleSwitch。
+
+    对外只有三个动作：`is_checked()` / `set_checked_by_user()` / `refresh()`。
+    ⚠ 没有 `set_checked()` 是**故意的** —— 一个"只改显示不改功能"的入口
+    正是三态不一致的来源。要改显示只能通过 `refresh()`（从 config 回读）。
+    """
+
+    def __init__(self, page, config_key: str, feature_name: str, parent=None):
+        super().__init__(parent)
+        # 延迟导入：与首页那 17 颗用**同一个**控件类，视觉才会一致。
+        from ui_toggle_switch import ToggleSwitch
+
+        self._page = page
+        self.config_key = config_key
+        self.feature_name = feature_name
+        self._syncing = False
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+        # ⚠ **开关放最左边，不是最右边。**
+        # 第一版把这一行塞在状态卡右上角（原来那颗跳转按钮的位置），外审 84 发里
+        # **12 发说"藏在角落/位置太偏"、15 发说"配完极易漏开"，七页全中**。
+        # 最尖锐的一条直接点破了我为此加的那句提示文案：
+        #   「『开关就在下面那张卡的右上角』说明总开关层级与可见性严重不足，
+        #     属于打补丁式的无效引导」
+        # ⭐ **需要用文字指路的控件，就是放错了地方** —— 指路是症状，不是修法。
+        # 左上角是这张卡的第一个扫视落点，总开关就该在那儿。
+        self._toggle = ToggleSwitch(checked=self._config_value())
+        self._toggle.toggled.connect(self._on_user_toggled)
+        layout.addWidget(self._toggle)
+
+        self._label = QLabel(ROW_LABEL_TEXT)
+        self._label.setObjectName("statusLabel")
+        layout.addWidget(self._label)
+
+        # 状态词跟在开关旁边。⭐ 开关自己只表达"开没开"这个**姿态**，
+        # 姿态要靠对比才读得出来（一颗孤立的开关看不出是开还是关）；
+        # 一个词把它钉死。
+        self._state_label = QLabel("")
+        self._state_label.setObjectName("hintLabel")
+        layout.addWidget(self._state_label)
+        layout.addStretch()
+
+        self._sync_state_text()
+        self.setToolTip(same_switch_text(feature_name))
+
+    def _sync_state_text(self) -> None:
+        self._state_label.setText(
+            STATE_ON_TEXT if self._toggle.isChecked() else STATE_OFF_TEXT)
+
+    # ------------------------------------------------------------ 对外三件
+
+    def is_checked(self) -> bool:
+        return bool(self._toggle.isChecked())
+
+    def set_checked_by_user(self, checked: bool) -> None:
+        """当作"用户拨了它"来处理 —— 判据和任何程序化入口都走这里。
+
+        ⚠ 不要拿它当"设置显示值"用：它会真的去开/关功能。
+        """
+        checked = bool(checked)
+        if self._toggle.isChecked() != checked:
+            # ⚠ 必须是 `toggle()`：`ToggleSwitch.setChecked()` **不发 `toggled`**
+            # （只有鼠标点击走的 `toggle()` 发）。写成 setChecked 的话开关会
+            # 变个样子然后**什么都不发生**。详见 `gui_widget.set_feature_enabled`。
+            self._toggle.toggle()
+        else:
+            self._on_user_toggled(checked)     # 值没变也补跑一次，语义是「他按了」
+
+    def refresh(self) -> None:
+        """从 `config` 回读实际值，只改显示、不触发功能。
+
+        主窗口在总开关变化后会把这一下广播给所有页内开关行；
+        `_on_user_toggled` 自己也会调它（因为**写进去的值不等于实际的值**）。
+        """
+        value = self._config_value()
+        if self._toggle.isChecked() != value:
+            self._syncing = True
+            try:
+                self._toggle.blockSignals(True)
+                self._toggle.setChecked(value)
+            finally:
+                self._toggle.blockSignals(False)
+                self._syncing = False
+        self._sync_state_text()
+        # ⭐ **无条件**通知页面，哪怕开关自己没动。
+        # 用户拨的就是这一颗时，`isChecked()` 早就是新值了 —— 上面那段会跳过，
+        # 而页面上那条「总开关 · 未开启」的徽章**还停在旧文案**。
+        # 这正是 RN-107 族（同屏两处说法不一致）的制造方式：
+        # 一个"值没变就早退"的优化，把"别人还没同步过"这件事一起早退掉了。
+        self._notify_page()
+
+    def _notify_page(self) -> None:
+        """让页面把自己那条状态文案重算一遍。
+
+        钩子名全仓统一叫 `on_master_switch_synced` —— 各页内部的状态方法
+        叫什么都行（`_sync_status_strip` / `_sync_overview_status` /
+        `_refresh_status_badge` 各不相同），但**对外只认这一个名字**。
+        """
+        hook = getattr(self._page, "on_master_switch_synced", None)
+        if not callable(hook):
+            return
+        try:
+            hook()
+        except Exception as exc:                      # pragma: no cover - 防御
+            _logger.error(f"{self.config_key} 的页面状态刷新失败: {exc}")
+
+    # ------------------------------------------------------------ 内部
+
+    def _config_value(self) -> bool:
+        from config import config
+
+        return bool(getattr(config, self.config_key, False))
+
+    def _main_window(self):
+        window = self._page.window() if self._page is not None else None
+        return window if hasattr(window, "set_feature_enabled") else None
+
+    def _on_user_toggled(self, checked: bool) -> None:
+        if self._syncing:
+            return
+        window = self._main_window()
+        if window is None:
+            # 页面还没进窗口树（单页构造的测试夹具就是这种）。
+            # ⚠ 只记日志、不自己写 config —— 自己写就绕开了副作用那条唯一链路。
+            _logger.warning(f"{self.config_key} 的就地开关找不到主窗口，本次拨动未生效")
+            self.refresh()
+            return
+        if not window.set_feature_enabled(self.config_key, bool(checked)):
+            _logger.warning(f"首页没有 {self.config_key} 对应的开关，就地开关空转")
+        # ⭐ 回读实际值，**不信任刚写进去的那个**：
+        # 前置不满足时（例如准心缺 pywin32）产品会回滚并提前 return，
+        # 走不到主窗口末尾那次广播。
+        self.refresh()
+
+
+def make_master_switch_row(page, config_key: str, feature_name: str) -> MasterSwitchRow:
+    """建一行总开关，接线一次接好。"""
+    return MasterSwitchRow(page, config_key, feature_name)

@@ -2912,45 +2912,64 @@ class MainWindow(QMainWindow):
         switch_id = self._switch_id_by_config_key.get(config_key)
         return self.switches.get(switch_id) if switch_id else None
 
-    def reveal_feature_switch(self, config_key: str) -> bool:
-        """跳到首页并把那颗总开关**指给用户看**（RN-144）。
+    def set_feature_enabled(self, config_key: str, enabled: bool) -> bool:
+        """从功能页**就地**开/关一个功能（RN-144 升级版）。
 
-        缺陷长这样：准心 / 屏幕特效 / 换弹音效三页都把总开关的状态摆在首屏
-        （「显示 · 未启用」），**却既不能在本页开、也没有任何入口**。
-        外审 6/6 票：「玩家调完准心进游戏不显示，会以为软件坏了」。
-        ⭐ **把状态摆出来而不给动作，比不摆更糟** —— 它制造了一个玩家
-        解决不了的问题。
+        ⭐ **要害：它不自己写 config，而是去拨首页那颗开关。**
 
-        与 RN-108 同一片区但机制不同：那条修的是「基础设置」在侧栏里找不到，
-        这条说的是**状态在这儿、开关不在这儿**。
+        `_on_switch_changed` 上挂着一长串副作用 —— 准心的 pywin32 前置检查与显隐、
+        开镜放大的启停、死亡刷短视频的预热/收尾、屏幕特效的叠加层同步、
+        `sync_legacy_gun_sound_flags`、`save_config`、卡片边框闪烁。
+        自己 `setattr` 一个都拿不到，得到的是"界面显示已开、功能根本没起"，
+        而这件事**不会有任何一处报错**（RN-107 族的最恶形态）。
 
-        ⚠ 刻意**不**走 `_highlight_search_target` 那条按文案模糊匹配的路：
-        这里手上有的是 `self.switches` 里那颗控件对象本身，直接定位它就行。
-        拿"准心"这两个字去页面上找，命中的可能是另一处同名文案 ——
-        **定位错行比不定位更糟**。
+        ⭐ **同一件事只能有一条链路；第二条链路一定会缺东西，而缺的那部分不报错。**
 
-        回报 True 表示真的找到并定位了那颗开关（调用方据此判断有没有空转）。
+        ⚠ 这里刻意**不** `blockSignals` —— 与 `sync_feature_switch` 正相反：
+        那个是"只同步显示"，这个是"真的去开"。信号必须发出去。
+
+        ⚠⚠ **必须用 `toggle()` 而不是 `setChecked()`。** `ToggleSwitch` 的文件头
+        写着"与 QCheckBox API 兼容"，**那句话在这一点上是错的**：
+        它的 `setChecked()` 只改样子、**不发 `toggled`**，只有 `toggle()`
+        （鼠标点击走的那条）才发。写成 `setChecked` 的话这个方法会
+        **安静地什么都不做** —— 开关的样子变了、副作用一条没跑。
+        ⭐ "API 兼容"是个关于方法名的说法，不是关于**信号语义**的保证。
+
+        回报 True 表示真的找到并拨动了那颗开关（调用方据此判断有没有空转）。
         """
+        self.ensure_page_loaded(self._master_switch_page_id())
         toggle = self._find_feature_switch(config_key)
         if toggle is None:
             return False
+        if toggle.isChecked() != bool(enabled):
+            toggle.toggle()        # 与鼠标点它是同一条路
+        return True
 
-        # ⚠ 就地 import，**不放模块顶部**：开源同步管道对 `gui_widget.py`
-        # 的整块 import 打了一个语义补丁（删掉账号那几行），往那个区间里插一行
-        # 会让补丁的上下文当场对不上、`git apply` 整个文件失败。
-        # 本文件本来就有一批"重量级组件延迟导入"，这里跟着同一个写法。
+    def _master_switch_page_id(self) -> str:
+        """总开关住在哪一页。单一真源在 `widgets/master_switch_link`。
+
+        ⚠ 就地 import，**不放模块顶部**：开源同步管道对本文件的整块 import
+        打了一个语义补丁，往那个区间里插一行会让补丁上下文当场对不上
+        （RN-156 刚踩过）。
+        """
         from widgets.master_switch_link import MASTER_SWITCH_PAGE_ID
 
-        self.ensure_page_loaded(MASTER_SWITCH_PAGE_ID)
-        self.show_page(MASTER_SWITCH_PAGE_ID, force=True)
-        page = self.pages.get(MASTER_SWITCH_PAGE_ID)
-        if page is None:
-            return False
-        # 高亮**整行**（标签 + 开关），不是光高亮那颗小开关 ——
-        # 单高亮一个 24px 的控件用户看不出范围（UP-041 的原话）。
-        row = toggle.parentWidget()
-        self._reveal_widget(page, row if row is not None else toggle)
-        return True
+        return MASTER_SWITCH_PAGE_ID
+
+    def _sync_master_switch_rows(self, config_key: str) -> int:
+        """总开关变了，把所有页内那一行同步过去。回报同步了几个。
+
+        ⭐ 刻意**不建注册表**：注册表要管生命周期（页面删了要摘掉，
+        摘漏了就是野指针）。这里直接遍历已加载页面找 `master_switch_row` ——
+        页面没了它自然就不在，**没有需要维护的第二份状态**。
+        """
+        synced = 0
+        for page in getattr(self, "pages", {}).values():
+            row = getattr(page, "master_switch_row", None)
+            if row is not None and getattr(row, "config_key", None) == config_key:
+                row.refresh()
+                synced += 1
+        return synced
 
     def sync_feature_switch(self, config_key: str) -> bool:
         """把 `config.<config_key>` 的当前值回写到首页那个开关上。
@@ -3000,6 +3019,10 @@ class MainWindow(QMainWindow):
                         sender.blockSignals(True)
                         sender.setChecked(False)
                         sender.blockSignals(False)
+                    # ⚠ 这条分支**提前 return**，跑不到函数末尾那次广播。
+                    # 页内那一行必须也跟着弹回去，否则它会停在"开"的位置，
+                    # 而功能其实没起（RN-144 升级版的判据专门盯这一条）。
+                    self._sync_master_switch_rows(config_key)
                     return
                 # 显示准心(2.2.0: 首建较重,挪出点击帧;复显走快速路径毫秒级)
                 if hasattr(self, 'crosshair_animation'):
@@ -3033,6 +3056,22 @@ class MainWindow(QMainWindow):
             if page and hasattr(page, "_load_settings"):
                 page._load_settings()
 
+        # 特殊处理：击杀图标总开关（预热素材 / 立刻收掉正在播的那张）
+        # ⚠ **这一段是补上来的，补的是一个既有的不对称**：击杀图标页上那颗
+        # 「开启击杀图标」复选框一直会调 `enable_kill_icons()` / `disable_kill_icons()`，
+        # 而首页「功能开关」里那颗**同名的总开关只写 config**。
+        # ⇒ 同一个开关，从两个地方拨的效果不一样：首页开完素材没预热，
+        # 首页关掉时正在播的那张图标不会停。谁都不会报错。
+        # ⭐ **同一件事有两条链路时，短的那条一定缺东西** —— 这次是 RN-155
+        # 要把页内那颗复选框并进总开关行才发现的。
+        if config_key == "kill_icon_enabled":
+            player = getattr(self, "kill_icon_player", None)
+            if player is not None:
+                if checked:
+                    player.enable_kill_icons()
+                else:
+                    player.disable_kill_icons()
+
         # 特殊处理：屏幕特效总开关（实时同步到叠加层）
         if config_key == "screen_effects_enabled":
             if hasattr(self, 'screen_effect_overlay') and self.screen_effect_overlay:
@@ -3044,6 +3083,12 @@ class MainWindow(QMainWindow):
         
         self.config.save_config()
         self.logger.info(f"配置已保存: {config_key} = {checked}")
+
+        # RN-144 升级版：功能页上那一行「总开关」跟着动。
+        # ⭐ 这一下是**双向同步的另一半** —— 页内拨动那半靠 `set_feature_enabled`
+        # 走回这里，首页拨动这半靠这里广播出去。少了它，用户在首页关掉之后
+        # 切回功能页会看到一颗停在"开"的开关。
+        self._sync_master_switch_rows(config_key)
 
         # 卡片边框闪烁反馈
         sender = self.sender()

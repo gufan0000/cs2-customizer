@@ -187,10 +187,14 @@ class KillSoundPage(SoundPageBase, QWidget):
     # 命名的文件，用户选的是整个风格，选不了"第 3 杀用另一套"。
     # 外审两发独立点出「提示可按连杀数分配，但界面上完全找不到入口」——
     # 承诺一件做不到的事，比少说一句更糟。
-    PAGE_LEAD = "击杀敌人时播放你自己的音效，逐把枪选风格；一个风格里自带 1~5 连杀的不同音效。点「测试」可以按连杀档位试听；总开关在「基础设置」里。"
+    PAGE_LEAD = "击杀敌人时播放你自己的音效，逐把枪选风格；一个风格里自带 1~5 连杀的不同音效。点「测试」可以按连杀档位试听；总开关管它开不开。"
     HELP_KEY = "kill_sound"
     TEST_LEVELS = [1, 2, 3, 4, 5]
     STYLE_TOOLS_MENU = True
+    # RN-147：与 reload_sound 同一个机制——状态卡上写着总开关开没开，
+    # 而开关在「基础设置」。RN-144 升级为就地开关时一并收进来。
+    MASTER_SWITCH_KEY = "kill_sound_enabled"
+    MASTER_SWITCH_NAME = "击杀音效"
 
     def _init_ui(self):
         self._build_sound_page_ui()
@@ -457,5 +461,5 @@ class KillSoundPage(SoundPageBase, QWidget):
                     "新增资源后可直接刷新风格列表。"
                 )
             else:
-                action_message = "总开关当前关闭，这里的映射会保留；如新增资源，可先刷新风格列表再去「基础设置」打开总开关。"
+                action_message = "总开关当前关闭，这里的映射会保留；如新增资源，可先刷新风格列表，再拨开总开关。"
             self.action_bar.set_message(action_message)

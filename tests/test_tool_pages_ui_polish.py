@@ -736,7 +736,9 @@ def test_screen_effects_page_status_strip_tracks_auto_saved_state(qapp, monkeypa
         "状态详情没挂在状态卡的 tooltip 上——那是用户唯一看得到它的地方"
     chips = _visible_audio_status_chip_texts(page.status_badge_label)
     assert len(chips) == 4
-    assert "总开关 · 开启" in chips
+    # ⚠ 2026-08-21（RN-163）：这颗徽章从「总开关 · …」改名了 ——
+    # 同一行右端现在就是那颗总开关，一行里说两遍。
+    assert "特效 · 开启" in chips
     assert "边缘特效 · 开启" in chips
     assert any(text.startswith("预设 · ") for text in chips)
     assert page.preset_summary_name_label.text() == "电磁风暴"
@@ -834,7 +836,9 @@ def test_kill_icon_page_status_strip_tracks_adjustments(qapp, monkeypatch):
     assert page.summary_label.isHidden() is True
     chips = _visible_audio_status_chip_texts(page.status_badge_label)
     assert len(chips) == 4
-    assert any(text.startswith("总开关 · ") for text in chips)
+    # ⚠ 2026-08-21（RN-163）：这颗徽章从「总开关 · …」改名了 ——
+    # 同一行右端现在就是那颗总开关，一行里说两遍。
+    assert any(text.startswith("显示 · ") for text in chips)
     assert any(text.startswith("素材 · ") for text in chips)
     assert any(text.startswith("风格 · classic") for text in chips)
     assert "位置 · 12/-8 · 110%" in chips

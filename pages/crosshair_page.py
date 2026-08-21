@@ -10,7 +10,7 @@ from core.utils.logger import get_logger
 from pages.audio_status_badge import create_badge_label, render_badges
 from ui_help_panel import install_help_panel, PAGE_HELP_TEXTS
 from page_theme_helper import style_as_primary_button, style_as_secondary_button
-from widgets.master_switch_link import make_master_switch_button
+from widgets.master_switch_link import make_master_switch_row
 from widgets.page_header import PageHeader
 from widgets.page_action_bar import PageActionBar
 import os
@@ -272,7 +272,16 @@ class CrosshairPage(QWidget):
             spacing=12,
             title_spacing=None,  # 沿用 Qt 默认间距：写死 10 会让右上角的 "?" 挪 2px
         )
-        hint_label = QLabel("显示开关由基础设置统一控制")
+        # ⚠ 2026-08-21（RN-144 升级版）：这里原来写的是
+        # 「显示开关由基础设置统一控制」—— **总开关搬到本页状态卡上之后，
+        # 那句话就变成假的了**，而它自己不会知道。
+        # ⭐ RN-138 同一个形状：改了一处，指向它的文案不会跟着改。
+        # ⚠ 这里一度写「开关就在下面那张卡的右上角」。外审当场点破：
+        #   「需要额外文字硬指引 ⇒ 总开关层级与可见性严重不足，
+        #     属于打补丁式的无效引导」
+        # ⭐ **指路是症状，不是修法。** 开关已挪到状态卡第一行最左边，
+        # 这句指路随之删掉 —— 留着既是错的，也是那个病的证据。
+        hint_label = QLabel("调完直接进游戏看效果")
         hint_label.setObjectName("hintLabel")
         # RN-121：标题行右侧的一行提示，不许折行。
         # 实测它只拿到 120px（需要 156px），于是断在「统 / 一」中间 ——
@@ -510,6 +519,14 @@ class CrosshairPage(QWidget):
             self.custom_summary_label.setText(custom_text)
             self.custom_summary_label.setToolTip(custom_text)
 
+    def on_master_switch_synced(self):
+        """总开关被别处拨动后，把本页那条状态文案重算一遍。
+
+        ⭐ 全仓统一的钩子名（`widgets/master_switch_link` 调它）。
+        少了这一下，开关动了而徽章不动 —— 同屏两处说法不一致，RN-107 族。
+        """
+        self._sync_overview_status()
+
     def _sync_overview_status(self):
         enabled = bool(getattr(config, "crosshair_enabled", False))
         style_value = str(getattr(config, "crosshair_style", "crosshair") or "crosshair")
@@ -575,17 +592,21 @@ class CrosshairPage(QWidget):
         layout.setContentsMargins(14, 12, 14, 12)
         layout.setSpacing(8)
 
+        # RN-144 升级版（第二稿）：总开关**独占卡片第一行、贴左边**。
+        # 外审 6/6 票「玩家调完准心进游戏不显示，会以为软件坏了」；
+        # 第一版的跳转按钮被复跑 15/15 判"仍然割裂"；
+        # 第二版把开关塞在状态行右端，又被 84 发里的 12 发判"藏在角落"。
+        # ⭐ 同一个角落位置，装什么都会被判"够不着" —— **位置本身就是那个缺陷**。
+        self.master_switch_row = make_master_switch_row(
+            self, "crosshair_enabled", "准心")
+        layout.addWidget(self.master_switch_row)
+
         status_row = QHBoxLayout()
 
         title = QLabel("当前状态")
         title.setObjectName("statusLabel")
         status_row.addWidget(title)
         status_row.addStretch()
-        # RN-144：状态里有「显示 · 未启用」，而总开关不在这一页 ——
-        # 外审 6/6 票「玩家调完准心进游戏不显示，会以为软件坏了」。
-        self.master_switch_btn = make_master_switch_button(
-            self, "crosshair_enabled", "准心")
-        status_row.addWidget(self.master_switch_btn)
 
         layout.addLayout(status_row)
 
@@ -620,7 +641,7 @@ class CrosshairPage(QWidget):
     def _create_preview_card(self):
         """创建预览卡片"""
         card = self._create_card()
-        card.setToolTip("这里展示当前配置的静态预览，实际显示仍以基础设置中的准心开关为准。")
+        card.setToolTip("这里展示当前配置的静态预览；游戏里显不显示，看总开关。")
         layout = QVBoxLayout(card)
         layout.setContentsMargins(14, 14, 14, 14)
         layout.setSpacing(8)
@@ -930,7 +951,7 @@ class CrosshairPage(QWidget):
     def _create_kill_effect_card(self):
         """创建击杀联动卡片"""
         card = self._create_card()
-        card.setToolTip("测试前需要先在基础设置中启用准心显示，否则看不到联动效果。")
+        card.setToolTip("测试前需要先打开总开关，否则看不到联动效果。")
         layout = QVBoxLayout(card)
         layout.setContentsMargins(14, 14, 14, 14)
         layout.setSpacing(8)
@@ -1138,7 +1159,7 @@ class CrosshairPage(QWidget):
     def _test_kill_effect(self):
         """测试击杀联动效果"""
         if not self.crosshair_animation or not self.crosshair_animation.is_visible:
-            QMessageBox.information(self, "提示", "请先在基础设置中启用准心以测试击杀联动效果")
+            QMessageBox.information(self, "提示", "请先打开总开关，再测试击杀联动效果")
             return
         
         effect_value = config.crosshair_kill_effect
