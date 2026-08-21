@@ -2801,13 +2801,16 @@ REVERTS = [
     ),
     Revert(
         "RN", "社区地址又变成一个必需的顶层 import",
-        "pages/kill_icon_page.py",
-        "except ImportError:          # pragma: no cover - 只有开源版会走到\n"
-        '    COMMUNITY_KILL_ICON_URL = ""',
-        "except ValueError:           # 抓错异常类型，等于没抓\n"
-        '    COMMUNITY_KILL_ICON_URL = ""',
+        # ⚠ 2026-08-21（RN-153）：这道守卫**搬家了** —— 从 kill_icon 页搬进
+        # `widgets/community_library`，因为音效家族四页也要用同一张地址表。
+        # ⭐ 同一道守卫散成 N 份，就是 N 个各自会漏的地方（RN-157 漏过一次）。
+        "widgets/community_library.py",
+        "except ImportError:                      # pragma: no cover - 只有开源版会走到\n"
+        "    COMMUNITY_CATEGORY_URLS = {}",
+        "except ValueError:                       # 抓错异常类型，等于没抓\n"
+        "    COMMUNITY_CATEGORY_URLS = {}",
         "tests/test_kill_icon_empty_library_guidance.py::"
-        "test_the_page_imports_even_when_service_urls_has_no_community",
+        "test_no_module_imports_the_community_urls_without_a_guard",
         "RN-145：开源版的 `service_urls.py` **归它自己所有**，里面没有社区站。"
         "一个必需的顶层 import 会让**整页 import 不进去** —— "
         "而同步管道的机械步骤完全看不出来（它只比文件差异），"
@@ -2849,6 +2852,80 @@ REVERTS = [
         "RN-145：页头文案一旦有两种说法，`description=` 收的就是名字不是字面量，"
         "**这一页当场从全站文案扫描里掉出去**，而总量守卫只少一条、照样绿。"
         "⭐ 这是改动自己造出来的盲区 —— 把字面量收成常量的那一刻就发生了，没有任何东西会响",
+    ),
+    # ==================================== RN-153 / RN-148（批 2）
+    Revert(
+        "RN", "结构投影又直接 json.loads 标记后的全部内容",
+        "scripts/renovation_baseline.py",
+        "        value, _end = json.JSONDecoder().raw_decode(tail)",
+        "        value = json.loads(tail)",
+        "tests/test_renovation_baselines.py::"
+        "test_the_structure_probe_survives_a_log_line_after_the_json",
+        "⭐⭐ RN-166：子进程的日志是异步落到同一个流上的，一条 "
+        "`[WARNING] [AudioHealth] ...` 完全可能排在 JSON **之后**。"
+        "那时 `json.loads` 抛 JSONDecodeError —— 而它报出来的样子是「结构对不上」。"
+        "⭐ **一个解析错误伪装成了一次内容差异**，于是人会去改基线"
+        "（我照着重锁了三轮），而真正的毛病在工装里",
+    ),
+
+    Revert(
+        "RN", "空库时主按钮又把用户送去空文件夹",
+        "pages/sound_page_base.py",
+        "        if empty and reachable:",
+        "        if False:",
+        "tests/test_empty_library_points_at_the_community.py::"
+        "test_an_empty_library_swaps_the_primary_button",
+        "RN-153：全新安装时底栏最抢眼的那颗按钮是「打开音频资源」，"
+        "点开是个**空文件夹** —— 用户手上没有文件，那儿什么也解决不了。"
+        "⭐ 打开一个空文件夹不是一条路",
+    ),
+    Revert(
+        "RN", "有素材了还一直显示社区引导",
+        "pages/sound_page_base.py",
+        "        empty = self._library_is_empty()",
+        "        empty = True",
+        "tests/test_empty_library_points_at_the_community.py::"
+        "test_a_stocked_library_keeps_the_original_primary",
+        "RN-153 的反面守卫：**永远显示引导**也能让正面那几条全绿，"
+        "而那会把一个正常用户每次都送去社区站。"
+        "⭐ 一条只验「新形态出现了」的判据，挡不住「新形态永远出现」",
+    ),
+    Revert(
+        "RN", "音效页抄漏了空库引导的调用点",
+        "pages/kill_voice_page.py",
+        "        self._sync_community_guidance()",
+        "        pass  # self._sync_community_guidance()",
+        "tests/test_empty_library_points_at_the_community.py::"
+        "test_every_sound_page_calls_the_shared_guidance[kill_voice]",
+        "RN-153：逻辑在基类只有一份，但**调用点每页一行** —— "
+        "抄漏一处，那一页的空库引导是死的，而**不会有任何一处报错**。"
+        "⭐ 与 RN-138 / RN-163 同一个形状：一处改动不会去通知它的所有调用点",
+    ),
+    Revert(
+        "RN", "没有社区站的发行版留下一颗指向空地址的按钮",
+        "pages/sound_page_base.py",
+        "        reachable = community_library.has_category(self.COMMUNITY_CATEGORY_KEY)",
+        "        reachable = True",
+        "tests/test_empty_library_points_at_the_community.py::"
+        "test_a_build_without_the_community_falls_back_to_a_real_path",
+        "RN-157 的教训：开源版的 `service_urls` 归它自己所有，没有社区站。"
+        "⭐ **一颗指向空地址的按钮比没有按钮更糟** —— 它看起来是出路，"
+        "点下去什么也没有",
+    ),
+    # ⚠ 开源版**摘掉了**「社区地址表和老常量又各写一份」那条断点：
+    # 它的锚点在 `service_urls.py` 里，而开源版的那一份**归它自己所有**、
+    # 根本没有社区站地址。断点锚在一个"另一个发行版里不存在的东西"上，
+    # 在闭源仓是看不出来的（同 RN-158）。
+    Revert(
+        "RN", "帮助面板又不自己装边缘提示",
+        "ui_help_panel.py",
+        "        install_scroll_shadow(scroll)",
+        "        pass  # install_scroll_shadow(scroll)",
+        "tests/test_help_panel_edge_indicator.py::"
+        "test_the_help_panel_has_edge_indicators_at_all",
+        "RN-148：这块内容有 243px 在视口外，而它一直没有边缘提示器 —— "
+        "全站遍历**压根没走到它**。⭐ 那句静默的 `except Exception: pass` "
+        "正是它能躺住的原因：**失败和没走到长得一模一样**",
     ),
     # ============== RN-144 升级版：功能页上那颗**就地**总开关（含 RN-147 / RN-155）
     Revert(

@@ -197,7 +197,20 @@ def _structure_via_subprocess(pages: list[str], expert: bool = False) -> dict:
     if code != 0 or _EMIT_MARKER not in out:
         raise AssertionError(
             f"取结构投影失败（退出码 {code}）：\n{out[-3000:]}")
-    return json.loads(out.split(_EMIT_MARKER, 1)[1])
+    # ⚠ **不能直接 `json.loads(标记之后的全部内容)`**：子进程的日志是异步落到
+    # 同一个流上的，一条 `[WARNING] [AudioHealth] ...` 完全可能排在 JSON **之后**。
+    # 那时 `json.loads` 抛 JSONDecodeError，而报出来的样子是"结构对不上"——
+    # ⭐ **一个解析错误伪装成了一次内容差异**，于是人会去改基线（我就这么
+    # 重锁了三轮），而真正的毛病在工装里。
+    # ⇒ 用 `raw_decode` 只吃**第一个完整的 JSON 值**，后面跟什么都不管。
+    tail = out.split(_EMIT_MARKER, 1)[1].lstrip()
+    try:
+        value, _end = json.JSONDecoder().raw_decode(tail)
+    except json.JSONDecodeError as exc:
+        raise AssertionError(
+            f"结构投影的 JSON 解析失败：{exc}\n标记之后的前 500 字：\n{tail[:500]}"
+        ) from exc
+    return value
 
 
 def capture(pages: list[str], accept: bool) -> int:

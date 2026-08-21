@@ -30,8 +30,7 @@ from PySide6.QtWidgets import (
     QSlider, QFrame, QScrollArea, QFileDialog, QProgressBar,
     QSizePolicy
 )
-from PySide6.QtCore import Qt, QTimer, QUrl
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtCore import Qt, QTimer
 
 from config import config
 from resource_manager import ResourceManager
@@ -40,15 +39,10 @@ from core.utils.logger import get_logger
 from core.utils.format_utils import format_percent
 from kill_icon_overlay import load_level_animation
 from pages.audio_status_badge import create_badge_label, render_badges
-try:
-    # ⚠ **结构上可选**，不靠同步管道打补丁：开源版（cs2-customizer）的
-    # `service_urls.py` 归它自己所有，里面没有社区站 —— 那是闭源商业版的运营资产。
-    # 一个顶层 import 失败会让**整页 import 不进去**，而那是"公开仓构建直接坏掉"
-    # 级别的后果，而且同步管道的机械步骤**完全看不出来**（它只比文件差异）。
-    # ⭐ 跨仓差异要让代码自己容得下，别指望补丁替你兜 —— 补丁的上下文窗口会漂。
-    from service_urls import COMMUNITY_KILL_ICON_URL
-except ImportError:          # pragma: no cover - 只有开源版会走到
-    COMMUNITY_KILL_ICON_URL = ""
+# ⚠ 社区地址那道「开源版没有」的守卫，全仓只在 `widgets/community_library`
+# 里写一次（RN-153）。本页原来自己写了一份 `try/except ImportError` ——
+# ⭐ **同一道守卫散成 N 份，就是 N 个各自会漏的地方**（RN-157 就是漏了一处，
+# 判据同步到开源仓之后挂死 300 秒）。
 from ui_help_panel import install_help_panel, PAGE_HELP_TEXTS
 from widgets.drop_import_mixin import enable_file_drop
 from widgets.kill_icon_import_task import KillIconImportTask
@@ -550,7 +544,9 @@ class KillIconPage(QWidget):
     @staticmethod
     def _icon_library_url() -> str:
         """这个发行版有没有社区图标库可去。开源版没有，返回空串。"""
-        return COMMUNITY_KILL_ICON_URL
+        from widgets import community_library
+
+        return community_library.category_url("kill_icon")
 
     def _empty_primary_text(self) -> str:
         return (EMPTY_PRIMARY_TEXT if self._icon_library_url()
@@ -577,7 +573,9 @@ class KillIconPage(QWidget):
 
     def _open_icon_library(self):
         """打开社区的击杀图标分类，让"没得挑"变成一条走得通的路。"""
-        QDesktopServices.openUrl(QUrl(self._icon_library_url()))
+        from widgets import community_library
+
+        community_library.open_category("kill_icon")
 
     @staticmethod
     def _set_primary_look(button, primary: bool) -> None:

@@ -56,6 +56,16 @@ from config import get_app_data_dir
 from core.audio.audio_file_utils import DEFAULT_AUDIO_EXTENSIONS
 
 
+#: 空库时主按钮的兜底文案（子类没写 `EMPTY_PRIMARY_TEXT` 时用）。
+DEFAULT_EMPTY_PRIMARY_TEXT = "去社区拿一套"
+#: 空库时底栏那句话。⭐ 第一件事是**承认软件本来就不带素材** ——
+#: 不说的话用户会以为是自己装坏了（RN-145 的原话）。
+EMPTY_LIBRARY_MESSAGE = (
+    "还没有任何可用风格 —— 本软件不带素材。三步：去社区拿一个包 → "
+    "「打开音频资源」把音频放进去 → 点「刷新风格列表」。"
+)
+
+
 class SoundPageBase:
     """音效页共用行为。
 
@@ -98,6 +108,70 @@ class SoundPageBase:
     #: ⭐ 改动范围要和裁定范围对得上；范围变了就把范围写下来，别让钩子空着装诚实。
     MASTER_SWITCH_KEY: str = ""
     MASTER_SWITCH_NAME: str = ""
+
+    #: 这一页在社区站的资源分类键（`widgets/community_library`）。RN-153。
+    #: **留空就不做空库引导** —— 四个音效页各填自己的。
+    COMMUNITY_CATEGORY_KEY: str = ""
+    #: 空库时那颗主按钮的文案。用页面自己的名字，别写"素材"这种谁都看不懂的词。
+    EMPTY_PRIMARY_TEXT: str = ""
+
+    def _library_is_empty(self) -> bool:
+        """**一把枪都没有可用风格** —— 这才叫空库。
+
+        ⚠ 不是"没配"（那是 `_configured_weapon_count`，是用户的选择），
+        是"根本没得配"。两者的修法完全相反：没配 ⇒ 去配；没得配 ⇒ 先去拿素材。
+        """
+        return not any(self._weapon_styles(weapon)
+                       for weapon in self._get_all_weapons())
+
+    def _sync_community_guidance(self) -> None:
+        """空库时把底栏主按钮换成「去社区拿一套」（RN-153）。
+
+        ⭐ **"打开一个空文件夹"不是一条路。** 全新安装时底栏最抢眼的那颗按钮
+        是「打开音频资源」，点开是个空目录 —— 用户手上没有文件，
+        那儿什么也解决不了。外审原话：「冷启动门槛极高」「操作路径极其割裂」。
+
+        与 RN-145（击杀图标）同一条裁定：**不内置素材，就把"没得挑"
+        变成一条走得通的路**。
+
+        ⚠ 没有社区站时（开源版）**退回原来那颗按钮** ——
+        一颗指向空地址的按钮比没有按钮更糟。
+        """
+        bar = getattr(self, "action_bar", None)
+        if bar is None or not self.COMMUNITY_CATEGORY_KEY:
+            return
+
+        from widgets import community_library
+
+        empty = self._library_is_empty()
+        reachable = community_library.has_category(self.COMMUNITY_CATEGORY_KEY)
+        if empty and reachable:
+            bar.configure_primary(
+                self.EMPTY_PRIMARY_TEXT or DEFAULT_EMPTY_PRIMARY_TEXT,
+                self._open_community_library, visible=True)
+            # ⚠ **第一版把「打开音频资源」整个换掉了，那是把链路砍断了一半。**
+            # 外审当场两发独立点破：「文案提示『放进资源目录』却没有打开目录的入口，
+            # 从社区下载后卡在找路径环节」。
+            # ⭐ 我修好了第一步（去哪儿拿），却顺手删掉了第二步（放哪儿去）——
+            # **一条三步的路，只把第一步做顺是走不通的。**
+            # ⇒ 空库态的三颗按钮就是那三步：拿 → 放 → 刷新。
+            #   「新建风格」在没有素材时本来就没用，把位置让出来。
+            bar.extra_btn.setMenu(None)
+            bar.configure_extra("打开音频资源", self._open_audio_resource_root,
+                                visible=True)
+            bar.set_message(EMPTY_LIBRARY_MESSAGE)
+        else:
+            bar.configure_primary("打开音频资源", self._open_audio_resource_root,
+                                  visible=True)
+            text, callback, menu = getattr(
+                self, "_extra_default", ("新建风格", None, None))
+            bar.configure_extra(text, callback, visible=True)
+            bar.extra_btn.setMenu(menu)
+
+    def _open_community_library(self) -> None:
+        from widgets import community_library
+
+        community_library.open_category(self.COMMUNITY_CATEGORY_KEY)
 
     def on_master_switch_synced(self):
         """总开关被别处拨动后，把状态徽章重算一遍。
@@ -401,6 +475,11 @@ class SoundPageBase:
             self.action_bar.extra_btn.setMenu(style_menu)
         else:
             self.action_bar.configure_extra("新建风格", self._open_style_creator, visible=True)
+        # RN-153：记下「风格工具/新建风格」的原样 —— 空库态要把这个位置
+        # 借给「打开音频资源」，恢复时得原样放回去。
+        self._extra_default = (self.action_bar.extra_btn.text(),
+                               self.action_bar._extra_callback,
+                               self.action_bar.extra_btn.menu())
         self.action_bar.configure_secondary("刷新风格列表", self._refresh_style_catalog, visible=True)
         self.action_bar.configure_primary("打开音频资源", self._open_audio_resource_root, visible=True)
         self.action_bar.extra_btn.setMinimumWidth(120)

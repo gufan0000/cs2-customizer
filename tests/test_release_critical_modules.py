@@ -46,11 +46,13 @@ KNOWN_UNLISTED = {
     "core.usage_reporter", "core.utils", "crosshair_overlay",
     "flash_process_manager", "gsi_handler_music", "gsi_handler_utility",
     "music_player", "page_theme_helper", "screen_effect_overlay",
-    # 开源版这边它一度不在页面链上（账号/官网入口都去掉了），所以曾被摘出去。
-    # `pages/kill_icon_page.py` 现在会 `try: from service_urls import ...`
-    # 拿社区图标库地址（开源版没有 ⇒ 走 except 退成空串），
-    # 它又成了页面链的静态根 —— PyInstaller 收得到，登记挂账即可。
-    "service_urls",
+    # ⚠ 2026-08-21（RN-153）：`service_urls` **又从页面链上下来了**。
+    # 那道「开源版没有社区站」的守卫从 kill_icon 页搬进了
+    # `widgets/community_library`（八个页面要共用同一张地址表，
+    # 同一道守卫散成 N 份就是 N 个会漏的地方）——
+    # 于是 pages/ 底下再没有人直接 import 它，挂账表里留着就成了腐烂条目。
+    # ⭐ 这条一来一回正好说明**挂账表必须有"不许留死条目"的反面守卫**：
+    # 加进来容易，没人会想起来摘。
     "theme_manager", "ui_design_system", "ui_help_panel",
     "ui_osd", "ui_style_applier", "ui_toast", "voice_output_manager",
 }

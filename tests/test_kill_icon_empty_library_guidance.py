@@ -75,7 +75,14 @@ TEST_LIBRARY_URL = "https://example.invalid/category.php?id=7"
 
 def _build(qapp, monkeypatch, styles, *, player=None, stale_style="",
            library_url=TEST_LIBRARY_URL):
-    monkeypatch.setattr(page_module, "COMMUNITY_KILL_ICON_URL", library_url)
+    # ⚠ 2026-08-21（RN-153）：社区地址不再是本页自己的模块常量了 ——
+    # 全仓统一走 `widgets/community_library` 的那张表（同一道
+    # 「开源版没有」的守卫只写一次）。所以钉的位置跟着搬到表上。
+    # ⭐ 判据要钉**真源**，钉一个已经变成转发的名字只会得到 AttributeError。
+    from widgets import community_library
+
+    monkeypatch.setattr(community_library, "COMMUNITY_CATEGORY_URLS",
+                        {"kill_icon": library_url} if library_url else {})
     monkeypatch.setattr(page_module.ResourceManager, "list_kill_icon_styles",
                         lambda: list(styles))
     monkeypatch.setattr(config, "save_config", lambda: None, raising=False)
@@ -303,28 +310,64 @@ def test_a_build_without_a_community_site_still_offers_a_first_step(
         qapp.processEvents()
 
 
-def test_the_page_imports_even_when_service_urls_has_no_community(monkeypatch):
-    """⭐ 那条 `try/except` 必须真的在源码里，而不是靠同步管道打补丁。
+def test_no_module_imports_the_community_urls_without_a_guard():
+    """⭐ 开源版的 `service_urls` 里没有社区站 —— 无守卫的顶层 import
+    会让**整个模块 import 不进去**。
 
-    判据走 AST 找 `ImportError` 处理，不查子串 —— 也不真的去删
-    `service_urls` 的常量（那会污染同一进程里别的用例）。
+    ⚠ 2026-08-21（RN-153）：这道守卫**搬家了**。原来它写在
+    `pages/kill_icon_page.py` 里，本轮统一收进 `widgets/community_library`
+    —— 因为音效家族四页也要用同一个地址表，
+    ⭐ **同一道守卫散成 N 份，就是 N 个各自会漏的地方**（RN-157 漏了一处，
+    判据同步到开源仓之后挂死 300 秒）。
+
+    所以这条判据不再盯"某一个文件里有没有 try"，而是盯那条**不变量**：
+    **全仓凡是顶层 import 社区地址的，都必须带 ImportError 守卫。**
     """
     import ast
     from pathlib import Path
 
-    src = (Path(__file__).resolve().parents[1] / "pages" / "kill_icon_page.py"
-           ).read_text(encoding="utf-8")
-    guarded = [
-        node for node in ast.walk(ast.parse(src))
-        if isinstance(node, ast.Try)
-        and any(isinstance(n, ast.ImportFrom) and n.module == "service_urls"
-                for n in node.body)
-        and any(isinstance(h.type, ast.Name) and h.type.id == "ImportError"
-                for h in node.handlers)
-    ]
-    assert guarded, (
-        "`from service_urls import ...` 不是可选的 —— 开源版的 service_urls "
-        "里没有社区站，这一行会让**整页 import 不进去**")
+    repo = Path(__file__).resolve().parents[1]
+    COMMUNITY_NAMES = {"COMMUNITY_CATEGORY_URLS", "COMMUNITY_CATEGORY_IDS",
+                       "COMMUNITY_KILL_ICON_URL", "COMMUNITY_WEBSITE_URL"}
+
+    guarded_somewhere = False
+    offenders = []
+    for path in sorted(repo.glob("*.py")) + sorted(repo.glob("pages/*.py"))             + sorted(repo.glob("widgets/*.py")):
+        if path.name == "service_urls.py":
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        # 被 try/except ImportError 包住的那些 import 节点
+        safe = set()
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Try):
+                continue
+            if not any(isinstance(h.type, ast.Name) and h.type.id == "ImportError"
+                       for h in node.handlers):
+                continue
+            for inner in ast.walk(node):
+                if isinstance(inner, ast.ImportFrom):
+                    safe.add(id(inner))
+        for node in tree.body:            # **只看顶层** —— 函数里的延迟 import 不算
+            if not (isinstance(node, ast.ImportFrom) and node.module == "service_urls"):
+                continue
+            names = {a.name for a in node.names}
+            if not (names & COMMUNITY_NAMES):
+                continue
+            if id(node) in safe:
+                guarded_somewhere = True
+            else:
+                offenders.append((path.name, node.lineno, sorted(names)))
+        # try 里的也算数（它们不在 tree.body 里）
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module == "service_urls"                     and id(node) in safe and {a.name for a in node.names} & COMMUNITY_NAMES:
+                guarded_somewhere = True
+
+    assert not offenders, (
+        "这些地方顶层 import 了社区地址却**没有 ImportError 守卫**：\n"
+        + "\n".join(f"  {n}:{ln}  {names}" for n, ln, names in offenders)
+        + "\n开源版的 service_urls 里没有这些名字 —— 少一道守卫就是整页 import 不进去。")
+    assert guarded_somewhere, (
+        "全仓一处带守卫的社区地址 import 都没有 —— 这条判据多半已经空转了")
 
 
 # ============================================== 2. 反面守卫（有风格的时候）

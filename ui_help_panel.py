@@ -103,6 +103,19 @@ class HelpPanel(QWidget):
         content.setContentsMargins(0, 4, 8, 4)
         scroll.setWidget(content)
 
+        # RN-148：这块内容实测有 243px 在视口外，而它**一直没有边缘提示器**。
+        # 全站的滚动区靠 `ui_style_applier._style_scrollarea()` 装，
+        # 探针实测它对这一个 **0 次调用** —— 不是被那句 `except Exception: pass`
+        # 吞了，是**压根没走到它**（这个面板不在那次遍历的树里）。
+        # ⭐ 那句静默的 except 正是它能躺住的原因：**失败和没走到长得一模一样**，
+        # 所以"装没装上"永远不会有人知道。
+        # ⇒ 修法不是去修遍历，是**让这个面板自己装**：
+        # 一个控件要不要有边缘提示，是它自己的事，
+        # 不该取决于"有没有人恰好遍历到它"。
+        from ui_effects import install_scroll_shadow
+
+        install_scroll_shadow(scroll)
+
         card_layout.addWidget(scroll, 1)
 
         outer.addWidget(self._card)

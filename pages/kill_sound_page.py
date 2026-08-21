@@ -195,6 +195,10 @@ class KillSoundPage(SoundPageBase, QWidget):
     # 而开关在「基础设置」。RN-144 升级为就地开关时一并收进来。
     MASTER_SWITCH_KEY = "kill_sound_enabled"
     MASTER_SWITCH_NAME = "击杀音效"
+    # RN-153：本软件不带素材。风格库空的时候，底栏那颗「打开音频资源」
+    # 点开是个空文件夹 —— 换成一条真的走得通的路。
+    COMMUNITY_CATEGORY_KEY = "kill_sound"
+    EMPTY_PRIMARY_TEXT = "去社区拿一套击杀音效"
 
     def _init_ui(self):
         self._build_sound_page_ui()
@@ -463,3 +467,6 @@ class KillSoundPage(SoundPageBase, QWidget):
             else:
                 action_message = "总开关当前关闭，这里的映射会保留；如新增资源，可先刷新风格列表，再拨开总开关。"
             self.action_bar.set_message(action_message)
+        # RN-153：空库时把主按钮换成社区引导（逻辑在基类，只有一份）。
+        # ⚠ 必须放在 set_message **之后** —— 它会覆盖上面那句文案。
+        self._sync_community_guidance()

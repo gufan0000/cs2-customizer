@@ -109,3 +109,48 @@ def test_structure_projection_scrubs_machine_specific_paths():
     a = _page_structure._scrub_machine_paths(cases[0][0])
     b = _page_structure._scrub_machine_paths(cases[1][0])
     assert a == b, f"抹完还是不一样，CI 照样会红：{a!r} vs {b!r}"
+
+
+def test_the_structure_probe_survives_a_log_line_after_the_json(monkeypatch):
+    """⭐⭐ RN-166：JSON 后面跟一行日志，取投影不许当成「结构对不上」。
+
+    子进程的日志是**异步**落到同一个流上的 —— 一条
+    `[WARNING] [AudioHealth] issues detected: ...` 完全可能排在 JSON **之后**。
+    原来的 `json.loads(标记之后的全部内容)` 那时抛 JSONDecodeError，
+    而它冒出来的样子是「这一页的结构和基线对不上」。
+
+    ⭐ **一个解析错误伪装成了一次内容差异。**
+    后果很具体：人会去**改基线**（我照着重锁了三轮），
+    而真正的毛病在工装里，基线越改越偏。
+
+    ⚠ **这条判据的第一版也是假绿的（回退验证 0/1）**：它在自己体内又写了一遍
+    `raw_decode`，压根没碰产品那段代码 —— 把工装改回 `json.loads` 它照样绿。
+    ⭐ **判据必须去调那段真代码**；测一份复制品测的是我抄得对不对。
+    ⇒ 现在打桩 `rb._run`，让真正的 `_structure_via_subprocess` 去解析这段脏输出。
+    """
+    import json
+
+    import renovation_baseline as rb
+
+    payload = json.dumps({"demo": [{"type": "QLabel"}]})
+    noisy = (f"启动日志\n{rb._EMIT_MARKER}\n{payload}\n"
+             "[WARNING] [AudioHealth] issues detected: missing_dirs=12\n")
+    monkeypatch.setattr(rb, "_run", lambda argv: (0, noisy))
+
+    got = rb._structure_via_subprocess(["demo"])
+    assert got == {"demo": [{"type": "QLabel"}]}, (
+        f"日志排在 JSON 后面就把取数搞挂了：{got!r}")
+
+
+def test_the_structure_probe_still_blows_up_on_real_garbage(monkeypatch):
+    """反面守卫：**真的坏掉的输出仍然要炸**。
+
+    ⭐ 少了这条，上面那条的修法可以退化成「什么都吞」——
+    那样一次真正的取数失败会变成「结构没差异」，也就是**一次静默的假绿**。
+    """
+    import renovation_baseline as rb
+
+    monkeypatch.setattr(rb, "_run",
+                        lambda argv: (0, f"{rb._EMIT_MARKER}\n这不是 JSON"))
+    with pytest.raises(AssertionError, match="JSON"):
+        rb._structure_via_subprocess(["demo"])
