@@ -1,0 +1,33 @@
+name: Temporary broky media PR fetch
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/broky-media-pr.yml
+      - tmp/fetch_broky_media.sh
+
+permissions:
+  contents: read
+
+jobs:
+  fetch-media:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch public media
+        shell: bash
+        run: bash tmp/fetch_broky_media.sh
+      - name: Upload media bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: broky-media-pr
+          path: |
+            assets
+            videos
+            failed.txt
+          if-no-files-found: warn
+          compression-level: 0
+          retention-days: 1
