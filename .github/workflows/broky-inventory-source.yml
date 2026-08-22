@@ -1,0 +1,237 @@
+name: Temporary broky inventory source
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/broky-inventory-source.yml
+
+permissions:
+  contents: read
+
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Find real inventory sources
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p inventory_source/search_images
+          python -m pip install --disable-pip-version-check -q requests beautifulsoup4 pillow
+          cat > /tmp/find_inventory.py <<'PY'
+          import html, json, os, re, subprocess, time
+          from pathlib import Path
+          from urllib.parse import quote, unquote, urlparse, parse_qs
+          import requests
+          from bs4 import BeautifulSoup
+          from PIL import Image, ImageOps, ImageDraw
+
+          out=Path('inventory_source'); imgs=out/'search_images'; imgs.mkdir(parents=True,exist_ok=True)
+          ua='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131 Safari/537.36'
+          s=requests.Session(); s.headers.update({'User-Agent':ua,'Accept-Language':'en-US,en;q=0.9,zh-CN;q=0.8'})
+          report=[]
+          def log(x):
+              print(x,flush=True); report.append(str(x))
+          def get(url, **kw):
+              try:
+                  r=s.get(url,timeout=25,allow_redirects=True,**kw)
+                  log(f'GET {r.status_code} {len(r.content)} {r.url}')
+                  return r
+              except Exception as e:
+                  log(f'GET ERR {url} {e!r}'); return None
+
+          # Search ordinary web results for Steam profile candidates and references to the claim.
+          queries=[
+            'broky Helvijs Saukants Steam profile',
+            'broky steam inventory AK teammate signatures',
+            'broky sold all skins kept signed AK inventory',
+            'broky inventory only AK signed by teammates',
+            'broky 库存 卖光 只剩 AK 队友 签名',
+            'broky 清空库存 AK 签名',
+          ]
+          found_urls=[]
+          for qi,q in enumerate(queries):
+              for engine,url in [
+                ('bing',f'https://www.bing.com/search?q={quote(q)}&count=50'),
+                ('ddg',f'https://html.duckduckgo.com/html/?q={quote(q)}')]:
+                  r=get(url)
+                  if not r: continue
+                  (out/f'{engine}_{qi}.html').write_bytes(r.content)
+                  text=r.text
+                  for m in re.findall(r'https?://[^\"\'<> ]+',text):
+                      u=html.unescape(m).replace('\\/','/')
+                      if 'steamcommunity.com/' in u or 'reddit.com/' in u or 'hltv.org/' in u or 'x.com/' in u or 'twitter.com/' in u or 'bilibili.com/' in u:
+                          found_urls.append(u)
+          # Normalize redirect wrappers.
+          norm=[]
+          for u in found_urls:
+              u=u.rstrip('\\')
+              try:
+                  qs=parse_qs(urlparse(u).query)
+                  if 'uddg' in qs: u=unquote(qs['uddg'][0])
+              except: pass
+              if u not in norm: norm.append(u)
+          (out/'found_urls.txt').write_text('\n'.join(norm),encoding='utf-8')
+          log(f'found urls {len(norm)}')
+
+          # Candidate vanity IDs plus any profile/id URLs found by search.
+          candidates=[
+            'https://steamcommunity.com/id/broky/',
+            'https://steamcommunity.com/id/brokycs/',
+            'https://steamcommunity.com/id/brokycsgo/',
+            'https://steamcommunity.com/id/brokyfps/',
+            'https://steamcommunity.com/id/brokyfaze/',
+            'https://steamcommunity.com/id/helvijs/',
+            'https://steamcommunity.com/id/helvijssaukants/',
+          ]
+          for u in norm:
+              m=re.search(r'https?://steamcommunity\.com/(?:id|profiles)/[^/?#&\" ]+',u)
+              if m: candidates.append(m.group(0)+'/')
+          candidates=list(dict.fromkeys(candidates))
+          valid=[]
+          for url in candidates:
+              r=get(url)
+              if not r or r.status_code>=400: continue
+              txt=r.text
+              sid=None
+              pats=[r'"steamid"\s*:\s*"(\d{17})"',r'g_steamID\s*=\s*"(\d{17})"',r'/profiles/(\d{17})']
+              for pat in pats:
+                  m=re.search(pat,txt)
+                  if m: sid=m.group(1); break
+              title=''
+              soup=BeautifulSoup(txt,'html.parser')
+              if soup.title: title=soup.title.get_text(' ',strip=True)
+              if not sid:
+                  m=re.search(r'"steamID64"\s*:\s*"(\d{17})"',txt)
+                  if m: sid=m.group(1)
+              log(f'CAND {url} sid={sid} title={title!r}')
+              if sid:
+                  valid.append((url,sid,title))
+
+          selected=None
+          for url,sid,title in valid:
+              invurl=f'https://steamcommunity.com/inventory/{sid}/730/2?l=english&count=5000'
+              r=get(invurl)
+              if not r or r.status_code!=200: continue
+              try: data=r.json()
+              except Exception as e:
+                  log(f'JSON fail {e!r}'); continue
+              if not data.get('success'): continue
+              descs=data.get('descriptions') or []
+              assets=data.get('assets') or []
+              ak=[]
+              for d in descs:
+                  name=' '.join(str(d.get(k,'')) for k in ('market_hash_name','name','type'))
+                  details=' '.join(x.get('value','') for x in d.get('descriptions',[]) if isinstance(x,dict))
+                  if 'AK-47' in name.upper() or 'AK-47' in details.upper():
+                      ak.append({'classid':d.get('classid'),'instanceid':d.get('instanceid'),'name':d.get('market_hash_name') or d.get('name'),'details':details,'icon_url':d.get('icon_url')})
+              rec={'profile_url':url,'steamid':sid,'title':title,'asset_count':len(assets),'description_count':len(descs),'ak_items':ak,'raw':data}
+              fn=out/f'inventory_{sid}.json'; fn.write_text(json.dumps(rec,ensure_ascii=False,indent=2),encoding='utf-8')
+              log(f'INVENTORY {sid} assets={len(assets)} descriptions={len(descs)} AK={len(ak)} title={title}')
+              score=0
+              low=(title+' '+url).lower()
+              if 'broky' in low: score+=100
+              if 0 < len(assets) <= 20: score+=50
+              if ak: score+=25
+              if selected is None or score>selected[0]: selected=(score,url,sid,title,rec)
+          if selected:
+              score,url,sid,title,rec=selected
+              canonical=f'https://steamcommunity.com/profiles/{sid}/inventory/'
+              (out/'selected_profile_url.txt').write_text(canonical,encoding='utf-8')
+              (out/'selected_inventory_summary.json').write_text(json.dumps({k:v for k,v in rec.items() if k!='raw'},ensure_ascii=False,indent=2),encoding='utf-8')
+              log(f'SELECTED {canonical} score={score}')
+              # Download real item icons from Steam CDN.
+              for i,a in enumerate(rec['ak_items'][:10]):
+                  if a.get('icon_url'):
+                      rr=get('https://community.cloudflare.steamstatic.com/economy/image/'+a['icon_url']+'/512fx512f')
+                      if rr and rr.status_code==200: (out/f'ak_real_{i}.png').write_bytes(rr.content)
+          else:
+              log('NO PUBLIC INVENTORY SELECTED')
+
+          # Bing image search for an already-published real screenshot; retain source page metadata.
+          image_queries=[
+            'broky Steam inventory signed AK teammates',
+            'broky sold inventory AK-47 signatures',
+            'broky inventory only one AK',
+            'broky 库存 只剩 一把 AK 签名',
+            'broky 清空库存 队友签名 AK',
+          ]
+          records=[]; n=0
+          for qi,q in enumerate(image_queries):
+              r=get(f'https://www.bing.com/images/search?q={quote(q)}&form=HDRSC2&first=1&count=35')
+              if not r: continue
+              (out/f'bing_images_{qi}.html').write_bytes(r.content)
+              soup=BeautifulSoup(r.text,'html.parser')
+              metas=[]
+              for a in soup.select('a.iusc'):
+                  raw=a.get('m')
+                  if not raw: continue
+                  try: m=json.loads(raw)
+                  except: continue
+                  metas.append(m)
+              for m in metas[:35]:
+                  u=m.get('murl'); page=m.get('purl'); title=m.get('t')
+                  if not u: continue
+                  try:
+                      rr=s.get(u,timeout=20,headers={'Referer':page or 'https://www.bing.com/','User-Agent':ua})
+                      if rr.status_code!=200 or len(rr.content)<5000: continue
+                      ext='.jpg'
+                      ct=rr.headers.get('content-type','').lower()
+                      if 'png' in ct: ext='.png'
+                      elif 'webp' in ct: ext='.webp'
+                      fn=imgs/f'{n:03d}_q{qi}{ext}'
+                      fn.write_bytes(rr.content)
+                      try:
+                          im=Image.open(fn); im.verify()
+                      except:
+                          fn.unlink(missing_ok=True); continue
+                      records.append({'file':str(fn),'query':q,'image_url':u,'page_url':page,'title':title})
+                      n+=1
+                  except Exception as e:
+                      log(f'IMG ERR {u} {e!r}')
+                  if n>=80: break
+              if n>=80: break
+          (out/'image_sources.json').write_text(json.dumps(records,ensure_ascii=False,indent=2),encoding='utf-8')
+          log(f'DOWNLOADED SEARCH IMAGES {len(records)}')
+
+          # Contact sheets are only for source inspection; originals remain untouched.
+          good=[]
+          for rec in records:
+              p=Path(rec['file'])
+              try:
+                  im=Image.open(p).convert('RGB')
+                  if im.width>=300 and im.height>=180: good.append((p,im,rec))
+              except: pass
+          for start in range(0,len(good),20):
+              block=good[start:start+20]
+              sheet=Image.new('RGB',(1600,((len(block)+3)//4)*260),'#111')
+              d=ImageDraw.Draw(sheet)
+              for j,(p,im,rec) in enumerate(block):
+                  thumb=ImageOps.fit(im,(390,215),method=Image.Resampling.LANCZOS)
+                  x=(j%4)*400+5; y=(j//4)*260+5
+                  sheet.paste(thumb,(x,y)); d.text((x,y+218),p.name,fill='white')
+                  d.text((x,y+236),(rec.get('title') or '')[:55],fill='#bbb')
+              sheet.save(out/f'contact_{start//20:02d}.jpg',quality=88)
+
+          (out/'report.txt').write_text('\n'.join(report),encoding='utf-8')
+          PY
+          python /tmp/find_inventory.py
+
+          URL=''
+          if [ -s inventory_source/selected_profile_url.txt ]; then URL=$(cat inventory_source/selected_profile_url.txt); fi
+          CHROME=$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || command -v chromium-browser || true)
+          if [ -n "$URL" ] && [ -n "$CHROME" ]; then
+            "$CHROME" --headless --disable-gpu --no-sandbox --hide-scrollbars --window-size=1920,1080 --virtual-time-budget=12000 --screenshot=inventory_source/real_steam_inventory_page.png "$URL" || true
+          fi
+          find inventory_source -type f -printf '%p %s bytes\n' | sort > inventory_source/files.txt
+      - name: Upload source bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: broky-inventory-source
+          path: inventory_source
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
