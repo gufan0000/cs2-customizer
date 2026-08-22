@@ -1,0 +1,46 @@
+name: Temporary broky inventory source commit
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/broky-inventory-source-commit.yml
+      - tmp/find_broky_inventory_commit.py
+
+permissions:
+  contents: write
+
+jobs:
+  source:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+      - name: Find and preserve real sources
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf inventory_source
+          python -m pip install --disable-pip-version-check -q requests beautifulsoup4 pillow
+          python tmp/find_broky_inventory_commit.py
+          URL=''
+          if [ -s inventory_source/selected_profile_url.txt ]; then URL=$(cat inventory_source/selected_profile_url.txt); fi
+          CHROME=$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || command -v chromium-browser || true)
+          if [ -n "$URL" ] && [ -n "$CHROME" ]; then
+            "$CHROME" --headless --disable-gpu --no-sandbox --hide-scrollbars --window-size=1920,1080 --virtual-time-budget=15000 --screenshot=inventory_source/real_steam_inventory_page.png "$URL" || true
+          fi
+          find inventory_source -type f -printf '%p %s bytes\n' | sort > inventory_source/files.txt
+      - name: Commit temporary results to source branch
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add inventory_source
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'chore: store temporary broky inventory sources'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
