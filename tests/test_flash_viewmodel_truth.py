@@ -185,20 +185,27 @@ def test_flash_bottom_bar_primary_actually_changes_something(qapp, monkeypatch):
     page = _page("flash")
     page._sync_action_bar()
     label = page.action_bar.primary_btn.text()
-    assert label == "启用自定闪光", (
-        f"总开关关着时底栏主按钮是「{label}」。它必须是**能把状态改过来**的那个动作，"
-        "而且名字要说清打开的是什么 —— 「前往效果预览」只切页签（RN-079）；"
-        "「打开并启动」也不行，外审 3/3 判「高」：不知道是开功能、开监听还是开游戏。")
+    # ⚠⚠ RN-192 改了这条判据量的**位置**，没改它量的**东西**。
+    # RN-079 的要害是「底栏主按钮不许是个只切页签的导航动作」，而当时「把状态改过来」
+    # 只有底栏一条路。RN-189 把总开关搬进本页状态卡之后，底栏那颗
+    # 「启用自定闪光」成了**第二个开启入口** —— 外审 6/6 判「不知道点哪个才生效」。
+    # ⭐ 现在两件事分开：**开关负责启用，按钮负责启动**（它们本来就是两个状态：
+    #   `flash_enabled` 与 `process_manager.is_running`）。
+    assert getattr(page, "master_switch_row", None) is not None, (
+        "flash 页没有就地总开关 —— 那「启用」这件事就又只能挂回底栏了（RN-189）")
+    assert label != "前往效果预览", (
+        f"总开关关着时底栏主按钮是「{label}」—— 那只是切页签的导航动作，"
+        "不能拿它当「下一步该做什么」（RN-079）。")
+    assert not page.action_bar.primary_btn.isEnabled(), (
+        f"总开关还关着，底栏「{label}」却是亮的 —— 一屏两个开启入口，"
+        "外审 6/6 判「不知道点哪个才算真正生效」（RN-192）。")
 
-    # 点它必须真的把总开关打开（不只是改按钮文案）
+    # 反面：总开关一开，那颗「启动」必须变得可点 —— 否则就是把入口删没了。
     monkeypatch.setattr(page, "_init_flash_process", lambda: None)
-    page._enable_and_start()
-    assert bool(getattr(config, "flash_enabled", False)) is True, (
-        "「打开并启动」没有真的写 `config.flash_enabled` —— 按钮改了名字而没干活。")
-
+    monkeypatch.setattr(config, "flash_enabled", True, raising=False)
     page._sync_action_bar()
-    assert page.action_bar.primary_btn.text() != "启用自定闪光", (
-        "总开关已经开了，主按钮还写着「启用自定闪光」—— 它得跟着状态走。")
+    assert page.action_bar.primary_btn.isEnabled(), (
+        "总开关开了，底栏「启动」还是灰的 —— 用户没有任何办法启动后台监听。")
 
 
 def test_the_home_switch_card_is_actually_readable_from_elsewhere():

@@ -286,20 +286,41 @@ class FlashPage(QWidget):
             # 原来无条件写「前往效果预览」——一个不改变任何状态的导航动作，
             # 而胶囊常年「效果·未启用 / 运行·待启动」，全页没有启动入口。
             # 现在按当前状态给"下一步真正该做的事"；两样都齐了才退回导航。
-            if not bool(getattr(config, "flash_enabled", False)):
-                # ⚠ 名字必须说清"打开的是什么"。第一版叫「打开并启动」，外审 3/3 × 多张图
-                # 判「高」：「不知道是开启闪光替换、启动后台监听、还是启动游戏」。
-                # 改成点名那个开关本身（和首页「功能开关」里的标签一字不差）。
-                self.action_bar.configure_primary("启用自定闪光", self._enable_and_start, visible=True)
-            elif not getattr(getattr(self, "process_manager", None), "is_running", False):
+            # ⚠ 名字必须说清"打开的是什么"。第一版叫「打开并启动」，外审 3/3 × 多张图
+            # 判「高」：「不知道是开启闪光替换、启动后台监听、还是启动游戏」。
+            #
+            # ⚠⚠ RN-192：RN-189 把总开关搬进这一页的状态卡之后，这里那颗
+            # 「启用自定闪光」就成了**第二个开启入口** —— 外审 6/6 票（两档各 3）
+            # 「同时存在总开关拨钮与启用按钮，不知道点哪个才算真正生效」。
+            # ⭐ 修法不是删掉一个，是**把两件事拆开**：
+            #   开关负责「启用」，这颗按钮负责「启动后台监听」——
+            #   它们本来就是两件事（`flash_enabled` 与 `process_manager.is_running`），
+            #   只是以前被 `_enable_and_start` 合成了一颗按钮，看上去像同一件事。
+            # ⚠ 没启用之前把它置灰而不是藏掉：藏掉的话用户不知道开完之后还有一步。
+            running = getattr(getattr(self, "process_manager", None), "is_running", False)
+            enabled = bool(getattr(config, "flash_enabled", False))
+            if not running:
                 self.action_bar.configure_primary("启动", self._enable_and_start, visible=True)
+                self.action_bar.primary_btn.setEnabled(enabled)
+                self.action_bar.primary_btn.setToolTip(
+                    "" if enabled else "总开关还没打开——打开之后这里才能启动后台监听")
             else:
                 self.action_bar.configure_primary("前往效果预览", self._open_preview_tab, visible=True)
+                self.action_bar.primary_btn.setEnabled(True)
+                self.action_bar.primary_btn.setToolTip("")
             action_message = (
                 f"当前页面：{current_tab} · 闪光样式 {style_text} / 媒体 {media_text}"
                 f" · 运行状态 {runtime_text}。"
             )
         self.action_bar.set_message(action_message)
+
+    def on_master_switch_synced(self):
+        """总开关被别处拨动后，把本页状态重算一遍（RN-189）。
+
+        ⭐ 全仓统一的钩子名（`widgets/master_switch_link` 调它）。
+        少了这一下，开关动了而徽章不动 —— 同屏两处说法不一致（RN-107 族）。
+        """
+        self._sync_overview_status()
 
     def _sync_overview_status(self, *_args):
         if not hasattr(self, "status_badge_label"):
@@ -396,7 +417,9 @@ class FlashPage(QWidget):
         # 这次重构不动一个像素，四种并存的字号是另一回事（UP-092）。
         header = PageHeader(
             "闪光效果设置",
-            description="被闪的时候，用你自己的颜色、图片和音效替换游戏默认的闪白。还没启用的话，点一下「启用自定闪光」就能开。",
+            # RN-192：「启用自定闪光」这颗按钮已经不存在了（启用归总开关，
+            # 按钮只管启动）。⭐ 文案点名的控件名必须跟调用方一起走（RN-167）。
+            description="被闪的时候，用你自己的颜色、图片和音效替换游戏默认的闪白。",
             title_font_size=None,
             spacing=12,
         )
@@ -409,6 +432,16 @@ class FlashPage(QWidget):
         status_card_layout = QVBoxLayout(self.status_card)
         status_card_layout.setContentsMargins(14, 12, 14, 12)
         status_card_layout.setSpacing(8)
+
+        # RN-189：就地总开关。首页「功能开关」里有「自定闪光」，而站在这一页上
+        # 拨不到它 —— 实测首页 17 颗开关里有 8 颗是这个样子。
+        # ⚠ 拨动一律走 `MainWindow.set_feature_enabled` ⇒ 首页那颗开关 ⇒ 一整串副作用。
+        # **同一件事只能有一条链路**，这里绝不自己 `setattr(config, ...)`。
+        from widgets.master_switch_link import make_master_switch_row
+
+        self.master_switch_row = make_master_switch_row(
+            self, "flash_enabled", "自定闪光")
+        status_card_layout.addWidget(self.master_switch_row)
 
         status_header = QHBoxLayout()
         status_header.setSpacing(10)

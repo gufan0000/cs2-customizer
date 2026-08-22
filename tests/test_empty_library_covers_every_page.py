@@ -241,15 +241,18 @@ def test_flash_only_guides_on_the_two_asset_tabs():
         f"flash 里有 {len(guides)} 处空库引导，应该恰好 2 处"
         "（图片设置 / 音频设置两个页签）")
 
-    # 启用/启动那一支不许被引导挤掉
+    # 启动那一支不许被引导挤掉
+    # ⚠ RN-192：原来数的是「启用自定闪光」+「启动」两颗。总开关搬进本页状态卡之后
+    # 「启用」归开关、按钮只管「启动」，于是只剩一颗 —— 判据跟着改的是**数目**，
+    # 守的还是同一句：**全页得有一个能让功能真正跑起来的入口，不能只剩导航。**
     starters = [n for n in ast.walk(fn)
                 if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
                 and n.func.attr == "configure_primary"
                 and n.args and isinstance(n.args[0], ast.Constant)
-                and n.args[0].value in ("启用自定闪光", "启动")]
-    assert len(starters) == 2, (
-        "flash 的「启用自定闪光 / 启动」入口不见了 —— "
-        "那是全页唯一能让功能真正跑起来的按钮（RN-079）")
+                and n.args[0].value == "启动"]
+    assert len(starters) == 1, (
+        f"flash 的「启动」入口有 {len(starters)} 处，应该恰好 1 处 —— "
+        "那是全页唯一能让后台监听真正跑起来的按钮（RN-079 / RN-192）")
 
 
 #: 八页各自"重算空库形态"的入口。⭐ 判据自己列，不读产品的类属性当答案 ——

@@ -245,6 +245,14 @@ class MagnifierPage(QWidget):
         )
         self.action_bar.set_message(action_message)
 
+    def on_master_switch_synced(self):
+        """总开关被别处拨动后，把本页状态重算一遍（RN-189）。
+
+        ⭐ 全仓统一的钩子名（`widgets/master_switch_link` 调它）。
+        少了这一下，开关动了而徽章不动 —— 同屏两处说法不一致（RN-107 族）。
+        """
+        self._sync_overview_status()
+
     def _sync_overview_status(self, *_args):
         if not hasattr(self, "status_badge_label"):
             return
@@ -352,7 +360,10 @@ class MagnifierPage(QWidget):
         # UP-047: 页头改用 PageHeader。间距按本页原值传入，一个像素不动。
         header = PageHeader(
             "开镜放大",
-            description="开镜时把屏幕中心放大，模拟更高倍率的瞄准镜；还能在放大时自动切到更低的灵敏度。先去「基础设置」打开总开关。",
+            # ⚠ RN-034 的最后一笔：原文**无条件**写「先去「基础设置」打开总开关。」——
+            # 开关已经开着的时候它照说不误，而同一屏的徽章写着「开关 · 已启用」。
+            # RN-189 把开关搬到这一页的状态卡里之后，这句话连"去哪儿"都不必再提。
+            description="开镜时把屏幕中心放大，模拟更高倍率的瞄准镜；还能在放大时自动切到更低的灵敏度。",
             title_font_size=None,
             spacing=12,
         )
@@ -811,6 +822,17 @@ class MagnifierPage(QWidget):
         card_layout = QVBoxLayout(self.status_card)
         card_layout.setContentsMargins(14, 12, 14, 12)
         card_layout.setSpacing(8)
+
+        # RN-189：就地总开关。首页「功能开关」里有「开镜放大」，而这一页
+        # 此前只会写一句「先去「基础设置」打开总开关」把用户支走。
+        # ⚠ 拨动走 `MainWindow.set_feature_enabled` ⇒ 首页那颗开关 ⇒ 一整串副作用
+        # （放大器启停、提权检查、save_config）。**同一件事只能有一条链路**，
+        # 这里绝不自己 `setattr(config, ...)`。
+        from widgets.master_switch_link import make_master_switch_row
+
+        self.master_switch_row = make_master_switch_row(
+            self, "magnifier_enabled", "开镜放大")
+        card_layout.addWidget(self.master_switch_row)
 
         status_header = QHBoxLayout()
         status_title = QLabel("当前状态")

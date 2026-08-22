@@ -80,7 +80,9 @@ class UtilityPage(QWidget):
         # 这次重构不动一个像素，四种并存的字号是另一回事（UP-092）。
         header = PageHeader(
             "道具瞄点",
-            description="在游戏里叠一层道具投掷点位参考，按阵营自动切换。先去「基础设置」打开总开关，设好热键，进对局按一下就出。",
+            # RN-189：总开关已经搬到这一页的状态卡里；原文还**无条件**写"先去开"，
+            # 而开关开着的时候它照说不误（RN-034 的最后一笔）。
+            description="在游戏里叠一层道具投掷点位参考，按阵营自动切换。设好热键，进对局按一下就出。",
             title_font_size=None,
             spacing=12,
         )
@@ -93,6 +95,16 @@ class UtilityPage(QWidget):
         status_card_layout = QVBoxLayout(self.status_card)
         status_card_layout.setContentsMargins(14, 12, 14, 12)
         status_card_layout.setSpacing(8)
+
+        # RN-189：就地总开关。首页「功能开关」里有「道具瞄点」，而站在这一页上
+        # 拨不到它 —— 实测首页 17 颗开关里有 8 颗是这个样子。
+        # ⚠ 拨动一律走 `MainWindow.set_feature_enabled` ⇒ 首页那颗开关 ⇒ 一整串副作用。
+        # **同一件事只能有一条链路**，这里绝不自己 `setattr(config, ...)`。
+        from widgets.master_switch_link import make_master_switch_row
+
+        self.master_switch_row = make_master_switch_row(
+            self, "utility_guide_enabled", "道具瞄点")
+        status_card_layout.addWidget(self.master_switch_row)
 
         status_row = QHBoxLayout()
         status_row.setSpacing(10)
@@ -232,6 +244,14 @@ class UtilityPage(QWidget):
                 f" · 当前已载入 {utility_count} 项道具。"
             )
         self.action_bar.set_message(action_message)
+
+    def on_master_switch_synced(self):
+        """总开关被别处拨动后，把本页状态重算一遍（RN-189）。
+
+        ⭐ 全仓统一的钩子名（`widgets/master_switch_link` 调它）。
+        少了这一下，开关动了而徽章不动 —— 同屏两处说法不一致（RN-107 族）。
+        """
+        self._sync_status_strip()
 
     def _sync_status_strip(self):
         hotkey_text = config.utility_guide_hotkey or ""

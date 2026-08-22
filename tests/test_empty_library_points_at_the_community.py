@@ -214,8 +214,15 @@ def test_the_empty_state_keeps_a_way_to_put_the_files_in(empty_page):
     # 「视线上下割裂」。⭐ **编号本身就够了**：写着「第 2 步」的人自然知道
     # 第 1 步在别处，不必再告诉他往哪儿看（RN-187）。
     message = empty_page.action_bar.message_label.text()
-    assert "第 2 步" in message and "第 3 步" in message, (
-        f"底栏没说清自己是第几步：{message!r}")
+    # ⚠ RN-193：原来断言底栏必须写「第 2 步 / 第 3 步」。复跑当场判
+    # 「直接从第 2 步开始，与第 1 步脱节」—— 编号本身制造了那个孤儿。
+    # ⭐ 判据现在要的是**这句话自己站得住**：说清放哪儿、说清放完点什么，
+    #   不依赖屏幕上别处有没有一个「第 1 步」。
+    assert "资源目录" in message and "刷新" in message, (
+        f"底栏没说清「放哪儿、放完点什么」：{message!r}")
+    assert "第 1 步" not in message and "第 2 步" not in message, (
+        f"底栏又开始编号了：{message!r} —— 编号会产生「第 1 步去哪了」这个问题，"
+        "而第 1 步在另一个区域里（RN-187/RN-193）。")
     for phrase in ("上面", "下面", "上方", "下方", "那张卡", "左边", "右边"):
         assert phrase not in message, (
             f"底栏文案又开始描述版面了（「{phrase}」）：{message!r} —— "

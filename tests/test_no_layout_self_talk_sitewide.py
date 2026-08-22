@@ -303,3 +303,89 @@ def test_the_old_two_page_judge_is_covered_by_this_one(page):
     assert not missing, (
         f"上一版（{page}）拦得住而现在拦不住的措辞：{missing} —— "
         "判据搬家不许缩小覆盖面。")
+
+
+def test_field_labels_never_wrap_into_two_lines(qapp, monkeypatch):
+    """⭐⭐ RN-191：以「:」结尾的**字段标签**不许被挤到折行。
+
+    实测（紧凑档 860×640，`magnifier`）：
+
+        「主武器热键:」  宽 69px / 需 **73px**  ⇒ 折成「主武器热」+「键:」
+        「防抖延迟(ms):」宽 73px / 需 88px、「微调:」「大幅:」同样折行
+
+    **差 4px 就断成两行。** 而它躲得过一切"有没有溢出/有没有截断"的判据 ——
+    折行既不溢出也不截断（RN-121 记过这条）。
+
+    ⭐⭐ 更要紧的是 RN-121 当年**已经留了 opt-out** (`KEEP_WRAP_PROPERTY`)，
+    可它是 **opt-in 的**：得有人想起来在调用处设那个属性，而表单标签的调用方
+    一个都没设。⇒ **一个"默认开、需要显式关"的行为，等于"绝大多数地方都开着"；
+    opt-out 的存在不代表它被用上了。**
+
+    现在的规则从文案自己推得出来（`_is_field_label`），不靠名单。
+    """
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QLabel
+
+    import sys as _sys
+
+    _scripts = str(REPO / "scripts")
+    if _scripts not in _sys.path:
+        _sys.path.insert(0, _scripts)
+    import _audit_neutralize as neutral
+    from config import config
+
+    neutral.apply(config)
+    config.compact_mode = True
+    monkeypatch.setenv("CS2C_NO_GLOBAL_HOTKEYS", "1")
+    monkeypatch.setenv("CS2C_SAFE_MODE_ACTIVE", "1")
+
+    import gui_widget
+
+    win = gui_widget.MainWindow(auto_background_preload=False)
+    try:
+        win.setAttribute(Qt.WA_DontShowOnScreen, True)
+        win.show()
+        qapp.processEvents()
+        win.setMinimumSize(860, 640)
+        win.resize(860, 640)
+        qapp.processEvents()
+
+        page_ids = [p for p in win._page_names if p not in neutral.unsafe_pages()]
+        neutral.apply(config, page_ids)
+        offenders, checked = [], 0
+        for page_id in page_ids:
+            win.show_page(page_id, animated=False)
+            for _ in range(3):
+                qapp.processEvents()
+            page = win.pages.get(page_id)
+            if page is None:
+                continue
+            for label in page.findChildren(QLabel):
+                text = label.text().strip()
+                if not text or label.isHidden():
+                    continue
+                if not (text[-1] in ":：" and len(text) <= 16):
+                    continue
+                checked += 1
+                # ⚠ 断言的是**规则本身**（字段标签不许开折行），不是"此刻被挤没被挤"。
+                # 第一版断言的是症状 —— 而"差 4px 折不折"取决于这一次布局跑到哪儿：
+                # 同一页，先逐页走一遍再看是 4 个折行，直接跳过去看是 0 个。
+                # ⭐ **一条结论随导航历史变化的判据，绿的时候什么都不证明。**
+                if label.wordWrap():
+                    need = label.fontMetrics().horizontalAdvance(text)
+                    offenders.append(
+                        f"{page_id}: 「{text}」 开着折行"
+                        f"（宽 {label.width()}px / 需 {need}px）")
+
+        assert checked >= 20, (
+            f"只量到 {checked} 个字段标签 —— 判据在空转，先修取标签那一段")
+        assert not offenders, (
+            f"紧凑档里这些字段标签被挤到折行（{len(offenders)} 个）：\n  "
+            + "\n  ".join(offenders[:8])
+            + "\n⭐ 折行不是「空间不够」的结果，是「我说我能折行」的结果 —— "
+            "它躲得过一切溢出/截断判据（RN-121 / RN-191）。")
+    finally:
+        config.compact_mode = False
+        win.close()
+        win.deleteLater()
+        qapp.processEvents()

@@ -72,6 +72,18 @@ EXPECTED_KEYS = {
     # 顺手改会让那一轮失去可比的基线。⭐ 但「以后补」只有真的补了才算数 ——
     # 这一行就是那笔账被结清的证据。
     "hud_color": "hud_rules_enabled",
+    # RN-189（批 6）：首页 17 颗总开关里当时有 **8 颗**在它自己那一页上拨不到。
+    # ⭐ 这一批不是"顺手扩范围"，是**把分母补齐** —— 见
+    #   `test_every_home_switch_has_a_page_that_hosts_it` 的说明：
+    #   原来那两条判据都遍历本表，而本表是「已经装了的页」，
+    #   于是「本该有却没有」对它们结构上不可见。
+    "gun_sound": "gun_sound_enabled",
+    "death_sound": "death_sound_enabled",
+    "magnifier": "magnifier_enabled",
+    "flash": "flash_enabled",
+    "music": "music_enabled",
+    "utility": "utility_guide_enabled",
+    "voice_output": "voice_output_enabled",
 }
 
 
@@ -436,6 +448,48 @@ def test_the_row_spells_out_that_it_is_the_same_switch_as_home(main_window, qapp
     assert link.MASTER_SWITCH_CARD_NAME in tip, f"tooltip 没说在哪张卡：{tip!r}"
 
 
+
+def _docstring_nodes(tree) -> set:
+    """模块/类/函数的 docstring 节点 —— **它们不是用户看得见的文案**。
+
+    ⚠ 不排除的话，`flash` 的「创建基础设置标签页」和 `utility` 的
+    「创建基础设置选项卡」这两句 docstring 会被当成「把用户支去基础设置」报上来。
+    判据管的是屏幕上的字，不是源码里的字。
+    （⚠ 顺带一条：**docstring 里别再写三引号** —— 上一版就是这么把自己截断的。）
+    """
+    out = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef,
+                                 ast.AsyncFunctionDef)):
+            continue
+        body = getattr(node, "body", None)
+        if (body and isinstance(body[0], ast.Expr)
+                and isinstance(body[0].value, ast.Constant)
+                and isinstance(body[0].value.value, str)):
+            out.add(body[0].value)
+    return out
+
+
+def _own_tab_titles(tree) -> set:
+    """这一页**自己那些页签的名字**（`addTab(widget, "…")` 的第二个实参）。
+
+    ⭐⭐ 这条排除是 RN-075 那个陷阱打到判据自己身上：
+    **「基础设置」既是首页的名字，也是 `flash` / `utility` 页里一个页签的名字。**
+    `flash_page.py` 有一句 `self.tab_widget.addTab(tab, "基础设置")` ——
+    那是个**标签**，不是"去那儿开开关"的**指路**。
+    一条只比字符串的判据分不出这两者，于是把页签名字也报成缺陷。
+
+    ⇒ 排除的依据取自源码自身（谁真的被 addTab 过），不是一份手抄名单。
+    """
+    out = set()
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "addTab" and len(node.args) >= 2):
+            arg = node.args[1]
+            if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                out.add(arg.value.strip())
+    return out
+
 def test_no_page_with_its_own_switch_still_sends_the_user_away():
     """⭐ 有了就地开关的页，不许还写着「总开关在「基础设置」里」。
 
@@ -464,8 +518,19 @@ def test_no_page_with_its_own_switch_still_sends_the_user_away():
             f"{page_id} 推不出页面文件（{path.name} 不存在）—— "
             "页面 id 和文件名对不上时这一页会被静默跳过，判据对它就是瞎的")
         tree = ast.parse(path.read_text(encoding="utf-8"))
+        skip = _docstring_nodes(tree)
+        own_tabs = _own_tab_titles(tree)
         for node in ast.walk(tree):
             if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
+                continue
+            if node in skip:
+                continue
+            # ⚠ 按**取值精确相等**放行页签名，不按节点身份 ——
+            # `utility` 的 `_current_tab_text()` 里有一句 `return "基础设置"`
+            # 作兜底，它同样是这一页页签的名字，却不是 `addTab` 的实参。
+            # ⭐ 整句里**嵌着**这四个字的照样报（那才是指路），
+            #   只有"整个字符串就等于某个页签名"才算标签。
+            if node.value.strip() in own_tabs:
                 continue
             if link.MASTER_SWITCH_PAGE_NAME in node.value:
                 offenders.append((path.name, node.lineno, node.value[:50]))
@@ -570,3 +635,86 @@ def test_the_page_name_in_the_copy_is_not_a_hand_written_literal():
     assert not offenders, (
         f"这几页自己抄了「{link.MASTER_SWITCH_CARD_NAME}」这个卡片名：{offenders}\n"
         "统一从 widgets/master_switch_link.py 取。")
+
+
+# ==================================================== 覆盖面：谁**本该**有就地开关
+
+#: 首页「功能开关」里**不对应任何页面**的开关，写明理由。
+#: ⭐ 每一条都要有依据 —— 一张没有理由的豁免表，跟没有判据是一回事。
+NO_PAGE_OF_ITS_OWN = {
+    "spectator": "「观战静音」是全局行为（观战时压低音量），没有属于它的功能页；"
+                 "它只在首页那张卡里出现，不存在"
+                 "「用户站在某一页上却找不到开关」这个局面。",
+}
+
+#: 页面**已经**能就地拨这个开关，但用的不是共用的 `MasterSwitchRow`。
+#: ⚠ 这不是豁免"能不能拨"，是记下"它走的是第二条链路"这笔账。
+HOSTS_IT_WITH_ITS_OWN_CONTROL = {
+    "fun_afterlife":
+        "`fun_page.py` 有一张标题就叫「总开关」的卡，里面是手搓的 QCheckBox。"
+        "⚠ 它 `setattr(config, ...)` **自己写**，再自己调 preheat/shutdown —— "
+        "而首页那颗开关的 `_on_switch_changed` 也做同一串事。"
+        "⭐ 同一个开关两条链路，短的那条缺的是「同步首页那颗的显示」"
+        "（RN-155 在 kill_icon 上踩过一模一样的）。"
+        "⇒ 改成共用行要连带改 `FunPage(controller)` 的独立构造用法与它的判据，"
+        "那是这一页自己翻新时的活，记在 **RN-190**。",
+}
+
+
+def _home_switch_configs() -> list[tuple[str, str, str]]:
+    """首页「功能开关」卡里那张表 —— (switch_id, 显示名, config 键)。
+
+    从 `gui_widget.py` 的 AST 里取，因为它是**产品事实**：
+    首页上真的画出了这么多颗开关。判据要的正是这个分母。
+    """
+    tree = ast.parse((REPO / "gui_widget.py").read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Assign) and len(node.targets) == 1
+                and getattr(node.targets[0], "id", "") == "switch_configs"):
+            return [(e.elts[0].value, e.elts[1].value, e.elts[2].value)
+                    for e in node.value.elts]
+    raise AssertionError(
+        "在 gui_widget.py 里找不到 `switch_configs` —— 判据的锚点过期了。"
+        "这份表是「首页有哪些总开关」的唯一真相源，别在判据里另抄一份。")
+
+
+def test_every_home_switch_has_a_page_that_hosts_it():
+    """⭐⭐ 首页上有的总开关，它那一页就得能就地拨。
+
+    ⚠⚠ **这条判据补的是上面两条判据的分母。**
+    `test_no_page_with_its_own_switch_still_sends_the_user_away` 和
+    `test_no_copy_about_the_master_switch_describes_where_it_sits`
+    都遍历 `EXPECTED_KEYS` —— 而那是**"已经装了就地开关的页"**。
+    于是一页「本该有却没有」，对它们**结构上不可见**：
+    它们能确认现状不倒退，**永远发现不了现状本身就是缺的**。
+
+    ⭐⭐ **一条只遍历"已合规对象"的判据，它的分母是由结论决定的。**
+      读起来是"这条规则在生效"，实际是"凡是符合的都符合"。
+
+    实测（2026-08-22）：首页 **17 颗**开关，只有 **8** 页装了就地开关，
+    **9 颗缺**（其中 `spectator` 没有属于它的页面，见 `NO_PAGE_OF_ITS_OWN`）。
+    而 `magnifier` / `utility` 两页的副标题还在**无条件**写
+    「先去「基础设置」打开总开关」—— 那正是 RN-034 一直没结干净的那一笔。
+
+    分母取首页那张 `switch_configs`：**首页真的画了几颗开关，就是几颗**。
+    """
+    switches = _home_switch_configs()
+    assert len(switches) >= 15, (
+        f"只读到 {len(switches)} 颗首页开关 —— 判据在空转，先修取表那一段")
+
+    missing = []
+    for switch_id, name, config_key in switches:
+        if switch_id in NO_PAGE_OF_ITS_OWN:
+            continue
+        if switch_id in HOSTS_IT_WITH_ITS_OWN_CONTROL:
+            continue
+        if config_key in set(EXPECTED_KEYS.values()):
+            continue
+        missing.append(f"{switch_id}（{name} / {config_key}）")
+
+    assert not missing, (
+        f"首页有 {len(switches)} 颗总开关，其中 {len(missing)} 颗**在它自己那一页上拨不到**：\n  "
+        + "\n  ".join(missing)
+        + "\n⭐ 用户站在功能页上，却要被支去另一页才能开这个功能。\n"
+        "  要么给那一页装上 `make_master_switch_row(...)` 并把 EXPECTED_KEYS 补齐，\n"
+        "  要么在 NO_PAGE_OF_ITS_OWN 里写明它为什么不该有 —— **别把这一行删掉了事**。")

@@ -2164,6 +2164,44 @@ REVERTS = [
         "那些页正是 RN-005 盲区里的四页",
     ),
     Revert(
+        "RN", "字段标签又被无条件开成可折行",
+        "ui_style_applier.py",
+        "                widget.setWordWrap(not self._is_field_label(widget.text()))",
+        "                widget.setWordWrap(True)",
+        "tests/test_no_layout_self_talk_sitewide.py::"
+        "test_field_labels_never_wrap_into_two_lines",
+        "RN-191：紧凑档「主武器热键:」宽 69px、需 73px —— **差 4px 就断成两行**"
+        "（「主武器热」/「键:」），magnifier 一页 4 个。"
+        "⭐ 折行既不溢出也不截断，躲得过一切既有判据（RN-121 记过）。"
+        "⭐⭐ 而 RN-121 当年**已经留了 opt-out**，可它是 opt-in 的 —— "
+        "表单标签的调用方一个都没设。**一个「默认开、需要显式关」的行为，"
+        "等于「绝大多数地方都开着」；opt-out 的存在不代表它被用上了**",
+    ),
+    Revert(
+        "RN", "就地总开关的覆盖面又只按已合规的页算",
+        "tests/test_master_switch_row.py",
+        '    "music": "music_enabled",',
+        "",
+        "tests/test_master_switch_row.py::"
+        "test_every_home_switch_has_a_page_that_hosts_it",
+        "RN-189：首页 17 颗总开关里曾有 **8 颗**在它自己那一页上拨不到，"
+        "而管这件事的两条判据都遍历 `EXPECTED_KEYS` —— 那是**已经装了开关的页**。"
+        "⭐⭐ **一条只遍历「已合规对象」的判据，它的分母是由结论决定的**："
+        "读起来是「这条规则在生效」，实际是「凡是符合的都符合」。"
+        "分母现在取首页那张 `switch_configs`（首页真的画了几颗，就是几颗）",
+    ),
+    Revert(
+        "RN", "magnifier 又把用户支去基础设置开总开关",
+        "pages/magnifier_page.py",
+        '            self, "magnifier_enabled", "开镜放大")',
+        '            self, "magnifier_enabled_NOPE", "开镜放大")',
+        "tests/test_master_switch_row.py::"
+        "test_the_config_key_each_page_declares_really_exists_at_home",
+        "RN-189：这一页的副标题**无条件**写「先去「基础设置」打开总开关」，"
+        "而同屏徽章可能正写着「开关 · 已启用」—— RN-034 拖了很久的最后一笔。"
+        "开关搬到本页之后那句话连「去哪儿」都不必提",
+    ),
+    Revert(
         "RN", "空库时又出现两颗紫按钮",
         "widgets/community_library.py",
         "        style_as_secondary_button(bar.primary_btn)",
@@ -2179,8 +2217,9 @@ REVERTS = [
     Revert(
         "RN", "空库底栏文案又开始描述版面",
         "widgets/community_library.py",
-        '            f"第 2 步：点「{keep_text}」把下载的包放进资源目录。"',
-        '            f"第 1 步在上面那张卡里。点「{keep_text}」放进资源目录。"',
+        # ⚠ RN-193 又改了一次这句话（去掉编号）。锚点跟着走。
+        '            f"下载好的包放进资源目录（点「{keep_text}」），再点「{refresh_label}」。")',
+        '            f"第 1 步在上面那张卡里。点「{keep_text}」放进资源目录。")',
         "tests/test_empty_library_points_at_the_community.py::"
         "test_the_empty_state_keeps_a_way_to_put_the_files_in",
         "RN-187：原文案写「第 1 步在上面那张卡里」，外审 3/3 判"
@@ -2400,7 +2439,10 @@ REVERTS = [
         # ⚠ 锚点跟着文案走：这一行在**同一轮里改过三次**（修同名歧义 → 修我自己
         # 引入的「左侧」→ 按钮能自己开之后改口径），前两版锚点都当场空转。
         # ⭐ 教训：**别把断点锚在这一轮还在改的那一行**，或者收尾时统一重锚一次。
-        "被闪的时候，用你自己的颜色、图片和音效替换游戏默认的闪白。还没启用的话，点一下「启用自定闪光」就能开。",
+        # ⚠ RN-192：那颗「启用自定闪光」按钮没了（启用归总开关），
+        # 副标题里点名它的半句也删了。⭐ 同一行在两条断点里各锚了一次 ——
+        #   一行文案被 N 条断点锚着，改它就是 N 处同时空转。
+        "被闪的时候，用你自己的颜色、图片和音效替换游戏默认的闪白。",
         "先去「基础设置」打开总开关。",
         "tests/test_flash_viewmodel_truth.py::"
         "test_the_master_switch_hint_says_which_basic_settings",
@@ -2411,7 +2453,8 @@ REVERTS = [
     Revert(
         "RN", "flash 底栏主按钮又变回纯导航",
         "pages/flash_page.py",
-        '                self.action_bar.configure_primary("启用自定闪光", self._enable_and_start, visible=True)',
+        # ⚠ RN-192：「启用」归总开关、按钮只管「启动」，那颗按钮已经改名。
+        '                self.action_bar.configure_primary("启动", self._enable_and_start, visible=True)',
         '                self.action_bar.configure_primary("前往效果预览", self._open_preview_tab, visible=True)',
         "tests/test_flash_viewmodel_truth.py::"
         "test_flash_bottom_bar_primary_actually_changes_something",
@@ -2465,7 +2508,10 @@ REVERTS = [
     Revert(
         "RN", "又用「左侧」给导航指路",
         "pages/flash_page.py",
-        "被闪的时候，用你自己的颜色、图片和音效替换游戏默认的闪白。还没启用的话，点一下「启用自定闪光」就能开。",
+        # ⚠ RN-192：那颗「启用自定闪光」按钮没了（启用归总开关），
+        # 副标题里点名它的半句也删了。⭐ 同一行在两条断点里各锚了一次 ——
+        #   一行文案被 N 条断点锚着，改它就是 N 处同时空转。
+        "被闪的时候，用你自己的颜色、图片和音效替换游戏默认的闪白。",
         "要生效得先在左侧「基础设置」页的「功能开关」里打开「自定闪光」。",
         "tests/test_no_layout_self_talk_sitewide.py::"
         "test_no_screen_direction_words_in_user_facing_copy",
@@ -2635,8 +2681,9 @@ REVERTS = [
     Revert(
         "RN", "样式应用器又把「我是一行」的提示改成折行",
         "ui_style_applier.py",
+        # ⚠ RN-191：这一行现在按「是不是字段标签」决定折不折行。
         "            if not widget.property(self.KEEP_WRAP_PROPERTY):\n"
-        "                widget.setWordWrap(True)",
+        "                widget.setWordWrap(not self._is_field_label(widget.text()))",
         "            widget.setWordWrap(True)",
         "tests/test_single_line_hints_stay_single_line.py::"
         "test_the_hint_is_still_one_line_after_the_page_is_fully_built",
@@ -3070,7 +3117,8 @@ REVERTS = [
     Revert(
         "RN", "flash 的启动入口被空库引导顶掉",
         "pages/flash_page.py",
-        '                self.action_bar.configure_primary("启用自定闪光", self._enable_and_start, visible=True)',
+        # ⚠ RN-192：同上，按钮改名成「启动」。
+        '                self.action_bar.configure_primary("启动", self._enable_and_start, visible=True)',
         '                self._guide_empty_library(True, "去社区拿一套自定闪光", "打开图片文件夹", self._open_flash_images_folder, "刷新样式列表")',
         "tests/test_empty_library_covers_every_page.py::"
         "test_flash_only_guides_on_the_two_asset_tabs",

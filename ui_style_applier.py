@@ -282,6 +282,20 @@ class StyleApplier:
     def _height_is_fixed(widget: QWidget) -> bool:
         return widget.minimumHeight() == widget.maximumHeight()
 
+
+    #: 字段标签的最长字数。超过这个长度的多半是句子而不是标签，照常允许折行。
+    FIELD_LABEL_MAX_CHARS = 16
+
+    @classmethod
+    def _is_field_label(cls, text: str) -> bool:
+        """这段文字是不是**用来称呼旁边那个控件**的字段标签（RN-191）。
+
+        判据取自文案自身：以「:」或「：」结尾、且短。
+        ⭐ 不用名单：名单要靠人记得往里加，而这条规则跟着文案自己走。
+        """
+        t = (text or "").strip()
+        return bool(t) and t[-1] in ":：" and len(t) <= cls.FIELD_LABEL_MAX_CHARS
+
     def fix_text_display(self, widget: QWidget):
         """
         修复文字显示问题
@@ -327,8 +341,19 @@ class StyleApplier:
             # 所以它躲得过一切"有没有溢出/有没有截断"的判据。
             #
             # opt-out 沿用本类既有的动态属性做法（见 KEEP_STYLE_PROPERTY）。
+            #
+            # ⚠⚠ RN-191：RN-121 留了这个 opt-out，**可它是 opt-in 的** ——
+            # 得有人想起来在调用处设那个属性，而表单标签的调用方一个都没设。
+            # 实测（紧凑档 magnifier）：「主武器热键:」宽 69px、需 73px，
+            # **差 4px 就折成两行**（「主武器热」/「键:」），本页共 9 个这样的标签。
+            # ⭐ 一个"默认开、需要显式关"的行为，等于"绝大多数地方都开着" ——
+            #   opt-out 的存在不代表它被用上了。
+            #
+            # ⇒ 加一条**从文案自己推得出来**的规则：以「:」「：」结尾的是**字段标签**，
+            #   它是用来称呼旁边那个控件的，永远不该折行。
+            #   折了它就把自己的宽度报小，布局照那个窄宽给它，于是折得更狠。
             if not widget.property(self.KEEP_WRAP_PROPERTY):
-                widget.setWordWrap(True)
+                widget.setWordWrap(not self._is_field_label(widget.text()))
             widget.adjustSize()
 
         elif isinstance(widget, (QLineEdit, QComboBox)):

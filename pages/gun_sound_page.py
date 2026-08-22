@@ -196,6 +196,16 @@ class GunSoundPage(QWidget):
         status_card_layout.setContentsMargins(14, 12, 14, 12)
         status_card_layout.setSpacing(8)
 
+        # RN-189：就地总开关。首页「功能开关」里有「枪声替换」，而站在这一页上
+        # 拨不到它 —— 实测首页 17 颗开关里有 8 颗是这个样子。
+        # ⚠ 拨动一律走 `MainWindow.set_feature_enabled` ⇒ 首页那颗开关 ⇒ 一整串副作用。
+        # **同一件事只能有一条链路**，这里绝不自己 `setattr(config, ...)`。
+        from widgets.master_switch_link import make_master_switch_row
+
+        self.master_switch_row = make_master_switch_row(
+            self, "gun_sound_enabled", "枪声替换")
+        status_card_layout.addWidget(self.master_switch_row)
+
         status_header = QHBoxLayout()
         status_header.setSpacing(10)
         status_title = QLabel("当前状态")
@@ -618,6 +628,14 @@ class GunSoundPage(QWidget):
             bar.configure_extra(text, callback, visible=has_text)
             bar.extra_btn.setMenu(menu)
 
+    def on_master_switch_synced(self):
+        """总开关被别处拨动后，把本页状态重算一遍（RN-189）。
+
+        ⭐ 全仓统一的钩子名（`widgets/master_switch_link` 调它）。
+        少了这一下，开关动了而徽章不动 —— 同屏两处说法不一致（RN-107 族）。
+        """
+        self._refresh_status_badge()
+
     def _refresh_status_badge(self, *_args):
         enabled = bool(is_gun_sound_master_enabled(config))
         effective = self._effective_styles()
@@ -690,7 +708,8 @@ class GunSoundPage(QWidget):
                     "新增资源后可直接刷新风格列表。"
                 )
             else:
-                action_message = "总开关当前关闭，这里的映射会保留；如新增资源，可先刷新风格列表再去「基础设置」打开总开关。"
+                # RN-189：总开关已经在这一页的状态卡里，不必再把用户支去别处。
+                action_message = "总开关当前关闭，这里的映射会保留；如新增资源，可先刷新风格列表，再打开总开关。"
             self.action_bar.set_message(action_message)
         # RN-165：空库引导（逻辑在 community_library，只有一份）
         self._sync_community_guidance()

@@ -200,9 +200,16 @@ def guide_empty_library(bar, *, empty: bool, category_key: str, cta_text: str,
         # `test_no_layout_self_talk_sitewide` 判据，**它没逮住这一句**。
         # ⭐ 编号本身就够了：写着「第 2 步」的人自然知道第 1 步在别处，
         #   不必再告诉他往哪儿看（RN-187）。
+        # ⚠⚠ RN-193：这句话在一轮之内被外审判了**两次，方向相反**。
+        #   第一版写「第 1 步在上面那张卡里」⇒ 判「用生硬文字打补丁」（RN-187）；
+        #   去掉指路、只留「第 2 步 / 第 3 步」⇒ 判「直接从第 2 步开始，
+        #   与第 1 步脱节，新手找不到第一步」。
+        # ⭐⭐ 两轮都对，而且都不是在说措辞 —— 它们说的是同一件事：
+        #   **三步被劈在两个区域里**。换个说法治不好被劈开这件事。
+        # ⇒ 干脆不编号：编号才会产生"第 1 步去哪了"这个问题。
+        #   卡里那颗按钮是行动，这里说的是拿到之后怎么办，各自完整。
         bar.set_message(
-            f"第 2 步：点「{keep_text}」把下载的包放进资源目录。"
-            f"第 3 步：点「{refresh_label}」。")
+            f"下载好的包放进资源目录（点「{keep_text}」），再点「{refresh_label}」。")
         return True
 
     bar.configure_primary(cta_text, lambda: open_category(category_key), visible=True)
