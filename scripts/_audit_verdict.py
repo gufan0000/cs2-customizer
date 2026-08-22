@@ -25,6 +25,7 @@ CI 侧的对应读法见 `.github/workflows/ci.yml`；判据见
 from __future__ import annotations
 
 import os
+import re
 import sys
 import threading
 import traceback
@@ -67,3 +68,25 @@ def deliver(name: str, rc: int) -> None:
     sys.stdout.flush()
     sys.stderr.flush()
     os._exit(rc)
+
+
+def parse_verdict(text: str, name: str) -> int | None:
+    """从审计输出里读回裁定；读不到返回 `None`（= 审计没活到交裁定那一步）。
+
+    **规则与 `.github/verdict.ps1` 必须一致**：取**最后一条**匹配的裁定行，
+    读不到一律当失败。这里是 Python 侧的唯一一份实现 ——
+    `scripts/gate.py` 用它，判据也用它，谁都不许再抄一份正则。
+
+    ⚠ RN-194：`os._exit(rc)` 本来是为了「不给退出链路改写的机会」，
+    **实测它没挡住**：2026-08-22 同一台机器上跑 9 次完整档排版审计，
+    **3 次退出码是 127，而同一次输出里的裁定行是 `RESULT layout rc=0`**，
+    且裁定行打在 `os._exit` 之前 —— 也就是说它执行到了，退出码还是被改写了。
+    ⇒ **退出码在这条路上不可信这件事，比 `os._exit` 能不能修它更根本。**
+    """
+    got = None
+    pattern = re.compile(rf"^{re.escape(VERDICT_PREFIX)}\s+{re.escape(name)}\s+rc=(-?\d+)\s*$")
+    for line in text.splitlines():
+        m = pattern.match(line.strip())
+        if m:
+            got = int(m.group(1))
+    return got

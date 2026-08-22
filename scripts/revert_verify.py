@@ -3384,6 +3384,96 @@ REVERTS = [
         "**`kill_sound_page.py` 实测抽到 0 条**，而总量守卫（≥60）一直是绿的。"
         "⇒ 每加一条通路就要配一条只盯它自己的守卫，否则总量会把它盖住",
     ),
+    # ==================================== 批 7：RN-030 / RN-194 / RN-196
+    Revert(
+        "RN", "排版审计又只量页签内容（整页范围被删）",
+        "scripts/layout_overflow_audit.py",
+        "    yield (None, page, tab_pages)          # 必须在任何 setCurrentIndex 之前",
+        "    pass  # 断点：不再交出「页面余下部分」这个范围",
+        "tests/test_audit_measures_the_whole_page.py::"
+        "test_every_visible_widget_of_every_page_falls_inside_some_scope",
+        "RN-030：`_scopes()` 只要发现 QTabWidget 就**只**返回页签内容，"
+        "于是页头、状态徽章条、顶层卡片、底部操作栏从来没被任何判据看过。"
+        "实测 10 页 / ~490 个可见控件，magnifier 一页就占 125/210（61%）——"
+        "而 RN-191 那四个折行的标签（`主武器热键:` 等）逐字就在这片盲区里。"
+        "⭐ 「只返回页签内容」是拿**替换**当**排除**用",
+    ),
+    Revert(
+        "RN", "先把页签切一遍再量整页",
+        "scripts/layout_overflow_audit.py",
+        "        if w is not None\n"
+        "    )\n"
+        "    yield (None, page, tab_pages)",
+        "        if w is not None\n"
+        "    )\n"
+        "    for _tw in tabs:                      # 断点：量整页之前先戳一遍页签\n"
+        "        for _i in range(_tw.count()):\n"
+        "            _tw.setCurrentIndex(_i)\n"
+        "            app.processEvents()\n"
+        "    yield (None, page, tab_pages)",
+        "tests/test_audit_measures_the_whole_page.py::"
+        "test_the_page_scope_is_measured_before_any_tab_is_touched",
+        "⭐⭐ **工装的观测动作本身会改变被观测对象**：切一遍页签，整页的布局最小高"
+        "会永久变大（magnifier 596→612、flash 500→516），`setCurrentIndex(original)` "
+        "复位也回不来（Qt 的尺寸提示要显示过一次才准）。"
+        "第一版就是先切后量，magnifier 的纵向缺口凭空从 6px（容差内）变成 22px",
+    ),
+    Revert(
+        "RN", "skip 写成整个 QTabWidget（页签条掉进两不管）",
+        "scripts/layout_overflow_audit.py",
+        "        w for tw in tabs for w in (tw.widget(i) for i in range(tw.count()))\n"
+        "        if w is not None",
+        "        w for w in tabs\n"
+        "        if w is not None",
+        "tests/test_audit_measures_the_whole_page.py::test_the_tab_bar_itself_is_measured",
+        "页签**条**不属于任何一个页签内容，但它一直被正常布局、有文字、会被截断。"
+        "跳过整个 QTabWidget 会让它既不在整页范围里、也不在任何页签范围里 ——"
+        "⭐ 修一个盲区时最容易顺手造出另一个更小的盲区",
+    ),
+    Revert(
+        "RN", "变坏也不算数（存量债棘轮只认新增）",
+        "scripts/layout_overflow_audit.py",
+        "        elif px > entry[0] + 2:          # 2px 容差：取整/滚动条钢化",
+        "        elif False:          # 断点：变坏不报",
+        "tests/test_audit_measures_the_whole_page.py::"
+        "test_the_known_debt_ratchet_bites_in_all_three_directions",
+        "RN-196：在册存量债的棘轮必须三向咬人（新增 / 变坏 / 已经不该在册）。"
+        "只认新增的话，那 6 条债可以一路劣化下去而门一直是绿的",
+    ),
+    Revert(
+        "RN", "本机门禁少接一道审计",
+        "scripts/gate.py",
+        '    "contrast": "ui_contrast_audit.py",',
+        "    # 断点：对比度审计没接进来",
+        "tests/test_ci_gates_read_the_verdict_line.py::"
+        "test_the_local_gate_covers_every_audit_that_delivers_a_verdict",
+        "RN-194：本机入口的分母取「所有会交裁定的审计」，不取它自己那张表 ——"
+        "⭐ 一张只列出「已经接进来的东西」的表，永远发现不了漏了谁（同 RN-189）",
+    ),
+    Revert(
+        "RN", "本机门禁自己抄一份裁定正则",
+        "scripts/gate.py",
+        "    rc = parse_verdict(out, name)",
+        "    import re\n"
+        "    rc = None\n"
+        "    for _line in out.splitlines():\n"
+        "        if re.match(r'^RESULT', _line.strip()):\n"
+        "            rc = 0",
+        "tests/test_ci_gates_read_the_verdict_line.py::"
+        "test_the_local_gate_does_not_reimplement_the_verdict_rule",
+        "裁定规则在 Python 侧只准有一份。抄出来的那份最容易漂：CI 取**最后一条**"
+        "匹配行，本机若取第一条，两道门在「审计中途重跑过」时会给出不同结论",
+    ),
+    # ⛔⛔ 新断点一律加在**这一行之上**。
+    #
+    # 下面这个标记是开源同步那个语义补丁的**锚点**：开源版在这个位置追加它自己的
+    # BRAND / ASSET / DOC 三组断点（上游没有）。补丁原来锚在「最后一条断点的
+    # 证据文字」上 —— 于是**每次往 REVERTS 末尾追加条目，那个补丁就断一次**
+    # （RN-156：语义补丁的上下文窗口是看不见的；批 7 又踩了一次）。
+    #
+    # 改成锚在这行不会变的标记上之后，往上面加多少条都不会顶开它。
+    # ⇒ 别删这一行、别改它的文字，也别把新条目加到它下面。
+    # OSS_SYNC_APPEND_POINT
     # ======================================== 开源版专属：品牌 / 素材 / 文档
     # ⚠ 这三组上游没有，只存在于开源版：BRAND 验「旧品牌名回流时判据变不变红」，
     # ASSET 验「素材混进仓库」，DOC 验开源治理文档。

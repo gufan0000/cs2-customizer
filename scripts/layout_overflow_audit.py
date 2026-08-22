@@ -128,26 +128,91 @@ FULL_SIZE = (1280, 800)
 ALL_THEMES = ("dark", "light", "green", "purple", "ocean", "warm", "rose", "contrast")
 
 
-def _scopes(page, app):
+def is_inside_any(widget, containers):
+    """`widget` 是不是 `containers` 里某一个、或它的后代。
+
+    单独拎出来是因为**判据也要用它** —— 判据自己再写一遍祖先遍历，
+    就又多了一份会各自漂移的副本（RN-002 那一族的病）。
+    """
+    if not containers:
+        return False
+    node = widget
+    while node is not None:
+        if any(node is c for c in containers):
+            return True
+        node = node.parentWidget()
+    return False
+
+
+def scopes_with_skip(page, app):
     """把一个页面拆成若干「真正被布局过的测量范围」。
 
-    R5 修的假阳性：直接对整页 `findChildren(QScrollArea)` 会连**非当前页签**里的
-    滚动区一起量。Qt 不给隐藏的页签做布局，那些控件保留着构造时的陈旧几何
-    （实测 special_sound 的隐藏页签视口只有 618~624px，而页签容器有 968px），
-    于是稳定误报"溢出 58~140px"。逐个 `setCurrentIndex` 把页签切出来再量之后，
-    四个页签全部零溢出——**那条缺陷根本不存在**。
+    返回 `[(范围名 or None, 控件, 要跳过的容器元组), ...]`；
+    范围名为 `None` 的那一条是**页面余下部分**。
 
-    改成逐页签测量还顺带把覆盖变真了：以前非当前页签等于从没被检查过。
+    ## R5 当年为什么只返回页签内容
 
-    返回 [(范围名 or None, 控件), ...]。
+    直接对整页 `findChildren(QScrollArea)` 会连**非当前页签**里的滚动区一起量。
+    Qt 不给隐藏的页签做布局，那些控件保留着构造时的陈旧几何（实测
+    special_sound 的隐藏页签视口只有 618~624px，而页签容器有 968px），
+    于是稳定误报「溢出 58~140px」。逐个 `setCurrentIndex` 切出来再量之后，
+    四个页签全部零溢出 —— **那条缺陷根本不存在**。这个理由到今天仍然成立。
+
+    ## RN-030：可那条修法把「页签之外的一切」也一起排除了
+
+    「只返回页签内容」是拿**替换**当**排除**用。躲开陈旧几何只需要排除
+    **非当前页签的内容**，而实际排除掉的是页头、状态徽章条、顶层卡片、
+    底部操作栏 —— 也就是这些页面上最显眼的那部分。实测（2026-08-22）：
+
+        magnifier 125 · voice_output 76 · kill_sound/kill_voice/switch_weapon/
+        reload_sound 各 38 · gun_sound 36 · flash 35 · utility 33 ·
+        special_sound 31   ⇒ 10 页合计 ~490 个可见控件从未被任何判据看过
+
+    ⇒ 现在**两条都要**：页面余下部分是一个范围（跳过页签内容），
+    每个页签内容各自还是一个范围。
+
+    ⚠ **跳过的是 `tw.widget(i)`（页签内容），不是整个 `QTabWidget`。**
+    页签**条**（QTabBar）不属于任何一个页签内容，而它一直被正常布局、
+    有文字、会被截断，是每页最显眼的控件之一。跳过整个 QTabWidget
+    会让它掉进两不管地带 —— 判据 `test_the_tab_bar_itself_is_measured`
+    专门钉这一条。
+
+    ## ⚠⚠ 这是个**生成器**，而且「页面余下部分」必须第一个出来
+
+    实测（2026-08-22，紧凑档）：**把页签切一遍，会把整页的布局最小高永久改大**，
+    而且 `setCurrentIndex(original)` 复位之后也回不来：
+
+        magnifier  596 → 612        flash  500 → 516
+        kill_sound / switch_weapon / voice_output  不变
+
+    成因是 Qt 的尺寸提示：页签内容**没被显示过之前**报的 hint 偏小，
+    显示过一次之后才准，于是 `QTabWidget` 的最小高跟着长一截。
+
+    ⇒ 先切页签、再量整页 = **量的是审计自己戳过之后的页面**。
+    第一版就是这么写的（还振振有词地写了理由），复量时对不上才发现：
+    magnifier 的纵向缺口新鲜时是 6px（在容差内），戳过之后是 22px。
+    ⭐ **工装的观测动作本身会改变被观测对象** —— 这条在本仓是第一次踩到。
+
+    写成生成器是为了让顺序**真的**生效：判据是在调用方拿到 scope 之后
+    才去读几何的，光把整页排在列表第一位没有用（那时页签早切完了）。
+    生成器 yield 到哪儿才做到哪儿，整页那一发出去时页签一根没动过。
+
+    ⚠ 因此**不许只消费一半**：中途 break 会把某个 QTabWidget 停在
+    非原始页签上。要一次性拿全的用 `list(...)` 或 `_scopes()`。
     """
     from PySide6.QtWidgets import QTabWidget
 
     tabs = [t for t in page.findChildren(QTabWidget) if t.count() > 0]
     if not tabs:
-        return [(None, page)]
+        yield (None, page, ())
+        return
 
-    out = []
+    tab_pages = tuple(
+        w for tw in tabs for w in (tw.widget(i) for i in range(tw.count()))
+        if w is not None
+    )
+    yield (None, page, tab_pages)          # 必须在任何 setCurrentIndex 之前
+
     for tw in tabs:
         original = tw.currentIndex()
         for i in range(tw.count()):
@@ -157,10 +222,18 @@ def _scopes(page, app):
             app.processEvents()
             widget = tw.currentWidget()
             if widget is not None:
-                out.append((tw.tabText(i), widget))
+                yield (tw.tabText(i), widget, ())
         tw.setCurrentIndex(original)
         app.processEvents()
-    return out
+
+
+def _scopes(page, app):
+    """`scopes_with_skip()` 的二元组形态，留给只关心「量哪些控件」的调用方。
+
+    ⚠ 不许在这里另写一份拆分逻辑 —— 副本不会跟着彼此变，而且漂了不报错
+    （RN-002 那一族）。
+    """
+    return [(name, scope) for name, scope, _skip in scopes_with_skip(page, app)]
 
 
 def _uneven_status_chips(scope):
@@ -205,7 +278,7 @@ def _uneven_status_chips(scope):
     return out
 
 
-def _elided_buttons(scope):
+def _elided_buttons(scope, skip=()):
     """返回该范围内**文案放不下**的按钮 [(文案, 实际宽, 需要宽), ...]。
 
     判据：向 style 要**文字实际可用区**（`SE_PushButtonContents`），
@@ -224,6 +297,8 @@ def _elided_buttons(scope):
 
     out = []
     for btn in scope.findChildren(QPushButton):
+        if is_inside_any(btn, skip):
+            continue
         text = btn.text().strip()
         if not btn.isVisible() or not text or btn.width() <= 0:
             continue
@@ -311,7 +386,7 @@ NESTED_SCROLL_ALLOWED: dict[tuple[str, str], str] = {
 }
 
 
-def _nested_scroll_hidden(scope, page, page_id):
+def _nested_scroll_hidden(scope, page, page_id, skip=()):
     """返回「内层滚动区藏住内容」的清单：[(名字, 视口高, 藏住的像素)]。
 
     RN-177（第 5 条判据）。⭐ 这条判据补的不是一个 bug，是**一整类的分母**：
@@ -338,7 +413,7 @@ def _nested_scroll_hidden(scope, page, page_id):
 
     hits = []
     for sa in scope.findChildren(QScrollArea):
-        if sa.isHidden():
+        if sa.isHidden() or is_inside_any(sa, skip):
             continue
         anc, nested = sa.parentWidget(), False
         while anc is not None:
@@ -362,7 +437,55 @@ def _nested_scroll_hidden(scope, page, page_id):
     return hits
 
 
-def _overflow_of(scope):
+#: RN-196：RN-030 把分母补齐之后，**紧凑档**当场浮出来的存量债。
+#:
+#: 这些不是这一批改坏的，是**一直存在、一直没有判据看得见**的：以前有页签的
+#: 页面根本没有「整页」这个测量范围（RN-030），所以整页装不下这件事无人可报。
+#:
+#: 键 = (页面, 类别)，值 = (实测最坏像素, 理由)。**数必须等于实测值**——
+#: 留富余的棘轮不是棘轮。比记录更坏 ⇒ 当场红；不再命中 ⇒ 也当场红（提醒收紧）。
+#:
+#: ⚠ 它们要改的是产品版面（用户可感知），属 B 堆，得走裁定 + 外审，
+#: 不在「把审计修准」这一批的范围内。
+KNOWN_COMPACT_DEBT: dict[tuple[str, str], tuple[int, str]] = {
+    ("kill_sound", "clip"): (64, "紧凑档整页布局最小高超出可视区"),
+    ("kill_voice", "clip"): (64, "同上（同族同基类）"),
+    ("reload_sound", "clip"): (64, "同上（同族同基类）"),
+    ("switch_weapon", "clip"): (64, "同上（同族同基类）"),
+    ("magnifier", "clip"): (82, "全站最大页，紧凑档最缺高的一页"),
+    ("magnifier", "overflow"): (29, "紧凑档整页横向溢出 11~29px（随字号递增）"),
+}
+
+
+def _split_known(hits, kind, known=None):
+    """把命中拆成「在册的存量债」和「新的」，并挑出可以收紧的。
+
+    返回 (新命中, 变坏的, 可收紧的)。三样都会打印，三样都让门变红。
+
+    ⚠ `known` 要由调用方给：这张表记的是**紧凑档**的事实，完整档拿它对账
+    会得到「六条全都不再命中、请收紧」的假红 —— 第一版就是这么翻车的。
+    完整档传 `{}`，于是任何命中都算新增（这正是想要的）。
+    """
+    table = KNOWN_COMPACT_DEBT if known is None else known
+    worst: dict[str, int] = {}
+    for pid, px in hits:
+        worst[pid] = max(worst.get(pid, 0), px)
+
+    fresh, worse = [], []
+    for pid, px in sorted(worst.items()):
+        entry = table.get((pid, kind))
+        if entry is None:
+            fresh.append((pid, px))
+        elif px > entry[0] + 2:          # 2px 容差：取整/滚动条钢化
+            worse.append((pid, px, entry[0]))
+    loosened = [
+        (pid, px) for (pid, k), (px, _why) in table.items()
+        if k == kind and pid not in worst
+    ]
+    return fresh, worse, loosened
+
+
+def _overflow_of(scope, skip=()):
     """返回该范围内最外层滚动区的横向溢出像素；无溢出返回 None。
 
     ⚠ 「内层的滚动是有意设计」这句只对**横向**成立。纵向的那一半交给
@@ -371,6 +494,8 @@ def _overflow_of(scope):
     from PySide6.QtWidgets import QScrollArea
 
     for sa in scope.findChildren(QScrollArea):
+        if is_inside_any(sa, skip):
+            continue
         # 只看最外层滚动区:内层(地图预览/画廊)的横向滚动是有意设计
         anc, nested = sa.parentWidget(), False
         while anc is not None and anc is not scope:
@@ -481,6 +606,27 @@ def main():
     if win.width() < width:
         print(f"!! 无法达到目标宽度: 实际 {win.width()}")
 
+    # ⭐⭐ RN-195：音乐控制条必须**在开量之前**就位，否则这道门依赖挂钟。
+    #
+    # `gui_widget` 里它是 `QTimer.singleShot(8000, self._create_music_control_bar)`
+    # 建的 —— **无条件**，跟有没有放过音乐无关。而这一条跑满 8 秒之后才出现的
+    # 常驻栏会永久吃掉内容区 42px（迷你态；展开态 128px）。
+    #
+    # 后果是实测出来的：同一次紧凑档跑，8 秒之前轮到的页按可视 590px 量，
+    # 之后轮到的按 548px 量，而 `light×1.0` 与 `dark×1.0` 这两组**条件完全相同的
+    # 组合结论不一样**。⇒ 这道门的结论取决于机器多快、页面多少，不取决于代码。
+    #
+    # ⚠ 不是"把它藏掉"——藏掉等于按一个用户只在头 8 秒里见过的世界来验收。
+    # 现在提前建出来，全程按**用户实际看到的那一档**量。
+    _bar = getattr(win, "_create_music_control_bar", None)
+    if callable(_bar):
+        _bar()
+        app.processEvents()
+        app.processEvents()
+    print(f"   音乐控制条已就位（RN-195：它无条件常驻，占 "
+          f"{getattr(win, 'music_control_bar', None).height() if getattr(win, 'music_control_bar', None) else 0}px，"
+          f"提前建出来免得这道门依赖挂钟）")
+
     tm = get_theme_manager()
     page_ids = list(win._page_names.keys())
     # UP-096: 总页数要单独留一份。以前只打印"页面 22"，读起来像全覆盖，
@@ -526,24 +672,24 @@ def main():
                     chrome = win.height() - (container.height() if container is not None else win.height())
                     avail_h = height - max(0, chrome)
 
-                    for scope_name, scope in _scopes(page, app):
+                    for scope_name, scope, skip in scopes_with_skip(page, app):
                         checked += 1
                         label = pid if scope_name is None else f"{pid}/{scope_name}"
-                        over = _overflow_of(scope)
+                        over = _overflow_of(scope, skip)
                         if over is not None:
                             problems.append((theme, scale, label, over))
                         short = _vertical_clip_of(scope, avail_h)
                         if short is not None:
                             clipped.append((theme, scale, label, short, avail_h))
-                        for text, have, need in _elided_buttons(scope):
+                        for text, have, need in _elided_buttons(scope, skip):
                             elided.append((theme, scale, label, text, have, need))
-                        for name, vp_h, hidden in _nested_scroll_hidden(scope, page, pid):
+                        for name, vp_h, hidden in _nested_scroll_hidden(
+                                scope, page, pid, skip):
                             nested_hidden.append((theme, scale, label, name, vp_h, hidden))
-                    # ⚠ 徽章判据**对整页量，不走 `_scopes()`**。
-                    # `_scopes()` 对有页签的页面只返回**页签内容**（见它的注释：
-                    # 那是为了躲开隐藏页签的陈旧几何），于是这些页的页头、状态卡、
-                    # 底部操作栏 —— 也就是徽章所在的地方 —— **从来没被任何一条判据看过**。
-                    # 这条覆盖漏洞记在 RN-030，比本判据本身更值得修。
+                    # 徽章判据对整页量。RN-030 之前这是**唯一**一条看得见页头/状态卡/
+                    # 底栏的判据（那时 `_scopes()` 对有页签的页面只返回页签内容）；
+                    # 现在页面余下部分本身就是一个范围，这里保持整页量是因为
+                    # 一排徽章本来就该整排一起看，拆进范围里反而会把一排劈开。
                     for text, h, common in _uneven_status_chips(page):
                         uneven.append((theme, scale, pid, text, h, common))
                 except Exception as exc:
@@ -571,11 +717,31 @@ def main():
         print(f"   已跳过 {len(skipped)} 个页面(构造即起热键/音频设备/子进程，"
               f"测它们会打扰前台): {', '.join(skipped)}")
         print("   需要覆盖它们请加 --include-unsafe（会打扰前台，需在授权时段跑）")
-    if problems:
-        for theme, scale, pid, detail in problems:
-            print(f"  溢出: [{theme} x{scale}] {pid} -> {detail}")
+    # RN-196：整页范围的存量债走声明式棘轮；页签范围与异常一律照常报。
+    blocking_overflow = []
+    page_overflow = []
+    for theme, scale, label, detail in problems:
+        if "/" not in label and isinstance(detail, int):
+            page_overflow.append((label, detail))
+        else:
+            blocking_overflow.append((theme, scale, label, detail))
+    # RN-196：存量债只在紧凑档对账（那是它被量出来的那一档）。
+    debt = KNOWN_COMPACT_DEBT if args.compact else {}
+    of_fresh, of_worse, of_loose = _split_known(page_overflow, "overflow", debt)
+
+    if blocking_overflow or of_fresh or of_worse:
+        for theme, scale, label, detail in blocking_overflow:
+            print(f"  溢出: [{theme} x{scale}] {label} -> {detail}")
+        for pid, px in of_fresh:
+            print(f"  ✗ 溢出(新): [{pid}] 整页横向溢出 {px}px")
+        for pid, px, was in of_worse:
+            print(f"  ✗ 溢出(变坏): [{pid}] {was}px → {px}px")
     else:
-        print("  ✓ 无水平溢出")
+        print("  ✓ 无水平溢出（在册存量债除外，见下）")
+    if of_loose:
+        print("  ! 这些在册的横向存量债已经不再命中，请把它们从 "
+              "KNOWN_COMPACT_DEBT 里删掉（棘轮只许收紧）: "
+              + ", ".join(pid for pid, _ in of_loose))
 
     # 按钮文案截断:横向溢出检测抓不到(按钮被钉死时布局"放得下",只是文字被裁)
     if elided:
@@ -592,18 +758,43 @@ def main():
         print("  ✓ 无按钮文案截断")
 
     # UP-072: 纵向裁切且滚不动——横向判据完全看不见这一类
-    if clipped:
+    # RN-196: 同上，整页范围的存量债走棘轮，页签范围照常报。
+    blocking_clip = []
+    page_clip = []
+    clip_avail = {}
+    for theme, scale, label, short, avail in clipped:
+        if "/" not in label:
+            page_clip.append((label, short))
+            clip_avail[label] = avail
+        else:
+            blocking_clip.append((label, short, avail))
+    cl_fresh, cl_worse, cl_loose = _split_known(page_clip, "clip", debt)
+
+    if blocking_clip or cl_fresh or cl_worse:
         seen = {}
-        for theme, scale, pid, short, avail in clipped:
-            seen.setdefault(pid, []).append((theme, scale, short, avail))
-        print(f"  ✗ {len(seen)} 处内容纵向装不下且无法滚动:")
-        for pid, hits in sorted(seen.items()):
-            worst = max(s for _t, _s, s, _a in hits)
-            avail = hits[0][3]
-            print(f"     [{pid}] 最小高超出可视区 {worst}px(可视 {avail}px)，"
-                  f"命中 {len(hits)}/{len(themes) * len(scales)} 个主题×字号")
+        for label, short, avail in blocking_clip:
+            seen.setdefault(label, []).append((short, avail))
+        print(f"  ✗ {len(seen) + len(cl_fresh) + len(cl_worse)} 处内容纵向装不下且无法滚动:")
+        for label, hits in sorted(seen.items()):
+            print(f"     [{label}] 最小高超出可视区 {max(s for s, _a in hits)}px"
+                  f"(可视 {hits[0][1]}px)，命中 {len(hits)} 个主题×字号")
+        for pid, px in cl_fresh:
+            print(f"     [{pid}] (新) 整页最小高超出可视区 {px}px"
+                  f"(可视 {clip_avail.get(pid, '?')}px)")
+        for pid, px, was in cl_worse:
+            print(f"     [{pid}] (变坏) {was}px → {px}px")
     else:
-        print("  ✓ 无纵向裁切")
+        print("  ✓ 无纵向裁切（在册存量债除外，见下）")
+    if cl_loose:
+        print("  ! 这些在册的纵向存量债已经不再命中，请把它们从 "
+              "KNOWN_COMPACT_DEBT 里删掉（棘轮只许收紧）: "
+              + ", ".join(pid for pid, _ in cl_loose))
+
+    if debt and (page_overflow or page_clip):
+        print(f"  ℹ 在册存量债 {len(debt)} 条（RN-196，紧凑档，"
+              f"待裁定后随各页动刀）: "
+              + "、".join(f"{pid}·{kind}{px}px"
+                          for (pid, kind), (px, _w) in sorted(debt.items())))
 
     # RN-026 引出的第 4 条：同一排状态徽章里有芯片因文案换行而比别人高
     if uneven:
@@ -641,13 +832,18 @@ def main():
     win.close()
     win.deleteLater()
     app.processEvents()
-    return 1 if (problems or elided or clipped or uneven or nested_hidden) else 0
+    # RN-196：在册的整页存量债不让门变红（它们要改产品版面，得走裁定 + 外审），
+    # 但**变坏、新增、以及"已经不该在册"三种情况都红**。
+    return 1 if (blocking_overflow or of_fresh or of_worse or of_loose
+                 or blocking_clip or cl_fresh or cl_worse or cl_loose
+                 or elided or uneven or nested_hidden) else 0
 
 
 if __name__ == "__main__":
     # ⚠ RN-092：裁定走 `_audit_verdict`，不走退出码 —— 见那个文件的说明。
-    # 这一道门和焦点巡检一样驱动 Qt，退出期同样有被改写的风险，
-    # 只不过它还没在 CI 上现过形（**没现形不等于没有**）。
+    # ⭐ RN-194 更新：那句「还没在 CI 上现过形」已经作废 —— 2026-08-22 在**本机**
+    # 现形了，同一棵树跑 9 次里 3 次退出码 127 而裁定行是 rc=0。本机请走
+    # `python scripts/gate.py layout`（它读裁定行，退出码干净）。
     from _audit_verdict import deliver, make_teardown_noise_visible
 
     make_teardown_noise_visible()
