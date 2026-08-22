@@ -213,6 +213,32 @@ _SYNTHETIC = """
 """
 
 
+def test_every_reader_skips_cleanly_when_there_is_no_campaign(monkeypatch):
+    """⭐⭐ 直接考「同级目录里没有翻新工程」那条路径 —— 本机模拟不出来。
+
+    本机的开源仓副本和私有仓是**同级目录**，所以 `_find_campaign()` 在那份
+    「开源仓」里照样找得到登记册 ⇒ **两个仓都跑绿，公开 CI 照样红**
+    （`AttributeError: 'NoneType' object has no attribute 'glob'`）。
+
+    ⇒ 与其指望某个环境替我制造那个条件，不如**自己把它造出来**
+    （同 RN-142 的教训：判据要直接制造它要防的那个状态）。
+    """
+    import sys as _sys
+    mod = _sys.modules[__name__]
+    monkeypatch.setattr(mod, "CAMPAIGN", None)
+    monkeypatch.setattr(mod, "REGISTRY", None)
+    monkeypatch.setattr(mod, "ARCHIVE", None)
+
+    for name, fn in (("_require_registry", _require_registry),
+                     ("_archive_tables", _archive_tables)):
+        with pytest.raises(BaseException) as caught:
+            fn()
+        assert caught.typename == "Skipped", (
+            f"{name}() 在「没有翻新工程」时抛的是 {caught.typename}，不是 skip —— "
+            "公开 CI 上会当场红，而本机因为镜像与私有仓同级而永远发现不了。"
+        )
+
+
 def test_the_parser_reads_a_synthetic_registry_correctly():
     rows = _rows(_SYNTHETIC)
     assert [c[0] for _, c in rows] == ["RN-901", "RN-902", "RN-903", "RN-904"]
@@ -448,6 +474,17 @@ ARCHIVE_NON_CHANGELOG_HEADERS = {
 
 
 def _archive_tables() -> list[tuple[tuple[str, ...], list[str]]]:
+    """⚠ **自己负责 skip，别指望调用方先调过 `_require_registry()`。**
+
+    第一版没有这一行，于是 `test_the_archive_table_shapes_are_a_closed_set`
+    （唯一一条不先读登记册的）在公开 CI 上 `AttributeError: 'NoneType' has no glob`。
+    ⭐⭐ 而本机**两个仓都跑绿了**，因为本机的开源仓副本和私有仓是**同级目录** ——
+    `_find_campaign()` 在"开源仓"里照样找得到那本登记册。
+    ⇒ **本机的镜像不是公开仓的忠实模型**：凡是会去看**同级目录**的代码，
+    「在本机的镜像里跑一遍」证明不了它在公开 CI 上的行为。
+    """
+    if CAMPAIGN is None:
+        pytest.skip("同级目录里没有翻新工程（登记册 + 档案）")
     out: list[tuple[tuple[str, ...], list[str]]] = []
     header: tuple[str, ...] | None = None
     for md in sorted(ARCHIVE.glob("*.md")):
