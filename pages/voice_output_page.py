@@ -646,10 +646,15 @@ class VoiceOutputPage(QWidget):
         layout.addWidget(tools_frame)
         
         # 槽位列表区域（可滚动）
+        # RN-177：这里的内层滚动是**对的** —— 槽位数由用户决定（初始 5、上限 50），
+        # 那是一份列表控件，不是被高度上限钉死的固定内容。排版审计第 5 条判据
+        # 按 objectName 在 `NESTED_SCROLL_ALLOWED` 里放行它，所以这个名字不能改
+        # （改了例外就失配，判据会当成新缺陷报出来 —— 那是它该有的行为）。
         scroll = QScrollArea()
+        scroll.setObjectName("voiceSlotList")
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
-        
+
         self.slots_widget = QWidget()
         self.slots_layout = QVBoxLayout(self.slots_widget)
         self.slots_layout.setSpacing(10)

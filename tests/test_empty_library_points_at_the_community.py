@@ -120,27 +120,34 @@ def stocked_page(qapp, monkeypatch):
 
 # ============================================ 1. 空库时主按钮换成一条真的路
 
-def test_an_empty_library_swaps_the_primary_button(empty_page):
-    """⭐ 空库时，底栏主按钮不许还是「打开音频资源」。
+def test_an_empty_library_leads_with_the_community_not_an_empty_folder(empty_page):
+    """⭐ 空库时，**最显眼的那一步**不许是「打开一个空文件夹」。
 
     点开一个空文件夹解决不了任何问题 —— 用户手上没有文件。
+
+    ⚠ RN-180 改了这条判据量的**位置**，没改它量的**东西**：
+    第一步从底栏搬进了引导卡（空白发生的地方），所以这里改问引导卡。
+    底栏那颗「打开音频资源」现在是**第 2 步**，是对的 ——
+    人下载完包之后确实需要它。⭐ 判据跟着修法搬家，但守的还是同一句话：
+    **别把"没得挑"包装成"去这个空目录看看"。**
     """
-    text = empty_page.action_bar.primary_btn.text()
+    callout = empty_page.empty_callout
+    assert not callout.frame.isHidden(), "空库时引导卡没亮 —— 第一步等于没给"
+    text = callout.button.text()
     assert "打开音频资源" not in text, (
-        "风格库是空的，主按钮却还在把用户送去一个空文件夹 —— "
-        "他手上没有文件，那儿什么也解决不了")
-    assert text.strip(), "主按钮文案是空的"
+        "风格库是空的，最显眼的那一步却还在把用户送去一个空文件夹")
+    assert "社区" in text, f"引导卡上那颗按钮不是「去社区拿」：{text!r}"
 
 
-def test_the_empty_state_primary_actually_opens_the_community(
+def test_the_empty_state_call_to_action_actually_opens_the_community(
         empty_page, monkeypatch):
     """文案对 ≠ 接线对。"""
     opened = []
     monkeypatch.setattr(lib, "open_category",
                         lambda key: (opened.append(key), True)[1])
-    empty_page.action_bar.primary_btn.click()
+    empty_page.empty_callout.button.click()
     assert opened == [EXPECTED_CATEGORY["reload_sound"]], (
-        f"点了空状态主按钮，实际去向：{opened}")
+        f"点了引导卡上那颗按钮，实际去向：{opened}")
 
 
 def test_a_stocked_library_keeps_the_original_primary(stocked_page):
@@ -151,6 +158,11 @@ def test_a_stocked_library_keeps_the_original_primary(stocked_page):
     """
     assert "打开音频资源" in stocked_page.action_bar.primary_btn.text(), (
         "有素材了，主按钮却还停在引导态")
+    # ⚠ RN-180 之后底栏主按钮在**两种状态下都是**「打开音频资源」——
+    # 只看它已经分不出引导态了（回退验证当场判假绿）。真正的分辨点是引导卡。
+    # ⭐ **判据盯的那个位置一旦在两种状态下取值相同，它就已经停止工作了。**
+    assert stocked_page.empty_callout.frame.isHidden(), (
+        "有素材了，空库引导卡却还亮着 —— 正常用户每次进来都被劝去社区站")
 
 
 def test_the_page_says_out_loud_that_it_ships_no_assets(empty_page):
@@ -159,10 +171,14 @@ def test_the_page_says_out_loud_that_it_ships_no_assets(empty_page):
     ⭐ RN-145 的原话：「没得挑」要变成一条走得通的路，
     而第一步是承认「本来就没有」。
     """
-    message = empty_page.action_bar.message_label.text()
-    assert message.strip(), "空库时底栏一句话都没有"
-    assert "不带素材" in message or "不内置" in message, (
-        f"底栏没说清「软件本来就不带素材」：{message!r}")
+    # RN-180：这句话跟着第一步一起搬进了引导卡 —— 它要出现在**看到空白的地方**，
+    # 而不是页尾。判据两边都收：卡里说了算数，底栏说了也算数，但不能两边都没说。
+    said = " ".join([empty_page.empty_callout.title.text(),
+                     empty_page.empty_callout.hint.text(),
+                     empty_page.action_bar.message_label.text()])
+    assert said.strip(), "空库时一句解释都没有"
+    assert "不带素材" in said or "不内置" in said, (
+        f"没说清「软件本来就不带素材」：{said!r}")
 
 
 def test_the_empty_state_keeps_a_way_to_put_the_files_in(empty_page):
@@ -178,15 +194,32 @@ def test_the_empty_state_keeps_a_way_to_put_the_files_in(empty_page):
     一条三步的路，只把第一步做顺是走不通的。
     而且底栏那句话还在说"放进资源目录"，等于**指着一个不存在的按钮**。
     """
-    texts = [empty_page.action_bar.primary_btn.text(),
+    # RN-180：三步现在**分居两处** —— 第 1 步在引导卡，第 2/3 步在底栏。
+    # ⚠ 判据必须把两处一起收：只看底栏就会把"第一步搬走了"误判成"第一步没了"，
+    # 只看卡就会漏掉 RN-153 那条血教训（第二步被顺手删掉）。
+    texts = [empty_page.empty_callout.button.text(),
+             empty_page.action_bar.primary_btn.text(),
              empty_page.action_bar.secondary_btn.text(),
              empty_page.action_bar.extra_btn.text()]
-    joined = " / ".join(texts)
+    joined = " / ".join(t for t in texts if t.strip())
     assert any("社区" in t for t in texts), f"没有「去拿」这一步：{joined}"
     assert any("打开音频资源" in t for t in texts), (
         f"没有「放进去」这一步：{joined}\n"
-        "底栏文案让用户把音频放进资源目录，却没有任何入口能打开那个目录")
+        "文案让用户把音频放进资源目录，却没有任何入口能打开那个目录")
     assert any("刷新" in t for t in texts), f"没有「刷新」这一步：{joined}"
+
+    # ⭐ 三步要**说得出顺序**，不只是三颗按钮都在。底栏那句话必须自报是第几步 ——
+    # 否则用户在页尾看到它会以为那就是开头。
+    # ⚠ 这里一度写成「第 1 步在上面那张卡里」，外审 3/3 判「用生硬文字打补丁」
+    # 「视线上下割裂」。⭐ **编号本身就够了**：写着「第 2 步」的人自然知道
+    # 第 1 步在别处，不必再告诉他往哪儿看（RN-187）。
+    message = empty_page.action_bar.message_label.text()
+    assert "第 2 步" in message and "第 3 步" in message, (
+        f"底栏没说清自己是第几步：{message!r}")
+    for phrase in ("上面", "下面", "上方", "下方", "那张卡", "左边", "右边"):
+        assert phrase not in message, (
+            f"底栏文案又开始描述版面了（「{phrase}」）：{message!r} —— "
+            "界面不该跟用户解释自己长什么样，版面一动这句话就是错的")
 
 
 def test_a_stocked_library_puts_the_style_tools_back(stocked_page):
@@ -332,6 +365,12 @@ def test_a_build_without_the_community_falls_back_to_a_real_path(
         assert "打开音频资源" in text, (
             f"没有社区站时主按钮是 {text!r} —— 它多半指向一个空地址。"
             f"应该退回一条真的能走的路")
+        # ⚠ RN-180 之后这条判据**必须也看引导卡**：CTA 已经从底栏搬进卡里，
+        # 只看底栏的话「没有社区站却照样弹出引导卡」会一路绿。
+        # 回退验证当场把它判成假绿，就是这个原因。
+        assert page.empty_callout.frame.isHidden(), (
+            f"没有社区站，引导卡却亮着「{page.empty_callout.button.text()}」—— "
+            "那颗按钮指向一个空地址，比没有按钮更糟（RN-157）")
     finally:
         page.deleteLater()
         qapp.processEvents()

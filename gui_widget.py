@@ -2630,12 +2630,37 @@ class MainWindow(QMainWindow):
         `flash` / `music` / `voice_output` 这些在导航列表靠后的页正是
         RN-005 盲区里的四页 —— 解除盲区的第一轮外审就撞上了它。
 
-        只对齐**上**边缘：下边缘露出的半项是"下面还有内容"的自然提示，
-        而上边缘之上的内容用户不需要提示（往上滚就是了）。
-        对齐后若把 `keep_visible` 挤出视口，就放弃对齐 —— 
+        对齐后若把 `keep_visible` 挤出视口，就放弃对齐 ——
         「当前项必须可见」（RN-008）优先级高于「边缘对齐」。
+
+        ⚠⚠ **RN-178：这里原来只对齐上边缘，理由写的是"下边缘露出的半项是
+        『下面还有内容』的自然提示"。那句话是错的，而且错得有数**（逐页实测，
+        1280×800 完整模式）：
+
+            上边被切  **0 / 28 页**   ← 本方法确实生效了
+            下边被切  **27 / 28 页**   ← 唯一的例外是滚到底的 `about`
+            露出的量  **2 ~ 10px**（项高 40~42）—— `fun_afterlife` 只剩 2px
+
+        2px 不是"下面还有内容"的提示，是一条**发丝宽的残渣**；用户读到的是
+        「这一栏画坏了」。而且那个提示是**多余的**：侧栏的竖滚动条本来就在
+        （`ScrollBarAsNeeded`，实测可见、宽 6px），"下面还有内容"已经说过一遍了。
+        ⭐ **两个机制盖同一件事时，先坏的那个不会报警**（同 RN-060 盖住微调算式）。
+
+        ⭐⭐ 更要紧的是根因：**这是数学上的必然，不是没写好。**
+        视口 657px，而项高 40/42 混着、间距 5 —— 657 **不可能**是整数个项。
+        于是「对齐一端」就等于「保证另一端永远切在项中间」，
+        换成对齐下边只会把同一条残渣搬到上边去。
+        ⇒ 所以修法不是"再对齐一次"，是**把余数吃掉**：对齐上边之后，
+        用 `setViewportMargins` 把跨在下边缘上的那一项整个挡在视口外
+        （见 `_trim_nav_viewport_to_item_boundary`）。两端于是都落在项边界上。
+
+        ⭐ 教训：**当一个缺陷是几何上必然的，去调参数就是在两个错误之间搬家。**
         """
         from PySide6.QtCore import QPoint
+
+        # 每次都从"没有底边距"的状态重新量 —— 否则上一次吃掉的余数会进入这一次的
+        # 视口高度，算出来的余数一次比一次小，最后收敛到一个跟内容无关的数。
+        scroll.setViewportMargins(0, 0, 0, 0)
 
         bar = scroll.verticalScrollBar()
         if bar is None or bar.maximum() <= 0:
@@ -2658,6 +2683,7 @@ class MainWindow(QMainWindow):
 
         current = bar.value()
         if current in tops:
+            MainWindow._trim_nav_viewport_to_item_boundary(scroll, keep_visible)
             return
 
         # ⚠ RN-100：**按距离就近对齐，两个方向都试。**
@@ -2693,9 +2719,41 @@ class MainWindow(QMainWindow):
         for target in targets:
             bar.setValue(target)
             if bar.value() == target and _keeps_visible():
+                MainWindow._trim_nav_viewport_to_item_boundary(scroll, keep_visible)
                 return
         # 两个方向都会把当前项挤出去 —— 「当前项必须可见」优先（RN-008）
         bar.setValue(current)
+        MainWindow._trim_nav_viewport_to_item_boundary(scroll, keep_visible)
+
+    @staticmethod
+    def _trim_nav_viewport_to_item_boundary(scroll, keep_visible=None):
+        """把跨在侧栏视口**下**边缘上的那一项整个挡出去（RN-178）。
+
+        为什么是"挡出去"而不是"再滚一点"：视口高不是整数个项（657px vs 40/42+5），
+        滚动只能决定余数出现在**哪一端**，消不掉它。把余数变成视口的底边距，
+        余数就不再画任何东西 —— 两端同时落在项边界上，这是滚动做不到的。
+
+        `keep_visible`（当前页那一项）若正好是跨边缘的那一项就放弃，
+        「当前项必须可见」优先（RN-008）。正常情况下轮不到：`_ensure_nav_button_visible`
+        已经先把当前项完整滚进视口了，跨边缘的只可能是它**下面**那一项。
+        """
+        from PySide6.QtCore import QPoint
+        from PySide6.QtWidgets import QAbstractButton
+
+        viewport = scroll.viewport()
+        content = scroll.widget()
+        if viewport is None or content is None:
+            return
+        limit = viewport.height()
+        for btn in content.findChildren(QAbstractButton):
+            if not btn.isVisible() or btn.height() <= 4:
+                continue
+            y = btn.mapTo(viewport, QPoint(0, 0)).y()
+            if y < limit < y + btn.height():
+                if keep_visible is not None and btn is keep_visible:
+                    return
+                scroll.setViewportMargins(0, 0, 0, max(0, limit - y))
+                return
 
     def _sync_nav_selection_to_current_page(self):
         """当切页被取消时，恢复导航按钮选中状态。"""

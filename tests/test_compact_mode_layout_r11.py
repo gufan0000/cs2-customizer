@@ -151,3 +151,92 @@ def test_flash_basic_tab_order_is_pinned():
         "setTabOrder 写在了 addLayout(controls_grid) 之前。"
         "那时控件还没有父控件，reparent 会重建焦点链把它冲掉——等于没写。"
     )
+
+
+def test_status_chips_are_never_squashed_flat_in_compact_mode(qapp, monkeypatch):
+    """⭐⭐ RN-185：紧凑档里状态徽章条不许被压到画不出字。
+
+    这条是**外审逮住的、我自己刚引入的退步**。RN-180 给八页加了一张空库引导卡，
+    紧凑档（860×640）竖向本来就紧，布局于是挑了这条**没有下限**的徽章条来压：
+
+        条高 **13px**，而芯片要 **40px**  ⇒ 四颗芯片只剩顶上一道圆弧，文字全没了
+
+    A/B 决定性：有引导卡 13px / 把卡收掉 44px —— 三页同时中招。
+
+    ⚠ **每一条既有判据都是绿的**：
+      · 排版审计第 4 条问「同排芯片高度**是否一致**」——
+        ⭐ 四颗一起被压扁，恰好就是一致的；
+      · 纵向裁切那条问「装不下**且滚不动**」—— 这一页滚得动；
+      · 本批新加的内层滚动那条也不适用。
+    ⇒ ⭐ **一条只看"齐不齐"的判据，看不见"全都不对"。**
+      齐平是必要条件，不是充分条件，而判据只写了必要的那一半。
+
+    判据直接量：徽章条的高度必须装得下它自己的芯片。
+    """
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QLabel, QWidget
+
+    import sys as _sys
+
+    _scripts = str(ROOT / "scripts")
+    if _scripts not in _sys.path:
+        _sys.path.insert(0, _scripts)
+    import _audit_neutralize as neutral
+    from config import config
+
+    neutral.apply(config)
+    config.compact_mode = True
+    monkeypatch.setenv("CS2C_NO_GLOBAL_HOTKEYS", "1")
+    monkeypatch.setenv("CS2C_SAFE_MODE_ACTIVE", "1")
+
+    import gui_widget
+
+    win = gui_widget.MainWindow(auto_background_preload=False)
+    try:
+        win.setAttribute(Qt.WA_DontShowOnScreen, True)
+        win.show()
+        qapp.processEvents()
+        # ⭐⭐ **判据自己制造压力，不靠产品此刻恰好超支。**
+        # 第一版只在 860×640 下量。RN-186 那一轮把引导卡压成一行之后布局不再超支，
+        # 于是把守卫拆掉也压不扁任何东西 —— 回退验证当场判这条**假绿**。
+        # ⇒ 一条「等着缺陷自己出现」的判据，会在别人把诱因修掉的那一刻悄悄失效，
+        #   而它读起来仍然是绿的。现在把窗口按到 860×480（**必定**装不下），
+        #   守卫在不在的差别就永远量得出来。
+        win.setMinimumSize(860, 480)
+        win.resize(860, 480)
+        qapp.processEvents()
+
+        offenders, checked = [], 0
+        for page_id in ("kill_sound", "reload_sound", "switch_weapon",
+                        "special_sound"):
+            win.show_page(page_id, animated=False)
+            for _ in range(3):
+                qapp.processEvents()
+            page = win.pages.get(page_id)
+            if page is None:
+                continue
+            for bar in page.findChildren(QWidget):
+                if bar.__class__.__name__ != "AudioStatusBadgeBar":
+                    continue
+                chips = [c for c in bar.findChildren(QLabel)
+                         if not c.isHidden() and c.text().strip()]
+                if not chips:
+                    continue
+                checked += 1
+                need = max(c.sizeHint().height() for c in chips)
+                if need > bar.height() + 2:
+                    offenders.append(
+                        f"{page_id}: 徽章条只有 {bar.height()}px，芯片要 {need}px "
+                        f"（{[c.text().strip() for c in chips][:2]}…）")
+
+        assert checked >= 3, (
+            f"只量到 {checked} 条徽章条 —— 判据在空转，先修取条那一段")
+        assert not offenders, (
+            "紧凑档里这些状态徽章被压到画不出字（RN-185）：\n  "
+            + "\n  ".join(offenders)
+            + "\n⭐ 它们是被**一起**压扁的，所以「同排高度一致」那条判据看不见。")
+    finally:
+        config.compact_mode = False
+        win.close()
+        win.deleteLater()
+        qapp.processEvents()

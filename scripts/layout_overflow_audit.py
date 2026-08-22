@@ -3,11 +3,21 @@
 """R1-9/R1-10 排版溢出审计(2026-06-12)，R4/R5 加固，R8a 补纵向判据。
 
 全页 × 主题 × 字号 离屏构建，比人眼扫 160 张截图快且可回归；
-像素级审美仍以渲染图为准。三条判据：
+像素级审美仍以渲染图为准。五条判据：
 
 1. **横向溢出**：QScrollArea 出现水平滚动(本应只纵向滚) = 破版信号。
 2. **按钮文案截断**：按钮被钉死宽度时布局"放得下"，只是文字被裁——横向判据抓不到。
 3. **纵向裁切**(UP-072，R8a 加)：内容装不下**且滚不动**。
+4. **状态徽章高度不齐**(RN-026)：某颗芯片文案太长换了行，整排肉眼可见地歪。
+5. **内层滚动区藏内容**(RN-177)：页面本身已经会滚，里面再套一层带高度上限的
+   滚动区，等于把内容藏进一个用户不知道要滚的小窗口。
+
+⚠️ 第 5 条同样是补上来的，而它补的是**一整类的分母**：第 1 条里明写着
+   「只看最外层滚动区，内层的滚动是有意设计」—— 那句话对横向成立，
+   对纵向不成立，于是「内层滚动区藏纵向内容」从来没有任何判据在看。
+   实测代价：`viewmodel` 的预设卡视口 320px 装 872px，5 组预设只有 1 组完整
+   可见，而卡副标题写着「5 组」。这一页 2026-08-18 就已关档、审计一路绿灯、
+   24 轮外审也没看见（看图渲染的是窗口，折叠线以下从没进过画面，RN-170）。
 
 ⚠️ 第 3 条是补上来的，此前本脚本**只有横向判据**。纵向被压扁时连个滚动条信号
    都没有，于是 `about` 页整页无滚动区、内容最小高 1091px 压进 750px 可视区
@@ -175,6 +185,18 @@ def _uneven_status_chips(scope):
                  if c.isVisible() and c.text().strip()]
         if len(chips) < 2:
             continue
+        # ⭐⭐ RN-185：**先问"这一条装不装得下"，再问"齐不齐"。**
+        # 原来只有下面那半条（齐不齐），而实测踩到的是：紧凑档竖向不够时布局
+        # 挑了这条没有下限的徽章条来压，条高 13px、芯片要 40px ——
+        # 四颗芯片只剩顶上一道圆弧、文字整个没了，而它们**被压得一样扁**，
+        # 于是"齐平"判据一路绿灯。
+        # ⇒ **一条只看"齐不齐"的判据，看不见"全都不对"。**
+        bar_h = bar.height()
+        for chip in chips:
+            need = chip.sizeHint().height()
+            if bar_h > 0 and need > bar_h + 2:
+                out.append((f"[被压扁] {chip.text().strip()}", bar_h, need))
+
         heights = [c.height() for c in chips]
         common = max(set(heights), key=heights.count)
         for chip, h in zip(chips, heights):
@@ -272,8 +294,80 @@ def _vertical_clip_of(scope, avail_h):
     return None
 
 
+#: RN-177 第 5 条判据的**声明式例外**。键 = (页面, 滚动区里第一个孩子的类名或 objectName)，
+#: 值 = 为什么这一处的内层滚动是对的。**每一条都要写理由**，理由不成立就该修页面。
+#:
+#: ⭐ 例外表存在的原因是一条实测出来的区别：`viewmodel` 的预设卡数量是**固定的 5**、
+#:    而且页面文案明写「5 组」，藏起来就是文案骗人；`voice_output` 的槽位列表长度
+#:    **由用户决定**，那是一份列表控件，内层滚动是它的正常形态。
+#:    一条分不清这两者的判据，会逼我把一个正常的列表拆掉 —— 那正是
+#:    「分母不对的判据不只是漏，它还会诬告对的代码」（RN-167）。
+NESTED_SCROLL_ALLOWED: dict[tuple[str, str], str] = {
+    ("voice_output", "voiceSlotList"):
+        "语音槽位是一份长度由用户决定的列表（初始 5、上限 50），内层滚动是列表控件的"
+        "正常形态；它藏住的量随槽位数变化，不是固定内容被钉死的高度上限。"
+        "⚠ 例外只免掉「不许藏内容」这一条，不代表这一处没账 —— "
+        "「默认 5 个槽位露不全最后一个」记在 RN-184，等 P3 翻到这一页时一起判。",
+}
+
+
+def _nested_scroll_hidden(scope, page, page_id):
+    """返回「内层滚动区藏住内容」的清单：[(名字, 视口高, 藏住的像素)]。
+
+    RN-177（第 5 条判据）。⭐ 这条判据补的不是一个 bug，是**一整类的分母**：
+
+    `_overflow_of` 里明写着「只看最外层滚动区:内层(地图预览/画廊)的横向滚动是有意设计」，
+    于是**内层滚动区藏纵向内容这一类从来没有任何判据在看**。实测代价：
+    `viewmodel` 的「视角预设」卡外面套着 `setMaximumHeight(320)` 的滚动区，
+    视口 320px 装 872px —— 5 组预设只有 1 组完整可见，而卡副标题写着「5 组」。
+    这一页 2026-08-18 就已关档，排版审计一路绿灯，**24 轮外审也没看见**
+    （看图脚本渲染的是窗口，折叠线以下从来没进过画面，见 RN-170）。
+
+    规则：**页面级滚动区里面的内层滚动区，不许藏内容**——页面本身已经会滚了，
+    再套一层只会把内容藏进一个用户不知道要滚的小窗口。容差 24px（滚动条钢化/取整）。
+    真正需要内层滚动的（长度由用户决定的列表）走 `NESTED_SCROLL_ALLOWED` 声明。
+
+    ⚠ **「嵌套」要相对 `page` 判，不能相对 `scope` 判** —— 这条判据的第一版就
+    栽在这里，而且**第一次跑就是绿的**：`_scopes()` 对带页签的页面返回的是
+    **页签内容**，于是页面级滚动区成了 `scope` 的**祖先**而不是后代，
+    页签里的滚动区一个都算不成"嵌套"。`voice_output` 的槽位列表（探针实测
+    藏 114px）因此完全逃过检测 —— 把它从例外表里拿掉做破坏测试，判据**照样绿**。
+    ⇒ 又一次印证：**判据第一次跑就绿，先怀疑它没在看，别当成通过**。
+    """
+    from PySide6.QtWidgets import QScrollArea
+
+    hits = []
+    for sa in scope.findChildren(QScrollArea):
+        if sa.isHidden():
+            continue
+        anc, nested = sa.parentWidget(), False
+        while anc is not None:
+            if isinstance(anc, QScrollArea):
+                nested = True
+                break
+            if anc is page:      # 边界取页面：再往上是主窗口，跟这一页无关
+                break
+            anc = anc.parentWidget()
+        if not nested:
+            continue
+        inner = sa.widget()
+        name = (sa.objectName() or (inner.objectName() if inner is not None else "")
+                or type(sa).__name__)
+        if (page_id, name) in NESTED_SCROLL_ALLOWED:
+            continue
+        vbar = sa.verticalScrollBar()
+        hidden = vbar.maximum() if vbar is not None else 0
+        if hidden > 24:
+            hits.append((name, sa.viewport().height(), hidden))
+    return hits
+
+
 def _overflow_of(scope):
-    """返回该范围内最外层滚动区的横向溢出像素；无溢出返回 None。"""
+    """返回该范围内最外层滚动区的横向溢出像素；无溢出返回 None。
+
+    ⚠ 「内层的滚动是有意设计」这句只对**横向**成立。纵向的那一半交给
+    `_nested_scroll_hidden`（RN-177）—— 这里放过去的东西那边会接住。
+    """
     from PySide6.QtWidgets import QScrollArea
 
     for sa in scope.findChildren(QScrollArea):
@@ -410,6 +504,7 @@ def main():
     elided = []
     clipped = []
     uneven = []
+    nested_hidden = []          # RN-177：内层滚动区藏住内容
     checked = 0
 
     for theme in themes:
@@ -442,6 +537,8 @@ def main():
                             clipped.append((theme, scale, label, short, avail_h))
                         for text, have, need in _elided_buttons(scope):
                             elided.append((theme, scale, label, text, have, need))
+                        for name, vp_h, hidden in _nested_scroll_hidden(scope, page, pid):
+                            nested_hidden.append((theme, scale, label, name, vp_h, hidden))
                     # ⚠ 徽章判据**对整页量，不走 `_scopes()`**。
                     # `_scopes()` 对有页签的页面只返回**页签内容**（见它的注释：
                     # 那是为了躲开隐藏页签的陈旧几何），于是这些页的页头、状态卡、
@@ -513,16 +610,38 @@ def main():
         seen = {}
         for theme, scale, pid, text, h, common in uneven:
             seen.setdefault((pid, text), (h, common))
-        print(f"  ✗ {len(seen)} 处状态徽章高度不齐(文案太长换了行):")
+        print(f"  ✗ {len(seen)} 处状态徽章不对劲"
+              "（[被压扁]=整条高度小于芯片所需，文字画不出来；"
+              "其余=文案太长换了行、比同排高一截）:")
         for (pid, text), (h, common) in sorted(seen.items()):
-            print(f"     [{pid}] 「{text}」 高 {h}px，同排其余 {common}px")
+            if text.startswith("[被压扁]"):
+                print(f"     [{pid}] {text} 整条只有 {h}px，芯片要 {common}px")
+            else:
+                print(f"     [{pid}] 「{text}」 高 {h}px，同排其余 {common}px")
     else:
         print("  ✓ 状态徽章高度齐平")
+
+    # RN-177 第 5 条：内层滚动区藏住内容——前四条一条都看不见这一类
+    if nested_hidden:
+        seen = {}
+        for theme, scale, pid, name, vp_h, hidden in nested_hidden:
+            cur = seen.get((pid, name))
+            if cur is None or hidden > cur[1]:
+                seen[(pid, name)] = (vp_h, hidden)
+        print(f"  ✗ {len(seen)} 处内层滚动区藏住内容(页面本身已经会滚，不该再套一层):")
+        for (pid, name), (vp_h, hidden) in sorted(seen.items()):
+            total = vp_h + hidden
+            print(f"     [{pid}] {name} 视口 {vp_h}px / 内容 {total}px，"
+                  f"藏住 {hidden}px（只露出 {vp_h * 100 // max(1, total)}%）")
+        print("     确属「长度由用户决定的列表」请在 NESTED_SCROLL_ALLOWED 里"
+              "写明理由，别直接调阈值。")
+    else:
+        print("  ✓ 无内层滚动区藏内容")
 
     win.close()
     win.deleteLater()
     app.processEvents()
-    return 1 if (problems or elided or clipped or uneven) else 0
+    return 1 if (problems or elided or clipped or uneven or nested_hidden) else 0
 
 
 if __name__ == "__main__":

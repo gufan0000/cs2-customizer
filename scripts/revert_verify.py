@@ -2157,11 +2157,96 @@ REVERTS = [
         "        MainWindow._snap_nav_scroll_to_item_boundary(scroll, btn)",
         "        pass",
         "tests/test_audit_can_see_every_page.py::"
-        "test_sidebar_never_shows_a_half_cut_nav_item_at_the_top",
+        "test_sidebar_never_shows_a_half_cut_nav_item_at_either_edge",
         "RN-060：28 页里 **16 页**的侧栏顶部/底部各切掉 13~21px（项高 43px），"
         "用户看到残缺的导航文字。排版审计一直绿（滚动区露半行不算溢出），"
         "外审 8 发独立报出来 —— 而它只在导航列表靠后的页出现，"
         "那些页正是 RN-005 盲区里的四页",
+    ),
+    Revert(
+        "RN", "空库时又出现两颗紫按钮",
+        "widgets/community_library.py",
+        "        style_as_secondary_button(bar.primary_btn)",
+        "        pass",
+        "tests/test_empty_library_covers_every_page.py::"
+        "test_the_empty_state_has_exactly_one_purple_button",
+        "RN-186：引导卡那颗和底栏那颗同时是 `primaryButton`，外审 3/3 报"
+        "「首步动作焦点冲突」「不知先点哪个」。⭐⭐ 本仓 RN-139 早就判过"
+        "「**两颗紫的等于零颗**」并留了棘轮 —— 可那条只盯 `basic` 一页。"
+        "**判据的页面范围就是它的分母**：一条只保 1/28 页的规则，"
+        "读起来跟「这条规则在生效」一模一样",
+    ),
+    Revert(
+        "RN", "空库底栏文案又开始描述版面",
+        "widgets/community_library.py",
+        '            f"第 2 步：点「{keep_text}」把下载的包放进资源目录。"',
+        '            f"第 1 步在上面那张卡里。点「{keep_text}」放进资源目录。"',
+        "tests/test_empty_library_points_at_the_community.py::"
+        "test_the_empty_state_keeps_a_way_to_put_the_files_in",
+        "RN-187：原文案写「第 1 步在上面那张卡里」，外审 3/3 判"
+        "「用生硬文字打补丁」「视线上下割裂」。⭐ 编号本身就够了 —— "
+        "写着「第 2 步」的人自然知道第 1 步在别处，不必再告诉他往哪儿看。"
+        "⚠ 本仓有一条专门的 `test_no_layout_self_talk_sitewide`，**它没逮住这一句**",
+    ),
+    Revert(
+        "RN", "紧凑档状态徽章又被压到画不出字",
+        "pages/audio_status_badge.py",
+        "        self._lock_in_chip_height()",
+        "        pass",
+        "tests/test_compact_mode_layout_r11.py::"
+        "test_status_chips_are_never_squashed_flat_in_compact_mode",
+        "RN-185：RN-180 的引导卡让紧凑档竖向更紧，布局挑了这条**没有下限**的"
+        "徽章条来压 —— 条高 13px 而芯片要 40px，四颗芯片只剩顶上一道圆弧。"
+        "⭐ 而排版审计第 4 条问的是「同排芯片高度是否一致」，"
+        "**四颗一起被压扁恰好就是一致的** —— 一条只看「齐不齐」的判据，"
+        "看不见「全都不对」",
+    ),
+    Revert(
+        "RN", "空库时控件又变回可点却没反应",
+        "widgets/community_library.py",
+        "        widget.setEnabled(False)",
+        "        pass",
+        "tests/test_empty_library_covers_every_page.py::"
+        "test_empty_library_leaves_no_control_that_does_nothing",
+        "RN-179：七页合计 **188 个**下拉框和试听按钮在空库时照样可点，"
+        "点下去什么都不会发生（switch_weapon 39+39、gun_sound 18+18…）。"
+        "⭐ 一个可点却什么都不做的控件比一个置灰的更糟 —— "
+        "置灰说的是「你还没准备好」，可点却无反应说的是「这软件坏了」",
+    ),
+    Revert(
+        "RN", "空库时的第一步又被塞回页尾",
+        "widgets/community_library.py",
+        "    use_callout = callout is not None",
+        "    use_callout = False",
+        "tests/test_empty_library_covers_every_page.py::"
+        "test_the_first_step_is_in_the_card_not_the_bottom_bar",
+        "RN-180：外审 20 发 / 跨 9 页判「核心流程倒置」。而 CLAUDE.md 里早写着"
+        "「解释放在困惑发生的位置之前，不是页尾；放页尾 = 没放」—— "
+        "⭐ 我自己写下的教训自己没照做，因为它归档在「网站」小节里而我在做桌面版。"
+        "**教训是按场景归档的，而缺陷不认场景**",
+    ),
+    Revert(
+        "RN", "预设摘要又只列前三组",
+        "pages/viewmodel_page.py",
+        '        for preset in getattr(self, "preset_vars", []):',
+        '        for preset in getattr(self, "preset_vars", [])[:3]:',
+        "tests/test_flash_viewmodel_truth.py::"
+        "test_the_preset_summary_names_every_preset_not_just_the_first_few",
+        "RN-177：摘要自称「共 5 组」却只列 3 组，而当时屏幕上又只看得见 1 组 —— "
+        "**三个地方三个数，没有一处能互相印证**。摘要列全之后它本身就成了"
+        "「5 组确实都在」的凭证，不必先滚到底才能确认",
+    ),
+    Revert(
+        "RN", "侧栏下边缘的余数又开始画半截项",
+        "gui_widget.py",
+        "                scroll.setViewportMargins(0, 0, 0, max(0, limit - y))",
+        "                pass",
+        "tests/test_audit_can_see_every_page.py::"
+        "test_sidebar_never_shows_a_half_cut_nav_item_at_either_edge",
+        "RN-178：只对齐上边缘时**27/28 页**的下边缘各露出 2~10px 的半截项"
+        "（项高 40~42），而上边缘是 0/28 —— 一半的账被判据名字里的 "
+        "`at_the_top` 挡了整整一轮。视口 657px 装不下整数个项，"
+        "滚动只能决定余数在哪一端，消不掉它；只有把余数吃进视口底边距才两端都干净",
     ),
     Revert(
         "RN", "建页耗时清单又漏掉设备页",
@@ -2192,8 +2277,11 @@ REVERTS = [
         # 锚点随之消失。原判据挂的是 `test_focus_audit_covers_every_page_with_a_class`
         # —— 那是条**覆盖面**判据（管「有没有看这一页」），不是顺序判据。
         # 现在改成注入一条真会打乱顺序的 setTabOrder，判据直接量顺序。
-        "        presets_layout.addWidget(presets_scroll)",
-        "        presets_layout.addWidget(presets_scroll)\n"
+        # ⚠ RN-177 又把锚点搬走了一次：那一行内层滚动区已经删掉。
+        # ⭐ 这条断点的锚点**三度失效**（RN-069 → RN-083 → RN-177），
+        #   每次都是版面被改。⇒ 把锚点挪到本页最稳的一行：右列装配那一句。
+        "        right_column_layout.addWidget(presets_frame)",
+        "        right_column_layout.addWidget(presets_frame)\n"
         "        self.setTabOrder(self.auto_switch_interval_input, save_btn)",
         "tests/test_flash_viewmodel_truth.py::test_viewmodel_tab_order_follows_the_screen",
         "RN-069：走到第 5 个焦点时跳到左下角的「保存到CFG」（y=487），"
@@ -2350,8 +2438,16 @@ REVERTS = [
     Revert(
         "RN", "视角预设又被推到折叠线以下",
         "pages/viewmodel_page.py",
-        "        self._viewmodel_right_column_layout.addWidget(presets_frame)",
-        "        scroll_layout.addWidget(presets_frame)",
+        # ⚠⚠ RN-177 之后**注入点也得换**，不只是锚点：预设卡的构造被挪到了
+        # 两列装配**之前**，于是原来那句 `scroll_layout.addWidget(presets_frame)`
+        # 反而把它放到了两列**上面** —— 破坏动作不再复现缺陷，判据当场假绿。
+        # ⭐ **锚点还在不代表破坏还成立**：失效体检只查锚点在不在，
+        #   查不出「这一刀现在砍的是别的地方」。那一层只有真跑一遍才看得见。
+        # 改成在页面收尾处把它抢过来 —— Qt 会重新认父，卡片落到两列下面，
+        # 正是 RN-083 的原状。
+        "        scroll_layout.addStretch()",
+        "        scroll_layout.addWidget(presets_frame)\n"
+        "        scroll_layout.addStretch()",
         "tests/test_flash_viewmodel_truth.py::"
         "test_viewmodel_presets_are_on_the_first_screen",
         "RN-083：右列只有一张卡、自 y≈450 起整列空白，而这一页**最核心的东西**"
@@ -2958,13 +3054,18 @@ REVERTS = [
     Revert(
         "RN", "共用件又把第二步删掉",
         "widgets/community_library.py",
-        "    bar.configure_extra(keep_text, keep_callback, visible=True)",
-        "    pass  # 不保第二步",
+        '        bar.configure_extra("", None, visible=False)',
+        '        bar.configure_primary("", None, visible=False)',
         "tests/test_empty_library_covers_every_page.py::"
-        "test_the_shared_helper_is_the_only_place_that_opens_the_category",
+        "test_the_empty_state_always_keeps_a_way_to_put_the_files_in",
         "⭐⭐ RN-153 的血教训：第一版把「打开资源目录」整个换掉了，"
         "而底栏文案还在说「放进资源目录」—— **指着一个不存在的按钮**。"
-        "我修好了第一步（去哪儿拿），却顺手删掉了第二步（放哪儿去）",
+        "我修好了第一步（去哪儿拿），却顺手删掉了第二步（放哪儿去）。"
+        "⚠ RN-180 之后这条断点和它的判据**一起搬了家**：CTA 进了引导卡，"
+        "第二步成了底栏那颗没被碰过的主按钮，共用件不再需要动 extra —— "
+        "而 `configure_extra` 这个名字仍在源码里（用来收「新建风格」），"
+        "于是那条 AST 判据变成假绿、一声不吭。"
+        "⭐ **「源码里出现过这个调用」和「用户真的还有那条路」是两回事**",
     ),
     Revert(
         "RN", "flash 的启动入口被空库引导顶掉",
@@ -3009,8 +3110,10 @@ REVERTS = [
         "widgets/community_library.py",
         "    if not empty or not has_category(category_key):",
         "    if True:",
+        # ⚠ RN-180 之后这条判据改了名，也改了量的位置：CTA 从底栏搬进引导卡，
+        # 判据于是从「底栏主按钮是什么」改问「最显眼的那一步是什么」。
         "tests/test_empty_library_points_at_the_community.py::"
-        "test_an_empty_library_swaps_the_primary_button",
+        "test_an_empty_library_leads_with_the_community_not_an_empty_folder",
         "RN-153：全新安装时底栏最抢眼的那颗按钮是「打开音频资源」，"
         "点开是个**空文件夹** —— 用户手上没有文件，那儿什么也解决不了。"
         "⭐ 打开一个空文件夹不是一条路",

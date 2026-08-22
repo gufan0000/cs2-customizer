@@ -222,6 +222,13 @@ class GunSoundPage(QWidget):
         status_card_layout.addWidget(self.status_hint_label)
         layout.addWidget(self.status_card)
 
+        # RN-180：空库时的第一步放在状态卡正下方 —— 那一片置灰控件的上方，
+        # 也就是困惑发生的位置。放底栏等于没放（CLAUDE.md 那条我自己写下又没照做的）。
+        from widgets.community_library import EmptyLibraryCallout
+
+        self.empty_callout = EmptyLibraryCallout(self)
+        layout.addWidget(self.empty_callout.frame)
+
         self.tab_widget = QTabWidget()
         for tab_name, weapon_types in self._tab_groups:
             tab = QWidget()
@@ -574,6 +581,12 @@ class GunSoundPage(QWidget):
             return
         from widgets import community_library
 
+        # RN-179：先把「没得选」的下拉框和它那一行的试听按钮置灰。
+        # ⚠ 放在 `guide_empty_library` **之前**：置灰与"这个发行版有没有社区站"无关，
+        # 而那个函数在没有社区站时会直接回 False、走另一条分支。
+        community_library.dim_controls_with_nothing_to_pick(
+            self, reason=community_library.dim_reason("风格"))
+
         applied = community_library.guide_empty_library(
             bar,
             empty=self._library_is_empty(),
@@ -582,6 +595,9 @@ class GunSoundPage(QWidget):
             keep_text="打开音频资源",
             keep_callback=self._open_audio_resource_root,
             message=community_library.empty_library_message("风格"),
+            callout=getattr(self, "empty_callout", None),   # RN-180
+            what="风格",
+            refresh_label="刷新风格列表",
         )
         if not applied:
             # ⚠ **借了要还**：空库态借用了 extra 那个位置。
@@ -589,7 +605,17 @@ class GunSoundPage(QWidget):
                                   visible=True)
             text, callback, menu = getattr(
                 self, "_extra_default", ("新建风格", None, None))
-            bar.configure_extra(text, callback, visible=True)
+            # ⚠ `_extra_default` 是在 PageActionBar **刚 new 出来**时抓的快照
+            # （见上面 __init__），那一刻 extra_btn 还是 `QPushButton("")` ——
+            # 抓到的 text 是**空串**、callback 是 None。于是"还回去"的结果是
+            # 一颗**没有文字、点了也没反应**的按钮杵在底栏上。
+            # 空库时走的是另一条分支（「去社区拿一套枪声」），而**默认状态下库总是空的**
+            # （软件不带素材），所以这颗空按钮只有配好素材的用户才看得见 ——
+            # 是给官网造演示状态时才第一次撞见。
+            # ⇒ 没有文字就别显示它。不凭空补个「新建风格」：这一页没有对应的实现，
+            #   补了只会得到一颗点了没反应的按钮，比空着更糟。
+            has_text = bool(str(text or "").strip())
+            bar.configure_extra(text, callback, visible=has_text)
             bar.extra_btn.setMenu(menu)
 
     def _refresh_status_badge(self, *_args):

@@ -392,8 +392,8 @@ def test_no_page_registers_a_real_hotkey_when_the_gate_is_on(qapp, monkeypatch):
 
 # ============================================================ 四、侧栏不许切字
 
-def test_sidebar_never_shows_a_half_cut_nav_item_at_the_top(qapp, monkeypatch):
-    """⭐ RN-060：侧栏视口**上边缘**不许落在某个导航项中间。
+def test_sidebar_never_shows_a_half_cut_nav_item_at_either_edge(qapp, monkeypatch):
+    """⭐ RN-060 / RN-178：侧栏视口**上下两个边缘**都不许落在某个导航项中间。
 
     实测原状（2026-08-17，1280×800 完整模式，逐页量）：
 
@@ -408,9 +408,22 @@ def test_sidebar_never_shows_a_half_cut_nav_item_at_the_top(qapp, monkeypatch):
     （同 RN-045）。⇒ **判据看不见的东西只有眼睛能看见** —— 所以这条判据
     量的是"项与视口边缘的相对位置"，不是"有没有溢出"。
 
-    ⚠ 只断言**上**边缘。视口高 657 不是项高 43 的整数倍，
-    上下不可能同时对齐，只能选一头；选顶部是因为那是视觉起点。
-    底边剩下的那道缝里没有文字，不构成"残缺的字"。
+    ⚠⚠ **RN-178：上面那段"只断言上边缘"的理由，本身就是这条判据的盲区自白。**
+    原话是「视口高 657 不是项高 43 的整数倍，上下不可能同时对齐，只能选一头」
+    「底边剩下的那道缝里没有文字」。前半句是对的，**后半句是错的**——
+    实测（改前）：
+
+        上边被切  **0 / 28 页**    ← RN-060 生效了
+        下边被切  **27 / 28 页**   ← 那道"缝"里全是文字
+        露出的量  **2 ~ 10px**（项高 40~42）—— `fun_afterlife` 只剩 2px
+
+    ⭐ 「只能选一头」这个前提是真的，可**结论跳错了**：选一头 ≠ 另一头就没账。
+      真正的出路不是滚动（滚动只能决定余数在哪一端），是把余数**吃进视口底边距**，
+      让跨边缘的那一项一个像素都不画（`_trim_nav_viewport_to_item_boundary`）。
+      改完实测：上 0/28、下 0/28，且每一页的当前项仍完整可见。
+
+    ⭐ 而这条判据的**名字**里就写着 `at_the_top` —— 一条判据的名字如果精确描述了
+      它只看半边，那半边的账就永远不会有人记起来。改名是修复的一部分。
     """
     monkeypatch.setenv("CS2C_NO_GLOBAL_HOTKEYS", "1")
     monkeypatch.setenv("CS2C_SAFE_MODE_ACTIVE", "1")
@@ -450,12 +463,10 @@ def test_sidebar_never_shows_a_half_cut_nav_item_at_the_top(qapp, monkeypatch):
             bar = scroll.verticalScrollBar()
             if bar.value() > 0:
                 scrolled_pages += 1
-            # ⚠ 滚到底这一页（导航列表最后一项，本仓是 `about`）**结构性无解**：
-            # 视口高 657 不是项高 43 的整数倍，滚到底时视口底边与内容底边对齐，
-            # 顶边就必然落在某项中间。此时"上面还有内容"正需要提示，
-            # 而"下面还有内容"已经不需要 —— 所以这是**对的那一头**。
-            # 豁免它不是放宽判据：要消掉它得给侧栏内容底部加动态 padding，
-            # 那是 X1/X2 的事，收益也远小于复杂度。
+            # ⚠ 滚到底这一页**曾经**被豁免，理由是"结构性无解"。RN-178 之后
+            # 余数被视口底边距吃掉，滚到底也不再撞上边界，实测这个分支已经
+            # 一次都不走（`about` 停在 531，而 maximum 是 541）。
+            # 留着它是当兜底：别的机器/字号下若真滚到了底，判据不该假红。
             if bar.value() >= bar.maximum():
                 at_bottom.append(page_id)
                 continue
@@ -468,6 +479,23 @@ def test_sidebar_never_shows_a_half_cut_nav_item_at_the_top(qapp, monkeypatch):
                 if y < -2:
                     offenders.append(
                         f"{page_id}: 「{btn.text().strip()}」顶部被切 {-y}px")
+                # RN-178：下边缘同理。这一半以前**没有任何判据在看**，
+                # 而它的命中率是上边缘的 27 倍（27/28 对 0/28）。
+                if y + btn.height() > viewport.height() + 2:
+                    offenders.append(
+                        f"{page_id}: 「{btn.text().strip()}」底部被切 "
+                        f"{y + btn.height() - viewport.height()}px"
+                        f"（只露出 {viewport.height() - y}px / 共 {btn.height()}px）")
+
+            # RN-008 优先级更高：吃掉余数**不许**把当前页那一项挤出视口。
+            cur = win.nav_buttons.get(page_id)
+            if cur is not None and cur.isVisible():
+                cy = cur.mapTo(viewport, QPoint(0, 0)).y()
+                if cy < -2 or cy + cur.height() > viewport.height() + 2:
+                    offenders.append(
+                        f"{page_id}: **当前项**「{cur.text().strip()}」被挤出视口 "
+                        f"(y={cy} 高={cur.height()} 视口={viewport.height()}) —— "
+                        "RN-008 优先于边缘对齐")
 
         assert scrolled_pages >= 5, (
             f"只有 {scrolled_pages} 页滚动过 —— 前提不成立，这条判据量不到东西")
@@ -475,8 +503,8 @@ def test_sidebar_never_shows_a_half_cut_nav_item_at_the_top(qapp, monkeypatch):
             f"滚到底的页不止一个：{at_bottom} —— 豁免范围只该是导航列表最后一项，"
             "多出来说明滚动逻辑又少滚了（RN-008 那一类）")
         assert not offenders, (
-            f"侧栏顶部还有被切一半的导航项（{len(offenders)} 处）：{offenders[:6]} —— "
-            "滚完要对齐到项边界（RN-060）。"
+            f"侧栏边缘还有被切一半的导航项（{len(offenders)} 处）：{offenders[:6]} —— "
+            "滚完要对齐到项边界（RN-060），余数要吃进视口底边距（RN-178）。"
             f"⚠ 本条覆盖面：{len(win._page_names)} 页里除滚到底的 {at_bottom} 之外全部")
     finally:
         win.close()

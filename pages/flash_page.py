@@ -216,11 +216,30 @@ class FlashPage(QWidget):
             keep_callback=keep_callback,
             message=community_library.empty_library_message(
                 "素材", refresh_label),
+            callout=getattr(self, "empty_callout", None),   # RN-180
+            what="素材",
+            refresh_label=refresh_label,
         )
 
     def _sync_action_bar(self):
         if not hasattr(self, "action_bar"):
             return
+
+        # RN-179：把「没得选」的下拉框置灰。
+        # ⭐ 这一页正是那条判据**差点诬告**的对象：它的「25%预览」「自定义强度预览」
+        # 预览的是软件自己合成的颜色叠加，一个素材都不用 —— 本来就该是亮的。
+        # 共用件按"这个控件有没有东西可选"划范围，所以那几颗按钮不会被碰，
+        # 而 `image_style_combo` / `audio_style_combo` 空的时候照样会被逮住。
+        from widgets import community_library
+
+        community_library.dim_controls_with_nothing_to_pick(
+            self, reason=community_library.dim_reason("样式"))
+
+        # RN-180：每次同步先把引导卡收掉。**只有**「图片设置 / 音频设置」两个
+        # 页签会把它重新亮起来 —— 其余页签根本不调 `_guide_empty_library`，
+        # 不先收就会把上一个页签的引导留在屏幕上（同 RN-153「借了要还」那条）。
+        if getattr(self, "empty_callout", None) is not None:
+            self.empty_callout.hide()
 
         current_tab = self._current_tab_text()
         runtime_text, _runtime_level = self._current_runtime_text()
@@ -406,6 +425,14 @@ class FlashPage(QWidget):
         # 那十行本来就已经由徽章的 detail_tooltip 和 `status_card.setToolTip()` 给出，
         # 删掉不丢任何信息。
         main_layout.addWidget(self.status_card)
+
+        # RN-180：空库时的第一步放进页面上部，不放底栏。
+        # ⚠ 这一页的"空"是**按页签**算的（图片库 / 音频库各一份），
+        # 所以这张卡跟着当前页签走 —— `_sync_action_bar` 每次切页签都会重算。
+        from widgets.community_library import EmptyLibraryCallout
+
+        self.empty_callout = EmptyLibraryCallout(self)
+        main_layout.addWidget(self.empty_callout.frame)
         
         # 创建TabWidget
         self.tab_widget = QTabWidget()

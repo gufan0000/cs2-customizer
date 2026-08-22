@@ -64,23 +64,36 @@ def test_generate_stylesheet_does_not_grow():
 #: 重构成清单板时那页从 3 处减到 2 处，实测值掉到 44——棘轮于是空出一格，
 #: 「再加一处手搓卡片」照样绿。2026-08-16 的回退验证台就是这么逮出来的：
 #: **棘轮的档位高于现状一格，它就不是棘轮。** 减少手搓卡片时记得同步压这个数。
-HANDROLLED_CARD_MAX = 44
+#: ⚠⚠ **同一个错法犯第二次了**（2026-08-22 回退验证逮出来）：实测值又掉到 43，
+#: 而这个数还停在 44 —— 棘轮再一次空出一格，「再加一处手搓卡片」照样绿。
+#: 上面那段注释白纸黑字写着 KI-6 那次一模一样的事。
+#: ⭐ **一条"只许减不许增"的棘轮，会被每一次真实的减少悄悄放松。**
+#:   减少是好事，可它同时就是这条判据失效的时刻，而没有任何东西会提醒你。
+#: ⇒ 现在的数 = pages 43 + widgets 4 + dialogs 1。
+HANDROLLED_CARD_MAX = 48
 
 _SETOBJECTNAME_CARD = re.compile(r"""setObjectName\(\s*["']card["']\s*\)""")
 
+#: ⚠⚠ 扫描范围原来**只有 `pages/`**。RN-180 加空库引导卡时我第一版手搓了一个
+#: `QFrame` + `objectName("card")`，而它住在 `widgets/` —— **这条棘轮完全看不见它**。
+#: 那张卡是八个页面共用的，也就是说：最容易被复制到全站的那一类新卡片，
+#: 恰好落在判据的盲区里。⭐ **判据的目录范围也是分母。**
+_CARD_SCAN_DIRS = ("pages", "widgets", "dialogs")
+
 
 def _handrolled_card_sites() -> dict[str, int]:
-    """统计 `pages/` 下把控件 objectName 直接设成 "card" 的处数。
+    """统计把控件 objectName 直接设成 "card" 的处数（pages / widgets / dialogs）。
 
     口径要和 `scripts/component_adoption.py` 对得上——两处数不一样的话，
-    "45"这个数字就没有意义了（R8d 的教训：文档说的判据和代码里的判据
+    这个数字就没有意义了（R8d 的教训：文档说的判据和代码里的判据
     可以是两回事，对着文档推理会推错）。
     """
     out = {}
-    for path in sorted((ROOT / "pages").glob("*.py")):
-        n = len(_SETOBJECTNAME_CARD.findall(path.read_text(encoding="utf-8")))
-        if n:
-            out[path.name] = n
+    for folder in _CARD_SCAN_DIRS:
+        for path in sorted((ROOT / folder).glob("*.py")):
+            n = len(_SETOBJECTNAME_CARD.findall(path.read_text(encoding="utf-8")))
+            if n:
+                out[f"{folder}/{path.name}"] = n
     return out
 
 

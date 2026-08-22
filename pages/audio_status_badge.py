@@ -85,6 +85,49 @@ class AudioStatusBadgeBar(QFrame):
             _restyle_widget(chip)
 
         self._apply_detail_tooltip()
+        self._lock_in_chip_height()
+
+    def _lock_in_chip_height(self):
+        """把整条的最小高钉在芯片自己要的高度上（RN-185）。
+
+        ⭐⭐ 这条是**外审逮住的、我自己刚引入的退步**：RN-180 给八页加了一张空库
+        引导卡，紧凑档（860×640）竖向本来就紧，于是布局挑了这条**没有下限**的
+        徽章条来压 —— 实测 **条高 13px 而芯片要 40px**，四颗芯片只剩顶上一道圆弧，
+        文字整个没了。A/B 决定性：有引导卡 13px / 把卡收掉 44px。
+
+        ⚠ 而**每一条既有判据都是绿的**：
+          · 排版审计第 4 条问的是「同排芯片高度**是否一致**」——
+            ⭐ **四颗一起被压扁，恰好就是一致的**；
+          · 纵向裁切那条问「装不下且滚不动」——这一页滚得动；
+          · 内层滚动那条（本批新加）也不适用。
+        ⇒ ⭐ **一条只看"齐不齐"的判据，看不见"全都不对"。**
+          齐平是必要条件，不是充分条件，而判据只写了必要的那一半。
+
+        钉下限之后，竖向不够时被压的是**下面能滚的那块**，不是这条状态摘要。
+        """
+        visible = [c for c in self._chip_pool if not c.isHidden()]
+        if not visible:
+            self.setMinimumHeight(0)
+            return
+        need = max(c.sizeHint().height() for c in visible)
+        margins = self._layout.contentsMargins()
+        target = need + margins.top() + margins.bottom()
+
+        # ⚠⚠ **只许抬，不许压。** 第一版直接 `setMinimumHeight(target)`，
+        # 结果 `crosshair` 的滚动内容整整矮了 16px（1196→1180，A/B 实测）：
+        # Qt 的 `qSmartMinSize` **一旦读到显式的 minimumSize 就不再看
+        # minimumSizeHint** —— 于是我设的 28 把布局本来推导出的 44 顶掉了。
+        # ⭐ 一个名字叫「设下限」的动作，实际效果是**把下限调低了**。
+        #   指纹基线逮住了它；否则这 16px 会跟着这一批悄悄进产品。
+        # ⚠ 「原本的下限」要取 `sizeHint()`，**不是** `minimumSizeHint()`：
+        # 这条的竖向 sizePolicy 是 `Fixed`，而 Qt 的 `qSmartMinSize` 对 Fixed
+        # 用的就是 sizeHint（min = max = sizeHint）。第二版取了 minimumSizeHint
+        # （28）照样比 sizeHint（44）小，那 16px 一点没修回来。
+        # ⭐ **改完要再量一次同一个数**：我这一处连着两版都以为修好了，
+        #   两次都是指纹基线把我按回来的。
+        self.setMinimumHeight(0)
+        natural = self.sizeHint().height()
+        self.setMinimumHeight(max(target, natural))
 
 
 def create_badge_bar() -> AudioStatusBadgeBar:

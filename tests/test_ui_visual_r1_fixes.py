@@ -436,7 +436,19 @@ def test_nav_button_nudge_fixes_a_short_scroll(app):
         assert y_before + btn.height() > viewport.height(), (
             "没造出「露在视口外」的局面，判据在空转")
 
-        win._nudge_nav_button_fully_into_view(scroll, btn)
+        # ⭐⭐ 和上面那条判据一样，要先把 RN-060 那层「对齐到项边界」摘掉再考算式。
+        # ⚠ **批 4 只给上面那条打了这个补丁，这一条漏了** —— 它当时还是绿的，
+        # 直到 RN-178 给对齐层又加了一手（把余数吃进视口底边距），
+        # 回退验证才把它判成假绿。
+        # ⭐ **同一个病在姐妹判据上还留着一份，而"这一条现在是绿的"看起来跟修好了一样。**
+        #   修一处共病时要问的不是"这条好了吗"，是"还有几条同源的没查"。
+        original_snap = win.__class__._snap_nav_scroll_to_item_boundary
+        win.__class__._snap_nav_scroll_to_item_boundary = staticmethod(
+            lambda *a, **k: None)
+        try:
+            win._nudge_nav_button_fully_into_view(scroll, btn)
+        finally:
+            win.__class__._snap_nav_scroll_to_item_boundary = original_snap
         app.processEvents()
 
         y_after = btn.mapTo(viewport, QPoint(0, 0)).y()

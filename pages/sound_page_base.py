@@ -137,6 +137,13 @@ class SoundPageBase:
 
         from widgets import community_library
 
+        # RN-179：先把「没得选」的下拉框和它那一行的试听按钮置灰。
+        # ⚠ 这一步**不能放在下面那个 `if applied: return` 之后** ——
+        # 那条 return 只表示"底栏换成了社区引导"，而没有社区站的发行版（开源版）
+        # 走的是另一条分支，控件照样是死的。**置灰与有没有社区站无关。**
+        community_library.dim_controls_with_nothing_to_pick(
+            self, reason=community_library.dim_reason("风格"))
+
         # ⭐ **空库时该长什么样，全仓只有一份**（`community_library`）——
         # 八个页面「库空不空」各问各的（数据结构完全不同），
         # 但"空了给什么"必须同一份，否则八页会长出八个略有差别的空状态。
@@ -148,6 +155,9 @@ class SoundPageBase:
             keep_text="打开音频资源",
             keep_callback=self._open_audio_resource_root,
             message=community_library.empty_library_message("风格"),
+            callout=getattr(self, "empty_callout", None),   # RN-180
+            what="风格",
+            refresh_label="刷新风格列表",
         )
         if applied:
             return
@@ -443,6 +453,13 @@ class SoundPageBase:
         self.category_overview_hint_label.setWordWrap(True)
         status_card_layout.addWidget(self.category_overview_hint_label)
         layout.addWidget(self.status_card)
+
+        # RN-180：空库时的第一步放在**状态卡和武器页签之间** —— 也就是
+        # 那一片置灰下拉框的正上方，困惑发生的位置。放底栏等于没放。
+        from widgets.community_library import EmptyLibraryCallout
+
+        self.empty_callout = EmptyLibraryCallout(self)
+        layout.addWidget(self.empty_callout.frame)
 
         self.tab_widget = QTabWidget()
         # 先 addTab 再 connect：加首个 tab 会触发 currentChanged，

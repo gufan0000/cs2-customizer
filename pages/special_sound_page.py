@@ -415,6 +415,13 @@ class SpecialSoundPage(QWidget):
         status_card_layout.addWidget(self.summary_label)
         main_layout.addWidget(self.status_card)
 
+        # RN-180：空库时的第一步放在状态卡正下方 —— 那一片置灰控件的上方，
+        # 也就是困惑发生的位置。放底栏等于没放（CLAUDE.md 那条我自己写下又没照做的）。
+        from widgets.community_library import EmptyLibraryCallout
+
+        self.empty_callout = EmptyLibraryCallout(self)
+        main_layout.addWidget(self.empty_callout.frame)
+
         self.tab_widget = QTabWidget()
         self.tab_widget.currentChanged.connect(self._refresh_status_badge)
         main_layout.addWidget(self.tab_widget, 1)
@@ -1039,6 +1046,12 @@ class SpecialSoundPage(QWidget):
             return
         from widgets import community_library
 
+        # RN-179：先把「没得选」的下拉框和它那一行的试听按钮置灰。
+        # ⚠ 放在 `guide_empty_library` **之前**：置灰与"这个发行版有没有社区站"无关，
+        # 而那个函数在没有社区站时会直接回 False、走另一条分支。
+        community_library.dim_controls_with_nothing_to_pick(
+            self, reason=community_library.dim_reason("风格"))
+
         applied = community_library.guide_empty_library(
             bar,
             empty=self._library_is_empty(),
@@ -1047,6 +1060,9 @@ class SpecialSoundPage(QWidget):
             keep_text="打开当前资源",
             keep_callback=self._open_current_resource_root,
             message=community_library.empty_library_message("风格"),
+            callout=getattr(self, "empty_callout", None),   # RN-180
+            what="风格",
+            refresh_label="刷新风格列表",
         )
         if not applied:
             # ⚠ **借了要还**：空库态借用了 extra 那个位置。

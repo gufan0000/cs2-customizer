@@ -295,6 +295,128 @@ def test_viewmodel_presets_are_on_the_first_screen(qapp):
         "这一页最核心的编辑入口（5 组预设 + 每组 FOV/XYZ）不许要滚动才看得见（RN-083）。")
 
 
+def _viewmodel_page_viewport(page):
+    """页面级滚动区的 viewport —— 「首屏看得见什么」只能对着它量。"""
+    from PySide6.QtWidgets import QScrollArea
+
+    for sa in page.findChildren(QScrollArea):
+        if sa.objectName() == "helpScrollArea":
+            continue
+        anc, nested = sa.parentWidget(), False
+        while anc is not None and anc is not page:
+            if isinstance(anc, QScrollArea):
+                nested = True
+                break
+            anc = anc.parentWidget()
+        if not nested:
+            return sa.viewport()
+    raise AssertionError("viewmodel 页找不到页面级滚动区 —— 判据的定位方式过期了。")
+
+
+def _is_fully_drawn_in(widget, root) -> bool:
+    """`widget` 在 `root` 里是不是**每一个像素都画得出来**。
+
+    ⚠ 不能只拿 `mapTo(root)` 的坐标跟 root 的高度比 —— 那只看最外面一层。
+    实测：给预设卡的外框加一句 `setMaximumHeight(320)`，卡片的**坐标**照样落在
+    页面视口里，而它其实被那个外框裁掉了 —— 判据一路绿。中间任何一层
+    （卡、分栏容器、页签）都可能裁，所以要**逐层与祖先求交**。
+
+    不用 `visibleRegion()`：窗口没有映射到屏幕时它的行为依赖平台，
+    而本仓的页面判据一律离屏跑（同「离屏子控件 `isVisible()` 恒假」那个坑）。
+    """
+    from PySide6.QtCore import QRect
+
+    full = QRect(widget.mapTo(root, widget.rect().topLeft()), widget.size())
+    rect = QRect(full)
+    anc = widget.parentWidget()
+    for _ in range(32):
+        if anc is None:
+            break
+        rect = rect.intersected(
+            QRect(anc.mapTo(root, anc.rect().topLeft()), anc.size()))
+        if anc is root:
+            break
+        anc = anc.parentWidget()
+    return rect == full
+
+
+def _card_of_preset(preset_vars_entry):
+    """从一组预设控件回溯到它那张卡（objectName="card"）。"""
+    card = preset_vars_entry["fov"].parentWidget()
+    while card is not None and card.objectName() != "card":
+        card = card.parentWidget()
+    assert card is not None, "找不到预设卡（objectName=card）—— 判据定位过期了。"
+    return card
+
+
+def test_viewmodel_shows_more_than_one_preset_at_a_time(qapp):
+    """RN-177：卡副标题写「5 组」，屏幕上就不许只看得见 1 组。
+
+    ⭐ 这条缺陷躲过了**所有**既有防线，值得记清楚每一道是怎么瞎的：
+      · 排版审计前四条 —— 内层滚动区滚得动，既不横向溢出也不纵向裁切；
+        第 1 条判据里还明写着「内层的滚动是有意设计」，等于**主动豁免**了这一类；
+      · 24 轮外审 —— 出图渲染的是**窗口**，折叠线以下从来没进过画面（RN-170）；
+      · 这一页 2026-08-18 已关档（RN-077/083/084），而**关档只表示那一页自己的账清了**。
+    实测原状：视口 320px 装 872px，完整可见 1 组、部分 1 组、看不见 3 组。
+
+    判据量**屏幕**不查布局代码：数有几张预设卡整个落在页面视口里。
+    阈值 2 是**推导**的不是拍的：修法把卡高从 168 压到 122，视口 464px 扣掉
+    卡头 90px 还剩 374px ⇒ 至少放得下 2 张（374/130≈2.9）。回退到 320px 内层
+    滚动区时这个数是 1 —— 两边差得开，判据才有分辨力。
+    """
+    page = _page("viewmodel")
+    page.resize(1280, 800)
+    page.show()
+    qapp.processEvents()
+
+    vp = _viewmodel_page_viewport(page)
+    assert len(page.preset_vars) >= 5, (
+        f"只数到 {len(page.preset_vars)} 组预设 —— 判据在空转，先修取卡那一段。")
+
+    fully = sum(1 for pv in page.preset_vars
+                if _is_fully_drawn_in(_card_of_preset(pv), vp))
+
+    # ⚠ 自检：先证明这个数**会随几何变化**，再拿它下结论。
+    # 一条"数出来 N 张"的判据最容易的失效方式不是数错，是**恒定**——
+    # 定位选错一层、或者拿到的是构造期的陈旧几何，它就会稳定返回一个好看的数。
+    # 把页面压到 420px（放不下两张 122px 的卡 + 90px 卡头）再数一次：必须掉下来。
+    page.resize(1280, 420)
+    qapp.processEvents()
+    shrunk = sum(1 for pv in page.preset_vars
+                 if _is_fully_drawn_in(_card_of_preset(pv), _viewmodel_page_viewport(page)))
+    page.resize(1280, 800)
+    qapp.processEvents()
+    assert shrunk < fully, (
+        f"把页面从 800px 压到 420px，完整可见的预设卡还是 {shrunk} 张（原 {fully} 张）"
+        " —— 这个数不随几何变化，说明判据没在量屏幕，先修测量那一段再看结论。")
+
+    assert fully >= 2, (
+        f"页面视口 {vp.height()}px 里只有 {fully} 张预设卡是完整可见的，"
+        "而这张卡的副标题写着「5 组持枪视角参数」、状态条写着「共 5 组预设」。\n"
+        "文案承诺 5 组、屏幕给 1 组，就是 RN-177。"
+        "别用「加个内层滚动区」来省地方 —— 那正是原来的做法。")
+
+
+def test_the_preset_summary_names_every_preset_not_just_the_first_few(qapp):
+    """RN-177：摘要自称「共 5 组」就得把 5 组都列出来。
+
+    原状是 `[:3]` —— 摘要说 5 组、只列 3 组，而屏幕上又只看得见 1 组。
+    **三个地方三个数，没有一处能互相印证。** 现在摘要本身就是「5 组确实都在」
+    的凭证：不必先滚到底才能确认。
+    """
+    page = _page("viewmodel")
+    page.show()
+    qapp.processEvents()
+
+    text = page.presets_summary_label.text()
+    names = [pv["name"].text().strip() for pv in page.preset_vars]
+    assert len(names) >= 5, f"只数到 {len(names)} 组预设 —— 判据在空转。"
+    missing = [n for n in names if n and n not in text]
+    assert not missing, (
+        f"预设摘要漏了 {missing}（当前文案：{text!r}）—— "
+        "摘要自称「共 N 组」就得列得出 N 组，否则那个数字没有任何东西能印证它。")
+
+
 def test_viewmodel_tab_order_follows_the_screen(qapp):
     """RN-069/RN-083：Tab 顺序必须跟屏幕顺序一致，**改完版面要重新验**。
 

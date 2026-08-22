@@ -174,6 +174,17 @@ class ViewmodelPage(QWidget):
         left_column_layout.setContentsMargins(0, 0, 0, 0)
         left_column_layout.setSpacing(10)
 
+        # ⚠ RN-177：右列容器提到这里创建（原来在 crosshair/持枪切换/CFG 三张卡之后）。
+        # 目的是让**卡片的构造顺序 = 它在屏幕上的先后**：右列现在是
+        # 「视角预设」在上、「持枪切换」在下，而 Tab 焦点链默认就走构造顺序。
+        # 顺序对齐了就不必再写 `setTabOrder` —— RN-069 已经证明那种显式补丁
+        # 是「对某个具体版面的断言」，改一次版面就要重验一次，成本比对齐构造顺序高。
+        right_column = QWidget()
+        right_column_layout = QVBoxLayout(right_column)
+        right_column_layout.setContentsMargins(0, 0, 0, 0)
+        right_column_layout.setSpacing(10)
+        self._viewmodel_right_column_layout = right_column_layout
+
         crosshair_card, crosshair_layout = SettingsCard.make(
             "准心快速回正",
             "准心快速回正单独开关，开不开都不影响持枪视角设置。",
@@ -220,6 +231,33 @@ class ViewmodelPage(QWidget):
         self.crosshair_summary_label.setWordWrap(True)
         crosshair_layout.addWidget(self.crosshair_summary_label)
         left_column_layout.addWidget(crosshair_card)
+
+        # ⚠ RN-177：这张卡以前**排在「持枪切换」下面**，而且外面套了一层
+        # `QScrollArea` + `setMaximumHeight(320)`。实测后果：视口 320px 装 872px 内容，
+        # 完整可见 **1 组**、部分 1 组、**完全看不见 3 组** —— 而卡副标题写着
+        # 「5 组持枪视角参数」、状态条写着「共 5 组预设」。**文案承诺 5 组，屏幕给 1 组。**
+        #
+        # ⭐ 为什么它躲过了所有判据：`layout_overflow_audit._overflow_of` 明写
+        #    「只看最外层滚动区，内层的滚动是有意设计」，于是**内层滚动区藏内容
+        #    这一类根本没有判据在看**。这不是判据写错了，是判据的分母漏了一整类。
+        #    补法见同名新判据 `_nested_scroll_hidden`（内层滚动区不许藏内容）。
+        #
+        # 改法是两条一起，缺一条都不够：
+        #   ① 去掉内层滚动区 ⇒ 内容并进页面级滚动，藏起来的 552px 变成正常翻页；
+        #   ② 挪到右列**最上面** ⇒ 否则它起点在 y≈460，首屏仍只露出一张卡，
+        #      等于把内层滚动条换成外层滚动条，缺陷原地不动。
+        # 同时把每张卡的四条滑杆从 2×2 改成一排四列，卡高 168→约 120px。
+        presets_frame, presets_layout = SettingsCard.make(
+            "视角预设",
+            "5 组持枪视角参数，每组都能单独改并保存下来。",
+        )
+        self.presets_summary_label = QLabel("")
+        self.presets_summary_label.setObjectName("hintLabel")
+        self.presets_summary_label.setWordWrap(True)
+        presets_layout.addWidget(self.presets_summary_label)
+        for i, preset in enumerate(self.presets):
+            presets_layout.addWidget(self._create_preset_card(preset, i))
+        right_column_layout.addWidget(presets_frame)
 
         viewmodel_card, viewmodel_layout = SettingsCard.make(
             "持枪切换",
@@ -299,13 +337,11 @@ class ViewmodelPage(QWidget):
         # 后果是这一页最核心的东西（5 组预设、每组的 XYZ/FOV 编辑入口）首屏看不见 ——
         # 外审 3/3 判「高」，原话是「作为『局内视角设置』页却完全找不到
         # FOV/XYZ 参数与 5 组预设的编辑入口」。
-        # 改成右列容器：持枪切换在上、视角预设在下，正好填掉那半屏空白。
-        right_column = QWidget()
-        right_column_layout = QVBoxLayout(right_column)
-        right_column_layout.setContentsMargins(0, 0, 0, 0)
-        right_column_layout.setSpacing(10)
+        # ⚠ RN-177 修正：RN-083 当时把顺序定成「持枪切换在上、视角预设在下」，
+        # 结果预设卡起点落在 y≈460，首屏只露出它的标题和第一张卡 —— 这一半的账
+        # 直到 RN-170 撑高窗口出图才看见。现在两张卡对调，预设在上。
         right_column_layout.addWidget(viewmodel_card)
-        self._viewmodel_right_column_layout = right_column_layout
+        right_column_layout.addStretch(1)
 
         tools_row.addWidget(left_column, 4, Qt.AlignTop)
         tools_row.addWidget(right_column, 6, Qt.AlignTop)
@@ -323,32 +359,8 @@ class ViewmodelPage(QWidget):
         # 打的补丁，新版面里屏幕顺序本身已经对了，补丁在跟布局对着干。
         # ⇒ 教训：**显式 setTabOrder 是对某个具体版面的断言，改版面就要重新验它。**
         # 现在这一页的 Tab 顺序由布局天然给出，不再依赖任何补丁（焦点巡检 43 个控件 0 挪动）。
-
-        presets_frame, presets_layout = SettingsCard.make(
-            "视角预设",
-            "5 组持枪视角参数，每组都能单独改并保存下来。",
-        )
-        self.presets_summary_label = QLabel("")
-        self.presets_summary_label.setObjectName("hintLabel")
-        self.presets_summary_label.setWordWrap(True)
-        presets_layout.addWidget(self.presets_summary_label)
-        presets_scroll = QScrollArea()
-        presets_scroll.setWidgetResizable(True)
-        presets_scroll.setFrameShape(QFrame.NoFrame)
-        presets_scroll.setMaximumHeight(320)
-        presets_scroll_content = QWidget()
-        presets_scroll_layout = QVBoxLayout(presets_scroll_content)
-        presets_scroll_layout.setContentsMargins(0, 0, 0, 0)
-        presets_scroll_layout.setSpacing(8)
-        for i, preset in enumerate(self.presets):
-            preset_card = self._create_preset_card(preset, i)
-            presets_scroll_layout.addWidget(preset_card)
-        presets_scroll_layout.addStretch()
-        presets_scroll.setWidget(presets_scroll_content)
-        presets_layout.addWidget(presets_scroll)
-        # RN-083：进右列那半屏空白，不再挂在两列下面（首屏看不见）。
-        self._viewmodel_right_column_layout.addWidget(presets_frame)
-        self._viewmodel_right_column_layout.addStretch(1)
+        # RN-177 对调右列两张卡时同样**没有**加 setTabOrder：构造顺序跟着一起对调了
+        # （预设卡在「持枪切换」之前构造），焦点链天然还是 0 挪动。
 
         scroll_layout.addStretch()
         scroll_area.setWidget(scroll_widget)
@@ -437,8 +449,11 @@ class ViewmodelPage(QWidget):
         crosshair_enabled = self.crosshair_reset_checkbox.isChecked() if hasattr(self, "crosshair_reset_checkbox") else False
         preset_count = len(getattr(self, "preset_vars", []))
 
+        # ⚠ RN-177：这里原来是 `[:3]` —— 摘要自称"共 5 组"却只列 3 组，
+        # 而当时屏幕上又只看得见 1 组。**三个地方三个数**，没有一处能互相印证。
+        # 现在全列：摘要本身就成了"5 组确实都在"的凭证，不必先滚到底才能确认。
         preset_preview = []
-        for preset in getattr(self, "preset_vars", [])[:3]:
+        for preset in getattr(self, "preset_vars", []):
             name = preset["name"].text().strip() or "未命名"
             key = preset["key"].text().strip() or "-"
             preset_preview.append(f"{name}({key})")
@@ -561,8 +576,8 @@ class ViewmodelPage(QWidget):
         slider_grid.setContentsMargins(0, 0, 0, 0)
         slider_grid.setHorizontalSpacing(12)
         slider_grid.setVerticalSpacing(8)
-        slider_grid.setColumnStretch(0, 1)
-        slider_grid.setColumnStretch(1, 1)
+        for _col in range(4):
+            slider_grid.setColumnStretch(_col, 1)
 
         fov_value_label = QLabel(str(preset["fov"]))
         fov_value_label.setMinimumWidth(36)
@@ -600,11 +615,13 @@ class ViewmodelPage(QWidget):
         z_slider.valueChanged.connect(lambda v, label=z_value_label: label.setText(f"{v/10:.1f}"))
         z_slider.valueChanged.connect(lambda: self._mark_unsaved())
 
+        # RN-177：原来是 2×2（卡高 168px，5 张就是 872px）。改成一排四列后
+        # 卡高降到 ~120px —— 这是"让 5 组真的看得见"里除了去掉内层滚动区之外的另一半。
         slider_specs = [
             ("FOV", fov_value_label, fov_slider, 0, 0),
             ("X", x_value_label, x_slider, 0, 1),
-            ("Y", y_value_label, y_slider, 1, 0),
-            ("Z", z_value_label, z_slider, 1, 1),
+            ("Y", y_value_label, y_slider, 0, 2),
+            ("Z", z_value_label, z_slider, 0, 3),
         ]
         for title, value_label, slider, row, column in slider_specs:
             group = QFrame()

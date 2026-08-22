@@ -197,6 +197,13 @@ class DeathSoundPage(QWidget):
         status_card_layout.addWidget(self.summary_label)
         layout.addWidget(self.status_card)
 
+        # RN-180：空库时的第一步放在状态卡正下方 —— 那一片置灰控件的上方，
+        # 也就是困惑发生的位置。放底栏等于没放（CLAUDE.md 那条我自己写下又没照做的）。
+        from widgets.community_library import EmptyLibraryCallout
+
+        self.empty_callout = EmptyLibraryCallout(self)
+        layout.addWidget(self.empty_callout.frame)
+
         # RN-036：卡片说明原文是**开发者的设计自白**，不是给玩家的话 ——
         # 「让这一页更像一块轻量工具面板」「把启用状态、候选数量…摆出来，
         # 确认时不用来回切」讲的都是版面决策。玩家读完既不知道这功能干什么，
@@ -456,6 +463,12 @@ class DeathSoundPage(QWidget):
             return
         from widgets import community_library
 
+        # RN-179：先把「没得选」的下拉框和它那一行的试听按钮置灰。
+        # ⚠ 放在 `guide_empty_library` **之前**：置灰与"这个发行版有没有社区站"无关，
+        # 而那个函数在没有社区站时会直接回 False、走另一条分支。
+        community_library.dim_controls_with_nothing_to_pick(
+            self, reason=community_library.dim_reason("风格"))
+
         applied = community_library.guide_empty_library(
             bar,
             empty=self._library_is_empty(),
@@ -464,6 +477,9 @@ class DeathSoundPage(QWidget):
             keep_text="打开音频资源",
             keep_callback=self._open_audio_resource_root,
             message=community_library.empty_library_message("风格"),
+            callout=getattr(self, "empty_callout", None),   # RN-180
+            what="风格",
+            refresh_label="刷新风格列表",
         )
         if not applied:
             # ⚠ **借了要还**：空库态借用了 extra 那个位置。

@@ -186,8 +186,6 @@ def test_the_shared_helper_is_the_only_place_that_opens_the_category():
         "共用件没有保住第二步（把原来那颗按钮挪到 extra）")
 
 
-# ==================================================== 3. 第二步不许丢
-
 @pytest.mark.parametrize("filename", sorted(ALL_WIRED))
 def test_every_wired_page_keeps_the_second_step(filename):
     """⭐⭐ 每一页交给共用件的 `keep_text` 都必须是**真的打开目录**那颗。
@@ -252,6 +250,326 @@ def test_flash_only_guides_on_the_two_asset_tabs():
     assert len(starters) == 2, (
         "flash 的「启用自定闪光 / 启动」入口不见了 —— "
         "那是全页唯一能让功能真正跑起来的按钮（RN-079）")
+
+
+#: 八页各自"重算空库形态"的入口。⭐ 判据自己列，不读产品的类属性当答案 ——
+#: 读产品的答案就等于"产品说它覆盖了几页，判据就信几页"。
+EMPTY_SYNC = {
+    "kill_sound_page.py": "_sync_community_guidance",
+    "kill_voice_page.py": "_sync_community_guidance",
+    "switch_weapon_page.py": "_sync_community_guidance",
+    "reload_sound_page.py": "_sync_community_guidance",
+    "gun_sound_page.py": "_sync_community_guidance",
+    "death_sound_page.py": "_sync_community_guidance",
+    "special_sound_page.py": "_sync_community_guidance",
+    "flash_page.py": "_sync_action_bar",
+}
+
+#: 「点了也不会有反应」的按钮文案。空库时这些按钮背后没有任何素材可播。
+DEAD_BUTTON_WORDS = ("测试", "试听", "预览", "播放")
+
+#: 下拉框里等于"什么都没选"的占位项。只剩这些 = 没得选。
+PLACEHOLDER_ITEMS = {"不启用", "未启用", "不使用", "无", "关闭", "默认", ""}
+
+
+def _combo_has_nothing_to_pick(combo) -> bool:
+    """这个下拉框是不是**没得选**。
+
+    ⭐⭐ 判据的范围必须**自己算出来**，不能由我手抄。第一版写的是
+    「空库页面上的所有下拉框」，当场诬告了 `flash` 的 4 个下拉框和 5 颗预览按钮 ——
+    闪光效果是软件**自己合成的颜色叠加**，一个素材都不用，那些控件完全正常。
+    ⇒ **分母划错的判据不只是漏，它还会逼人去改对的代码**（RN-167 同款）。
+
+    改成问控件自己：**它有没有东西可选**。`flash` 的颜色下拉框有真实选项 ⇒ 放行；
+    `flash` 的 `image_style_combo` 空库时 `count()==0` ⇒ 照样逮住。
+    同一条判据，范围自己就对了。
+    """
+    if combo.count() == 0:
+        return True
+    return all(combo.itemText(i).strip() in PLACEHOLDER_ITEMS
+               for i in range(combo.count()))
+
+
+def _combo_driving(button, page):
+    """这颗按钮试听的是哪个下拉框选中的东西；找不到就返回 None。
+
+    从按钮往上走，第一个**恰好含一个下拉框**的祖先就是它那一行。
+    ⚠ 上界是页面：`flash` 的预览按钮住在底部操作栏（0 个下拉框），
+    再往上就是整页（4 个）—— 永远凑不出"恰好一个"，于是**不配对、不误报**。
+    这个上界不是为了省事，它就是"这颗按钮到底受不受风格库支配"的判据本身。
+    """
+    from PySide6.QtWidgets import QComboBox
+
+    anc = button.parentWidget()
+    for _ in range(8):
+        if anc is None:
+            return None
+        combos = anc.findChildren(QComboBox)
+        if len(combos) == 1:
+            return combos[0]
+        if anc is page:
+            return None
+        anc = anc.parentWidget()
+    return None
+
+
+def _build_empty_page(filename, qapp, monkeypatch):
+    """离屏建一页，并把它的"我空不空"全部按成 True。"""
+    from PySide6.QtCore import Qt
+
+    from _audit_neutralize import block_modal_dialogs
+    from _audit_sandbox import sandbox_external_writes
+
+    sandbox_external_writes(verbose=False)
+    block_modal_dialogs()
+    cls = _page_class(_module_of(filename))
+    page = cls()
+    page.setAttribute(Qt.WA_DontShowOnScreen, True)
+    patched = 0
+    for name in ("_library_is_empty", "_image_library_is_empty",
+                 "_audio_library_is_empty"):
+        if hasattr(page, name):
+            monkeypatch.setattr(page, name, lambda: True)
+            patched += 1
+    assert patched, f"{filename} 一个「我空不空」的钩子都没有 —— 判据没法造空库态"
+    getattr(page, EMPTY_SYNC[filename])()
+    qapp.processEvents()
+    return page
+
+
+def _enabled_dead_controls(page):
+    """空库时**点了也不会有反应**、却仍然可点的控件。
+
+    通用扫描（下拉框 + 试听类按钮），不读页面自己报的清单 ——
+    ⭐ 手抄清单是会扩大的盲区：页面加了一排新控件，清单不会自己跟上，
+    而"清单里的都置灰了"读起来跟"全都置灰了"一模一样。
+    """
+    from PySide6.QtWidgets import QAbstractButton, QComboBox
+
+    combos = [c for c in page.findChildren(QComboBox)
+              if c.isEnabled() and _combo_has_nothing_to_pick(c)]
+    buttons = []
+    for b in page.findChildren(QAbstractButton):
+        if not b.isEnabled() or not any(w in b.text() for w in DEAD_BUTTON_WORDS):
+            continue
+        driver = _combo_driving(b, page)
+        if driver is not None and _combo_has_nothing_to_pick(driver):
+            buttons.append(b)
+    return combos, buttons
+
+
+@pytest.mark.parametrize("filename", sorted(EMPTY_SYNC))
+def test_empty_library_leaves_no_control_that_does_nothing(filename, qapp,
+                                                           monkeypatch):
+    """⭐⭐ RN-179：库是空的时候，不许留下一堆点了没反应的控件。
+
+    外审 **21 发 / 跨 9 页**，原话是「误以为功能损坏 / 界面卡死」。
+    实测原状（2026-08-22）：
+
+        switch_weapon   下拉框 37/39 可点   试听按钮 39/39 可点
+        gun_sound       15/18               18/18
+        special_sound   14/18               18/18
+
+    点下去什么都不会发生。⭐ **一个可点却什么都不做的控件，比一个置灰的控件更糟** ——
+    置灰说的是「你还没准备好」，可点却无反应说的是「这软件坏了」。
+
+    与 RN-040/047「试听静默」同族但**轴不同**：那次问的是响不响，
+    这次问的是**该不该能点**。修好了响不响，不等于修好了该不该能点。
+
+    ⚠ 扫描是**通用**的（所有下拉框 + 所有试听类按钮），动作才是各页显式给的。
+    这么分是有理由的：如果判据也只看各页自己报的清单，那么页面新加一排控件时
+    判据会**跟着一起瞎**，而它报出来的绿和真的全绿长得一模一样。
+    """
+    page = _build_empty_page(filename, qapp, monkeypatch)
+    try:
+        combos, buttons = _enabled_dead_controls(page)
+        assert not combos and not buttons, (
+            f"{filename} 空库时还有 {len(combos)} 个下拉框、{len(buttons)} 颗试听类按钮"
+            f"可以点：下拉框如 {[c.objectName() or '(无名)' for c in combos[:3]]}，"
+            f"按钮如 {[b.text() for b in buttons[:3]]} —— "
+            "点下去什么都不会发生（RN-179）。")
+
+        # ⭐ 反面：**素材补上了就得还回去**。少了这一条，"把控件全部 setEnabled(False)"
+        # 也能过关，而那是一次静默的功能丢失（同 RN-153「借了要还」那条）。
+        #
+        # ⚠ 取样不能写成"页面上所有灰着的下拉框" —— 第一版就是这么写的，当场把
+        # `flash` 上**本来就因为别的原因是灰的**那 2 个也算成了受害者，
+        # 于是共用件按约定把它们还原成"原来的灰"，判据却判成了"借了不还"。
+        # ⭐ **判据分不清"谁弄灰的"，就不能拿"现在是灰的"当证据。**
+        # 改成自己造一次 A/B：明确挑一个**亮的**下拉框，清空 → 同步（应变灰）→
+        # 加一项 → 同步（应变亮）。两头都是判据自己设的，不用猜。
+        from PySide6.QtWidgets import QComboBox
+
+        probe = next(iter(page.findChildren(QComboBox)), None)
+        assert probe is not None, (
+            f"{filename} 上一个下拉框都没有 —— 造不出 A/B，这条反面在空转。")
+        # 先把它推回一个**干净的亮着的起点**：给一项让共用件把它还原、
+        # 再显式置亮。这样接下来两步的因果只可能来自这条机制本身。
+        probe.addItem("判据造的一个风格")
+        getattr(page, EMPTY_SYNC[filename])()
+        probe.setEnabled(True)
+        qapp.processEvents()
+
+        probe.clear()
+        getattr(page, EMPTY_SYNC[filename])()
+        qapp.processEvents()
+        assert not probe.isEnabled(), (
+            f"{filename}：把一个下拉框清空之后它还是亮的 —— "
+            "置灰这一步没在看这个控件（RN-179）。")
+
+        probe.addItem("判据造的一个风格")
+        getattr(page, EMPTY_SYNC[filename])()
+        qapp.processEvents()
+        assert probe.isEnabled(), (
+            f"{filename}：下拉框有风格之后仍然是灰的 —— "
+            "借了不还，用户再也选不了（RN-179）。")
+    finally:
+        page.deleteLater()
+
+
+@pytest.mark.parametrize("filename", sorted(EMPTY_SYNC))
+def test_the_empty_state_always_keeps_a_way_to_put_the_files_in(
+        filename, qapp, monkeypatch):
+    """⭐⭐ RN-153 的血教训要**量行为**，不能靠 AST 找一个函数名。
+
+    原来守这条的是上面那条 AST 判据（「共用件里必须出现 `configure_extra`」）。
+    RN-180 之后它变成了**假绿**，而且假得很隐蔽：CTA 搬进引导卡以后，
+    第二步（打开资源目录）成了底栏那颗**没被碰过**的主按钮，
+    共用件根本不需要再动 extra —— 可 `configure_extra` 这个名字**仍然出现在源码里**
+    （用来把「新建风格」收掉），于是那条 AST 判据照样绿。
+    回退验证把 `configure_extra(keep_text, ...)` 换成 `pass`，它一声不吭。
+
+    ⭐ **「源码里出现过这个调用」和「用户真的还有那条路」是两回事。**
+    这条改成直接问屏幕：空库时页面上必须存在一颗**看得见、点得动**、
+    能打开资源目录的按钮。
+
+    ⚠ RN-153 那次的原话值得再抄一遍 ——「文案提示『放进资源目录』却没有打开目录的
+    入口，从社区下载后卡在找路径」。⭐ 一条三步的路，只把第一步做顺是走不通的。
+    """
+    from PySide6.QtWidgets import QAbstractButton
+
+    page = _build_empty_page(filename, qapp, monkeypatch)
+    try:
+        if filename == "flash_page.py":
+            tabs = page.tab_widget
+            index = next((i for i in range(tabs.count())
+                          if tabs.tabText(i) == "图片设置"), None)
+            tabs.setCurrentIndex(index)
+            page._sync_action_bar()
+            qapp.processEvents()
+
+        openers = [b.text().strip() for b in page.findChildren(QAbstractButton)
+                   if not b.isHidden() and b.isEnabled()
+                   and "打开" in b.text() and (
+                       "资源" in b.text() or "文件夹" in b.text() or "目录" in b.text())]
+        assert openers, (
+            f"{filename} 空库时没有任何一颗看得见又点得动的「打开…资源/文件夹」按钮 —— "
+            "文案让用户把素材放进资源目录，却没有入口能打开那个目录（RN-153）。")
+    finally:
+        page.deleteLater()
+
+
+# ==================================================== 3. 第二步不许丢
+
+@pytest.mark.parametrize("filename", sorted(EMPTY_SYNC))
+def test_the_first_step_is_in_the_card_not_the_bottom_bar(filename, qapp,
+                                                          monkeypatch):
+    """⭐⭐ RN-180：空库时的第一步必须在**空白发生的地方**，不在页尾。
+
+    外审 **20 发 / 跨 9 页**：「核心流程倒置」「玩家会在满屏不可用的控件里乱点受挫」。
+    RN-153/165 把社区 CTA 放进的正是底部操作栏。
+
+    ⭐ 而 CLAUDE.md 里早就写着这条 ——「**解释性文字放在困惑发生的位置之前，
+    不是页尾；放页尾 = 没放**」，是做官网那一轮拿两轮外审换来的。
+    我自己写下的教训自己没照做，因为**它归档在「网站」小节里**，而我在做桌面版。
+    ⇒ **教训是按场景归档的，而缺陷不认场景。**
+
+    判据同时守两头（只守一头就会被"两边都放"蒙混过去 —— 那正是 RN-171 在
+    `kill_icon` 上判掉的「同一个行动在页面出现 3 次」）：
+      1. 引导卡**看得见**，而且卡上那颗按钮就是 CTA；
+      2. 底栏**任何一颗**按钮都不许再叫这个名字。
+    """
+    page = _build_empty_page(filename, qapp, monkeypatch)
+    try:
+        # ⚠ `flash` 的"空"是**按页签**算的（图片库 / 音频库各一份），引导只插在
+        # 那两个资源页签上 —— 这是 RN-153 就定下的、由
+        # `test_flash_only_guides_on_the_two_asset_tabs` 锁着的行为，不是缺陷。
+        # 判据得先切到资源页签，否则量的是"基础设置页签上没有引导"，那当然没有。
+        if filename == "flash_page.py":
+            tabs = page.tab_widget
+            index = next((i for i in range(tabs.count())
+                          if tabs.tabText(i) == "图片设置"), None)
+            assert index is not None, "flash 的「图片设置」页签不见了 —— 判据锚点失效"
+            tabs.setCurrentIndex(index)
+            page._sync_action_bar()
+            qapp.processEvents()
+
+        callout = getattr(page, "empty_callout", None)
+        assert callout is not None, (
+            f"{filename} 没有空库引导卡 —— 第一步还留在底栏（RN-180）")
+        # ⚠ 用 `isHidden()` 不用 `isVisible()`：页面是离屏建的，
+        # 离屏窗口的子控件 `isVisible()` 恒为 False，拿它断言等于判据空转。
+        assert not callout.frame.isHidden(), (
+            f"{filename} 空库时引导卡没有亮起来 —— 引导等于没做")
+        cta = callout.button.text().strip()
+        assert cta, f"{filename} 引导卡上那颗按钮没有文案"
+
+        bar = page.action_bar
+        bottom = [b.text().strip() for b in
+                  (bar.primary_btn, bar.secondary_btn, bar.extra_btn)
+                  if not b.isHidden()]
+        assert cta not in bottom, (
+            f"{filename} 底栏还有一颗「{cta}」（底栏现有：{bottom}）—— "
+            "同一个行动同时出现在卡里和页尾，用户不知道该点哪一个（RN-171/RN-180）。")
+    finally:
+        page.deleteLater()
+
+
+@pytest.mark.parametrize("filename", sorted(EMPTY_SYNC))
+def test_the_empty_state_has_exactly_one_purple_button(filename, qapp,
+                                                       monkeypatch):
+    """⭐⭐ RN-186：空库时全页只许有一颗主按钮，就是引导卡上那颗。
+
+    外审 3/3（多页）：「同时存在两个高亮紫色主按钮」「首步动作焦点冲突」
+    「不知先点哪个」。实测确认：引导卡的「去社区拿一套…」和底栏的
+    「打开音频资源」**都是 `primaryButton`**。
+
+    ⭐⭐ 本仓早就判过这件事 —— RN-139 的原话就是
+    「**两颗紫的等于零颗 ——「主」是相对的**」，而且还专门留了一条棘轮
+    `test_there_is_exactly_one_primary_button`。它没逮住这一次，
+    因为**它只盯 `basic` 一页**。
+
+    ⇒ ⭐ **判据的页面范围就是它的分母。** 一条只保一页的规则，
+      在登记册上、在注释里、在我脑子里都写着"这条规则在生效"，
+      而它实际覆盖 1/28。这跟"没有这条规则"的区别，只在出事的那一页上才看得出来。
+
+    ⚠ 只断言**空库这一态**，不做全站棘轮：本仓有页面刻意让同一个动作在卡里和
+    底栏各出现一次（RN-078 的 viewmodel「保存到CFG」），那是判过的设计，
+    一条全站铁规会当场诬告它。全站口径记在 RN-188，单独判。
+    """
+    from PySide6.QtWidgets import QPushButton
+
+    page = _build_empty_page(filename, qapp, monkeypatch)
+    try:
+        if filename == "flash_page.py":
+            tabs = page.tab_widget
+            index = next((i for i in range(tabs.count())
+                          if tabs.tabText(i) == "图片设置"), None)
+            tabs.setCurrentIndex(index)
+            page._sync_action_bar()
+            qapp.processEvents()
+
+        purple = [b.text().strip() for b in page.findChildren(QPushButton)
+                  if b.objectName() == "primaryButton" and not b.isHidden()]
+        assert len(purple) == 1, (
+            f"{filename} 空库时有 {len(purple)} 颗主按钮：{purple} —— "
+            "两颗紫的等于零颗（RN-139/RN-186）。"
+            "此刻唯一该抢眼的是引导卡上那颗「去社区拿一套…」。")
+        assert "社区" in purple[0], (
+            f"{filename} 空库时唯一那颗主按钮是「{purple[0]}」，不是去社区拿素材 —— "
+            "主按钮该指向第一步")
+    finally:
+        page.deleteLater()
 
 
 def test_kill_icon_empty_state_offers_exactly_one_call_to_action(qapp, monkeypatch):
