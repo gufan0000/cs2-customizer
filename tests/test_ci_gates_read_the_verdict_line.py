@@ -34,7 +34,6 @@ GATE = REPO / ".github" / "verdict.ps1"
 #: 处置待用户拍板 —— 在那之前，这张表让「跳过它们」这件事**是被断言的**，
 #: 而不是悄悄发生的。
 KNOWN_UNPARSEABLE = (
-    "bootstrap_tutorial_content.py",
     "capture_web_tutorial_screenshots.py",
 )
 

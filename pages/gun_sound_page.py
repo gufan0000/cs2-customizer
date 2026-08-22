@@ -367,9 +367,14 @@ class GunSoundPage(QWidget):
         tuning_layout.addWidget(duck_value_label, 0, 2)
 
         duration_caption = QLabel("静音覆盖:")
+        # ⚠ RN-254：这句原来写的是「连发武器往短了调」—— 而**连发武器在这一页
+        # 根本选不到**（`FULL_AUTO_GUN_SOUND_WEAPON_TYPES` 把 17 把全自动枪排除在外，
+        # 见 `core/gun_sound_profiles.py:363`）。⇒ 一句教用户去调一个他找不到的东西的话。
+        # 属 RN-167 族（文案点名了这一页不存在的东西），2026-08-23 改成按**射速**说，
+        # 那对这一页真正选得到的枪（tec9 / glock 这类点得快的手枪）成立。
         duration_caption.setToolTip(
             "每次开火后压住原声的时长。太短会听到原声的尾巴，"
-            "太长会盖掉下一枪；连发武器往短了调。")
+            "太长会盖掉下一枪；点得快的枪往短了调。")
         tuning_layout.addWidget(duration_caption, 0, 3)
 
         duration_slider = QSlider(Qt.Horizontal)

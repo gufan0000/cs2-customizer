@@ -77,7 +77,6 @@ EXPERT_ON_PURPOSE = {
 #: ⚠ **不能默默跳过**：默默跳过就是给"把文件弄坏"开了一条绕过判据的路。
 #: 所以这里正面断言"扫不动的就只有这两个"，多一个就红。
 _UP091_UNPARSEABLE = frozenset({
-    "bootstrap_tutorial_content.py",
     "capture_web_tutorial_screenshots.py",
 })
 

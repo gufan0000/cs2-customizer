@@ -105,3 +105,50 @@ def test_fast_fire_profiles_have_peak_ducking(gun_type: str):
 
     assert plan.peak_ratio <= plan.sustain_ratio
     assert plan.peak_ms > 0
+
+
+# ================================================ RN-254：页面文案不许点名选不到的枪
+
+#: 这一页把 17 把全自动枪排除在外（`FULL_AUTO_GUN_SOUND_WEAPON_TYPES`），
+#: 所以页面上的**控件文案**不许再教用户去调它们。
+#: ⚠ 2026-08-23 实测：静音覆盖那颗滑块的 tooltip 写着「连发武器往短了调」——
+#: 而连发武器在这一页根本选不到。属 RN-167 族（文案点名了这一页不存在的东西），
+#: 而 RN-167 那条棘轮只查**按钮名**，看不见这种「点名一类武器」的写法。
+#: ⭐ **一个教训只修在它被发现的那条轴上，等于只修了一份副本。**
+_CLASSES_NOT_ON_THIS_PAGE = ("连发", "全自动", "步枪", "冲锋枪", "机枪")
+
+#: ⛔ 帮助面板**不在这条判据的管辖里**，那是有意的：
+#: `ui_help_panel` 的 gun_sound 段落写着「连发武器（步枪、冲锋枪、机枪）暂未开放」——
+#: 那是**明确说明它没有**，正是玩家需要知道的。判据要防的是「教你去调它」，
+#: 不是「告诉你没有它」。⇒ 只扫页面自己的控件文案。
+
+
+def test_the_page_does_not_name_weapon_classes_it_cannot_select():
+    import ast
+    from pathlib import Path
+
+    src = Path(__file__).resolve().parent.parent / "pages" / "gun_sound_page.py"
+    tree = ast.parse(src.read_text(encoding="utf-8"))
+
+    offenders = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
+            continue
+        hit = [w for w in _CLASSES_NOT_ON_THIS_PAGE if w in node.value]
+        if hit:
+            offenders.append((node.lineno, hit, node.value[:60]))
+
+    assert not offenders, (
+        "gun_sound 页的文案点名了这一页选不到的武器类：\n"
+        + "\n".join(f"  :{ln} {hit} -> {text!r}" for ln, hit, text in offenders)
+        + "\n这一页只开放半自动/单发武器；要么按射速说（「点得快的枪」），"
+          "要么明确说「暂未开放」，别教用户去调一个他找不到的东西。"
+    )
+
+
+def test_that_judge_is_not_vacuous():
+    """空转守卫：先证明这条判据看得见那句原文。"""
+    bad = "太长会盖掉下一枪；连发武器往短了调。"
+    assert [w for w in _CLASSES_NOT_ON_THIS_PAGE if w in bad] == ["连发"], (
+        "词表已经认不出 RN-254 那句原话了 —— 这条判据现在是空转的。"
+    )

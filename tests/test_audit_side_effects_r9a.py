@@ -59,7 +59,6 @@ EXEMPT = {
 #: 本来就跑不起来的脚本（既有问题，与 UP-090 无关，另记 UP-091）。
 #: 列在这里是为了让本测试的失败信号保持干净，不是为了掩盖它们。
 BROKEN_ALREADY = {
-    "bootstrap_tutorial_content.py",
     "capture_web_tutorial_screenshots.py",
 }
 

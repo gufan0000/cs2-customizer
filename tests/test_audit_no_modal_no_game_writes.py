@@ -28,6 +28,7 @@
 from __future__ import annotations
 
 import ast
+import re
 import sys
 from pathlib import Path
 
@@ -37,10 +38,11 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(REPO / "scripts"))
 
-#: UP-091：这两个文件损坏到 `py_compile` 都过不去（基线导入事故，进来时就是坏的），
-#: 处置要用户拍板。它们是**唯一**允许被 lint 排除的东西，且只准按文件名排除。
-_UP091 = ("scripts/bootstrap_tutorial_content.py",
-          "scripts/capture_web_tutorial_screenshots.py")
+#: UP-091：损坏到 `py_compile` 都过不去的历史文件（基线导入事故，进来时就是坏的）。
+#: 它们是**唯一**允许被 lint 排除的东西，且只准按文件名排除。
+#: 2026-08-23 处置：`bootstrap_tutorial_content.py` 已删（253/654 行不可逆乱码），
+#: 只剩这一个（只坏 13 行、且证明跑通过，去留取决于 RN-199）。
+_UP091 = ("scripts/capture_web_tutorial_screenshots.py",)
 
 
 # ==================================================== 一、配置层（RN-070）
@@ -62,9 +64,32 @@ def test_lint_does_not_blindfold_the_whole_scripts_directory():
         "ruff.toml 又把整个 scripts/ 排除了（RN-070）。"
         f"要排除的话只准按文件名排除那两个已知损坏的：{_UP091}")
     for name in _UP091:
+        if not (REPO / name).exists():
+            continue        # 删掉了就不该再要求 ruff.toml 替它留一行
         assert name in text, (
             f"{name} 是 UP-091 的已知损坏文件（py_compile 都过不去），"
             "un-exclude scripts/ 之后必须按文件名单独排除，否则 lint 会被语法错刷屏")
+
+    # ⭐ 反面：ruff.toml 不许替**已经不存在的文件**留排除行。
+    # 这条是 2026-08-23 删 `bootstrap_tutorial_content.py` 时补的：
+    # 原来那条断言只查「名字在不在 ruff.toml 里」，于是文件删掉之后，
+    # 那一行排除会**永远留着**，而它锁的是一个幽灵 —— 既不报错，也不再保护任何东西。
+    # ⚠ 同一趟还发现 `scripts/revert_verify.py` 的一个回退断点就锚在那一行上，
+    # 删掉文件而不动它，断点会当场变成假绿。
+    # ⚠ 只查**点名到具体文件**的那些。`[lint.per-file-ignores]` 里的
+    # `"scripts/*.py"` 是通配，天然不对应某一个文件（第一版没排除它，当场假红）。
+    excluded_files = [n for n in re.findall(r'"(scripts/[^"]+\.py)"', text)
+                      if "*" not in n and "?" not in n]
+    # ⛔ 这里**不许**写 `assert excluded_files`（「名单空了就说明判据空转」）。
+    # 写过一次，开源版当场红：那边把这些损坏脚本整个裁掉了，
+    # 排除名单**本来就该是空的** —— 空不是空转，是正确状态。
+    # ⭐ 「照闭源版文件集写死的断言，在子集仓里不是『更严』，是『错』」
+    #   （批 7 的 KNOWN_UNPARSEABLE 同款，一周内第二次）。
+    # 真正防空转的是上面那个 `_UP091` 循环：**文件还在就必须被点名**。
+    for name in excluded_files:
+        assert (REPO / name).exists(), (
+            f"ruff.toml 点名了一个不存在的文件：{name} —— 把这一行删掉。"
+            "留着它等于给一个幽灵免检，还会让锚在这一行上的回退断点变成假绿。")
 
 
 def test_every_script_that_uses_sys_imports_it():

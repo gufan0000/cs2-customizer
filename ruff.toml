@@ -15,10 +15,11 @@ exclude = [
     # `ruff check .` 当 lint 门禁，它一个字都没看。里面藏着一条 F821
     # （`ui_perf_probe` 用 `sys` 没 import，NameError 被 `except: pass` 吞掉，
     # 整块 UTF-8 兜底恒失效），一秒就能查出来的东西躺了很久。
-    # ⇒ 现在只排除 UP-091 那两个**语法都不合法**的历史损坏文件（ruff 无法解析，
-    #    会刷 2288 条 invalid-syntax 把真信号盖掉）。它们的处置待用户拍板。
-    "scripts/bootstrap_tutorial_content.py",
-    "scripts/capture_web_tutorial_screenshots.py",
+    # ⇒ 开源版这里**一个文件都不排除**：那些语法不合法的历史损坏脚本
+    #    （教程内容生成器 / 教程截图脚本）不属于开源子集，已随裁剪整体移除。
+    # ⚠ 不许在这里替一个不存在的文件留排除行 ——
+    #    判据 `test_lint_does_not_blindfold_the_whole_scripts_directory` 会当场红。
+    #    一张只增不减的排除名单会慢慢变成免检区。
 ]
 
 [lint]

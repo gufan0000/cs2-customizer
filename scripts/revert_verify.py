@@ -2330,8 +2330,11 @@ REVERTS = [
     Revert(
         "RN", "lint 又把整个 scripts/ 蒙住",
         "ruff.toml",
-        '    "scripts/bootstrap_tutorial_content.py",',
-        '    "scripts",',
+        # ⚠ 锚在 `exclude = [` 上，不锚在某个被排除的文件名上 ——
+        # 开源版的排除清单是**空的**（那些损坏脚本不属于开源子集），
+        # 锚在文件名上会让这条断点在开源仓找不到锚点（2026-08-23 实测，同步验收门当场红）。
+        "exclude = [",
+        'exclude = [\n    "scripts",',
         "tests/test_audit_no_modal_no_game_writes.py::"
         "test_lint_does_not_blindfold_the_whole_scripts_directory",
         "RN-070：`exclude = [..., \"scripts\"]` 让 64 支 / 19226 行工装代码零 lint，"
@@ -3463,6 +3466,43 @@ REVERTS = [
         "test_the_local_gate_does_not_reimplement_the_verdict_rule",
         "裁定规则在 Python 侧只准有一份。抄出来的那份最容易漂：CI 取**最后一条**"
         "匹配行，本机若取第一条，两道门在「审计中途重跑过」时会给出不同结论",
+    ),
+    Revert(
+        "RN", "枪声页文案又去教用户调连发武器",
+        "pages/gun_sound_page.py",
+        "太长会盖掉下一枪；点得快的枪往短了调。",
+        "太长会盖掉下一枪；连发武器往短了调。",
+        "tests/test_gun_sound_profiles.py::"
+        "test_the_page_does_not_name_weapon_classes_it_cannot_select",
+        "RN-254：这一页把 17 把全自动枪排除在外，而静音覆盖那颗滑块的 tooltip "
+        "写着「连发武器往短了调」—— 教用户去调一个他在这一页根本选不到的东西。"
+        "⚠ RN-167 那条棘轮只查**按钮名**，看不见「点名一类武器」这种写法",
+    ),
+    Revert(
+        "RN", "ruff.toml 替一个已删的文件留排除行",
+        "ruff.toml",
+        # 同上：锚 `exclude = [`，在两个仓里都存在。
+        "exclude = [",
+        'exclude = [\n    "scripts/bootstrap_tutorial_content.py",',
+        "tests/test_audit_no_modal_no_game_writes.py::"
+        "test_lint_does_not_blindfold_the_whole_scripts_directory",
+        "UP-091：`bootstrap_tutorial_content.py` 已于 2026-08-23 删除。"
+        "排除行留着不报错、也不再保护任何东西 —— 而**这条回退断点自己就锚在那一行上**，"
+        "删文件不动它就会当场变成假绿。⭐ 一张只增不减的排除名单会慢慢变成免检区",
+    ),
+    Revert(
+        "RN", "产品代码点名一条还没结的 RN，登记册那一格没人管",
+        "pages/gun_sound_page.py",
+        "# 属 RN-167 族（文案点名了这一页不存在的东西）",
+        "# 属 RN-199 族（文案点名了这一页不存在的东西）",
+        "tests/test_renovation_registry_does_not_rot.py::"
+        "test_product_code_that_names_an_rn_is_not_still_open",
+        "RN-198：登记册是全工程唯一一个**没有棘轮**的真相源。一次对账查出 **14 条**"
+        "已经做完却还挂着「新立/待裁定」的条目。这个断点模拟的是其中一种发现路径："
+        "产品代码里点着某条 RN 的名，而登记册里它还没结。"
+        "⚠ 登记册在另一个仓（一个纯文档仓），所以这条判据的**数据检查**在 CI 与"
+        "开源版里 skip（逻辑守卫照跑）；它守的是**本机提交前**那一刻，"
+        "而腐烂恰恰就发生在那一刻",
     ),
     # ⛔⛔ 新断点一律加在**这一行之上**。
     #
