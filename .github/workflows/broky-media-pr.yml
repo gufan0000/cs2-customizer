@@ -7,27 +7,27 @@ on:
     paths:
       - .github/workflows/broky-media-pr.yml
       - tmp/fetch_broky_media.sh
+      - tmp/fetch_broky_clips.sh
 
 permissions:
   contents: read
 
 jobs:
-  fetch-media:
+  fetch-clips:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - name: Fetch public media
+      - name: Fetch public Twitch clips
         shell: bash
-        run: bash tmp/fetch_broky_media.sh
-      - name: Upload media bundle
+        run: bash tmp/fetch_broky_clips.sh
+      - name: Upload clip bundle
         uses: actions/upload-artifact@v4
         with:
-          name: broky-media-pr
+          name: broky-clips-pr
           path: |
-            assets
-            videos
-            failed.txt
+            clips
+            clip_failed.txt
           if-no-files-found: warn
           compression-level: 0
           retention-days: 1
