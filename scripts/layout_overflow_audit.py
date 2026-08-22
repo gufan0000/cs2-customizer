@@ -460,7 +460,24 @@ KNOWN_COMPACT_DEBT: dict[tuple[str, str], tuple[int, str]] = {
 def _split_known(hits, kind, known=None):
     """把命中拆成「在册的存量债」和「新的」，并挑出可以收紧的。
 
-    返回 (新命中, 变坏的, 可收紧的)。三样都会打印，三样都让门变红。
+    返回 (新命中, 变坏的, 可收紧的)。三样都打印，**但只有前两样让门变红**。
+
+    ## ⚠ 为什么第三样（可收紧的）不红 —— 这是 CI 逮出来的
+
+    第一版让三样都红，理由写得也对：只判「变没变坏」的棘轮，在缺陷被修好之后
+    会永远停在旧数上，从「守着一条线」退化成「记着一个古董」。
+
+    **可它在 CI 上当场把整道门判红了**（2026-08-22 公开仓 `e265ab1`）：
+    `kill_sound` / `kill_voice` / `reload_sound` / `switch_weapon` 四条纵向债
+    **在 CI 那台机器上根本不复现** —— 字体度量不同，同一份代码量出来的像素就不同。
+
+    ⭐⭐ **一个按像素写死的棘轮，是一台机器的事实。** 「不再命中」既可能是
+    「缺陷修好了」，也可能只是「这台机器渲染得不一样」，而判据分不出这两者 ——
+    分不出就不该拿它去红。
+
+    ⇒ 现在它是**上限**语义：超过在册数、或冒出新的一页 ⇒ 红；不命中 ⇒ 打印提醒。
+    「别让它变成古董」这件事改由收工清单里的人工复核管（每次报告都会把在册清单
+    整个打出来，不会静默）。
 
     ⚠ `known` 要由调用方给：这张表记的是**紧凑档**的事实，完整档拿它对账
     会得到「六条全都不再命中、请收紧」的假红 —— 第一版就是这么翻车的。
@@ -739,8 +756,10 @@ def main():
     else:
         print("  ✓ 无水平溢出（在册存量债除外，见下）")
     if of_loose:
-        print("  ! 这些在册的横向存量债已经不再命中，请把它们从 "
-              "KNOWN_COMPACT_DEBT 里删掉（棘轮只许收紧）: "
+        # ⚠ 提醒，**不判红** —— 见 `_split_known` 的说明：不命中既可能是修好了，
+        # 也可能只是这台机器渲染得不一样，判据分不出这两者。
+        print("  ! 这些在册的横向存量债在**这台机器上**不再命中，请人工确认是"
+              "「修好了」还是「环境不同」，前者请从 KNOWN_COMPACT_DEBT 删掉: "
               + ", ".join(pid for pid, _ in of_loose))
 
     # 按钮文案截断:横向溢出检测抓不到(按钮被钉死时布局"放得下",只是文字被裁)
@@ -786,8 +805,9 @@ def main():
     else:
         print("  ✓ 无纵向裁切（在册存量债除外，见下）")
     if cl_loose:
-        print("  ! 这些在册的纵向存量债已经不再命中，请把它们从 "
-              "KNOWN_COMPACT_DEBT 里删掉（棘轮只许收紧）: "
+        # ⚠ 同上：提醒，不判红。CI 上这四页就是不复现的（字体度量不同）。
+        print("  ! 这些在册的纵向存量债在**这台机器上**不再命中，请人工确认是"
+              "「修好了」还是「环境不同」，前者请从 KNOWN_COMPACT_DEBT 删掉: "
               + ", ".join(pid for pid, _ in cl_loose))
 
     if debt and (page_overflow or page_clip):
@@ -833,9 +853,11 @@ def main():
     win.deleteLater()
     app.processEvents()
     # RN-196：在册的整页存量债不让门变红（它们要改产品版面，得走裁定 + 外审），
-    # 但**变坏、新增、以及"已经不该在册"三种情况都红**。
-    return 1 if (blocking_overflow or of_fresh or of_worse or of_loose
-                 or blocking_clip or cl_fresh or cl_worse or cl_loose
+    # 但**变坏和新增**照样红。
+    # ⚠ "已经不该在册"那一样**不红** —— 第一版让它红，CI 当场把整道门判红：
+    # 那四条纵向债在 CI 的字体度量下根本不复现。像素级棘轮是一台机器的事实。
+    return 1 if (blocking_overflow or of_fresh or of_worse
+                 or blocking_clip or cl_fresh or cl_worse
                  or elided or uneven or nested_hidden) else 0
 
 
