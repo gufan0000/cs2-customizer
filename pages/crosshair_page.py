@@ -15,7 +15,6 @@ from widgets.page_header import PageHeader
 from widgets.page_action_bar import PageActionBar
 import os
 import json
-from ui_style_applier import keep_single_line
 
 
 #: 样式的中文名——**这是本文件里唯一一份**。
@@ -267,7 +266,22 @@ class CrosshairPage(QWidget):
         # 用 add_title_action 追加——它加在 stretch 之后，与原来的顺序一致。
         header = PageHeader(
             "准心设置",
-            description="调准心的形状、颜色、动效和击杀联动。改完点右下角「绘制准心」写进游戏。",
+            # ⚠⚠ RN-174：这里原来写「改完点右下角「绘制准心」写进游戏。」——
+            # **三个分句全假**：
+            #   ① 「改完点」：参数每改一项，各自的槽里当场 save_config()；
+            #   ② 「写进游戏」：那颗按钮不写任何游戏文件，它打开的是 30×30 手绘板；
+            #   ③ 「「绘制准心」」：画过之后底栏主按钮就叫「导出准心」了。
+            # 外审 5/6 票报「找不到保存 / 应用入口」—— **现象是真的，成因全反**：
+            # 这一页压根没有"应用入口"这个东西。
+            # ⭐⭐ 票数衡量的是「玩家困惑是真的」，不是「外审对成因的归因是对的」。
+            # ⚠ 原建议「改名为『应用到游戏』」会变成一句**新的**假话（它不写游戏）。
+            # ⭐ 文案不许替代码编一个借口。
+            # ⚠⚠ 第一版改成「改哪一项当场就生效——…」，**外审当场指出它还是半真话**
+            # （4/6 判高）：「总开关默认关闭，玩家调完参数直接进游戏会发现没效果」。
+            # 确实如此 —— `crosshair_enabled` 关着的时候，"当场就生效"是假的。
+            # ⭐ 我把三句假话改成一句真话时，漏掉了那句真话**自己的前提**。
+            description="调准心的形状、颜色、动效和击杀联动。总开关打开后，改哪一项当场就生效——"
+                        "准心是本软件画在画面上的覆盖层，不改动游戏的任何配置文件。",
             title_font_size=None,
             spacing=12,
             title_spacing=None,  # 沿用 Qt 默认间距：写死 10 会让右上角的 "?" 挪 2px
@@ -281,16 +295,18 @@ class CrosshairPage(QWidget):
         #     属于打补丁式的无效引导」
         # ⭐ **指路是症状，不是修法。** 开关已挪到状态卡第一行最左边，
         # 这句指路随之删掉 —— 留着既是错的，也是那个病的证据。
-        hint_label = QLabel("调完直接进游戏看效果")
-        hint_label.setObjectName("hintLabel")
-        # RN-121：标题行右侧的一行提示，不许折行。
-        # 实测它只拿到 120px（需要 156px），于是断在「统 / 一」中间 ——
-        # 而同一行还空着 900 多 px。⭐ 折行的 QLabel 在横排里会自己把宽度报小，
-        # 布局就照那个窄宽给它：**折行往往不是"空间不够"，是"我说我能折行"。**
-        # ⚠ 只 `setWordWrap(False)` 是**没用的** —— `fix_text_display()` 会在页面
-        # 构造完之后把它无条件改回 True（运行时打桩逮到的）。必须走 keep_single_line。
-        keep_single_line(hint_label)
-        header.add_title_action(hint_label)
+        # ⚠⚠ RN-174：这条小字原文是「调完直接进游戏看效果」——
+        # 它和页头描述在说**同一件事**，而且和第一版页头犯**同一个错**：
+        # 总开关关着的时候，"调完直接进游戏就看到"是假的。
+        # ⭐ 外审同一轮报「顶部胶囊栏、各卡片副标题、底部栏三处重复堆叠，
+        #   信息冗余严重且分散操作焦点」—— 这条正是那堆重复里的一条。
+        # ⇒ 删掉，把带前提的那一句话**只放一处**（页头 description）。
+        # ⭐ 同一件事说三遍，任何一遍变假都不会有人发现 —— 因为没人知道有三遍。
+        #
+        # ⚠ 连带删掉的 RN-121 那条 `keep_single_line(hint_label)`：它防的是
+        #   「这条小字在标题行里折行、把整条标题行撑高」。标签没了，那个风险
+        #   也就没了 —— 但**判据里那一格必须跟着删掉，不许留着空转**
+        #   （`tests/test_single_line_hints_stay_single_line.py`）。
 
         self.page_lead_label = header.description_label
         main_layout.addWidget(header)
@@ -449,13 +465,46 @@ class CrosshairPage(QWidget):
         kill_effect_value = str(getattr(config, "crosshair_kill_effect", "none") or "none")
         custom_points = len(getattr(config, "crosshair_custom_data", []) or [])
 
-        self.action_bar.configure_secondary("导入准心", self._import_crosshair, visible=True)
-        if custom_points > 0:
-            self.action_bar.configure_primary("导出准心", self._export_crosshair, visible=True)
-        else:
-            self.action_bar.configure_primary("绘制准心", self._open_custom_editor, visible=True)
+        # ⚠⚠ RN-174-B / C：这里原来是
+        #     有数据 ⇒ 主按钮「导出准心」；没数据 ⇒ 主按钮「绘制准心」
+        # 一个位置、一样的视觉重量，**两件毫不相干的事轮流坐**。
+        # 而「绘制准心」在自定义准心卡片里**本来就有一颗**（同名同槽同功能），
+        # 于是没数据时这一屏上有两颗一模一样的按钮。
+        #
+        # ⭐ 主按钮**可以**随状态变，前提是那几个状态是**同一条流程的相邻两步**
+        #   —— 闪光页「启动」→「前往效果预览」就是（RN-192，外审驱动的改法）。
+        #   而「绘制」和「导出」不是一条流程的两步，是两件无关的事共用一个槽。
+        #
+        # 「绘制准心」只留在自定义准心卡片里那一颗 —— 用户想「我要自己画一个」
+        # 的时候人就在那张卡上（那里有点数摘要和格式说明）。
+        #
+        # ⚠⚠ 第一版修法（把主按钮固定成「导出准心」、没数据时置灰）**当场被外审否掉**：
+        #   「置灰的『导出准心』极易被误认为是『保存/应用』按钮，
+        #     导致玩家误以为当前修改未生效」（2/6 判中）
+        #   「自动生效缺少明确反馈或『应用』按钮，不读说明的玩家会反复寻找保存入口」
+        # ⭐⭐ 一颗**灰着的、紫色的、蹲在右下角的**按钮，形状本身就在说
+        #   「这里有个保存动作，只是现在不能点」—— 而这一页根本没有保存动作。
+        #   ⇒ 我把 5/6 票那条原始困惑**换了个样子留在原地**。
+        #
+        # 现在：底栏**不放主按钮**。导入 / 导出都是次级，位置固定、两种状态都在场。
+        # 全页唯一的紫按钮是自定义准心卡片里那颗「绘制准心」——
+        # 那也确实是这一页唯一一个"点了会发生新事情"的动作（RN-139/RN-186：
+        # **「主」是相对的，两颗紫的等于零颗**）。
+        # ⚠ 「导出准心」没数据时**置灰而不是藏掉**：藏掉的话用户看到的是
+        #   "这个功能不存在"，而不是"还没有东西可导"（同 RN-197）。
+        self.action_bar.configure_extra("导入准心", self._import_crosshair, visible=True)
+        self.action_bar.configure_secondary("导出准心", self._export_crosshair, visible=True)
+        self.action_bar.secondary_btn.setEnabled(custom_points > 0)
+        self.action_bar.secondary_btn.setToolTip(
+            "" if custom_points > 0
+            else "还没有自定义准心数据——先在「自定义准心」卡片里绘制一个")
+        self.action_bar.configure_primary("", None, visible=False)
 
+        # ⭐ RN-174：底栏这行字要**先回答那个 5/6 票的困惑**（"我改的东西保存了吗"），
+        # 再报状态。原来它只报状态，于是玩家在整页找不到任何"已保存"的回执，
+        # 就会去找一颗保存按钮 —— 而那颗按钮不存在。
         action_message = (
+            "改动已自动保存，不用点任何按钮。"
             f"当前样式：{self._format_style_text(style_value)} · 颜色 {self._format_color_text(color_value)}"
             f" · 动效 {self._format_animation_text(animation_value)}"
             f" · 联动 {self._format_kill_effect_text(kill_effect_value)}"

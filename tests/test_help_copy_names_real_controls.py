@@ -44,9 +44,28 @@ REPO = Path(__file__).resolve().parent.parent
 #: 「可用「一键保守修复」」**整条漏掉**（分母 35 → 39，多逮出一条真缺陷）。
 #: 和 `LAYOUT_WORDS` 一样，这是**拦已知形状的棘轮，不是发现通道** ——
 #: 别把「扫过了」读成「没有了」。
+#:
+#: ⚠⚠ **RN-401：动词和控件名之间夹一个方位词，整条就看不见了。**
+#: 第一版要求动词**紧挨**引号，于是这些一条都没进过分母：
+#:
+#: | 漏掉的原话 | 出处 |
+#: |---|---|
+#: | 点**右下角**「绘制准心」写进游戏 | `crosshair_page.py:269`（RN-174 的本体）|
+#: | 点**本页的**「启用自定闪光」直接开 | `ui_help_panel.py[flash]` —— **RN-192 已经删掉那颗按钮**|
+#: | 点**右上角**「?」看用法 | 四个页面的页头 |
+#:
+#: ⭐⭐ 讽刺的是，方位词恰恰是**"硬指引"的标志** —— 也就是这条棘轮最该盯的那一片，
+#: 被它自己的正则整片切掉了。⭐ **一个棘轮的分母，比它自以为的小。**
+#: ⭐ 而 RN-192 的现场注释白纸黑字写着「文案点名的控件名必须跟调用方一起走（RN-167）」，
+#: 它照做了 —— 只改了**页头**那一处，帮助面板那句没人看见。
+POSITION = (
+    r"(?:右上角|右下角|左上角|左下角|页面底部|页面顶部|底部操作栏|底栏|操作栏|"
+    r"底部|顶部|上面|下面|右边|左边|右侧|左侧|页尾|页首|这一页|本页|"
+    r"最下面|最上面|卡片里|这里)"
+)
 CLICK_CONTEXT = re.compile(
     r"(点击|点|按下|按|勾上|勾选|打开|切到|进入|使用|可用|用|选中|回到|去)"
-    r"\s*[「]([^「」]{1,24})[」]"
+    r"\s*(?:" + POSITION + r"的?\s*)?[「]([^「」]{1,24})[」]"
 )
 
 #: 比对前先脱掉**装饰符**。
@@ -74,6 +93,13 @@ SHARED_SOURCES = [
     REPO / "widgets" / "community_library.py",
     REPO / "widgets" / "master_switch_link.py",
     REPO / "gui_widget.py",
+    #: ⚠ RN-401：放宽正则之后当场冒出 4 条假缺陷「点右上角「?」看用法」——
+    #: 那颗 "?" 是**每一页都有**的帮助按钮（`ui_help_panel.py:40`
+    #: `super().__init__("?", parent)`），而这个文件不在共用来源里。
+    #: `preset_center` 那条碰巧绿，只是因为 `core/presets/preset_center.py` 里
+    #: 恰好另有一个 "?" 字面量 —— ⭐ **一条靠巧合成立的绿，和红一样是坏消息。**
+    #: （与上面 `dialogs` 那条同型：分母不够的判据会反过来诬告正确的代码。）
+    REPO / "ui_help_panel.py",
 ]
 
 #: ⚠ `dialogs` 是**补上去的**，而漏掉它的代价是当场造出一条假缺陷：
@@ -146,9 +172,30 @@ def _non_docstring_strings(path: Path) -> list[tuple[int, str]]:
     ]
 
 
+def _strip_comments(text: str) -> str:
+    """去掉整行注释，保留行号结构（换成空行）。
+
+    ⚠⚠ **RN-401：这里原来不去注释，于是判据会被"记录这条缺陷的那段注释"判红。**
+    修 flash 那句假话时，我在现场写了一条注释引用原话
+    （「原来写『点本页的「启用自定闪光」』」）—— 文案已经改对了，
+    判据却照旧红，因为它把注释也读成了给用户看的文案。
+
+    ⭐ 这**正是** `_non_docstring_strings` 那条已经写在文件里的教训
+    （RN-072 / RN-163：判据连注释一起扫，被自己的说明性文字判红，
+    然后人就会去改一段本来是对的说明）。
+    ⇒ 而这个函数走的是**另一条通路**（裸文本扫描，不过 AST），
+    所以那层保护它一点都没享受到。
+    ⭐⭐ **一个教训只修在它被发现的那条通路上，等于只修了一份副本。**
+    """
+    return "\n".join(
+        "" if line.lstrip().startswith("#") else line
+        for line in text.splitlines()
+    )
+
+
 def _help_panel_sections() -> list[tuple[str, str]]:
     """帮助面板按 `page_id` 分段 —— 每段文案只该点名**那一页**的控件。"""
-    text = (REPO / "ui_help_panel.py").read_text(encoding="utf-8")
+    text = _strip_comments((REPO / "ui_help_panel.py").read_text(encoding="utf-8"))
     keys = [
         (m.start(), m.group(3))
         for m in re.finditer(r"^(\s*)([\"'])([a-z_0-9]+)\2\s*:", text, re.M)
@@ -323,3 +370,69 @@ def test_the_master_switch_help_line_follows_the_control():
         f"`kill_icon` 的帮助文案里没有提到那颗真正的开关（「{ROW_LABEL_TEXT}」）—— "
         "三步引导的第一步就断了。"
     )
+
+
+def test_the_position_word_clause_is_not_vacuous():
+    """空转守卫⑥（RN-401）：**方位词那一段必须真的在多逮东西。**
+
+    第一版正则要求动词**紧挨**引号，于是「点**右下角**「绘制准心」」这种
+    一条都进不了分母 —— 而方位词恰恰是「硬指引」的标志，也就是这条棘轮
+    最该盯的那一片。实测：加上这一段，分母 **50 → 59**。
+
+    ⚠ 这条守的不是"分母别掉"（那是①），是"**这一段别退化成摆设**" ——
+    有人把 `POSITION` 改成一个匹配不到任何东西的表达式，①②照样全绿。
+    """
+    narrow = re.compile(
+        r"(点击|点|按下|按|勾上|勾选|打开|切到|进入|使用|可用|用|选中|回到|去)"
+        r"\s*[「]([^「」]{1,24})[」]"
+    )
+    sample = "改完点右下角「绘制准心」写进游戏。也可以点本页的「启用自定闪光」。"
+    assert not narrow.findall(sample), "样本选错了：窄正则本来就该看不见它"
+    assert len(CLICK_CONTEXT.findall(sample)) == 2, (
+        f"放宽后的正则看不见夹着方位词的点名：{CLICK_CONTEXT.findall(sample)}")
+
+    real = sum(1 for _s, _p, _n in _named_controls())
+    narrow_hits = 0
+    for _pid, body in _help_panel_sections():
+        narrow_hits += len(narrow.findall(body))
+    for path in sorted((REPO / "pages").glob("*_page.py")):
+        for _lineno, literal in _non_docstring_strings(path):
+            narrow_hits += len(narrow.findall(literal))
+    assert real > narrow_hits, (
+        f"方位词那一段一条都没多逮到（宽 {real} vs 窄 {narrow_hits}）—— "
+        f"它已经退化成摆设")
+
+
+def test_comments_in_the_help_panel_are_not_read_as_user_copy():
+    """空转守卫⑦（RN-401）：帮助面板通路必须**去掉注释**再读。
+
+    ⚠ 这条是当场踩出来的：修好 flash 那句假话之后，判据**照旧红** ——
+    因为我在现场写了一条注释引用原话，而这条通路是**裸文本扫描**，
+    把注释也读成了给用户看的文案。
+
+    ⭐ 页面通路早就有这层保护（`_non_docstring_strings`，RN-072 / RN-163），
+    帮助面板通路一点都没享受到。
+    ⭐⭐ **一个教训只修在它被发现的那条通路上，等于只修了一份副本。**
+    """
+    poisoned = (
+        '    "flash": (\n'
+        '        # 原来写「点本页的「启用自定闪光」直接开」，那颗按钮已删\n'
+        '        "1. 在本页打开「自定闪光」总开关<br>"\n'
+        '    ),\n'
+    )
+    cleaned = _strip_comments(poisoned)
+    names = [n for _v, n in CLICK_CONTEXT.findall(cleaned)]
+    assert "启用自定闪光" not in names, (
+        f"注释里的旧文案被当成了给用户看的文案：{names}")
+    assert "自定闪光" in names, (
+        f"去注释去过头了，真正的文案也没了：{names}")
+
+    # ⚠⚠ **上面只测了那个函数，没测它有没有被用上。**
+    # 回退验证当场判这条假绿：把 `_help_panel_sections` 里的 `_strip_comments(...)`
+    # 拆掉，这条判据**纹丝不动**（它自己直接调函数，绕过了调用点）。
+    # ⭐⭐ **一条只测「零件好使」的判据，证明不了「零件装上了」。**
+    # ⇒ 下面这段走**真实通路**：真的分段，断言分出来的每一段里都没有注释行。
+    for page_id, body in _help_panel_sections():
+        offenders = [ln for ln in body.splitlines() if ln.lstrip().startswith("#")]
+        assert not offenders, (
+            f"帮助面板通路把注释也读进来了（{page_id} 段）：{offenders[:2]}")

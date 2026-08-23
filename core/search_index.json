@@ -860,19 +860,19 @@
   },
   {
    "page": "crosshair",
+   "text": "导出准心",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "crosshair",
    "text": "绘制自定义准心",
    "card": "",
    "tab": "",
    "kind": "label",
    "src": "static"
-  },
-  {
-   "page": "crosshair",
-   "text": "调完直接进游戏看效果",
-   "card": "",
-   "tab": "",
-   "kind": "label",
-   "src": "runtime"
   },
   {
    "page": "crosshair",

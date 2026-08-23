@@ -3556,6 +3556,90 @@ REVERTS = [
         "坐标系（实测差 11~16 条/页），而分界线离边界只有 0.11 秒。"
         "⭐ 钉住只是「我打算量哪一档」，回验才是「这一轮真的全程都在那一档」",
     ),
+    # ============================================ RN-174 / RN-401：准心页说实话
+    Revert(
+        "RN", "页头又去点名一颗按钮",
+        "pages/crosshair_page.py",
+        'description="调准心的形状、颜色、动效和击杀联动。总开关打开后，改哪一项当场就生效——"',
+        'description="调准心的形状、颜色、动效和击杀联动。改完点右下角「绘制准心」写进游戏。"  #',
+        "tests/test_crosshair_page_tells_the_truth.py::"
+        "test_the_header_does_not_name_a_button_to_press",
+        "RN-174：外审 5/6 票报「找不到保存/应用入口」——**现象真、归因全反**："
+        "这一页压根没有「应用入口」这个东西（参数各自的槽里当场 save_config，"
+        "准心是自绘覆盖层，不写任何游戏文件）。页头点名一颗按钮 = 告诉玩家"
+        "「不点就没生效」，那是假的。⭐ 文案不许替代码编一个借口",
+    ),
+    Revert(
+        "RN", "页头讲「当场生效」却不讲它的前提",
+        "pages/crosshair_page.py",
+        "总开关打开后，改哪一项当场就生效",
+        "改哪一项当场就生效",
+        "tests/test_crosshair_page_tells_the_truth.py::"
+        "test_the_header_states_the_precondition_for_taking_effect",
+        "RN-174：第一版把三句假话改成一句真话「改哪一项当场就生效」，"
+        "**外审当场指出它还是半真话**（4/6 判高）—— `crosshair_enabled` 默认关着，"
+        "而默认状态恰好就是新用户的状态。"
+        "⭐⭐ **把假话改成真话时，漏掉了那句真话自己的前提**",
+    ),
+    Revert(
+        "RN", "底栏又长出一颗「应用形状」的主按钮",
+        "pages/crosshair_page.py",
+        'self.action_bar.configure_primary("", None, visible=False)',
+        'self.action_bar.configure_primary("导出准心", self._export_crosshair, visible=True)',
+        "tests/test_crosshair_page_tells_the_truth.py::"
+        "test_the_bottom_bar_offers_no_apply_shaped_button",
+        "RN-174：这**正是第一版修法**，外审当场否掉——「置灰的『导出准心』极易被"
+        "误认为是『保存/应用』按钮，导致玩家误以为当前修改未生效」。"
+        "⭐⭐ 一颗灰着的、紫色的、蹲在右下角的按钮，形状本身就在说「这里有个保存动作」——"
+        "而这一页没有。⇒ 我把 5/6 票那条原始困惑**换了个样子留在了原地**",
+    ),
+    Revert(
+        "RN", "文案棘轮的方位词从句退化成摆设",
+        "tests/test_help_copy_names_real_controls.py",
+        r'    r"\s*(?:" + POSITION + r"的?\s*)?[「]([^「」]{1,24})[」]"',
+        r'    r"\s*[「]([^「」]{1,24})[」]"',
+        "tests/test_help_copy_names_real_controls.py::"
+        "test_the_position_word_clause_is_not_vacuous",
+        "RN-401：第一版正则要求动词**紧挨**引号，于是「点右下角「绘制准心」」"
+        "「点本页的「启用自定闪光」」这类**一条都进不了分母**（50 → 59）。"
+        "⭐ 而方位词恰恰是「硬指引」的标志 —— 这条棘轮最该盯的那一片，"
+        "被它自己的正则整片切掉了",
+    ),
+    Revert(
+        "RN", "帮助面板通路不再剔除注释",
+        "tests/test_help_copy_names_real_controls.py",
+        '    text = _strip_comments((REPO / "ui_help_panel.py").read_text(encoding="utf-8"))',
+        '    text = (REPO / "ui_help_panel.py").read_text(encoding="utf-8")',
+        "tests/test_help_copy_names_real_controls.py::"
+        "test_comments_in_the_help_panel_are_not_read_as_user_copy",
+        "RN-401：这条通路是**裸文本扫描**，不去注释就会把「记录这条缺陷的注释」"
+        "读成给用户看的文案 —— 文案已经改对了，判据照旧红。"
+        "页面通路早有 `_non_docstring_strings` 这层保护（RN-072/RN-163）。"
+        "⭐⭐ **一个教训只修在它被发现的那条通路上，等于只修了一份副本**",
+    ),
+    Revert(
+        "RN", "帮助面板又教用户去点一颗已删的按钮",
+        "ui_help_panel.py",
+        '"1. 在本页打开「自定闪光」总开关，再点「启动」开始后台监听；"',
+        '"1. 点本页的「启用自定闪光」直接开；"',
+        "tests/test_help_copy_names_real_controls.py::"
+        "test_every_named_control_actually_exists",
+        "RN-401 首跑逮到的真缺陷：「启用自定闪光」这颗按钮 **RN-192 早就删了**"
+        "（启用归状态卡上的总开关，底栏那颗只管启动）。RN-192 当场改了页头、"
+        "还在现场注释里写下「文案点名的控件名必须跟调用方一起走」——"
+        "**却没人打开帮助面板那个文件**",
+    ),
+    Revert(
+        "RN", "单行提示表被清空（判据静默什么都不测）",
+        "tests/test_single_line_hints_stay_single_line.py",
+        '    ("kill_icon", "还没有任何风格",',
+        '    ("kill_icon_DISABLED", "还没有任何风格",',
+        "tests/test_single_line_hints_stay_single_line.py::"
+        "test_the_hint_is_still_one_line_after_the_page_is_fully_built",
+        "RN-174：删掉 crosshair 那一格之后这张表只剩 1 条。"
+        "⚠ pytest 对「参数化了零个用例」是**静默通过**的 —— 报告上看不出区别。"
+        "⭐ 一条会随产品一起缩小的清单，必须有人盯着它的下界",
+    ),
     # ⛔⛔ 新断点一律加在**这一行之上**。
     #
     # 下面这个标记是开源同步那个语义补丁的**锚点**：开源版在这个位置追加它自己的

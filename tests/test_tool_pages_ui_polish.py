@@ -586,10 +586,19 @@ def test_crosshair_page_action_bar_tracks_custom_data_state(qapp, monkeypatch):
     assert "当前还没有自定义点" in page.custom_summary_label.text()
     assert page.preview_frame.width() == 156
     assert page.preview_frame.height() == 156
+    # ⚠⚠ RN-174（批 10）：这几行原来断言的是
+    #     主按钮可见、且文案是「绘制准心」（有数据时变「导出准心」）
+    # —— 也就是**把那条缺陷钉在了原地**：一颗会变身的主按钮 + 与卡片里
+    # 那颗同名同槽的重复按钮。⭐ 与下面 `test_viewmodel_...` 里 RN-009 那条注释
+    # 是同一个形状：**判据要求缺陷必须存在，于是清理它反而会让判据变红。**
+    # 现在：底栏没有主按钮（这一页没有"应用"动作），导入/导出都是次级。
+    assert page.action_bar.extra_btn.isHidden() is False
     assert page.action_bar.secondary_btn.isHidden() is False
-    assert page.action_bar.primary_btn.isHidden() is False
-    assert page.action_bar.secondary_btn.text() == "导入准心"
-    assert page.action_bar.primary_btn.text() == "绘制准心"
+    assert page.action_bar.primary_btn.isHidden() is True
+    assert page.action_bar.extra_btn.text() == "导入准心"
+    assert page.action_bar.secondary_btn.text() == "导出准心"
+    assert page.action_bar.secondary_btn.isEnabled() is False  # 还没画过，没东西可导
+    assert "自动保存" in page.action_bar.message_label.text()
     assert "当前样式：十字" in page.action_bar.message_label.text()
     assert "还没有自定义准心数据" in page.action_bar.message_label.text()
 
@@ -599,7 +608,10 @@ def test_crosshair_page_action_bar_tracks_custom_data_state(qapp, monkeypatch):
     assert "样式 · 自定义" in chips
     assert "当前样式：自定义 · 已保存 2 个自定义点" in page.style_summary_label.text()
     assert "当前已保存 2 个自定义点" in page.custom_summary_label.text()
-    assert page.action_bar.primary_btn.text() == "导出准心"
+    # 有数据之后：底栏动作组**不变**，只是「导出准心」从置灰变成可点。
+    assert page.action_bar.primary_btn.isHidden() is True
+    assert page.action_bar.secondary_btn.text() == "导出准心"
+    assert page.action_bar.secondary_btn.isEnabled() is True
     assert "已保存 2 个自定义点" in page.action_bar.message_label.text()
 
     page.deleteLater()
