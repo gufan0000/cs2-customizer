@@ -849,9 +849,12 @@ def main():
         logger.info(f"✓ {stage_id} 完成")
         # 2.2.0 卡顿治理:音乐控制栏在音频阶段完成后创建——pygame 已被
         # 工作线程 import 热过,主线程创建为轻操作(原 0.3s 时创建实测卡 320ms)
+        # RN-195: 走**条件**创建 —— 没放过音乐就不建这条常驻栏（它一出现
+        # 就永久吃掉内容区 42px）。这里和 `gui_widget` 那个 8 秒兜底必须
+        # 调同一个入口，否则"建不建"就有了两份判断。
         if str(stage_id) == "stage2":
             try:
-                QTimer.singleShot(0, window._create_music_control_bar)
+                QTimer.singleShot(0, window._create_music_control_bar_if_played)
             except Exception:
                 pass
     

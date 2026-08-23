@@ -619,6 +619,13 @@ class MusicPlayer:
         try:
             self._debug_log(f"准备播放: {track.get('title', 'Unknown')}")
             
+            # RN-195：这里是 play / play_current / next / previous / 自动续播
+            # 的**唯一汇合点** —— 通知挂在这儿，就不用挂到每一个入口上，
+            # 而漏掉任何一个入口都意味着"用户放着音乐却没有控制条"。
+            # 放在最前面而不是加载成功之后：控制条本来就要负责显示「[加载中...]」
+            # （下面那个 on_track_change），它得先存在。
+            notify_playback_started()
+
             # 停止当前播放
             self.stop_progress = True
             self.stop_end_check = True
@@ -1308,6 +1315,73 @@ def get_music_player() -> MusicPlayer:
     if music_player is None:
         music_player = MusicPlayer()
     return music_player
+
+
+# ==================== RN-195：「放过音乐」这件事的唯一真相源 ====================
+# 音乐控制条原本由 `QTimer.singleShot(8000, ...)` **无条件**建出来，一出现就
+# 永久吃掉内容区 42px（实测：完整档 750→708、紧凑档 650→608）。改成"放过才建"
+# 之后，"放没放过"这个判断被三处用到（启动那一发、后台阶段那一发、量图工装），
+# ⇒ 只能有一份。
+
+_playback_started_listeners: List[Callable[[], None]] = []
+
+
+def add_playback_started_listener(callback: Callable[[], None]) -> None:
+    """注册「有音乐真的开始播了」的监听者。
+
+    ⚠ **不能复用 `player.on_track_change`** —— 那是**单槽**的（音乐控制条自己
+    占着，见 `music_control_bar._bind_player_callbacks`），而这里的监听者恰恰
+    要在控制条**还不存在**的时候被叫醒。
+    """
+    if callback not in _playback_started_listeners:
+        _playback_started_listeners.append(callback)
+
+
+def remove_playback_started_listener(callback: Callable[[], None]) -> None:
+    if callback in _playback_started_listeners:
+        _playback_started_listeners.remove(callback)
+
+
+def notify_playback_started() -> None:
+    """通告「开始播放」。
+
+    ⚠ **可能跑在加载线程/结束检测线程上**（自动续播走 `_handle_track_end → next`），
+    监听者自己负责切回主线程再碰 Qt 控件。
+    ⚠ 单个监听者抛异常不许影响别人，更不许把播放本身带崩。
+    """
+    for callback in list(_playback_started_listeners):
+        try:
+            callback()
+        except Exception:
+            get_logger("MusicPlayer").exception("播放开始通知失败（不影响播放）")
+
+
+def playback_has_ever_started() -> bool:
+    """这台机器上放过音乐没有。
+
+    两个来源都要看，缺一个就会在某段窗口里答错：
+      · **本会话**：`play()` 一进来就同步写 `current_index`，而配置要等曲目
+        加载完成（`_on_track_loaded`）才写 —— 只看配置，会在"按下播放 →
+        加载完成"这段窗口里说没放过；
+      · **跨会话**：上次退出时存着播到第几首。
+
+    ⭐ **认不出来的值一律算「放过」。** 这个判断的两个失效方向**不对称**：
+    误判成「没放过」= 把用户唯一的播放控制面整个拿掉（`pages/music_page.py`
+    自己一个播放控件都没有，暂停/下一首/音量全在控制条上）；误判成「放过」
+    = 多占 42px。分不出类的时候，选那个只会难看、不会致残的方向。
+    """
+    player = music_player
+    if player is not None:
+        try:
+            if int(getattr(player, "current_index", -1)) >= 0:
+                return True
+        except (TypeError, ValueError):
+            return True
+    try:
+        return int(getattr(config, "music_current_index", -1)) >= 0
+    except (TypeError, ValueError):
+        return True
+
 
 class MusicLoaderThread(threading.Thread):
     """音乐加载线程

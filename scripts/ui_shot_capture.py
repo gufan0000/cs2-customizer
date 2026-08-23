@@ -215,6 +215,14 @@ def main() -> int:
                     help="内容比视口高的页，**另拍一张没有折线的整页图**（RN-170）。"
                          "不给的话每一页折线以下的部分永远没人看过，"
                          "而折线处那个被切一半的元素会被外审读成「容器坏了」")
+    ap.add_argument("--music-bar", choices=("auto", "on"), default="auto",
+                    help="音乐控制条拍不拍进去（RN-195）。"
+                         "auto=按全新配置的样子，产品自己决定（没放过音乐⇒没有），"
+                         "**基线拍这一档**；"
+                         "on=强制建出来，量的是放过音乐的用户永远停在的那一档，"
+                         "**送外审配合排版审计时拍这一档**。"
+                         "⚠ 不给的话就是交给一个 8 秒定时器决定，实测会在一轮里"
+                         "拍出两种可视区（见 scripts/_audit_music_bar.py）")
     _ui_mode.add_expert_argument(ap)
     args = ap.parse_args()
 
@@ -259,6 +267,12 @@ def main() -> int:
     if win.width() < width:
         print(f"!! 未达目标宽度: 实际 {win.width()}")
 
+    # RN-195：钉住音乐控制条的档位（理由与两类工装的口径差别见该模块）。
+    import _audit_music_bar as _mbar
+
+    _mode = _mbar.MODE_WORST_CASE if args.music_bar == "on" else _mbar.MODE_PRISTINE
+    print("   " + _mbar.pin(win, app, _mode))
+
     page_ids = list(win._page_names.keys())
     total = len(page_ids)
     neutralized = []
@@ -300,6 +314,10 @@ def main() -> int:
             failed.append(pid)
 
     apply_font_scale(1.0)
+    # RN-195：回验 —— 这一批图**全程**都在同一档可视区里拍的。
+    # 少了这一步，一批"前 26 张矮 42px、后 2 张不矮"的图看起来毫无异样，
+    # 而外审会把那 42px 读成页面本身的差异。
+    _mbar.assert_stable(win)
     # 界面模式必须写进报告：不写，读图的人（和外审）会默认这是普通视图（RN-134）
     print(f"\n== {mode} 模式 {width}x{height} 主题 {args.theme} 字号 {args.scale}"
           f" · 界面 {_ui_mode.describe(args.expert)} ==")

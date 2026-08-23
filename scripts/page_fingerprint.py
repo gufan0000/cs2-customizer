@@ -130,6 +130,14 @@ def build(page_spec: str = "sound", expert: bool = False):
     win.resize(1200, 800)
     app.processEvents()
 
+    # RN-195：钉住音乐控制条的档位。实测这一轮 28 页跑 8.11 秒，而那条栏由
+    # 一个 8 秒定时器建 —— 最后两页量到的是**矮 42px 的可视区**，前 26 页不是。
+    # 指纹含几何，于是同一份基线里混着两种坐标系（实测差 11~16 条/页）。
+    # 基线要的是**可复现**，取全新配置下产品自己的决定（RN-195 之后 = 不建）。
+    import _audit_music_bar as _mbar
+
+    print("   " + _mbar.pin(win, app, _mbar.MODE_PRISTINE))
+
     if page_spec == "all":
         neutralize_apply(config)
         total_pages = len(win._page_names)
@@ -174,6 +182,8 @@ def build(page_spec: str = "sound", expert: bool = False):
         if page is None:
             continue
         out[pid] = fingerprint(page, win)
+    # RN-195：跑完回验 —— 这一轮全程都在钉住的那一档里。
+    _mbar.assert_stable(win)
     return out
 
 

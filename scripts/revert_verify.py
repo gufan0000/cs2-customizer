@@ -3504,6 +3504,58 @@ REVERTS = [
         "开源版里 skip（逻辑守卫照跑）；它守的是**本机提交前**那一刻，"
         "而腐烂恰恰就发生在那一刻",
     ),
+    # ============================================ RN-195：音乐控制条
+    Revert(
+        "RN", "首播时没人去把控制条建出来",
+        "music_player.py",
+        "            notify_playback_started()",
+        "            pass  # notify_playback_started()",
+        "tests/test_music_bar_only_after_playing.py::"
+        "test_play_track_is_the_one_place_that_announces_playback",
+        "RN-195：控制条改成「放过音乐才建」之后，**首播那条通知路径不能省**。"
+        "`pages/music_page.py` 自己一个播放控件都没有（唯一入口是双击曲目），"
+        "暂停/下一首/音量全在这条栏上 —— 通知一断，用户放着音乐却连暂停都点不到。"
+        "⭐ 一个把用户扔进没有出口的状态的「收窄」，不是收窄，是新缺陷",
+    ),
+    Revert(
+        "RN", "认不出的播放记录被判成「没放过」",
+        "music_player.py",
+        '        return int(getattr(config, "music_current_index", -1)) >= 0\n'
+        "    except (TypeError, ValueError):\n"
+        "        return True",
+        '        return int(getattr(config, "music_current_index", -1)) >= 0\n'
+        "    except (TypeError, ValueError):\n"
+        "        return False",
+        "tests/test_music_bar_only_after_playing.py::"
+        "test_a_value_it_cannot_classify_falls_toward_building_the_bar",
+        "RN-195：这个判断的两个失效方向**不对称** —— 误判成「没放过」是把用户"
+        "唯一的播放控制面整个拿掉，误判成「放过」只是多占 42px。"
+        "⭐ 分不出类的值，必须朝那个只会难看、不会致残的方向倒"
+        "（与批 8 `_is_open()` 同型）",
+    ),
+    Revert(
+        "RN", "延迟入口改回无条件建控制条",
+        "gui_widget.py",
+        "QTimer.singleShot(8000, self._create_music_control_bar_if_played)",
+        "QTimer.singleShot(8000, self._create_music_control_bar)",
+        "tests/test_music_bar_only_after_playing.py::"
+        "test_every_deferred_entry_point_goes_through_the_conditional_creator",
+        "RN-195：两处延迟创建（8 秒兜底 / 后台 stage2）只要有一处改回无条件，"
+        "「建不建」就有了两份判断，而结论取决于**哪个定时器先到**",
+    ),
+    Revert(
+        "RN", "量图工装钉了档位却不回验",
+        "scripts/page_fingerprint.py",
+        "    # RN-195：跑完回验 —— 这一轮全程都在钉住的那一档里。\n"
+        "    _mbar.assert_stable(win)",
+        "    # RN-195：跑完回验 —— 这一轮全程都在钉住的那一档里。",
+        "tests/test_music_bar_only_after_playing.py::"
+        "test_every_measuring_harness_pins_the_music_bar",
+        "RN-195：实测这一轮 28 页跑 8.11 秒，而控制条由一个 **8 秒**定时器建 —— "
+        "最后两页量到的是矮 42px 的可视区，前 26 页不是，同一份基线里混着两种"
+        "坐标系（实测差 11~16 条/页），而分界线离边界只有 0.11 秒。"
+        "⭐ 钉住只是「我打算量哪一档」，回验才是「这一轮真的全程都在那一档」",
+    ),
     # ⛔⛔ 新断点一律加在**这一行之上**。
     #
     # 下面这个标记是开源同步那个语义补丁的**锚点**：开源版在这个位置追加它自己的

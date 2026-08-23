@@ -112,6 +112,10 @@ class MainWindow(QMainWindow):
     # 是 GSI 事件驱动的、跑在**后台线程**上，在那儿直接碰 Qt 控件会崩。
     # Signal 的自动连接在跨线程时会排队到 GUI 线程，正是我们要的。
     _config_reloaded_signal = Signal(str)
+    # RN-195: 本会话第一次真的放起音乐时叫醒主窗，把控制条建出来。
+    # 必须走 Signal：自动续播的通知跑在**加载线程/结束检测线程**上，
+    # 在那儿直接建控件会崩（同 `_config_reloaded_signal` 那条的理由）。
+    _music_playback_started_signal = Signal()
 
     def __init__(self, auto_background_preload=True):
         super().__init__()
@@ -274,8 +278,11 @@ class MainWindow(QMainWindow):
         # 2.2.0 卡顿治理:推迟到后台音频阶段(stage2,工作线程已把 pygame import 热了)
         # 之后创建——主线程二次 import 同模块为零成本,卡顿消失。
         # 兜底:若 8s 后后台阶段仍未触发(异常路径),仍强制创建,保证控制栏必然出现。
+        # RN-195: 这里改成**放过音乐才建**。原来是无条件建,一出现就永久吃掉
+        # 内容区 42px(实测完整档 750→708、紧凑档 650→608),而全新用户从没
+        # 放过音乐、也没有任何理由要一条播放控制栏。
         from PySide6.QtCore import QTimer
-        QTimer.singleShot(8000, self._create_music_control_bar)
+        QTimer.singleShot(8000, self._create_music_control_bar_if_played)
 
         # 延迟刷新所有已加载页面的主题（修复首次启动时主题加载问题）
         # 使用500ms延迟确保Qt样式系统完全初始化，避免与页面加载撞车
@@ -1499,6 +1506,64 @@ class MainWindow(QMainWindow):
         # 间隔 50ms 加载下一个，保持 UI 流畅
         from PySide6.QtCore import QTimer
         QTimer.singleShot(50, self._preload_next)
+
+    def _create_music_control_bar_if_played(self):
+        """RN-195：**放过音乐才建**这条常驻栏 —— 不是建了再 hide，是不建。
+
+        ⚠ 「建了再 hide」在本仓有前科（RN-009 那个建出来就 hide 的死控件）：
+        藏起来的控件照样占内存、照样被主题刷新遍历、照样有人往里写文案，
+        而且照样骗过"它不在屏幕上"这类判据。
+
+        走到这里时 pygame 已经被工作线程 import 热过（stage2 完成 / 8 秒兜底），
+        所以此刻 `import music_player` 是查表，不是那 320ms。
+        """
+        try:
+            import music_player as _mp
+        except Exception:
+            # ⭐ 取不到判断依据时**照建** —— 见 `playback_has_ever_started` 里
+            # 那段"两个失效方向不对称"的说明。
+            self.logger.exception("音乐控制栏：取不到播放记录，按原样创建")
+            self._create_music_control_bar()
+            return
+
+        # 先布好这条线再决定建不建：用户可能在**之后**才第一次按下播放，
+        # 那时候控制条必须当场出现（音乐页自己没有任何播放控件）。
+        self._arm_music_playback_watch(_mp)
+
+        if not _mp.playback_has_ever_started():
+            self.logger.info("音乐控制栏：这台机器还没放过音乐，先不创建（RN-195）")
+            return
+        self._create_music_control_bar()
+
+    def _arm_music_playback_watch(self, music_player_module):
+        """让「第一次按下播放」能把控制条叫出来（幂等）。
+
+        这一半路**不能省**：`pages/music_page.py` 自己一个播放控件都没有
+        （第 31 行原话「播放控制栏已移至全局」），用户唯一的播放入口是双击曲目，
+        而暂停 / 下一首 / 音量全在这条栏上。
+        ⇒ 首播时它要是不出现，用户连暂停都点不到 ——
+        **一个把用户扔进没有出口的状态的"收窄"，不是收窄，是新缺陷。**
+        """
+        if getattr(self, "_music_playback_watch_armed", False):
+            return
+        self._music_playback_started_signal.connect(
+            self._create_music_control_bar, Qt.QueuedConnection)
+        import weakref
+
+        window_ref = weakref.ref(self)
+
+        def _on_playback_started():
+            window = window_ref()
+            if window is None:
+                return
+            try:
+                window._music_playback_started_signal.emit()
+            except RuntimeError:
+                pass  # 窗口的 C++ 那半边已经没了
+
+        self._music_playback_started_listener = _on_playback_started
+        music_player_module.add_playback_started_listener(_on_playback_started)
+        self._music_playback_watch_armed = True
 
     def _create_music_control_bar(self):
         """延迟创建音乐控制栏（避免pygame导入阻塞首屏渲染;幂等,双触发安全）"""

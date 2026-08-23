@@ -624,25 +624,14 @@ def main():
         print(f"!! 无法达到目标宽度: 实际 {win.width()}")
 
     # ⭐⭐ RN-195：音乐控制条必须**在开量之前**就位，否则这道门依赖挂钟。
+    # 档位的选择理由、以及两类工装为什么口径不同，全在 `_audit_music_bar` 里。
     #
-    # `gui_widget` 里它是 `QTimer.singleShot(8000, self._create_music_control_bar)`
-    # 建的 —— **无条件**，跟有没有放过音乐无关。而这一条跑满 8 秒之后才出现的
-    # 常驻栏会永久吃掉内容区 42px（迷你态；展开态 128px）。
-    #
-    # 后果是实测出来的：同一次紧凑档跑，8 秒之前轮到的页按可视 590px 量，
-    # 之后轮到的按 548px 量，而 `light×1.0` 与 `dark×1.0` 这两组**条件完全相同的
-    # 组合结论不一样**。⇒ 这道门的结论取决于机器多快、页面多少，不取决于代码。
-    #
-    # ⚠ 不是"把它藏掉"——藏掉等于按一个用户只在头 8 秒里见过的世界来验收。
-    # 现在提前建出来，全程按**用户实际看到的那一档**量。
-    _bar = getattr(win, "_create_music_control_bar", None)
-    if callable(_bar):
-        _bar()
-        app.processEvents()
-        app.processEvents()
-    print(f"   音乐控制条已就位（RN-195：它无条件常驻，占 "
-          f"{getattr(win, 'music_control_bar', None).height() if getattr(win, 'music_control_bar', None) else 0}px，"
-          f"提前建出来免得这道门依赖挂钟）")
+    # 这道门要的是**最坏那一档**：控制条**在**。RN-195 之后它不再无条件出现，
+    # 但只做「不建」不做「撤走」—— 放过一次音乐的用户就永远停在这一档，
+    # 所以按"没有控制条"来验收等于把大半用户的世界排除在门外。
+    import _audit_music_bar as _mbar
+
+    print("   " + _mbar.pin(win, app, _mbar.MODE_WORST_CASE))
 
     tm = get_theme_manager()
     page_ids = list(win._page_names.keys())
@@ -714,6 +703,11 @@ def main():
 
     apply_font_scale(1.0)
     tm.set_theme(getattr(config, "ui_theme", "dark") or "dark")
+
+    # RN-195：回验 —— 上面那一整轮真的全程都在钉住的那一档里。
+    # 钉住只是"我打算量哪一档"；不回验的话，一条在途中冒出来的控制条照样能
+    # 混过去，而产物读起来毫无异样（页与页之间差的那 42px 会被当成页面差异）。
+    _mbar.assert_stable(win)
 
     # UP-100: 档位要和覆盖面一样**每次都报**。同一句"全绿"，跑的是完整模式
     # 还是紧凑模式，结论完全不是一回事——不写出来就会被读成"两档都绿"。
