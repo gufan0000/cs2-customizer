@@ -3640,6 +3640,81 @@ REVERTS = [
         "⚠ pytest 对「参数化了零个用例」是**静默通过**的 —— 报告上看不出区别。"
         "⭐ 一条会随产品一起缩小的清单，必须有人盯着它的下界",
     ),
+    # ============================================ RN-408：页面清单的棘轮
+    #
+    # ⚠ 这一组的**被测对象在另一个仓**（页面清单、总纲都是纯文档仓里的文件），
+    # 而 revert_verify 只动得了 `ROOT` 底下的东西 ⇒ 断点只能打在**判据自己的
+    # 承重逻辑**上。这不是将就：RN-408 那一类腐烂的唯一防线就是这几条判据，
+    # 而**判据自己空转**恰恰是本工程反复踩到的形态（RN-169 / RN-198 / 批 10 两条假绿）。
+    Revert(
+        "RN", "页面清单解析器瞎了（0 行，下面每条断言无条件通过）",
+        "tests/test_renovation_progress_board_does_not_rot.py",
+        "        if header is not None and len(cells) == len(header):",
+        "        if False and header is not None and len(cells) == len(header):",
+        "tests/test_renovation_progress_board_does_not_rot.py::"
+        "test_the_parser_actually_sees_the_page_table",
+        "RN-408：一个把表解析成 0 行的解析器，长得和「这份文档很干净」一模一样。"
+        "⭐ 先证明判据看得见东西，再让它去断言「没问题」（RN-169）",
+    ),
+    Revert(
+        "RN", "批号从行文里读，而不是从状态格里读",
+        "tests/test_renovation_progress_board_does_not_rot.py",
+        "    for status in _statuses(_registry_text()).values():",
+        "    for status in [_registry_text()]:",
+        "tests/test_renovation_progress_board_does_not_rot.py::"
+        "test_every_batch_the_registry_tagged_has_a_row_on_the_board",
+        "RN-408：行文里的「批 11」「批 12」是**排期**，状态格里的"
+        "「已结（…）·批 10」才是**记录**。⭐ 这个区分是拿批 10 换来的 ——"
+        "那一轮有一条判据被一句**预告**（「排在批 10，做完即关档」）里的同一个"
+        "字面量喂成了绿。**一个字符串出现过，不等于那件事发生过**",
+    ),
+    Revert(
+        "RN", "悄悄把一个页状态移出分母",
+        "tests/test_renovation_progress_board_does_not_rot.py",
+        'STATUS_IN_PROGRESS = ("盘点", "锁基线", "找茬", "待裁定", "动刀", "验收")',
+        'STATUS_IN_PROGRESS = ("盘点", "锁基线", "找茬", "待裁定", "动刀")',
+        "tests/test_renovation_progress_board_does_not_rot.py::"
+        "test_the_page_status_vocabulary_does_not_rot",
+        "RN-408：从中间态清单里删掉一个词，对账判据**不会变红，只会少查几页** ——"
+        "⭐ 分母缩水和「没问题」在结果上长得一模一样（RN-198 的解析器把分母从 66% "
+        "缩到 13% 时也不报错）。所以守着它的必须是**状态词表那条双向断言**",
+    ),
+    Revert(
+        "RN", "「存不存在」拿「结没结」那个分母去答",
+        "tests/test_renovation_progress_board_does_not_rot.py",
+        '    on_file = {cells[0].strip("* ") for _, cells in _rows(text)}',
+        "    on_file = set(status)",
+        "tests/test_renovation_progress_board_does_not_rot.py::"
+        "test_a_batch_row_only_claims_closures_the_registry_agrees_with",
+        "RN-408 判据首跑当场咬到我这条：旧账逐页表那 104 条**没有状态列**，"
+        "所以「有状态格的那堆 RN」不是「在册的那堆 RN」。第一版当场诬告 RN-254。"
+        "⭐ **两个分母长得很像** —— 都是「从登记册里读出来的一堆 RN 号」",
+    ),
+    Revert(
+        "RN", "一整页被摘出导航，页面清单还挂着它",
+        "gui_widget.py",
+        '                ("about", "关于软件"),',
+        '                # ("about", "关于软件"),',
+        "tests/test_renovation_progress_board_does_not_rot.py::"
+        "test_the_board_lists_exactly_the_pages_the_product_registers",
+        "RN-408：页面名单的真源是 `gui_widget.nav_groups`，页面清单不许维护第二份。"
+        "⚠ 这条判据横跨两个仓，所以它必须先回答「这两边是同一个产品吗」——"
+        "**多出来的页只有在实现文件也一并不在时才算派生子集的正常缺项**；"
+        "实现文件还在却不在导航里，那就是一整页被摘掉了。"
+        "⭐⭐ 第一版没问这个问题，当场在派生子集里假红（那边整个没有账号页）——"
+        "**本机的镜像不是任何一个真实环境的忠实模型**",
+    ),
+    Revert(
+        "RN", "总纲按文件名找不到了，判据静默失去被测对象",
+        "tests/test_renovation_progress_board_does_not_rot.py",
+        '    charters = sorted(CAMPAIGN.glob("总纲*.md"))',
+        '    charters = sorted(CAMPAIGN.glob("总纲*.rst"))',
+        "tests/test_renovation_progress_board_does_not_rot.py::"
+        "test_the_closing_checklist_is_enumerated_in_exactly_one_place",
+        "RN-408：收工清单被复述了五遍（两个文件、两个不同的数）。"
+        "⭐⭐ **同一件事说五遍，任何一遍变假都不会有人发现 —— 因为没人知道有五遍。**"
+        "这条断点防的是「找不到真源就当没事」——**必须是红，不许是 skip**",
+    ),
     # ⛔⛔ 新断点一律加在**这一行之上**。
     #
     # 下面这个标记是开源同步那个语义补丁的**锚点**：开源版在这个位置追加它自己的
