@@ -28,6 +28,7 @@ KI-7 那 73 条判据全绿的同时，预览框里的占位文字两头各被�
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
@@ -215,6 +216,16 @@ def main() -> int:
                     help="内容比视口高的页，**另拍一张没有折线的整页图**（RN-170）。"
                          "不给的话每一页折线以下的部分永远没人看过，"
                          "而折线处那个被切一半的元素会被外审读成「容器坏了」")
+    ap.add_argument(
+        "--scenario", action="append", default=[], metavar="KEY=VALUE",
+        help="⭐ 造场景：拍之前往 config 上按几个值（可重复给）。"
+             "值走 JSON 解析，解析不了就当字符串（`--scenario crosshair_style=custom` "
+             "`--scenario crosshair_custom_data=[]`）。"
+             "⚠ 出图工装默认拍的是**全新配置**，于是任何「只在某个状态下才成立的缺陷」都不进图 ——"
+             "而外审**看不见的东西不会报**。RN-406 就是这么漏掉的："
+             "选中「自定义」而没画过时准心一个像素都不画，"
+             "而全新配置的样式是「十字」，那一屏永远拍不到那个状态。"
+             "⛔ 这个开关**只给外审出图用**：基线和排版审计要的是可复现的那一档，别给它。")
     ap.add_argument("--music-bar", choices=("auto", "on"), default="auto",
                     help="音乐控制条拍不拍进去（RN-195）。"
                          "auto=按全新配置的样子，产品自己决定（没放过音乐⇒没有），"
@@ -284,6 +295,32 @@ def main() -> int:
     if args.pages.strip():
         want = {p.strip() for p in args.pages.split(",") if p.strip()}
         page_ids = [p for p in page_ids if p in want]
+
+    # ⭐ 造场景（RN-406）。**必须在中和之后**：中和表管的是"别让设备页起硬件"，
+    # 而场景管的是"让某个状态出现在画面上"，两者不冲突；顺序反了会被中和覆盖掉。
+    for item in args.scenario:
+        key, _, raw = str(item).partition("=")
+        key = key.strip()
+        if not key:
+            raise SystemExit(f"--scenario 写法是 KEY=VALUE，收到：{item!r}")
+        try:
+            value = json.loads(raw)
+        except (TypeError, ValueError):
+            value = raw
+        setattr(config, key, value)
+        print(f"   场景: config.{key} = {value!r}")
+    if args.scenario:
+        # 页面是在上面 MainWindow 构造时建好的，config 改完要让它重读一遍。
+        for pid in page_ids:
+            page = win.pages.get(pid)
+            for hook in ("_sync_overview_status", "load_settings", "refresh"):
+                fn = getattr(page, hook, None)
+                if callable(fn):
+                    try:
+                        fn()
+                    except Exception as exc:      # noqa: BLE001
+                        print(f"   !! 场景刷新 {pid}.{hook} 失败: {exc}")
+                    break
 
     apply_font_scale(args.scale)
     get_theme_manager().set_theme(args.theme)

@@ -3640,6 +3640,57 @@ REVERTS = [
         "⚠ pytest 对「参数化了零个用例」是**静默通过**的 —— 报告上看不出区别。"
         "⭐ 一条会随产品一起缩小的清单，必须有人盯着它的下界",
     ),
+    # ============================================ RN-406：选中自定义却什么都不画
+    Revert(
+        "RN", "样式徽章又只报名字、不报后果",
+        "pages/crosshair_page.py",
+        '            ("warning" if blank_custom else "info",\n'
+        '             f"样式 · {style_text}（未绘制）" if blank_custom else f"样式 · {style_text}"),',
+        '            ("info", f"样式 · {style_text}"),',
+        "tests/test_crosshair_custom_style_is_honest.py::"
+        "test_the_badge_says_the_consequence_not_just_the_name",
+        "RN-406：`样式 · 自定义` 这句话是**真的**，但它回答的不是用户此刻的问题"
+        "（「我选了它，为什么屏幕上什么都没有」）。而且它是 info 色 ——"
+        "和「十字」「圆圈」那些完全正常的状态长得一模一样。"
+        "⭐ 让**颜色**携带「现在能不能用」，是这条修法里唯一结构性的部分",
+    ),
+    Revert(
+        "RN", "紧凑摘要在 0 点时又闭嘴了",
+        "pages/crosshair_page.py",
+        '                f"自定义 {custom_points} 点" if custom_points else "自定义未绘制")',
+        '                f"自定义 {custom_points} 点" if custom_points else "")',
+        "tests/test_crosshair_custom_style_is_honest.py::"
+        "test_the_compact_summary_does_not_go_quiet_exactly_when_it_matters",
+        "RN-406：原状是 `if style_value == \"custom\" and custom_points:` ——"
+        "有点时才说，**0 点时整句消失**。⭐⭐ **一个在最需要说话的时候恰好闭嘴的提示，"
+        "比没有这个提示更糟**：它让「一切正常」和「什么都画不出来」"
+        "在紧凑档里长得一模一样",
+    ),
+    Revert(
+        "RN", "「没画过就什么都不画」这条事实没人看着了",
+        "crosshair_overlay.py",
+        "    points = frame.custom_points or ()\n    if not points:\n        return",
+        "    points = frame.custom_points or ()\n    if not points:\n        points = ((15, 15),)",
+        "tests/test_crosshair_custom_style_is_honest.py::"
+        "test_a_custom_crosshair_with_no_points_really_draws_nothing",
+        "RN-406：本页有四句文案在说「未绘制 ⇒ 屏幕上不会出现准心」。"
+        "渲染器哪天加了兜底，那四句**同时变成假话**，而没有任何一条文案判据看得见。"
+        "⭐ **一句文案所依赖的事实，要有判据看着**（同 RN-174 那条"
+        "`..._never_writes_a_game_file`）",
+    ),
+    Revert(
+        "RN", "「有没有画过」这个判断被抄了第二份",
+        "pages/crosshair_page.py",
+        "        blank_custom = self._custom_style_is_blank()",
+        '        blank_custom = (style_value == "custom" and not custom_points)',
+        "tests/test_crosshair_custom_style_is_honest.py::"
+        "test_the_blank_custom_judgement_has_exactly_one_source",
+        "RN-406：这个判断同时决定四个地方的说法（徽章色阶与文案、紧凑摘要、"
+        "样式卡副文案、自定义卡副文案）。抄成第二份，改一处就造出"
+        "「同屏两处说法不一致」（RN-107 族）。"
+        "⭐ 上面那几条文案判据**全都能被「在四个地方各抄一份 if」满足** ——"
+        "所以必须另有一条直接查调用点的",
+    ),
     # ============================================ RN-408：页面清单的棘轮
     #
     # ⚠ 这一组的**被测对象在另一个仓**（页面清单、总纲都是纯文档仓里的文件），
@@ -3662,11 +3713,17 @@ REVERTS = [
         "    for status in _statuses(_registry_text()).values():",
         "    for status in [_registry_text()]:",
         "tests/test_renovation_progress_board_does_not_rot.py::"
-        "test_every_batch_the_registry_tagged_has_a_row_on_the_board",
-        "RN-408：行文里的「批 11」「批 12」是**排期**，状态格里的"
+        "test_only_status_cells_count_as_a_batch_record",
+        "RN-408：行文里的批号是**排期**，状态格里的"
         "「已结（…）·批 10」才是**记录**。⭐ 这个区分是拿批 10 换来的 ——"
         "那一轮有一条判据被一句**预告**（「排在批 10，做完即关档」）里的同一个"
-        "字面量喂成了绿。**一个字符串出现过，不等于那件事发生过**",
+        "字面量喂成了绿。**一个字符串出现过，不等于那件事发生过**。"
+        "⚠⚠ 批 12 全组回退验证把这条判成**假绿**：批 11 写它的时候，"
+        "真登记册的行文里恰好有几个台账里还没有的批号，所以「改成读全文」当场变红；"
+        "批 12 把那一批记进台账之后，行文与台账正好一致，同一个破坏就咬不动了。"
+        "⭐⭐ **一条靠巧合成立的红，会在巧合消失的那一刻变成假绿。**"
+        "⇒ 判据已改成拿合成登记册直接考真函数（证据格写批 5、状态格不写），"
+        "那个差别**不依赖任何真实数据，永远存在**",
     ),
     Revert(
         "RN", "悄悄把一个页状态移出分母",

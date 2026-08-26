@@ -409,6 +409,21 @@ class CrosshairPage(QWidget):
         main_layout.addWidget(self.action_bar, 0)
 
 
+    def _custom_style_is_blank(self):
+        """样式选的是「自定义」，而一个点都还没画 —— 此刻屏幕上什么都不会有。
+
+        RN-406。⭐ **这个判断全页只许有一份**：它同时决定四个地方的说法
+        （状态徽章的色阶与文案、紧凑摘要、样式卡副文案、自定义卡副文案）。
+        抄成四份，改一处就会造出「同屏两处说法不一致」（RN-107 族）。
+
+        依据的事实在 `crosshair_overlay._paint_custom`：`if not points: return`。
+        那条事实由 `tests/test_crosshair_custom_style_is_honest.py` 单独看着 ——
+        ⭐ **一句文案所依赖的事实，要有判据看着。**
+        """
+        if str(getattr(config, "crosshair_style", "") or "") != "custom":
+            return False
+        return not (getattr(config, "crosshair_custom_data", None) or [])
+
     def _format_style_text(self, style_value):
         return CROSSHAIR_STYLE_LABELS.get(
             str(style_value or ""), CROSSHAIR_STYLE_LABELS[DEFAULT_STYLE]
@@ -540,7 +555,12 @@ class CrosshairPage(QWidget):
 
         if hasattr(self, "style_summary_label"):
             style_text = f"当前样式：{self._format_style_text(style_value)}"
-            if custom_points:
+            if self._custom_style_is_blank():
+                # RN-406：他刚点完「自定义」，这张卡要当场回答
+                # 「所以现在屏幕上是什么」——答案是**什么都没有**。
+                # ⚠ 主句是后果，不是指路：批 10 刚实测过「补一句指路」票数一票不掉。
+                style_text += " —— 还没画过，屏幕上不会出现准心"
+            elif custom_points:
                 style_text += f" · 已保存 {custom_points} 个自定义点"
             self.style_summary_label.setText(style_text)
             self.style_summary_label.setToolTip(style_text)
@@ -563,6 +583,11 @@ class CrosshairPage(QWidget):
         if hasattr(self, "custom_summary_label"):
             if custom_points > 0:
                 custom_text = f"当前已保存 {custom_points} 个自定义点，可继续微调后导入或导出。"
+            elif self._custom_style_is_blank():
+                # RN-406：样式已经切到「自定义」了，这里就不再是一句软建议。
+                # ⭐ 同一句话在两种状态下的**性质**不同：一种是"这样会更好"，
+                # 另一种是"不做这件事，功能就是坏的"。
+                custom_text = "样式已选「自定义」，但一个点都还没画 —— 现在准心不会显示。"
             else:
                 custom_text = "当前还没有自定义点，先绘制一个常用模板会更高效。"
             self.custom_summary_label.setText(custom_text)
@@ -586,9 +611,18 @@ class CrosshairPage(QWidget):
         thickness_value = int(getattr(config, "crosshair_thickness", 2) or 2)
         custom_points = len(getattr(config, "crosshair_custom_data", []) or [])
 
+        # RN-406：选中「自定义」而一个点都没画时，`_paint_custom` 直接 return ——
+        # 屏幕上一个像素都不画，而这一格原来写的是 `样式 · 自定义`（info 色），
+        # 和「十字」「圆圈」那些**完全正常**的状态长得一模一样。
+        # ⭐ 让**颜色**携带「现在能不能用」这个信息，是这条修法里唯一结构性的部分；
+        #   文案只加五个字（⚠ 徽章文案改长会让芯片换行、比同排另外四颗高一截 ——
+        #   那条是拿 kill_sound 那一轮换来的，而排版审计三条判据一条都看不见它）。
+        blank_custom = self._custom_style_is_blank()
+        style_text = self._format_style_text(style_value)
         badges = [
             ("positive" if enabled else "warning", f"显示 · {'已启用' if enabled else '未启用'}"),
-            ("info", f"样式 · {self._format_style_text(style_value)}"),
+            ("warning" if blank_custom else "info",
+             f"样式 · {style_text}（未绘制）" if blank_custom else f"样式 · {style_text}"),
             ("info", f"颜色 · {self._format_color_text(color_value)}"),
             ("info", f"大小 · {size_value} / {thickness_value}"),
             (
@@ -596,7 +630,13 @@ class CrosshairPage(QWidget):
                 f"动效 · {self._format_animation_text(animation_value)}",
             ),
             (
-                "positive" if kill_effect_value != "none" else "warning",
+                # ⚠ 这里原来是 `else "warning"` ——「关闭联动」是**默认值**，
+                # 一个完全正常的状态，却常年顶着一颗橙色警示。外审改前那一轮
+                # 5 发点名它「极易误导玩家以为是系统报警或必须配置的异常项」。
+                # ⭐⭐ 而它同时在**稀释真警告**：RN-406 刚在同一排加了一颗
+                #   「样式 · 自定义（未绘制）」——那颗是真的。
+                #   **两颗橙的等于零颗**（RN-139「两颗紫的等于零颗」的徽章版）。
+                "positive" if kill_effect_value != "none" else "info",
                 f"联动 · {self._format_kill_effect_text(kill_effect_value)}",
             ),
         ]
@@ -609,8 +649,13 @@ class CrosshairPage(QWidget):
         ]
         if animation_value != "none":
             compact_parts.append(self._format_animation_text(animation_value))
-        if style_value == "custom" and custom_points:
-            compact_parts.append(f"自定义 {custom_points} 点")
+        if style_value == "custom":
+            # ⚠⚠ 原来是 `if style_value == "custom" and custom_points:` ——
+            # **有点时才说，0 点时整句消失**。⭐ 一个在最需要说话的时候恰好闭嘴的
+            # 提示，比没有这个提示更糟：它让「一切正常」和「什么都画不出来」
+            # 在紧凑档里长得一模一样。
+            compact_parts.append(
+                f"自定义 {custom_points} 点" if custom_points else "自定义未绘制")
 
         compact_summary = " · ".join(compact_parts)
         if not enabled:
@@ -1356,9 +1401,22 @@ class CrosshairPage(QWidget):
             paint_crosshair(painter, frame)
             painter.end()
 
-            pixmap = QPixmap.fromImage(image)
-            pixmap.setDevicePixelRatio(dpr)
-            self.preview_label.setPixmap(pixmap)
+            # RN-406：选中「自定义」而一个点都没画时，`paint_crosshair` 画出来的
+            # 是一张**全透明**的图 —— 预览框于是变成一个纯黑的大方块。
+            # ⭐ 那正是缺陷的现场，而现场上一个字都没有：**它长得像渲染坏了**，
+            #   而不是像「你还没画」。⇒ 这里不放图，放话。
+            if self._custom_style_is_blank():
+                self.preview_label.setPixmap(QPixmap())
+                # ⚠ 措辞要短到**不会在窄卡片里折出半个词**：第一版
+                # 「此时游戏里不会显示任何准心」实测折成
+                # 「…不会显示任何 / 准心」，断在词中间。
+                self.preview_label.setText("还没画过自定义准心\n游戏里不会显示准心")
+                self.preview_label.setWordWrap(True)
+            else:
+                self.preview_label.setText("")
+                pixmap = QPixmap.fromImage(image)
+                pixmap.setDevicePixelRatio(dpr)
+                self.preview_label.setPixmap(pixmap)
 
         except Exception as e:
             self.logger.error(f"更新预览失败: {e}")

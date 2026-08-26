@@ -258,6 +258,7 @@ _SYNTHETIC_REGISTRY = """
 | RN-902 | beta | ①功能 | S3 | 乙页那条 | A | 立案 | — |
 | RN-903 | gamma | ①功能 | S3 | 丙页那条 | A | 立案 | — |
 | RN-904 | gamma | ①功能 | S3 | 丙页第二条 | B | 立案（批 3 外审）| — |
+| RN-905 | epsilon | ①功能 | S3 | ⚠ 这一行专门用来钉「只认状态格」：**行文里**提到批 5 | B | 待裁定 | 排期上准备放进批 5 做 |
 """
 
 
@@ -276,18 +277,34 @@ def test_the_batch_gap_check_actually_catches_a_gap():
     assert missing == [2], f"缺口检查算出 {missing}，应当且只应当是 [2]"
 
 
-def test_the_cross_file_batch_check_actually_catches_a_missing_row():
-    """合成登记册里状态格打过 批 1 与 批 3 —— 再造一条 批 4 出来，必须被逮住。"""
-    logged = {int(re.search(r"(\d+)", c[0]).group(1)) for c in _batch_rows(_SYNTHETIC_BOARD)}
-    tagged = set()
-    for header, cells in _rows(_SYNTHETIC_REGISTRY):
-        status = _cell(header, cells, "状态") or ""
-        tagged |= {int(n) for n in re.findall(r"批\s*(\d{1,2})", status)}
+def test_only_status_cells_count_as_a_batch_record(monkeypatch):
+    """⭐⭐ 只认**状态格**里的批号，不认行文 —— 行文里的是**排期**，不是**记录**。
+
+    ⚠⚠ **这条判据的第一版是「把逻辑照抄一遍跑在合成数据上」，而不是调真函数。**
+    于是它证明的是「我抄的那份逻辑好使」，不是「产品里那份好使」——
+    ⭐ **只测「零件好使」证明不了「零件装上了」**（批 10 那两条假绿就是这个形状，
+    批 12 又中一次）。
+
+    ⚠⚠ 更要命的是它连带让**回退断点变成了假绿**：批 11 写那条断点时，
+    真登记册的行文里恰好有几个台账里还没有的批号，所以「改成读全文」当场变红；
+    批 12 把那一批记进台账之后，行文与台账**正好一致**，同一个破坏就再也咬不动了。
+    ⭐⭐ **一条靠巧合成立的红，会在巧合消失的那一刻变成假绿 ——
+    而它变的时候不会有人通知你。**（批 10 记过它的镜像：一条靠巧合成立的绿。）
+
+    ⇒ 现在直接考**真函数**，输入是合成登记册：`RN-905` 的**证据格**里写着「批 5」，
+    状态格里没有。只认状态格 ⇒ {1, 3}；读全文 ⇒ {1, 3, 5}。
+    **这个差别不依赖任何真实数据，永远存在。**
+    """
+    import sys as _sys
+    monkeypatch.setattr(_sys.modules[__name__], "_registry_text",
+                        lambda: _SYNTHETIC_REGISTRY)
+    tagged = _batches_the_registry_tagged()
     assert tagged == {1, 3}, (
-        f"从合成登记册的状态格里读出 {sorted(tagged)} —— 应当是 [1, 3]。"
-        "⚠ 「批 3」写在 RN-904 的状态格里（`立案（批 3 外审）`），"
-        "而 RN-903 的证据格里什么都没有 —— 这条判据只该看状态格。"
+        f"从合成登记册里读出 {sorted(tagged)} —— 应当恰好是 [1, 3]。\n"
+        "「批 5」只写在 RN-905 的**证据格**里（那是排期，不是记录），不许算进来；\n"
+        "「批 3」写在 RN-904 的**状态格**里（`立案（批 3 外审）`），必须算进来。"
     )
+    logged = {int(re.search(r"(\d+)", c[0]).group(1)) for c in _batch_rows(_SYNTHETIC_BOARD)}
     assert not (tagged - logged), "合成数据本身应当是对上的"
     assert 4 not in logged, "合成台账里不该有 批 4"
 
