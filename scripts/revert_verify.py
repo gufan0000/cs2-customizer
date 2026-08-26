@@ -3640,6 +3640,61 @@ REVERTS = [
         "⚠ pytest 对「参数化了零个用例」是**静默通过**的 —— 报告上看不出区别。"
         "⭐ 一条会随产品一起缩小的清单，必须有人盯着它的下界",
     ),
+    # ============================================ RN-188：全站主按钮唯一性
+    Revert(
+        "RN", "又一页长出第二颗同名主按钮",
+        "pages/hud_color_page.py",
+        '        self.action_bar.configure_primary("保存 HUD 规则"',
+        '        self.action_bar.configure_primary("保存 HUD 规则", self._save_hud_rules, visible=True)\n'
+        '        self.action_bar.configure_extra("保存 HUD 规则", self._save_hud_rules, visible=True)\n'
+        '        self.action_bar.extra_btn.setObjectName("primaryButton")\n'
+        '        self.action_bar.configure_primary("保存 HUD 规则"',
+        "tests/test_one_primary_button_per_screen.py::"
+        "test_no_page_grows_a_new_pair_of_identical_primary_buttons",
+        "RN-188：全站 28 页实测，**4 页同屏 >1 颗，且无一例外都是同一个动作出现两次**"
+        "（viewmodel 保存到CFG ×2 / voice_output 添加槽位 ×2 / account 登录账号 ×2 / "
+        "about 查看更新日志 ×2）。⭐ **两颗紫的等于零颗**（RN-139）。"
+        "⭐⭐ 而 `viewmodel` 那一对是 **RN-078 的裁定亲手造出来的** ——"
+        "它把「两个名字」统一成「一个名字」，解决了「以为是两件事」，"
+        "却造出了「两颗一模一样的紫按钮」，隔了 5 天、跨了两个条目才被看见",
+    ),
+    Revert(
+        "RN", "债表变成博物馆（修好了不回来删）",
+        "tests/test_one_primary_button_per_screen.py",
+        '    "account":      ("登录账号", 2),         # RN-416',
+        '    "account":      ("登录账号", 9),         # RN-416',
+        "tests/test_one_primary_button_per_screen.py::"
+        "test_the_debt_table_does_not_become_a_museum",
+        "RN-188：只判「变没变坏」的棘轮，在缺陷修好之后会**永远停在旧数上** ——"
+        "从「守着一条线」退化成「记录一个历史」，而且**没有任何东西会说它退化了**。"
+        "⇒ 三向都要红：新增 / 变多 / **已经不该在册**。同 RN-196 的 `KNOWN_COMPACT_DEBT`",
+    ),
+    Revert(
+        "RN", "债表里的页被摘出导航，而实现文件还在",
+        "gui_widget.py",
+        '                ("viewmodel", "局内视角"),',
+        '                # ("viewmodel", "局内视角"),',
+        "tests/test_one_primary_button_per_screen.py::"
+        "test_the_debt_table_does_not_become_a_museum",
+        "RN-188：这张债表记的是**完整产品**的实测值，而派生的功能子集里每一格都可能不同"
+        "（实测：子集里 `account` 整页不存在、`about` 的按钮被机械替换改名且少一颗）。"
+        "⭐ 「照闭源版文件集写死的断言，在子集仓里不是「更严」，是「错」」——**一周内第三次**。"
+        "⇒ 判别式沿用批 11 那条：**缺的页必须连实现文件都不在**；"
+        "实现文件还在却没扫到，就是**一整页被摘出了导航**，必须红。"
+        "⚠ 这条断点防的正是「为了让子集跑绿而把整条 skip 掉」那种放宽",
+    ),
+    Revert(
+        "RN", "全站扫描只走到一半（专家页静默漏掉）",
+        "tests/test_one_primary_button_per_screen.py",
+        "            _ui_mode.goto(win, page_id)",
+        "            win.show_page(page_id, animated=False)",
+        "tests/test_one_primary_button_per_screen.py::"
+        "test_the_scan_actually_sees_the_pages",
+        "RN-188：普通模式下 6 个专家页没有导航入口，不带 `force=True` 的 `show_page` "
+        "会**静默 return** ⇒ 28 页只走到 22 页。⭐ 那条教训逐字写在 `_ui_mode.goto` "
+        "的注释里，而我在普查脚本里用对了、换到判据里又自己抄了一遍 ——"
+        "**一个教训只修在它被发现的那条通路上，等于只修了一份副本**",
+    ),
     # ============================================ RN-406：选中自定义却什么都不画
     Revert(
         "RN", "样式徽章又只报名字、不报后果",
