@@ -629,6 +629,11 @@ class FlashPage(QWidget):
         preview_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.basic_preview_widget = FlashPreviewWidget()
         preview_layout.addWidget(self.basic_preview_widget, 1)
+        # RN-407 第③件：预览照常合成，旁边一句话说清楚游戏里看不看得到。
+        from widgets.master_switch_effect import make_preview_effect_caption
+
+        self.preview_effect_caption = make_preview_effect_caption()
+        preview_layout.addWidget(self.preview_effect_caption)
         layout.addWidget(preview_card, 1)
 
         scroll.setWidget(content)

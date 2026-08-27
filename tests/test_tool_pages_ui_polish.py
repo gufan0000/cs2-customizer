@@ -2044,6 +2044,14 @@ def test_voice_output_page_status_card_tracks_runtime_and_forwarding(qapp, monke
     monkeypatch.setattr(voice_output_page_module.keyboard, "hook", lambda *_args, **_kwargs: object())
     monkeypatch.setattr(voice_output_page_module.keyboard, "unhook", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(config, "save_config", lambda: None, raising=False)
+    # ⚠⚠ **这一条前置状态原来是"看命"的**（2026-08-27 批 16 逮到）。
+    # 下面断言底栏最后一句是「当前标签：语音设置 …」，而 `voice_output_enabled`
+    # 一旦为真，`register_hotkeys` 会在那之后**再写一句**「音板快捷键已就绪（N 个）」
+    # 把它冲掉。判据不钉这个值，靠的是那个**跨轮次累积**的共享配置目录里恰好是 False
+    # —— 别处一条判据拨了一次总开关，这一条就红，而红的原因跟被判的改动无关。
+    # ⭐ RN-141 那条规矩的第四个实例：**判据的前置状态要么它自己钉，要么 conftest
+    #   统一钉死；不许"看命"。**
+    monkeypatch.setattr(config, "voice_output_enabled", False, raising=False)
     monkeypatch.setattr(config, "voice_output_volume", 0.65, raising=False)
     monkeypatch.setattr(config, "voice_output_mode", "覆盖", raising=False)
     monkeypatch.setattr(config, "voice_output_also_local", True, raising=False)

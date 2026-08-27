@@ -14,6 +14,9 @@ class PageActionBar(QFrame):
         self._primary_callback = None
         self._secondary_callback = None
         self._extra_callback = None
+        # RN-407：页面自己写的那一截状态文案。回执由 `_effect_state()` 现算
+        # （真源是那颗开关），不在这儿存第二份。
+        self._base_message = ""
         self._init_ui()
 
     def _init_ui(self):
@@ -46,8 +49,57 @@ class PageActionBar(QFrame):
         self.primary_btn.hide()
         layout.addWidget(self.primary_btn, 0)
 
+    def _effect_state(self) -> bool | None:
+        """这一页的总开关现在是开是关；这一页没有总开关就返回 None。
+
+        ⭐⭐ **回执的真源是那颗开关自己，不是「有没有人来通知过我」。**
+        第一版是让 `MasterSwitchRow` 拨过来一个布尔存着，而那件事挂在一个
+        `singleShot(0)` 上 —— 于是「页面建完但事件循环还没转过」的那一瞬间，
+        底栏一个字都不说。三条既有判据当场逮到（crosshair 两条 + 排版一条）。
+        ⚠ 那不是"少了一次刷新"，是**回执的正确性依赖了一次时序**。
+        同 RN-417：量不稳的东西就别去量它的值，去量决定那个值的规则。
+        """
+        node = self.parentWidget()
+        while node is not None:
+            row = getattr(node, "master_switch_row", None)
+            if row is not None and hasattr(row, "is_checked"):
+                return bool(row.is_checked())
+            node = node.parentWidget()
+        return None
+
+    def refresh_effect_state(self):
+        """总开关动了 —— 把这一条回执重算一遍。"""
+        self._render_message()
+
     def set_message(self, text: str):
-        message = str(text or "")
+        self._base_message = str(text or "")
+        self._render_message()
+
+    def _render_message(self):
+        """RN-407 第①件：把「改的东西现在生不生效」收进底栏这一条回执。
+
+        ⚠⚠ 批 10 我在 crosshair 底栏写的是**无条件**的
+        「改动已自动保存，不用点任何按钮。」——它在总开关开着时是真话，
+        关着时是假话。外审对它的判词：现状 4/4 高、候选 C 6/6 高，
+        是这条缺陷里票数最高的一项。
+        ⭐ **一句只在某个状态下为真的回执，在别的状态里就是一句谎。**
+
+        拼在这儿而不是让各页自己拼，是因为**页面会在任意时刻再调一次
+        `set_message`**（各页的 `_sync_action_bar`）。让它自己拼的话，
+        回执随时会被下一次刷新冲掉，而且不会有任何一处报错。
+        ⭐⭐ 一条守卫的输入如果能被一次常规操作顺手改写，那条守卫就不是守卫。
+        """
+        from widgets.master_switch_effect import (
+            ACTION_BAR_OFF_TEXT, ACTION_BAR_ON_TEXT,
+        )
+
+        enabled = self._effect_state()
+        parts = []
+        if enabled is not None:
+            parts.append(ACTION_BAR_ON_TEXT if enabled else ACTION_BAR_OFF_TEXT)
+        if self._base_message:
+            parts.append(self._base_message)
+        message = "".join(parts)
         self.message_label.setText(message)
         self.message_label.setToolTip(message)
 

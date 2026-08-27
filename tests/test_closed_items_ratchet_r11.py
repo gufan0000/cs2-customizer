@@ -72,6 +72,11 @@ def test_generate_stylesheet_does_not_grow():
 #: ⇒ 现在的数 = pages 43 + widgets 4 + dialogs 1。
 HANDROLLED_CARD_MAX = 48
 
+#: ⚠ 它数的是**字面形态**，分不出「这是在调用」还是「这是在注释里谈论它」。
+#: 2026-08-27（批 16）实测：`widgets/master_switch_effect.py` 的一句解释性注释
+#: 里写了这个调用的样子，当场被算成第 49 处手搓卡片。
+#: ⭐ **一条按正则数「有没有做某件事」的棘轮，会把「谈论那件事」也算进去。**
+#: ⇒ 处置是**改注释**，不是放宽棘轮：写文档的人绕开一句话，比棘轮空出一格便宜。
 _SETOBJECTNAME_CARD = re.compile(r"""setObjectName\(\s*["']card["']\s*\)""")
 
 #: ⚠⚠ 扫描范围原来**只有 `pages/`**。RN-180 加空库引导卡时我第一版手搓了一个

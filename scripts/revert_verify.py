@@ -3861,6 +3861,100 @@ REVERTS = [
         "⭐⭐ **同一件事说五遍，任何一遍变假都不会有人发现 —— 因为没人知道有五遍。**"
         "这条断点防的是「找不到真源就当没事」——**必须是红，不许是 skip**",
     ),
+    # ==================================== RN-407：总开关关着时整页停止假装已生效
+    Revert(
+        "RN", "底栏那句回执又变回**无条件**的「已保存」",
+        "widgets/page_action_bar.py",
+        "            parts.append(ACTION_BAR_ON_TEXT if enabled else ACTION_BAR_OFF_TEXT)",
+        "            parts.append(ACTION_BAR_ON_TEXT)",
+        "tests/test_master_switch_effect_is_honest.py::"
+        "test_the_action_bar_receipt_follows_the_master_switch",
+        "RN-407：这正是批 10 我自己写进去的那句话的形态 ——"
+        "它在总开关开着时是真话，关着时是假话，而外审对它的判词是"
+        "现状 4/4 高、候选 C 6/6 高（这条缺陷里票数最高的一项）。"
+        "⭐ **一句只在某个状态下为真的回执，在别的状态里就是一句谎。**",
+    ),
+    Revert(
+        "RN", "回执改回「等人来通知」，于是建完那一瞬间它什么都不说",
+        "widgets/page_action_bar.py",
+        "            row = getattr(node, \"master_switch_row\", None)",
+        "            row = None",
+        "tests/test_master_switch_effect_is_honest.py::"
+        "test_the_receipt_needs_no_one_to_come_and_tell_it",
+        "RN-407：第一版把状态存成一个布尔、由 `MasterSwitchRow` 在 `singleShot(0)` 里"
+        "拨过来，于是「页面刚建好、事件循环还没转」的那一瞬间底栏一个字都不说，"
+        "三条既有判据当场逮到。⭐⭐ **回执的真源是那颗开关自己，"
+        "不是「有没有人来通知过我」**（同 RN-417：量不稳的东西就去量决定它的规则）",
+    ),
+    Revert(
+        "RN", "降权只降卡片外壳，说话的那些控件一个像素不动",
+        "widgets/master_switch_effect.py",
+        "            if isinstance(child, _ACCENT_BEARING) or (",
+        "            if False or (",
+        "tests/test_master_switch_effect_is_honest.py::"
+        "test_the_de_emphasis_actually_changes_pixels",
+        "⚠⚠ **这条断点第一次指的是 `..._is_de_emphasised_when_the_switch_is_off`，"
+        "回退验证当场判它假绿** —— 那条判据查的是卡片上那个**属性**，"
+        "而属性设上了、QSS 也写对了，屏幕上照样可以一个像素都不变"
+        "（改祖先的动态属性不会让后代重算样式）。"
+        "⭐⭐⭐ **判据绿不代表屏幕上有东西 —— 那就去量屏幕**：现在指的是"
+        "直接抓那个控件像素的那一条。"
+        "RN-407 ⭐⭐ **这条修复是外审复跑打出来的**：第一版只降了标题字色和左侧竖杠，"
+        "**43 发里 39 发照旧报**「所有控件均为高亮紫色激活态且未置灰 ⇒ 以为在运行」。"
+        "⭐ 「这一片是活的」这个信号不是外壳发出来的，是滑块/单选/主按钮上的"
+        "**品牌强调色**发出来的。⚠ 另一半坑：**改祖先的动态属性不会让后代重算样式**"
+        "—— QSS 规则写对了、判据也绿，而屏幕上一个像素没变，因为没人叫它们 repolish",
+    ),
+    Revert(
+        "RN", "降权顺手把控件禁用了（RN-179 那条缺陷换个形态回来）",
+        "widgets/master_switch_effect.py",
+        "        card.setProperty(CARD_DIM_PROPERTY, value)",
+        "        card.setEnabled(enabled)\n        card.setProperty(CARD_DIM_PROPERTY, value)",
+        "tests/test_master_switch_effect_is_honest.py::"
+        "test_the_de_emphasis_itself_never_disables_anything[crosshair]",
+        "RN-407 / RN-179：要的是「**可调、会保存，但现在不生效**」。"
+        "禁用是另一条缺陷（那一轮实测「空库时 188 个控件可点却没反应」），"
+        "⭐ **两条都不要** —— 所以这条断点是**反方向**的：它防的不是「没做」，"
+        "是「做过了头」",
+    ),
+    Revert(
+        "RN", "那句「照常可调」重新变成一条会长高的横幅",
+        "widgets/master_switch_effect.py",
+        'NOTICE_OFF_TEXT = "游戏里不生效；照常可调、改了会保存"',
+        'NOTICE_OFF_TEXT = ("总开关关着：下面的设置照常可以调，改了也会自动保存，'
+        '但现在不会出现在游戏里。把总开关打开就立刻生效。")',
+        "tests/test_master_switch_effect_is_honest.py::"
+        "test_the_off_copy_promises_the_controls_still_work",
+        "RN-407：这就是第一版的原文。做成开关行下面的横幅之后开关行 24px → **63px**，"
+        "紧凑档排版审计当场判红：状态卡在滚动区外面的 9 页，那 39px 是从 548px 的"
+        "可视区里硬扣的（`kill_voice` 在册纵向裁切 64→107px，还多出两条全新溢出）。"
+        "⭐⭐ **把话说清楚，不等于可以把它塞在任何地方** —— "
+        "固定不动的那块屏幕是稀缺资源",
+    ),
+    Revert(
+        "RN", "预览被藏起来（候选 C 那一步）",
+        "pages/crosshair_page.py",
+        "        self.preview_frame = preview_frame",
+        "        self.preview_frame = preview_frame\n        preview_frame.hide()",
+        "tests/test_master_switch_effect_is_honest.py::"
+        "test_the_preview_is_still_being_drawn_when_the_switch_is_off[crosshair]",
+        "RN-407：批 14 的候选 C 把预览改成不渲染，**6/6 判高**"
+        "「失去反馈，与底栏『已自动保存』矛盾」—— 比它想修的那条还重。"
+        "⭐ **说后果，别撤反馈。**"
+        "⚠ 这条断点第一次打在「把那句话藏起来」上，指向的判据只查文案不查可见性，"
+        "**回退验证当场判它假绿** —— ⭐ 断点模拟的缺陷和判据盯的行为**必须是同一件事**",
+    ),
+    Revert(
+        "RN", "状态胶囊组照旧用彩色喊「运行中」",
+        "widgets/master_switch_effect.py",
+        "    if host is not None and host.property(HOST_DIM_PROPERTY) != value:",
+        "    if False and host.property(HOST_DIM_PROPERTY) != value:",
+        "tests/test_master_switch_effect_is_honest.py::"
+        "test_the_status_chips_follow_the_switch[crosshair]",
+        "RN-407：外审 43 发里 **16 发**把那颗**橙色**的「未启用」读成了"
+        "「运行中/已激活」的高亮指示灯 —— 深色底上的橙色对 CS2 玩家就是「点亮了」。"
+        "⭐ **按警示色着色而不按状态着色，颜色照样不携带信息。**",
+    ),
     # ⛔⛔ 新断点一律加在**这一行之上**。
     #
     # 下面这个标记是开源同步那个语义补丁的**锚点**：开源版在这个位置追加它自己的

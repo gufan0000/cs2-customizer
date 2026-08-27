@@ -40,14 +40,30 @@ def main() -> int:
     ok = 0
     fails: list[tuple[str, str]] = []
     total_cases = 0
+    timed_out: list[str] = []
     for tf in tests:
-        r = subprocess.run(
-            [sys.executable, "-m", "pytest", str(tf), "-q", "--no-header", "-p", "no:cacheprovider"],
-            cwd=str(ROOT), capture_output=True, text=True, timeout=300,
-            # 钉死 UTF-8:GitHub runner/非中文区 Windows 默认 cp1252,
-            # 子进程输出含中文会让 reader 线程 UnicodeDecodeError(CI #5 实锤)
-            encoding="utf-8", errors="replace",
-        )
+        try:
+            r = subprocess.run(
+                [sys.executable, "-m", "pytest", str(tf), "-q", "--no-header", "-p", "no:cacheprovider"],
+                cwd=str(ROOT), capture_output=True, text=True, timeout=300,
+                # 钉死 UTF-8:GitHub runner/非中文区 Windows 默认 cp1252,
+                # 子进程输出含中文会让 reader 线程 UnicodeDecodeError(CI #5 实锤)
+                encoding="utf-8", errors="replace",
+            )
+        except subprocess.TimeoutExpired:
+            # ⚠⚠ 2026-08-27（批 16）：这里原来**不接** `TimeoutExpired` ——
+            # 一个跑过 300 秒的判据文件会让整台门禁**当场抛异常退出**，
+            # 连「文件 N: OK x / FAIL y」那行汇总都打不出来。
+            # ⭐⭐ **一条跑不完的判据，坏的不是它自己，是它把别的判据的结论一起带走了。**
+            #   而且现场看到的是一段 subprocess 回溯，读起来像工装坏了，
+            #   不像「有个测试太慢」—— 归因方向直接被带偏。
+            # ⇒ 超时现在记成**一条红**，剩下的文件照跑完。
+            timed_out.append(tf.name)
+            fails.append((tf.name, "超时（>300s）—— 判据本身没跑完，结论未知"))
+            print(f"FAIL {tf.name}: 超时（>300s）")
+            print("     ! 这条不是「测出问题」，是「没测完」。")
+            print("     ! 常见成因：函数级夹具里建了主窗口，参数化用例又有几十条。")
+            continue
         out = (r.stdout or "").strip().splitlines()
         summary = next((line for line in reversed(out) if re.search(r"passed|failed|error", line)), "")
         m = re.search(r"(\d+) passed", summary)
@@ -74,6 +90,9 @@ def main() -> int:
     print(f"文件 {len(tests)}: OK {ok} / FAIL {len(fails)} | 用例通过 {total_cases} | {time.time()-t0:.0f}s")
     for name, s in fails:
         print(f"  FAIL {name}: {s}")
+    if timed_out:
+        print(f"  ⚠ 其中 {len(timed_out)} 个是**超时**（结论未知，不是判为不通过）："
+              f"{'、'.join(timed_out)}")
     return 1 if fails else 0
 
 

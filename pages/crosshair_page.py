@@ -518,8 +518,13 @@ class CrosshairPage(QWidget):
         # ⭐ RN-174：底栏这行字要**先回答那个 5/6 票的困惑**（"我改的东西保存了吗"），
         # 再报状态。原来它只报状态，于是玩家在整页找不到任何"已保存"的回执，
         # 就会去找一颗保存按钮 —— 而那颗按钮不存在。
+        # ⚠⚠ RN-407（批 16）：那句回执**已经不在这儿了**。批 10 我写的是无条件的
+        #   「改动已自动保存，不用点任何按钮。」——它在总开关开着时是真话，
+        #   关着时是假话，而外审对它的判词是现状 4/4 高、候选 C 6/6 高。
+        #   现在它由 `PageActionBar.set_effect_state()` 按总开关的实际状态拼，
+        #   本页只负责报**状态**那一截。⭐ 一句只在某个状态下为真的回执，
+        #   在别的状态里就是一句谎。
         action_message = (
-            "改动已自动保存，不用点任何按钮。"
             f"当前样式：{self._format_style_text(style_value)} · 颜色 {self._format_color_text(color_value)}"
             f" · 动效 {self._format_animation_text(animation_value)}"
             f" · 联动 {self._format_kill_effect_text(kill_effect_value)}"
@@ -768,8 +773,18 @@ class CrosshairPage(QWidget):
         preview_container.addWidget(preview_frame)
         preview_container.addStretch()
         layout.addLayout(preview_container)
+
+        # RN-407 第③件：预览**照常画**，但要说清楚它意味着什么。
+        # ⚠ 候选 C 那一轮试的是「关着就别渲染」，6/6 判高「失去反馈，与底栏矛盾」
+        #   —— 比它想修的那条还重。⭐ 说后果，别撤反馈。
+        # 位置在预览框**紧下方**：解释性文字要放在困惑发生的地方，
+        # 放页尾等于没放（官网那两轮 6 发的判词是「藏在底部小字里」）。
+        from widgets.master_switch_effect import make_preview_effect_caption
+
+        self.preview_effect_caption = make_preview_effect_caption()
+        layout.addWidget(self.preview_effect_caption)
         layout.addStretch()
-        
+
         return card
     
     def _create_size_thickness_card(self):

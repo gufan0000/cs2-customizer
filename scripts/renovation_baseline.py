@@ -270,7 +270,12 @@ def capture(pages: list[str], accept: bool) -> int:
         missing = [p for p in all_pages if p not in set(pages)]
         old = env_file.read_text(encoding="utf-8").strip() if env_file.exists() else ""
         if not missing or not old or old == now:
-            env_file.write_text(now + "\n", encoding="utf-8")
+            # ⚠ `newline="\n"`：不给的话 Windows 会写成 CRLF，而这个文件在仓里是 LF
+            # ⇒ 每一次「环境没变，原样写回去」都会留下一条**只有行尾在变**的假改动。
+            # ⭐ 「一个『读出来再原样写回去』的还原，在 Windows 上不一定是原样」——
+            #   批 12 在 `revert_verify` 上踩过一模一样的，这里是它的第二个出口。
+            with env_file.open("w", encoding="utf-8", newline="\n") as fp:
+                fp.write(now + "\n")
             print(f"   环境签名: {now}")
         else:
             print(f"   !! **环境签名没改写**：本机 {now}\n"

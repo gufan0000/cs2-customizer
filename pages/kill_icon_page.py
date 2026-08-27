@@ -239,7 +239,17 @@ class KillIconPage(QWidget):
         # "正常"：不溢出、不报错、判据全绿，是渲染成图肉眼看才发现的。
         self.hero_preview.setMinimumWidth(0)
         self.hero_preview.setMinimumHeight(120)
-        body.addWidget(self.hero_preview, 0, Qt.AlignTop)
+        # RN-407 第③件：图照常播，旁边一句话说清楚游戏里看不看得到。
+        from widgets.master_switch_effect import make_preview_effect_caption
+
+        preview_column = QVBoxLayout()
+        preview_column.setSpacing(6)
+        preview_column.addWidget(self.hero_preview)
+        self.preview_effect_caption = make_preview_effect_caption()
+        self.preview_effect_caption.setMaximumWidth(212)
+        preview_column.addWidget(self.preview_effect_caption)
+        preview_column.addStretch()
+        body.addLayout(preview_column, 0)
 
         right = QVBoxLayout()
         right.setSpacing(8)

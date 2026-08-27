@@ -358,6 +358,139 @@ class Theme:
         c = QColor(hex_color)
         return f"rgba({c.red()}, {c.green()}, {c.blue()}, {alpha})"
 
+    def _master_switch_effect_qss(self) -> str:
+        """RN-407（批 16）：总开关关着时，整页停止假装已经生效。
+
+        ⭐ 单开一个方法是 UP-058 那条棘轮要求的（`generate_stylesheet` 判为不拆，
+        但**不许继续长**）—— 它在这一批当场把我拦下来了，1543 → 1590 行。
+
+        三段，对应三件事：
+
+        1. **参数卡降权**。⚠ 降权**不是禁用** —— RN-179 记过「188 个控件可点却
+           没反应」，那是另一条缺陷。这里只换颜色：控件照常可点、改了照常存，
+           旁边那条 `#masterOffNotice` 负责把「但现在不生效」说出来。
+           ⚠ 不走 `QGraphicsOpacityEffect`：卡片自己挂着 elevation 阴影，
+           一个控件只能挂一个 effect，换上去就把阴影顶掉并析构
+           （`gui_widget.py:4633` 的搜索高亮、`ui_transitions.py:7` 的转场各记过一次）。
+           ⚠ 这一段必须排在 `[semantic]` **之后**：特异度相同，后来者胜。
+           ⭐ 字色用 `text_secondary` —— 它已经被
+           `test_theme_contrast.test_body_text_meets_aa` 盯着（9 主题 ×3 背景全部
+           ≥4.5:1）。随手另调一个灰就绕开了那条守卫，而
+           「改了配色一定要重算对比度」是拿官网那轮换来的。
+           ⚠ **左侧那条竖杠不能用 `border_secondary`**：实测（批 16 出图肉眼看）
+           深色主题下它是 `#1f212c`，压在 `#1a1d27` 的卡上**一个像素都看不出来**，
+           整条降权在图上等于没发生。⭐ 又一次「一个没渲染出来的效果」——
+           **改完必须出图看一眼，判据绿不代表屏幕上有东西**。
+           ⚠ 也不能靠**换卡片底色**：`light` 主题的 `bg_card` 和 `bg_secondary`
+           都是 `#ffffff`、`contrast` 主题只差一档 —— ⭐ 一个在两个主题里
+           **数学上等于零**的视觉通道，不算通道。
+           ⇒ 只走**字色 + 竖杠**，两者在九个主题里都拉得开。
+
+        2. **那句话**。它是一个 `QLabel`（`QLabel` 自己会画 stylesheet 背景；
+           ⚠ **`QWidget` 子类不会** —— 批 14 的候选 B 就废在这儿，底色一个像素
+           都没渲染出来，⭐ 一个没渲染出来的候选，拿去比就是在比两张一样的图）。
+           配色沿用 `audioStatusChip[level="warning"]` 那一套（薄染 + 左侧色条），
+           字色走 `_chip_text()`，与 `test_status_chip_text_meets_aa` 同一条守卫。
+
+        3. **预览旁边那句话**。开着是中性说明，关着跳成警示色 ——
+           颜色要携带「现在到底生不生效」这个信息（官网那轮记过：
+           **按品牌着色而不按状态着色，等于颜色不说话**）。
+        """
+        c = self.colors
+        radius = self.ds.radius
+        font = self.ds.font_size
+        # 降权用的中性色。⚠ 主按钮上的字要跟着它走，不能留着原来那套。
+        # ⚠ 实测（批 16）：光取黑白里较好的那一端还不够 —— 墨绿主题 4.37:1、
+        #   玫瑰 4.45:1，两个都**差一口气到 AA**。⭐ 「改了配色一定要重算对比度」
+        #   这条每一次都会逮到一个我以为没问题的组合。
+        # （`idle` 自己压在卡片底上最差 3.09:1 —— 它是**非文字 UI 元件**
+        #   （滑块填充、单选框圈），WCAG 那一档的下限就是 3:1。）
+        from core.utils.contrast import AA_NORMAL, ensure_contrast
+
+        idle = c.text_tertiary
+        idle_text = ensure_contrast(self._on_color(idle), (idle,), AA_NORMAL)
+        return f"""
+            QFrame#card[masterOff="true"] {{
+                border-left: 3px solid {c.text_tertiary};
+            }}
+            QFrame#card[masterOff="true"] QLabel#cardTitle {{
+                color: {c.text_secondary};
+            }}
+
+            /* ⚠⚠ **第一版只降了卡片的「壳」（标题字色 + 左侧竖杠），外审复跑当场
+             *   证明那是降错了地方**：43 发里 39 发照旧报
+             *   「所有控件均为高亮紫色激活态且未置灰 ⇒ 以为功能正在运行」。
+             * ⭐⭐ **「这一片是活的」这个信号不是卡片外壳发出来的，是那些强调色
+             *   控件发出来的** —— 滑块的紫色填充、单选框的紫圈、主按钮。
+             *   我把外壳调暗了，而说话的那个东西一个像素没动。
+             * ⇒ 关着的时候，卡片里所有带**品牌强调色**的控件一律退成中性灰。
+             * ⚠ 只换颜色，**不动 `:disabled`**：控件照常可点、照常保存
+             *   （RN-179：可点却没反应是另一条缺陷，两条都不要），
+             *   开关行旁边那句「照常可调、改了会保存」负责把这件事说出来。 */
+            QFrame#card[masterOff="true"] QSlider::sub-page:horizontal,
+            QFrame#card[masterOff="true"] QSlider::sub-page:vertical {{
+                background: {idle};
+            }}
+            QFrame#card[masterOff="true"] QSlider::handle:horizontal,
+            QFrame#card[masterOff="true"] QSlider::handle:vertical {{
+                background: {idle};
+                border: 1px solid {c.border_secondary};
+            }}
+            QFrame#card[masterOff="true"] QRadioButton::indicator {{
+                border-color: {idle};
+            }}
+            QFrame#card[masterOff="true"] QRadioButton::indicator:checked {{
+                border-color: {idle};
+            }}
+            QFrame#card[masterOff="true"] QCheckBox::indicator:checked {{
+                background: {idle};
+                border-color: {idle};
+            }}
+            QFrame#card[masterOff="true"] QPushButton#primaryButton {{
+                background: {idle};
+                color: {idle_text};
+            }}
+
+            /* 状态胶囊组：关着的时候它读起来像一张「当前正在运行的配置清单」。
+             * 外审 43 发里 16 发把那颗**橙色**的「未启用」读成了「运行中/已激活」
+             * 的高亮指示灯（深色主题下橙色 = 点亮，是 CS2 玩家的既有直觉）。
+             * ⭐ **按警示色着色而不按状态着色，颜色照样不携带信息。**
+             * ⇒ 总开关关着时整排胶囊退成中性 —— 「开没开」由它正上方那颗开关
+             *   和那句话来说，不由一排彩色标签来说。
+             * ⚠ 挂在**祖先**（状态卡）上而不是逐颗挂：那排胶囊自己会因为
+             *   level 变化反复 repolish，属性挂在它们身上会被洗掉。 */
+            QFrame#card[masterOffHost="true"] QLabel#audioStatusChip {{
+                color: {c.text_muted};
+                background-color: transparent;
+                border: 1px solid {c.border_secondary};
+            }}
+
+            /* ⚠⚠ **这两处原来是橙色的，那是错的。**
+             * 外审第三轮 12 发以上同一条判词：
+             *   「橙黄色背景**误当成已激活的运行指示灯**」
+             *   「橙色提示条视觉上类似高亮状态条**而非阻断警告**」
+             * —— 和当初逼我把状态胶囊改成中性的**是同一条**：
+             * ⭐⭐⭐ **在这套深色界面里，任何一块饱和的色都读作「亮着 = 在运行」。**
+             *   于是「未启用」用橙色写，写得越醒目越像「已启用」。
+             * ⇒ 全站统一成一套：**中性 = 没在跑，品牌色 = 在跑**。
+             *   这一句、状态胶囊、参数控件因此在关着时是同一个调子，
+             *   整屏唯一还带颜色的就是那颗要去拨的开关。 */
+            QLabel#masterOffNotice {{
+                color: {c.text_secondary};
+                background-color: {self._hex_to_rgba(c.text_tertiary, 30)};
+                border-left: 3px solid {c.text_tertiary};
+                border-top-right-radius: {radius.sm}px;
+                border-bottom-right-radius: {radius.sm}px;
+                font-size: {font.sm}px;
+                padding: 2px 8px 2px 6px;
+            }}
+
+            QLabel#previewEffectCaption {{
+                color: {c.text_secondary};
+                font-size: {font.sm}px;
+            }}
+"""
+
     def _icon_button_qss(self, c, radius) -> str:
         """两个"只有一个字符"的小方按钮：顶栏模式切换、页面标题旁的帮助「?」。
 
@@ -947,7 +1080,7 @@ class Theme:
             QFrame#card[semantic="danger"] {{
                 border-left: 3px solid {c.error};
             }}
-
+            {self._master_switch_effect_qss()}
             QFrame#pageActionBar {{
                 background-color: {self._hex_to_rgba(c.bg_secondary, 252)};
                 border-top: 1px solid {c.border_secondary};

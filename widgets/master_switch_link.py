@@ -117,14 +117,51 @@ class MasterSwitchRow(QWidget):
         self._state_label = QLabel("")
         self._state_label.setObjectName("hintLabel")
         layout.addWidget(self._state_label)
-        layout.addStretch()
+
+        # RN-407 第②件的**说话**部分：「可调、会保存、但现在不生效」。
+        # ⭐ 做成这个组件自己的一部分，而不是让 15 页各插一条 ——
+        #   「关着的时候有没有把后果说出来」这件事因此**结构上不可能漏一页**。
+        # ⚠ 它坐在开关行本来就空着的那段横向空间里，占的是 stretch 的位置：
+        #   常态**零新增高度**。理由见 `NOTICE_OFF_TEXT` 上那段紧凑档的账。
+        from widgets.master_switch_effect import make_master_switch_notice
+
+        self.effect_notice = make_master_switch_notice()
+        layout.addWidget(self.effect_notice, 1)
+        layout.addStretch(0)
 
         self._sync_state_text()
         self.setToolTip(same_switch_text(feature_name))
 
+    def showEvent(self, event):
+        """页面第一次露面时把三件套铺一遍。
+
+        ⚠ 构造那一刻页面还没搭完（状态卡通常是第一张，参数卡都还不存在），
+        铺过去只会扫到 0 张卡 —— 所以要等，但**不能用 `singleShot(0)` 等**。
+        ⭐ 实测（批 16）：往事件队列里多塞一个 0ms 定时器，会让别处
+        `processEvents()` 那一下**多冲掉一批排队的工作**，
+        `voice_output` 底栏当场换了一句话（两处都在写同一行，谁最后写谁赢），
+        一条既有判据当场红。**它跟这次改动毫无关系，是被时序顺手带偏的。**
+        ⇒ 挂在 `showEvent` 上：要显示才需要，且不往队列里加任何东西。
+        另一半在 `refresh()` 里 —— 那条管的是「拨了就跟着变」。
+        """
+        super().showEvent(event)
+        self._apply_effect_state()
+
     def _sync_state_text(self) -> None:
         self._state_label.setText(
             STATE_ON_TEXT if self._toggle.isChecked() else STATE_OFF_TEXT)
+        # 开着的时候那条说明**整个不存在**（RN-195）：
+        # 开着还挂一条「总开关关着」，那是屏幕上第二处假话。
+        notice = getattr(self, "effect_notice", None)
+        if notice is not None:
+            notice.setVisible(not self._toggle.isChecked())
+
+    def _apply_effect_state(self) -> None:
+        from widgets.master_switch_effect import apply_effect_state_safely
+
+        if self._page is None:
+            return
+        apply_effect_state_safely(self._page, self._toggle.isChecked())
 
     # ------------------------------------------------------------ 对外三件
 
@@ -161,6 +198,11 @@ class MasterSwitchRow(QWidget):
                 self._toggle.blockSignals(False)
                 self._syncing = False
         self._sync_state_text()
+        # RN-407：三件套跟着一起铺（底栏回执 / 参数区降权 / 预览说后果）。
+        # ⚠ 排在 `_notify_page()` **之前**：页面那个钩子里往往会重写底栏文案，
+        # 而底栏那句回执是它自己回读这颗开关现算的 —— 先铺一次，
+        # 页面随后那次 `set_message` 会带着正确的回执一起渲染。
+        self._apply_effect_state()
         # ⭐ **无条件**通知页面，哪怕开关自己没动。
         # 用户拨的就是这一颗时，`isChecked()` 早就是新值了 —— 上面那段会跳过，
         # 而页面上那条「总开关 · 未开启」的徽章**还停在旧文案**。
