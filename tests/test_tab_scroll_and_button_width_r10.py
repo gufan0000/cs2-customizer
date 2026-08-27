@@ -236,21 +236,17 @@ _PUA = re.compile("[\ue000-\uf8ff]")
 
 #: 只在这个目录下允许存在损坏（UP-099：整个教程内容库，42 个文件，
 #: 90% 的中文不可自动还原，处置待用户决定）。别的地方一个都不许有。
-#: 开源版不再有任何允许损坏的目录（原来的例外是 docs/tutorial/ 那 42 个文件，
-#: 已随开源裁剪整体移除）。设成一个不可能匹配的前缀 = 全仓零容忍。
-_CORRUPTION_ALLOWED_UNDER = "\x00never/"
-
-#: UP-091：损坏得连 `py_compile` 都过不去的脚本，且**全仓没有任何引用**。
-#: 它和上面那 42 个教程文件是**同一次**基线导入事故的产物 ——
-#: 本仓库里只有一个提交，进来时就是坏的。
-#: 2026-08-23 处置（用户授权代裁）：原来这里有两个，坏的程度差 20 倍 ——
-#:   · `bootstrap_tutorial_content.py`：654 行里 253 行带不可逆私有区字符 ⇒ **已删**；
-#:   · 剩下这个只坏 13 行中文字面量，且有物证证明它跑通过（水印像素与仓库里
-#:     85 张长截图逐点吻合）⇒ 留着待修，修不修取决于 RN-199 怎么裁。
-#: **这个集合只许减不许增。**
-#: 开源版为空：原先那些坏到 py_compile 都不过的脚本已随裁剪移除。
-#: **这个集合只许减不许增。**
-_KNOWN_BROKEN: set[str] = set()
+# ⭐⭐ 2026-08-26（RN-199）：**这条判据现在是无条件的。**
+#
+# 原来这里有两样东西：
+#   · `_CORRUPTION_ALLOWED_UNDER = docs/tutorial/` —— 42 个乱码教程文件的豁免范围；
+#   · `_KNOWN_BROKEN` —— 那两个语法都不合法的脚本。
+# 两样都是**同一次基线导入事故**的产物，而整条教程流水线已随 RN-199 删除
+# （247 个被跟踪文件 + 6 支只读它的脚本；git 历史里留着，`3b5301e` 是它唯一那次提交）。
+#
+# ⭐ **删掉一条死线路的净收益，往往是某条判据的例外跟着消失。**
+#   在此之前这条判据说的是「除了那一片以外没有乱码」；现在说的是「没有乱码」。
+# ⚠ 别再往回加豁免：真出现新的乱码文件，该修的是那个文件。
 
 #: 不扫的目录：打包产物与第三方数据。
 #: ⚠ `pypinyin/phrases_dict.json` 是**误报源**——「民淳俗厚」「涓滴不剩」
@@ -284,7 +280,7 @@ def _corrupted_files() -> list[str]:
     return sorted(out)
 
 
-def test_no_encoding_corruption_outside_the_tutorial_corpus():
+def test_no_encoding_corruption_anywhere_in_the_repo():
     """源码与文档里不许再出现 UTF-8/GBK 乱码。
 
     **为什么这条值得存在**：R10 顺着 UP-091 那两个"语法都不过"的脚本查下去，
@@ -300,7 +296,7 @@ def test_no_encoding_corruption_outside_the_tutorial_corpus():
     """
     bad = [
         f for f in _corrupted_files()
-        if not f.startswith(_CORRUPTION_ALLOWED_UNDER) and f not in _KNOWN_BROKEN
+        if True
     ]
     assert not bad, (
         "这些文件有 UTF-8/GBK 编码损坏（中文变乱码，且含不可逆的私有区字符）：\n  "
@@ -310,26 +306,33 @@ def test_no_encoding_corruption_outside_the_tutorial_corpus():
     )
 
 
-def test_the_corruption_detector_still_sees_the_known_bad_corpus(tmp_path):
+def test_the_corruption_detector_still_recognises_corruption():
     """自检：探测器得真的认得出损坏，否则上面那条永远绿。
 
-    原先拿 `docs/tutorial/` 那 42 个已知损坏文件当样本，开源裁剪把整个教程目录
-    移除后样本没了，判据会自废。这里改成**合成样本**：现造一个 UTF-8 被当 GBK
-    解码后再存回的典型产物（含私有区字符），断言探测器认得出。
+    ⚠⚠ **2026-08-26（RN-199）换了样本，而换样本这件事本身就是这条判据的一次事故。**
 
-    这比原来的写法更好——自检不再依赖"仓库里必须一直存在坏文件"这个前提，
-    真把坏文件都修完了判据也不会失效。
+    原来它拿的是 `docs/tutorial/` 底下那 42 个已知损坏的教程文件当样本
+    （「数量只许减不许增」）。而 RN-199 把整条教程流水线删了 ——
+    ⭐⭐⭐ **删掉缺陷语料，就把「探测器还认不认得出缺陷」的证明一起删了。**
+    上面那条判据会从「除了那一片以外没有乱码」变成「没有乱码」，
+    看起来更严，实际上**再没有任何东西证明它还看得见东西**。
+
+    ⇒ 改成**合成样本**：当场造一段真实形态的 mojibake（UTF-8 中文被按 GBK
+    解码再回写，末尾留下不可逆的私有区字符），断言探测器认得出它，
+    并断言一段正常中文**不会**被误判。
+    ⭐ **一个不依赖仓库里恰好还留着几个坏文件的自检，才是真的自检。**
     """
-    good = tmp_path / "clean.md"
-    good.write_text("# 帆船与罗盘\n中文正常，不该被判定为损坏。\n", encoding="utf-8")
+    clean = '这是一段完全正常的中文说明，带标点：括号（）与引号「」。'
+    assert not _PUA.search(clean), (
+        f"探测器把一段正常中文判成了损坏：{clean!r} —— 它会开始诬告"
+    )
 
-    # 私有区字符 U+E000..U+F8FF 是不可逆乱码的标志物（正文里正常中文绝不会出现）
-    bad = tmp_path / "broken.md"
-    bad.write_text("# \ue5b8\ue6b4\ue52a\ue624\n姝ラ1锛氱\n", encoding="utf-8")
-
-    assert _PUA.search(bad.read_text(encoding="utf-8")), "探测器正则认不出私有区字符——它失灵了"
-    assert not _PUA.search(good.read_text(encoding="utf-8")), "探测器把正常中文误判为损坏"
-
+    # 真实形态：私有区字符（U+E000..U+F8FF）正是那次事故里不可逆的那部分。
+    corrupted = "鍔犺浇閫愬抚鍔ㄧ敾" + chr(0xE05F) + "锛?"
+    assert _PUA.search(corrupted), (
+        f"探测器认不出这段 mojibake：{corrupted!r} —— "
+        "那么上面那条「全仓没有乱码」是空转的。"
+    )
 
 def test_the_button_detector_actually_sees_fixed_widths():
     """自检：探测器得真的认得出 `setFixedWidth`，否则上面那条永远绿。

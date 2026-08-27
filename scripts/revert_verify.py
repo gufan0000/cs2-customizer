@@ -388,7 +388,7 @@ REVERTS = [
         # 只有写进目标文件时才变成真正的私有区字符——否则本文件自己就"损坏"了。
         '        """老接口，保留空实现：缓存现在跟着风格与缩放走，不需要外部清\ue000。"""',
         "tests/test_tab_scroll_and_button_width_r10.py::"
-        "test_no_encoding_corruption_outside_the_tutorial_corpus",
+        "test_no_encoding_corruption_anywhere_in_the_repo",
         "UP-098：中文变乱码但 Python 照常运行、测试照常绿，只有用户看见乱码",
     ),
 

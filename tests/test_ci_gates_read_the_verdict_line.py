@@ -33,9 +33,8 @@ GATE = REPO / ".github" / "verdict.ps1"
 #: 未闭合字符串）。它们 import 不进来、`ruff.toml` 里排除着、任何 AST 判据也读不了。
 #: 处置待用户拍板 —— 在那之前，这张表让「跳过它们」这件事**是被断言的**，
 #: 而不是悄悄发生的。
-KNOWN_UNPARSEABLE = (
-    "capture_web_tutorial_screenshots.py",
-)
+# ⭐ 2026-08-26（RN-199）：**空了** —— 随整条教程流水线删除。
+KNOWN_UNPARSEABLE = ()
 
 #: 跑这些脚本的步骤就是「阻断级的门」，必须走裁定行。
 AUDIT_SCRIPT_RE = re.compile(r"python\s+(scripts/[A-Za-z0-9_]*audit[A-Za-z0-9_]*\.py)")
