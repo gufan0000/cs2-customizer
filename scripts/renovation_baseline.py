@@ -248,10 +248,38 @@ def capture(pages: list[str], accept: bool) -> int:
     # 判断"该不该拿这份基线来判"，而不是靠"有没有字体"这种看起来正常就放行的条件。
     code, out = _run(["scripts/page_fingerprint.py", "--emit-env"])
     from page_fingerprint import ENV_MARKER  # noqa: E402  取标记的唯一真相源
+    env_file = BASELINE_DIR / "_env.json"
     if code == 0 and ENV_MARKER in out:
-        (BASELINE_DIR / "_env.json").write_text(
-            out.split(ENV_MARKER, 1)[1].strip() + "\n", encoding="utf-8")
-        print(f"   环境签名: {out.split(ENV_MARKER, 1)[1].strip()}")
+        now = out.split(ENV_MARKER, 1)[1].strip()
+        # ⚠⚠ RN-419：**`_env.json` 是一条全局签名，而这次可能只重锁了一部分页。**
+        #
+        # 它写的是「这批基线是在什么环境下量出来的」，指纹判据靠它决定
+        # 「该不该拿这份基线来判」。只重锁 9 页却把签名整个改写，
+        # 等于**替另外 10 页声明了一个它们从没待过的环境** ——
+        # 那 10 页的指纹还是旧环境的数，而可比性守卫已经被这一行关掉了。
+        #
+        # 实测（2026-08-26）：本机 DPR 从 1.25 变成 1.0，我重锁 9 页 ⇒
+        # 签名被改成 1.0 ⇒ 判据认为「同一套环境」于是照判，
+        # **另外 10 页当场全红**，而报的是「已关档的页被碰歪了」——
+        # ⭐ 一次**环境**变化被报成了一次**产品**变化，而两者的修法完全相反（同 RN-166）。
+        #
+        # ⇒ 只有在**全量重锁**（这一轮覆盖了所有有基线的页）时才改写它。
+        all_pages = sorted(
+            d.name for d in BASELINE_DIR.iterdir()
+            if d.is_dir() and (d / "fingerprint.json").exists())
+        missing = [p for p in all_pages if p not in set(pages)]
+        old = env_file.read_text(encoding="utf-8").strip() if env_file.exists() else ""
+        if not missing or not old or old == now:
+            env_file.write_text(now + "\n", encoding="utf-8")
+            print(f"   环境签名: {now}")
+        else:
+            print(f"   !! **环境签名没改写**：本机 {now}\n"
+                  f"      基线里记的是 {old}\n"
+                  f"      而这一轮只重锁了 {len(pages)} 页，还有 {len(missing)} 页"
+                  f"（{missing[:4]}…）的指纹仍是旧环境的数。\n"
+                  f"      ⭐ 改写它等于替那些页声明一个它们从没待过的环境，"
+                  f"可比性守卫会被关掉（RN-419）。\n"
+                  f"      ⇒ 要么在原环境下重锁，要么**全量重锁**所有 {len(all_pages)} 页。")
     else:
         print(f"   !! 环境签名没取到（退出码 {code}）—— 指纹判据会一直 skip，记进档案")
 

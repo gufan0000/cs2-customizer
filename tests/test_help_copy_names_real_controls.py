@@ -436,3 +436,75 @@ def test_comments_in_the_help_panel_are_not_read_as_user_copy():
         offenders = [ln for ln in body.splitlines() if ln.lstrip().startswith("#")]
         assert not offenders, (
             f"帮助面板通路把注释也读进来了（{page_id} 段）：{offenders[:2]}")
+
+
+# --------------------------------------------------------------------------
+# RN-087：文案不许再把人支去一个**不必去**的地方
+# --------------------------------------------------------------------------
+
+#: 「去基础设置开那个开关」这个句式。⚠ 只拦**同时**出现"基础设置"和"开/启用"
+#: 的行 —— 单说「基础设置」是正常的（那一页确实存在，别的话题也会提到它）。
+SENT_AWAY = re.compile(r"基础设置[^。；\n]{0,12}(?:启用|打开|开启)")
+
+
+def _pages_with_an_in_place_switch() -> set[str]:
+    """哪些页自己就带一颗总开关 —— **真源是产品代码，不是我记的名单**。
+
+    两条来源缺一不可：
+      · 页面直接调 `make_master_switch_row(self, "...")`；
+      · `sound_page_base` 调它 ⇒ **它的每一个子类**都有（键是变量，AST 认不出来，
+        所以按"谁继承了这个基类"来收）。
+    ⚠ 漏掉第二条的话，五个音效页会静默躲开这条规则 —— 而它们正是这次
+      9 条错文案里的 5 条。⭐ **一份"哪些页适用"的名单，漏掉的那部分不会喊疼。**
+    """
+    found: set[str] = set()
+    base_users: set[str] = set()
+    for path in sorted((REPO / "pages").glob("*_page.py")):
+        src = path.read_text(encoding="utf-8")
+        page_id = path.stem[: -len("_page")]
+        if re.search(r"make_master_switch_row\(\s*self\s*,", src):
+            found.add(page_id)
+        if re.search(r"class\s+\w+\s*\(\s*SoundPageBase\b", src):
+            base_users.add(page_id)
+    base_src = (REPO / "pages" / "sound_page_base.py").read_text(encoding="utf-8")
+    if "make_master_switch_row" in base_src:
+        found |= base_users
+    return found
+
+
+def test_the_in_place_switch_roster_is_not_empty():
+    """⭐ 分母守卫：这条规则的分母是"有就地开关的页"，它要是空的，下面那条永远绿。"""
+    roster = _pages_with_an_in_place_switch()
+    assert len(roster) >= 10, (
+        f"只找到 {len(roster)} 页有就地总开关：{sorted(roster)} —— "
+        "RN-144/147/155/189 一共铺了十几页，说明这份名单的取法瞎了。")
+    assert {"kill_sound", "crosshair", "magnifier"} <= roster, (
+        f"名单里缺了已知一定有的页：{sorted(roster)}\n"
+        "⚠ `kill_sound` 那几页的开关在 `SoundPageBase` 里 —— "
+        "只扫页面自己的源码会把它们整片漏掉。")
+
+
+def test_no_help_text_sends_the_user_somewhere_they_no_longer_need_to_go():
+    """⭐⭐ RN-087：**帮助面板 9 条还在教用户「去基础设置启用某某开关」**，
+
+    而 RN-144/147/155/189 早就把那颗开关搬到了**每一页自己的状态卡第一行**。
+
+    ⭐ 这条的形状是本工程的老熟人：**一次修复只改了它被发现的那一处**。
+    RN-192 / RN-401 修好了 `flash` 那一条（还在现场注释里写下「文案点名的控件名
+    必须跟调用方一起走」），**而同一个文件里另外九条一动没动** ——
+    因为那条棘轮问的是「点名的控件**存不存在**」，
+    而这九条点名的控件（基础设置里那颗开关）**确实存在**。
+    ⇒ ⭐⭐ **「文案说的东西存在」和「文案说的事该做」是两条判据。**
+    """
+    roster = _pages_with_an_in_place_switch()
+    offenders = []
+    for page_id, body in _help_panel_sections():
+        if page_id not in roster:
+            continue
+        for line in body.splitlines():
+            if SENT_AWAY.search(line):
+                offenders.append(f"{page_id}: {line.strip()[:70]}")
+    assert not offenders, (
+        "这几页自己就有总开关，帮助文案却还在把人支去「基础设置」：\n  " +
+        "\n  ".join(offenders) +
+        "\n⇒ 改成「在本页状态卡最上面打开「总开关」」（`flash` 那条是改好的样板）。")
