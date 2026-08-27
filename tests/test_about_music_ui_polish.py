@@ -92,6 +92,13 @@ def test_music_page_overview_badges_sync(qapp, monkeypatch):
     monkeypatch.setattr(music_page_module, "get_music_player", lambda: dummy_player)
     monkeypatch.setattr(config, "save_config", lambda: None, raising=False)
     monkeypatch.setattr(config, "music_game_link_enabled", True, raising=False)
+    # ⚠⚠ **钉住这一页的总开关**（RN-141 第 6/7 例，RN-425 逼出来的）。
+    # 这条判据断言胶囊写「联动 · **已启用**」，而那三个字现在是**三态**的：
+    # 子开关开着但总开关关着 ⇒ 「已配置」（配好了，但没在跑）。
+    # 它以前碰巧一直绿，只因为那时候这句话**根本不看总开关** ——
+    # 也就是说它断言的正是那句假话。⭐ **一条判据钉住的如果是缺陷本身，
+    #   它就会在缺陷被修掉的那天变红，而那是它唯一一次说真话。**
+    monkeypatch.setattr(config, "music_enabled", True, raising=False)
     monkeypatch.setattr(config, "music_death_action", "play", raising=False)
     monkeypatch.setattr(config, "music_death_volume_custom", False, raising=False)
     monkeypatch.setattr(config, "music_death_volume", 1.0, raising=False)

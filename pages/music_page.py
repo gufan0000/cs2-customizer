@@ -32,6 +32,25 @@ import weakref
 # 播放控制栏已移至全局 (music_control_bar.py)
 
 
+def _link_state_word(link_enabled: bool) -> str:
+    """「联动」这一格现在该写哪两个字（RN-407 家族，批 18）。
+
+    ⚠⚠ 这里原来只看子开关 `music_game_link_enabled`，写死「已启用 / 已关闭」。
+    于是总开关关着时，同一屏上**总开关写着「未开启」而这里写着「已启用」**。
+    实测：外审在这一页 **2/45 判「会以为已经生效」**，措辞直指这颗胶囊
+    （「总开关未开启却显示『联动 · 已启用』，极易误导玩家功能已生效」）。
+
+    ⭐⭐ 批 16 把状态胶囊退成了**中性色**，却没有动它说的**话** ——
+    颜色不再喊「运行中」了，字还在喊。
+    ⭐ **「这个设置开着」和「这件事正在发生」是两回事**，
+    而「已启用」这三个字同时承担了这两个意思。
+    ⇒ 三态：总开关关着 + 子开关开 = 「**已配置**」（配好了，但没在跑）。
+    """
+    if not link_enabled:
+        return "已关闭"
+    return "已启用" if bool(getattr(config, "music_enabled", False)) else "已配置"
+
+
 class MusicPage(QWidget):
     """音乐播放器设置页面"""
 
@@ -452,8 +471,12 @@ class MusicPage(QWidget):
             else ("不附加淡出" if fade_available else "当前策略无需淡出")
         )
 
+        # ⚠ RN-407 家族：**总开关关着的时候，「已启用」是一句假话。**
+        # `link_enabled` 只是那颗**子开关**的值，它不看总开关 `music_enabled`；
+        # 于是总开关写着「未开启」而这里写着「联动已启用」——同一屏自相矛盾。
+        # ⭐ 三态才是真话：关着 + 子开关开 = 「**已配置**」（配好了，但没在跑）。
         summary_text = (
-            f"当前策略：{'联动已启用' if link_enabled else '联动未启用'} · "
+            f"当前策略：联动{_link_state_word(link_enabled)} · "
             f"{death_action_text} · {alive_action_text} · {fade_text}"
         )
         self.link_policy_label.setText(summary_text)
@@ -525,7 +548,8 @@ class MusicPage(QWidget):
             current_track_state = "暂停中" if getattr(self.player, "is_paused", False) else "播放中"
 
         badges = [
-            ("positive" if link_enabled else "warning", f"联动 · {'已启用' if link_enabled else '已关闭'}"),
+            ("positive" if link_enabled else "warning",
+             f"联动 · {_link_state_word(link_enabled)}"),
             ("info", f"模式 · {mode_text}"),
             ("info", f"列表 · {self._compact_text(playlist_name, '默认列表', 10)}"),
             ("positive" if playlist else "warning", f"曲目 · {len(playlist)} 首"),

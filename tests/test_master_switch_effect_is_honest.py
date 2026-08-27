@@ -851,3 +851,89 @@ def test_pages_without_a_preview_are_not_quietly_missing_one(main_window, qapp):
     assert not missed, (
         f"这几页其实有预览面，却不在名单里：{missed}\n"
         "⇒ 要么补进 PAGES_WITH_A_PREVIEW，要么写明为什么它不算预览。")
+
+
+def test_the_notice_leads_with_what_he_can_do_now():
+    """⚖ **RN-424：开关旁那句话，要先说「现在能干什么」，再说「还不生效」。**
+
+    批 16 为了让人看见「不生效」，把否定放到了句首（RN-407，那条是对的：
+    ⭐ 写在转折之后的否定等于没写）。⚠ **但那同时把「可以调」挤进了
+    没人读的后半截** —— 于是产生了另一条缺陷。
+
+    实测（批 18，判断题 + **地板对照**）：问「他知不知道现在就可以先把参数
+    调好、调好之后再打开总开关」——
+
+    | 屏 | 知道 | 不知道 |
+    |---|---|---|
+    | 把这两句话**都拿掉**（地板对照）| **0/45（0%）** | 45/45 |
+    | 批 16 的写法（否定在句首）| **26/45（57%）** | 19/45 |
+
+    ⇒ 两件事同时成立：**那句话是真的有效的**（0% → 57%，每一发「知道」都
+    逐字引用了它），**而它只走到 57%**。19 发「不知道」的措辞几乎完全一致：
+    「**以为必须先打开总开关才能开始配置**，关着的时候调了不会保存或不起作用。」
+
+    ⭐⭐ **这两句话分工**：开关旁那句回答「我现在能干什么」（肯定在前），
+    底栏那句回答「我改的东西生不生效」（否定在前，见上面那条判据）。
+    ⭐ 同一屏上两句话都用同一个语序，等于把同一个后半截丢了两次。
+
+    ⚠ **这跟「别再试第四版文案」不冲突**：那条禁令是对 **RN-407 那条缺陷**
+    说的（连续四轮文字打不动「以为已生效」）。在 RN-424 这条轴上，文案
+    **恰恰是有效成分**。⭐ **「文案打不动」是对某一条缺陷说的，
+    不是对文案这个手段说的。**
+    """
+    text = eff.NOTICE_OFF_TEXT
+    head = text[:6]
+    assert any(w in head for w in ("可以调", "现在可以", "照常")), (
+        f"这句话的前 6 个字里没有「你现在能干什么」：{text}\n"
+        "⭐ 读的人在读到分号之前就走了 —— 而这一句的职责正是那半截。")
+    assert "不生效" in text, (
+        f"把「不生效」丢了：{text}\n"
+        "⚠ 语序换了，内容一个字都不许少 —— 那是 RN-407 那条轴。")
+    negation = text.index("不生效")
+    affordance = min(text.index(w) for w in ("可以调", "照常") if w in text)
+    assert affordance < negation, (
+        f"「能干什么」排在「不生效」后面了：{text}")
+
+
+#: 「这东西正在跑」的说法。总开关关着时，屏幕上一个字都不该这么说。
+ENABLED_CLAIMS = ("已启用", "已开启", "运行中", "生效中")
+
+
+@pytest.mark.parametrize("page_id", sorted(EXPECTED_KEYS))
+def test_nothing_on_screen_claims_to_be_enabled_while_the_switch_is_off(
+        main_window, qapp, page_id):
+    """⭐⭐ **批 16 把状态胶囊退成了中性色，却没有动它说的话。**
+
+    颜色不再喊「运行中」了，**字还在喊**。实测（批 18，RN-407 那条轴的复跑）：
+    `music` 一页在总开关关着时仍然写着
+
+        状态胶囊「联动 · **已启用**」
+        「当前策略：**联动已启用** · 阵亡后自动开始/继续播放 · …」
+
+    因为 `link_enabled` 只读子开关 `music_game_link_enabled`，
+    **完全不看总开关** `music_enabled`。
+
+    ⚠ 这处缺陷**在批 16 就已经在屏幕上了**（现状截图里逐字可见），
+    只是当时那一轮 45 发一次都没报。批 18 换了开关旁那句话的语序之后，
+    **同一页 2/45 判「会以为已生效」** ——
+    ⭐⭐ **我的改动没有造出那处缺陷，但它把注意力从「不生效」挪开了，
+    于是那处一直都在的矛盾被读到了。**
+    ⇒ 不是撤回语序，是把那句假话改掉。
+
+    ⭐ 顺带一条：这解释了批 16 为什么会漏 ——
+    **它审的是「我改的那三件东西」，而缺陷在「页面自己算出来的那句话」里。**
+    """
+    page = _open(main_window, qapp, page_id)
+    _set_switch(page, qapp, False)
+    offenders = []
+    for label in page.findChildren(QLabel):
+        if label.isHidden():
+            continue
+        text = (label.text() or "").strip()
+        hit = [c for c in ENABLED_CLAIMS if c in text]
+        if hit:
+            offenders.append(f"[{label.objectName() or 'QLabel'}] {text[:60]}")
+    assert not offenders, (
+        f"{page_id}：总开关关着，屏幕上还有 {len(offenders)} 处在说「已启用」——\n  "
+        + "\n  ".join(offenders) +
+        "\n⭐ 一句只在某个状态下为真的话，在别的状态里就是一句谎。")

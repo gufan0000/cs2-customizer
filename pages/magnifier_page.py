@@ -241,7 +241,13 @@ class MagnifierPage(QWidget):
         action_message = (
             f"当前分类：{self._current_tab_text()} · 当前武器 {current_weapon_text or '未识别'}"
             f" · 倍率 {self.zoom_factor:.1f}x / 偏移 {self._current_offset_text()}"
-            f" · 已启用 {enabled_weapon_count}/{total_weapon_count} 项。"
+            # ⚠ RN-407 家族（批 18）：这里数的是**勾选了几把武器**，不是
+            # 「几件事正在跑」。写「已启用 12/18 项」时，如果总开关关着，
+            # 这行字就在替一件没发生的事作证 —— 而它和底栏那句「不生效」
+            # 挨着，同一屏自相矛盾。
+            # ⭐ **「这个设置开着」和「这件事正在发生」是两回事**，
+            #   而「已启用」三个字同时承担了这两个意思。⇒ 改说勾选。
+            f" · 已勾选 {enabled_weapon_count}/{total_weapon_count} 项。"
         )
         self.action_bar.set_message(action_message)
 

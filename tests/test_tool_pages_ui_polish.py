@@ -1954,6 +1954,13 @@ def test_music_page_status_cards_track_link_mode_and_playlist(qapp, monkeypatch)
     monkeypatch.setattr(music_page_module, "get_music_player", lambda: dummy)
     monkeypatch.setattr(config, "save_config", lambda: None, raising=False)
     monkeypatch.setattr(config, "music_game_link_enabled", True, raising=False)
+    # ⚠⚠ **钉住这一页的总开关**（RN-141 第 7 例，RN-425 逼出来的）。
+    # 这条判据断言胶囊写「联动 · **已启用**」，而那三个字现在是**三态**的：
+    # 子开关开着但总开关关着 ⇒ 「已配置」（配好了，但没在跑）。
+    # 它以前碰巧一直绿，只因为那时候这句话**根本不看总开关** ——
+    # 也就是说它断言的正是那句假话。⭐ **一条判据钉住的如果是缺陷本身，
+    #   它就会在缺陷被修掉的那天变红，而那是它唯一一次说真话。**
+    monkeypatch.setattr(config, "music_enabled", True, raising=False)
     monkeypatch.setattr(config, "music_play_mode", "repeat_all", raising=False)
     monkeypatch.setattr(config, "music_current_playlist", "默认", raising=False)
     monkeypatch.setattr(config, "music_death_action", "play", raising=False)
@@ -1997,7 +2004,9 @@ def test_music_page_status_cards_track_link_mode_and_playlist(qapp, monkeypatch)
     qapp.processEvents()
     chips = _visible_audio_status_chip_texts(page.status_badge_label)
     assert "联动 · 已关闭" in chips
-    assert "联动未启用" in page.link_policy_label.text()
+    # ⚠ 措辞在批 18 统一了：同一个状态原来有两个词 —— 胶囊写「联动 · 已关闭」、
+    # 摘要写「联动未启用」。⭐ **一个状态两个说法，读的人会去找那个不存在的区别。**
+    assert "联动已关闭" in page.link_policy_label.text()
     assert page.link_content_frame.isEnabled() is False
 
     page.deleteLater()
