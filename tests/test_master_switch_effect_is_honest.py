@@ -321,6 +321,11 @@ def main_window(qapp):
     before = {key: getattr(config, key, None) for key in EXPECTED_KEYS.values()}
     neutral.apply(config)
     config.compact_mode = False
+    # ⚠ 钉死这颗**子开关**（产品默认 True，见 `config.py:549`）。
+    # 不钉的话 `screen_effects` 那条级联的差值在本机和 CI 上不一样 ——
+    # 本机那个跨轮次累积的配置目录里它是 False，四个控件拨之前就已经关着。
+    # ⭐ **判据的前置状态要么它自己钉，要么 conftest 统一钉死；不许「看命」**（RN-141）。
+    monkeypatch.setattr(config, "screen_edge_flash_enabled", True, raising=False)
     monkeypatch.setattr("config.config.save_config", lambda: None, raising=False)
     # ⚠ RN-157：模态框在测试进程里是**卡死**不是失败。
     from PySide6.QtWidgets import QMessageBox
@@ -451,16 +456,27 @@ def test_the_card_holding_the_switch_is_never_de_emphasised(
 
 #: 拨总开关时，**页面自己**（不是降权）会关掉的控件，逐条写明依据。
 #: ⭐ 每一条都要指到源码行 —— 一张没有理由的豁免表，跟没有判据是一回事。
-#: ⚠ 这两条**与 RN-407 立的规矩相反**（关着时应「可调但明说不生效」），
+#: ⚠ 这些**与 RN-407 立的规矩相反**（关着时应「可调但明说不生效」），
 #:   已就此立案 **RN-420**：它们不是这一批的漏网，是一个需要单独裁的取舍。
+#:
+#: ⚠⚠ **这张表第一版是「看命」的，被公开仓 CI 当场逮到。**
+#: 本机只报出 `screen_effects: checkBox` 一条，CI 上是**整条级联**——
+#: `screen_effects_page.py:371-374` 那四个控件由 `edge_enabled`
+#: （= 总开关 **且** 子开关 `screen_edge_flash_enabled`）决定，
+#: 而本机那个**跨轮次累积**的配置目录里这颗子开关恰好是 `False`，
+#: 四个控件**拨之前就已经是关的**，于是「拨完新增的禁用」这个差值里看不见它们。
+#: ⭐⭐ **我在同一批里，一边给别人的判据钉前置状态（RN-141 第四例），
+#:   一边写了一条自己不钉的。** ⇒ 夹具已把这颗子开关钉在产品默认值 `True` 上。
+#: ⭐ 顺带记账：**公开仓 CI 这一次又逮到了本机三样门禁全绿的东西**
+#:   —— 那正是 RN-418 差点被我判死的那条依赖。
 DISABLED_BY_THE_PAGE_ITSELF = {
-    "flash": ("primaryButton",
+    "flash": (("primaryButton",),
               "flash_page.py:303 `_sync_action_bar` 里 `primary_btn.setEnabled(enabled)`"
               "——「启动闪光」在总开关关着时点了也起不来，是**动作按钮**不是参数"),
-    "screen_effects": ("checkBox",
-                       "screen_effects_page.py:370 "
-                       "`enable_edge_flash_checkbox.setEnabled(master_enabled)`"
-                       "——那是一颗**子开关**，页面在 RN-011 那一轮就是这么定的"),
+    "screen_effects": (("checkBox", "comboBox", "primaryButton", "secondaryButton"),
+                       "screen_effects_page.py:370-374：子开关本体由总开关决定"
+                       "（RN-011 那一轮就是这么定的）；另外三类由 `edge_enabled` 决定"
+                       "（两颗下拉 + 底栏两颗预览按钮）"),
 }
 
 
@@ -499,11 +515,17 @@ def test_flipping_the_switch_off_disables_only_what_is_declared(
     _set_switch(page, qapp, True)
     enabled_before = {id(w) for w in page.findChildren(QWidget) if w.isEnabled()}
     _set_switch(page, qapp, False)
-    turned_off = sorted({w.objectName() or type(w).__name__
-                         for w in page.findChildren(QWidget)
-                         if id(w) in enabled_before and not w.isEnabled()})
+    newly_off = [w for w in page.findChildren(QWidget)
+                 if id(w) in enabled_before and not w.isEnabled()]
+    # ⚠ 只报这几棵子树的**根**：Qt 的禁用是往下传的，一颗关掉的下拉框会把
+    # 它内部的 `qt_scrollarea_viewport` 一串都带上 —— 那不是「又多禁用了一个控件」。
+    # ⭐ **量一件事的时候，要量它的因，不要连着量它的果。**
+    off_ids = {id(w) for w in newly_off}
+    roots = [w for w in newly_off
+             if not (w.parentWidget() is not None and id(w.parentWidget()) in off_ids)]
+    turned_off = sorted({w.objectName() or type(w).__name__ for w in roots})
     declared = DISABLED_BY_THE_PAGE_ITSELF.get(page_id)
-    expected = [declared[0]] if declared else []
+    expected = sorted(declared[0]) if declared else []
     assert turned_off == expected, (
         f"{page_id}：拨关总开关关掉了 {turned_off}，而豁免表写的是 {expected}\n"
         "⇒ 要么这是新加的禁用（RN-179 那条缺陷又长出来了），"
