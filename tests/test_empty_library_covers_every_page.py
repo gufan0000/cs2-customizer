@@ -623,3 +623,42 @@ def test_kill_icon_empty_state_offers_exactly_one_call_to_action(qapp, monkeypat
             "库不空了，「打开素材工坊」却没回来 —— 这一页少了做素材的入口")
     finally:
         page.deleteLater()
+
+
+def test_dimming_records_the_control_own_switch_not_its_ancestors(qapp):
+    """⚠ **`_set_dim` 记原状，必须记控件「它自己那面开关」。**
+
+    `isEnabled()` 在**任何一层祖先被禁用时都返回 False**。一旦某个祖先容器
+    是禁用的（页面自己的 `_sync_enabled_state`、或将来任何一处整块禁用），
+    这里就会把一颗**本来好好的**控件记成「它原本就是灰的」；等库补上之后
+    `_set_dim(..., False)` 按这份错误的原状还回去（`setEnabled(False)`）——
+    **那颗控件从此永久变灰，而且没有任何一处报错。**
+
+    ⭐⭐ **一个只在自己那条路径上正确的读数，会在别人叠上来的那一刻变成谎话** ——
+    它坏的方式是「记错了，然后忠实地还原成错的」，看起来完全像在守规矩。
+    ⇒ 问 `isEnabledTo(parent)`：那是它自己那面开关，祖先怎么样都不影响。
+
+    ⚠ 这条是批 17 那个**已被撤回**的实验（总开关关着时整张卡 `setEnabled(False)`）
+    顺带挖出来的。实验撤了，**但这个读数本来就是错的** —— 撤回的是那条产品改动，
+    不是这条修正。⭐ **一次没走通的尝试，未必没有走通的部分。**
+    """
+    from PySide6.QtWidgets import QComboBox, QFrame, QVBoxLayout
+
+    from widgets.community_library import dim_controls_with_nothing_to_pick
+
+    box = QFrame()
+    QVBoxLayout(box)
+    combo = QComboBox(box)
+    combo.addItems(["十字", "圆点"])
+
+    box.setEnabled(False)                       # ① 某个祖先被关掉了
+    dim_controls_with_nothing_to_pick(box, reason="没东西可选")   # ② 此刻库还满着
+    combo.clear()                               # ③ 库空了
+    dim_controls_with_nothing_to_pick(box, reason="没东西可选")   # ④ 置灰、记原状
+    combo.addItems(["十字", "圆点"])             # ⑤ 库补回来了
+    dim_controls_with_nothing_to_pick(box, reason="没东西可选")   # ⑥ 按原状还原
+    box.setEnabled(True)                        # ⑦ 祖先恢复
+
+    assert combo.isEnabled(), (
+        "库补回来、祖先也恢复了，这颗下拉框却还是灰的 —— "
+        "`_set_dim` 把「祖先关着」记成了「它自己本来就是关的」")

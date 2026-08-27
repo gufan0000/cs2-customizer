@@ -282,6 +282,13 @@ def test_voice_output_page_help_and_controls_are_usable(qapp, monkeypatch):
     monkeypatch.setattr(config, "voice_output_stop_key", "F8", raising=False)
     monkeypatch.setattr(config, "voice_output_microphone", "默认", raising=False)
     monkeypatch.setattr(config, "voice_output_slots", {"0": {"audio": "demo.wav", "key": "ctrl+1", "volume": 0.8, "name": "Demo Clip"}}, raising=False)
+    # ⚠⚠ **钉住这一页的总开关**（RN-141 第五例，RN-421 逼出来的）。
+    # 这条判据断言的是「控件**可用**」，而 RN-421 之后「可不可用」正是由这颗
+    # 总开关决定的 —— 关着时参数卡整张禁用。它以前碰巧一直绿，只是因为
+    # 那时候关着也不禁用任何东西；⇒ 它其实**从来没有钉过自己那条断言的前提**，
+    # 读的是那个跨轮次累积的共享配置目录里恰好剩下的值。
+    # ⭐ **一条断言「X 可用」的判据，必须自己钉住「什么情况下 X 才可用」。**
+    monkeypatch.setattr(config, "voice_output_enabled", True, raising=False)
     monkeypatch.setattr(config, "sfx_forwarding_enabled", False, raising=False)
     monkeypatch.setattr(config, "sfx_forwarding_options", {"kill_sound": True, "special_sound": True}, raising=False)
 

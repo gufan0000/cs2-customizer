@@ -3955,6 +3955,21 @@ REVERTS = [
         "「运行中/已激活」的高亮指示灯 —— 深色底上的橙色对 CS2 玩家就是「点亮了」。"
         "⭐ **按警示色着色而不按状态着色，颜色照样不携带信息。**",
     ),
+    Revert(
+        "RN", "空库置灰记原状时把「祖先关着」当成「它自己本来就是关的」",
+        "widgets/community_library.py",
+        "    return bool(widget.isEnabledTo(parent) if parent is not None",
+        "    return bool(widget.isEnabled() if parent is not None",
+        "tests/test_empty_library_covers_every_page.py::"
+        "test_dimming_records_the_control_own_switch_not_its_ancestors",
+        "RN-179 ⚠⚠ `isEnabled()` 在**任何一层祖先被禁用时都返回 False**，"
+        "于是 `_set_dim` 会把一颗本来好好的控件记成「它原本就是灰的」，"
+        "等库补上之后按这份错误的原状还回去 ⇒ **那颗控件永久变灰，且没有任何一处报错**。"
+        "⭐⭐ **一个只在自己那条路径上正确的读数，会在别人叠上来的那一刻变成谎话** —— "
+        "而它坏的方式是「记错了，然后忠实地还原成错的」，看起来完全像在守规矩。"
+        "⚠ 这条是 RN-421 那个**已被撤回**的实验顺带挖出来的：撤回的是产品改动，"
+        "不是这条修正 —— ⭐ **一次没走通的尝试，未必没有走通的部分**",
+    ),
     # ⛔⛔ 新断点一律加在**这一行之上**。
     #
     # 下面这个标记是开源同步那个语义补丁的**锚点**：开源版在这个位置追加它自己的

@@ -263,12 +263,34 @@ def _combo_driving(button, scope):
     return None
 
 
+def _own_enabled(widget) -> bool:
+    """这颗控件**它自己**那面开关，跟祖先关没关无关（RN-421）。
+
+    ⚠⚠ 这里以前写的是 `widget.isEnabled()`，而 `isEnabled()` 在**任何一层祖先
+    被禁用时都返回 False**。只要有任何一层祖先容器是禁用的，这里就会把一颗
+    **本来好好的**控件记成「它原本就是灰的」；等库补上之后，下面那行按这份
+    错误的原状还回去（`setEnabled(False)`）——
+    **那颗控件从此永久变灰，且没有任何一处报错**。
+
+    ⚠ 这条是 RN-421 那个**已被撤回**的实验（总开关关着时整张参数卡禁用）
+    顺带挖出来的。实验撤了，**而这个读数本来就是错的**：撤回的是那条产品改动，
+    不是这条修正。⭐ **一次没走通的尝试，未必没有走通的部分。**
+
+    ⭐⭐ **一个只在自己那条路径上正确的读数，会在别人叠上来的那一刻变成谎话** ——
+    而它坏的方式是「记错了，然后忠实地还原成错的」，看起来完全像在守规矩。
+    ⇒ 问 `isEnabledTo(parent)`：那是它自己那面开关，祖先怎么样都不影响。
+    """
+    parent = widget.parentWidget()
+    return bool(widget.isEnabledTo(parent) if parent is not None
+                else widget.isEnabled())
+
+
 def _set_dim(widget, dim: bool, reason: str) -> int:
     """置灰 / 还原一个控件，并记住它原来的样子。回报这次置灰了几个。"""
     prev = widget.property(_PREV_ENABLED)
     if dim:
         if prev is None:                     # 只在**第一次**置灰时记原状
-            widget.setProperty(_PREV_ENABLED, bool(widget.isEnabled()))
+            widget.setProperty(_PREV_ENABLED, _own_enabled(widget))
             widget.setProperty(_PREV_TOOLTIP, widget.toolTip())
         widget.setEnabled(False)
         widget.setToolTip(reason)
