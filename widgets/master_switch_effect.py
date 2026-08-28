@@ -45,7 +45,8 @@ RN-407 立案写的是「总开关默认关闭且**不够醒目**」。批 14 �
 from __future__ import annotations
 
 from PySide6.QtWidgets import (
-    QCheckBox, QFrame, QLabel, QPushButton, QRadioButton, QSlider, QWidget,
+    QCheckBox, QFrame, QLabel, QPushButton, QRadioButton, QScrollArea,
+    QSlider, QWidget,
 )
 
 from core.utils.logger import get_logger
@@ -184,6 +185,57 @@ def parameter_cards(page) -> list[QWidget]:
     return out
 
 
+#: 强调色在这里编码的是**当前值/状态**的那几类控件 —— 打着勾的框、
+#: 选中的单选、拉到某个位置的滑块。它们是「这一片是活的」这个信号的来源。
+#: ⚠⚠ **`QPushButton` 不在里面**，这是拿三次分母划错换来的：
+#:   一颗紫色的主按钮编码的是「这是主要动作」，不是「这件事正在发生」。
+#:   外审枚举轮点名的全是打勾/滑块/胶囊，**一次都没点过「去社区拿一套」
+#:   这类号召按钮**；把它们一起退成灰，等于把唯一该点的东西也调暗了
+#:   （RN-179 那条空库引导正指着它们）。
+#: ⭐⭐ **同一种颜色可以承担两个意思，分母要按「它在这儿说什么」划，
+#:   不按「它是什么控件」划。**
+_VALUE_ACCENT = (QCheckBox, QRadioButton, QSlider)
+
+
+def parameter_area_controls(page) -> list[QWidget]:
+    """这一页**参数区**里所有带品牌强调色的控件（RN-427，批 19）。
+
+    ⚠⚠ **批 16 把「参数区」等同于「objectName 叫 card 的 QFrame」** ——
+    那是一个**代理**，而代理会漏：`music` 的「允许游戏状态自动控制音乐」和
+    `voice_output` 的三颗转发复选框住在 **`QGroupBox`** 里，一张卡都不沾，
+    于是降权**一个像素都没够着**（开/关两态逐像素完全相同），
+    而当时的判据问的是「每张卡有没有被降权」——15 页全绿。
+    ⭐⭐⭐ **一个用容器类型当代理的分母，会漏掉所有没用那个容器的地方。**
+
+    ⚠ 而我第一版换的代理**同样是坏的**：拿「不在状态卡里」当「在参数区里」，
+    当场把**底栏操作按钮**和**页头那颗「?」**扫了进去 —— 那是动作和页面外壳，
+    不是参数。⭐ **连着两次用排除法划分母，两次都漏。**
+
+    ⇒ 改用一条**真实的结构边界**：参数区 = **页面主滚动区里的内容**。
+    状态卡在滚动区**外面**（15 页里有 9 页如此，批 16 量过），
+    底栏和页头也在外面 —— 这不是命名约定，是版面本身。
+
+    ⭐ 实现和判据**共用这一个定义**：各写一份的话，判据会去量一个和产品
+    不一样的分母，然后全绿。
+    """
+    host = status_card_of(page)
+    row = getattr(page, "master_switch_row", None)
+    out = []
+    for area in page.findChildren(QScrollArea):
+        inner = area.widget()
+        if inner is None:
+            continue
+        for w in inner.findChildren(QWidget):
+            if not isinstance(w, _VALUE_ACCENT):
+                continue
+            if host is not None and (w is host or host.isAncestorOf(w)):
+                continue
+            if row is not None and (w is row or row.isAncestorOf(w)):
+                continue
+            out.append(w)
+    return out
+
+
 def undimmed_cards(page) -> list[QWidget]:
     """检查器：现在**还没**降权的参数卡。判据拿它数数。"""
     return [c for c in parameter_cards(page) if not c.property(CARD_DIM_PROPERTY)]
@@ -263,6 +315,17 @@ def apply_effect_state(page, enabled: bool) -> None:
             if isinstance(child, _ACCENT_BEARING) or (
                     isinstance(child, QLabel) and child.objectName() == "cardTitle"):
                 _repolish(child)
+
+    # ②c 参数区里**编码当前值**的控件，属性挂在**它们自己身上**（RN-427）。
+    # ⚠ 上面那一步只够得着住在 card 里的控件，而 `music` / `voice_output`
+    #   有 4 颗住在 `QGroupBox` 里 —— 降权对它们**一个像素都没动过**，
+    #   而判据当时问的是「每张卡有没有被降权」，15 页全绿。
+    # ⭐⭐⭐ **一个用容器类型当代理的分母，会漏掉所有没用那个容器的地方。**
+    for widget in parameter_area_controls(page):
+        if widget.property(CARD_DIM_PROPERTY) == value:
+            continue
+        widget.setProperty(CARD_DIM_PROPERTY, value)
+        _repolish(widget)
 
     # ②b 状态胶囊组退成中性。⚠ 挂在状态卡（祖先）上，见 HOST_DIM_PROPERTY。
     host = status_card_of(page)

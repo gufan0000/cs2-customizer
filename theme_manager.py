@@ -451,6 +451,35 @@ class Theme:
                 color: {idle_text};
             }}
 
+            /* ⚠⚠ RN-427（批 19）：上面那组选择器全都要求控件**住在一张 card 里**，
+             * 而 `music` 的「允许游戏状态自动控制音乐」和 `voice_output` 的三颗
+             * 转发复选框住在 **`QGroupBox`** 里 —— 一张卡都不沾，
+             * 于是降权**一个像素都没够着**（开/关两态逐像素完全相同），
+             * 而当时的判据问的是「每张卡有没有被降权」，15 页全绿。
+             * ⭐⭐⭐ **一个用容器类型当代理的分母，会漏掉所有没用那个容器的地方。**
+             * ⇒ 下面这组挂在**控件自己**的属性上，与它住在哪儿无关。
+             * ⚠ 只管**编码「当前值」**的那几类（打勾 / 单选 / 滑块）——
+             *   紫色主按钮编码的是「这是主要动作」，不是「这件事正在发生」。 */
+            QCheckBox[masterOff="true"]::indicator:checked {{
+                background: {idle};
+                border-color: {idle};
+            }}
+            QRadioButton[masterOff="true"]::indicator {{
+                border-color: {idle};
+            }}
+            QRadioButton[masterOff="true"]::indicator:checked {{
+                border-color: {idle};
+            }}
+            QSlider[masterOff="true"]::sub-page:horizontal,
+            QSlider[masterOff="true"]::sub-page:vertical {{
+                background: {idle};
+            }}
+            QSlider[masterOff="true"]::handle:horizontal,
+            QSlider[masterOff="true"]::handle:vertical {{
+                background: {idle};
+                border: 1px solid {c.border_secondary};
+            }}
+
             /* 状态胶囊组：关着的时候它读起来像一张「当前正在运行的配置清单」。
              * 外审 43 发里 16 发把那颗**橙色**的「未启用」读成了「运行中/已激活」
              * 的高亮指示灯（深色主题下橙色 = 点亮，是 CS2 玩家的既有直觉）。

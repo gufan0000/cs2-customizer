@@ -320,7 +320,12 @@ class HudColorPage(QWidget):
 
         # 固定底部操作栏：统一组件，降低跨页面维护成本
         self.action_bar = PageActionBar(self)
-        self.action_bar.set_message("修改后请点击保存，设置才会生效")
+        # ⚠ RN-427：这句话原来说的是「点保存，设置**才会生效**」——
+        # 它把「写入」说成了「生效」，而这一页还有一颗总开关。外审原话：
+        # 「让玩家误以为只要点击右侧保存按钮设置就会在游戏内生效，无需开启总开关」。
+        # ⭐ 这一句只该说**它自己负责的那一步**（写入），
+        #   「生不生效」由底栏那条共用回执回答 —— 两句话各说各的那一半。
+        self.action_bar.set_message("HUD 规则要点一下保存才会写入")
         self.action_bar.configure_primary("保存 HUD 规则", self._save_hud_rules, visible=True)
         self.save_hint_label = self.action_bar.message_label
         self.save_btn = self.action_bar.primary_btn
@@ -456,11 +461,16 @@ class HudColorPage(QWidget):
     def _refresh_dirty_ui(self):
         if self._dirty:
             self.save_btn.setText("保存 HUD 规则 *")
-            self.save_hint_label.setText("有未保存修改，请点击右侧保存")
+            # ⚠⚠ 走 `set_message`，**不许直接对 message_label 写字**。
+            # 实测（批 19）：直接 setText 会把批 16 那条共用回执**整句冲掉** ——
+            # 拨完开关时回执还在，跑一次 `_refresh_dirty_ui()`（用户改任何一个
+            # 设置都会触发）之后就只剩这一句了。
+            # ⭐⭐ **守卫建在入口上，而这一页拿到了入口里面那个控件的引用。**
+            self.action_bar.set_message("有未保存修改，请点击右侧保存")
             self.save_hint_label.setStyleSheet("color: #f7b955;")
         else:
             self.save_btn.setText("保存 HUD 规则")
-            self.save_hint_label.setText("修改后请点击保存，设置才会生效")
+            self.action_bar.set_message("HUD 规则要点一下保存才会写入")
             self.save_hint_label.setStyleSheet("")
         self._sync_status_strip()
 

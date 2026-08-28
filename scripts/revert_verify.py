@@ -4002,6 +4002,45 @@ REVERTS = [
         "⚠ 这处缺陷批 16 就在屏幕上了、当轮 45 发一次没报 —— "
         "⭐⭐ **一处缺陷被读到的概率，取决于它旁边那句话占用了多少注意力**",
     ),
+    Revert(
+        "RN", "降权又只认「住在一张卡里」的控件",
+        "widgets/master_switch_effect.py",
+        "            if not isinstance(w, _VALUE_ACCENT):",
+        "            if True:",
+        "tests/test_master_switch_effect_is_honest.py::"
+        "test_no_control_in_the_parameter_area_stays_brand_coloured[music]",
+        "RN-427 ⚠⚠ 批 16 把「参数区」等同于「objectName 叫 card 的 QFrame」——"
+        "那是一个**代理**，而代理会漏：`music` 的「允许游戏状态自动控制音乐」和"
+        "`voice_output` 的三颗转发复选框住在 **`QGroupBox`** 里，一张卡都不沾，"
+        "降权**一个像素都没够着**（开/关两态逐像素完全相同），"
+        "而当时的判据问的是「每张卡有没有被降权」，**15 页全绿**。"
+        "⭐⭐⭐ **一个用容器类型当代理的分母，会漏掉所有没用那个容器的地方。**"
+        "⚠ 我自己换的头两个代理同样是坏的（「不在状态卡里」扫进了底栏按钮和页头"
+        "那颗「?」；「所有强调色控件」扫进了「去社区拿一套」这类号召按钮）——"
+        "⭐⭐ **同一种颜色可以承担两个意思，分母要按「它在这儿说什么」划，"
+        "不按「它是什么控件」划**",
+    ),
+    Revert(
+        "RN", "hud_color 底栏那句又说「点保存就生效」",
+        "pages/hud_color_page.py",
+        # ⚠ 判据跑的是 **else 分支**（页面此刻不脏），所以要破坏的是那一支；
+        #   而那句话在建页时也出现一次 ⇒ 带上上一行让锚点唯一。
+        '            self.save_btn.setText("保存 HUD 规则")\n'
+        '            self.action_bar.set_message("HUD 规则要点一下保存才会写入")',
+        '            self.save_btn.setText("保存 HUD 规则")\n'
+        '            self.save_hint_label.setText("修改后请点击保存，设置才会生效")',
+        "tests/test_master_switch_effect_is_honest.py::"
+        "test_the_receipt_survives_the_page_refreshing_itself[hud_color]",
+        "RN-427 ⭐⭐ **一条守卫的输入如果能被一次常规操作顺手改写，那条守卫就不是"
+        "守卫。** 批 16 把这句话写进了 `_render_message` 的注释里，并把守卫建在"
+        "**入口**（`set_message`）上；而 `hud_color` 拿到的是**入口里面那个控件**"
+        "（`save_hint_label = action_bar.message_label`）然后直接 setText。"
+        "实测：拨完开关回执还在，跑一次 `_refresh_dirty_ui()`（用户改任何一个"
+        "设置都会触发）之后**回执整句消失**，只剩那句「点保存，设置才会生效」——"
+        "外审原话「误以为只要点保存就会在游戏内生效，无需开启总开关」。"
+        "⭐⭐ **守卫建在入口上，而那一页拿到了入口里面那个控件的引用** —— "
+        "这不是有人绕过规则，是规则的边界没覆盖到它自己暴露出去的那个引用",
+    ),
     # ⛔⛔ 新断点一律加在**这一行之上**。
     #
     # 下面这个标记是开源同步那个语义补丁的**锚点**：开源版在这个位置追加它自己的

@@ -937,3 +937,187 @@ def test_nothing_on_screen_claims_to_be_enabled_while_the_switch_is_off(
         f"{page_id}：总开关关着，屏幕上还有 {len(offenders)} 处在说「已启用」——\n  "
         + "\n  ".join(offenders) +
         "\n⭐ 一句只在某个状态下为真的话，在别的状态里就是一句谎。")
+
+
+def _accent_rgb():
+    """品牌强调色（当前主题）。⭐ 从主题取，不写死 —— 写死的话换主题就静默失效。"""
+    from theme_manager import get_theme_manager
+    tm = get_theme_manager()
+    raw = tm.current_theme.colors.accent_primary.lstrip("#")
+    return tuple(int(raw[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def _accent_pixels(widget, rgb, tol=12):
+    """这颗控件身上有多少个像素在用品牌强调色。"""
+    img = widget.grab().toImage()
+    n = 0
+    for y in range(img.height()):
+        for x in range(img.width()):
+            c = img.pixelColor(x, y)
+            if (abs(c.red() - rgb[0]) <= tol and abs(c.green() - rgb[1]) <= tol
+                    and abs(c.blue() - rgb[2]) <= tol):
+                n += 1
+    return n
+
+
+def test_the_parameter_area_definition_can_still_find_controls(main_window, qapp):
+    """⚠ 反空转 —— 而它必须是**聚合**的，不能逐页钉。
+
+    第一版逐页钉「这一页必须找得出控件」，全量跑时 5 个音效页当场误报：
+    那几页库是空的，**根本不建那些参数行**（显示的是空库引导卡）——
+    ⭐ **这一页的分母本来就可以是空的。**
+    ⚠ 而且它只在**全量跑**时红、单独跑绿，因为库空不空取决于前面哪个
+    测试动过那个共享配置目录（RN-141 那一族）。
+
+    ⭐⭐ **「分母塌了」和「这一页此刻恰好什么都没有」是两件事，
+    而一条反空转断言很容易把它们混成一件。**
+    ⇒ 改成问一句聚合的：这个定义在 15 页里**至少还能在大多数页上找出控件**。
+    它塌掉（比如有人把 `_VALUE_ACCENT` 判空）时会立刻红，
+    而某一页恰好空着不会。
+
+    ⚠ 这条存在的理由见另一条判据的账：产品和判据**共用同一个分母定义**，
+    ⭐⭐⭐ **单一真相源让它们一致，也让它们一起错** —— 定义一塌，
+    产品不降权、判据也同时看不见任何东西，于是全绿。
+    """
+    found = {}
+    for page_id in sorted(EXPECTED_KEYS):
+        page = _open(main_window, qapp, page_id)
+        found[page_id] = len(eff.parameter_area_controls(page))
+    lively = [p for p, n in found.items() if n]
+    assert len(lively) >= 10, (
+        f"15 页里只有 {len(lively)} 页找得出参数区控件：{found}\n"
+        "⭐ 这个分母定义多半塌了 —— 而它一塌，产品和判据会一起瞎。")
+
+
+@pytest.mark.parametrize("page_id", sorted(EXPECTED_KEYS))
+def test_no_control_in_the_parameter_area_stays_brand_coloured(
+        main_window, qapp, page_id):
+    """⭐⭐ **降权的分母是「谁在发亮」，不是「谁住在一张卡里」。**
+
+    批 16 把「参数区」等同于 `objectName == "card"` 的 QFrame，
+    判据也照着问「每张卡有没有被降权」—— 15 页全绿。
+    ⚠ 而实测（批 19）：`music` 的「允许游戏状态自动控制音乐」和 `voice_output`
+    的三颗转发复选框住在 **`QGroupBox`** 里，**不在任何 card 里** ⇒
+    降权一个像素都没够着，开/关两态**逐像素完全相同**。
+    外审枚举轮当场点名其中一颗：「**紫色**勾选框…让人以为此刻已经开启生效」。
+
+    ⭐⭐⭐ **一个用容器类型当代理的分母，会漏掉所有没用那个容器的地方，
+    而判据会因为「卡都降权了」而全绿。**（同 RN-425：批 16 审的是
+    「我改的那三件东西」，不是「屏幕上还有什么在发亮」。）
+
+    ⇒ 这条判据按**它开着时用不用强调色**划分母，直接抓像素：
+    开着时身上有品牌色的控件，关着时必须显著变少。
+    ⚠ 状态卡（那颗要去拨的开关所在的卡）不在分母里 —— 调暗出口等于把门锁上。
+    """
+    page = _open(main_window, qapp, page_id)
+    rgb = _accent_rgb()
+    host = eff.status_card_of(page)
+    row = getattr(page, "master_switch_row", None)
+
+    def in_the_way_out(w):
+        if host is not None and (w is host or host.isAncestorOf(w)):
+            return True
+        return row is not None and (w is row or row.isAncestorOf(w))
+
+    _set_switch(page, qapp, True)
+    watched = []
+    # ⭐ 分母走 `parameter_area_controls` —— **产品和判据共用同一个定义**。
+    #   各写一份的话，判据会去量一个和产品不一样的分母，然后全绿。
+    for w in eff.parameter_area_controls(page):
+        if w.isHidden() or in_the_way_out(w):
+            continue
+        if w.width() < 4 or w.height() < 4:
+            continue
+        lit = _accent_pixels(w, rgb)
+        if lit >= 20:                     # 开着时真的在用强调色的，才进分母
+            watched.append((w, lit))
+
+    # ⚠⚠ **反空转，而且这一条是回退验证逼出来的。**
+    # 分母走 `parameter_area_controls`（产品和判据共用同一个定义），
+    # 于是把那个定义弄坏时 —— 产品不再降权、判据的分母也同时变空 ——
+    # **两边一起瞎，判据照样全绿**。
+    # ⭐⭐⭐ **单一真相源让实现和判据保持一致，也让它们一起错。**
+    # ⇒ 共用定义可以，但「这个定义还认得出东西吗」必须独立断言一次。
+
+    _set_switch(page, qapp, False)
+    qapp.processEvents()
+    offenders = []
+    for w, lit_on in watched:
+        lit_off = _accent_pixels(w, rgb)
+        if lit_off > lit_on * 0.3:        # 基本没退
+            offenders.append(
+                f"{type(w).__name__}:{(w.text() if hasattr(w, 'text') else '') or w.objectName() or '?'}"
+                f"（开 {lit_on}px → 关 {lit_off}px）")
+    assert not offenders, (
+        f"{page_id}：总开关关着，参数区里还有 {len(offenders)} 个控件在用品牌强调色画——\n  "
+        + "\n  ".join(offenders[:6]) +
+        "\n⭐ 「这一片是活的」这个信号就是它们发出来的。")
+
+
+#: 页面自己的「刷新一下底栏/状态」入口。⭐ 名字是**列出来的**，不是猜的：
+#: 判据会断言每一页至少命中一个，命不中就红 —— 否则它会安静地什么都没验。
+REFRESH_ENTRIES = ("_sync_action_bar", "_refresh_dirty_ui", "_update_action_bar",
+                   "_sync_status_strip", "_sync_overview_status", "_update_status",
+                   "_refresh_status_badge", "_sync_community_guidance",
+                   "_refresh_style_overview")
+
+
+@pytest.mark.parametrize("page_id", sorted(EXPECTED_KEYS))
+def test_the_receipt_survives_the_page_refreshing_itself(main_window, qapp, page_id):
+    """⭐⭐ **一条守卫的输入如果能被一次常规操作顺手改写，那条守卫就不是守卫。**
+
+    批 16 把这句话写进了 `PageActionBar._render_message` 的注释里，并把守卫
+    建在**入口**（`set_message`）上：页面随时再调一次，回执照样会被重新拼回去。
+
+    ⚠⚠ 而 `hud_color` 拿到的是**入口里面那个控件**：
+    `self.save_hint_label = self.action_bar.message_label`，
+    然后直接 `setText(...)` —— 实测（批 19）：
+
+        拨完开关：       「总开关关着——…不生效…」+ 页面自己那句   ✓
+        跑一次 `_refresh_dirty_ui()`：  只剩页面自己那句           ✗
+
+    而 `_refresh_dirty_ui` 在**用户改任何一个设置时都会跑**。
+    ⇒ **玩家一动手，那条回执就没了**，剩下的那句还恰好在说
+    「点保存，设置才会生效」（外审：「误以为只要点保存就会在游戏内生效，
+    无需开启总开关」）。
+
+    ⭐⭐ **守卫建在入口上，而那一页拿到了入口里面那个控件的引用** ——
+    这不是有人绕过规则，是规则的边界**没有覆盖到它自己暴露出去的那个引用**。
+    ⭐ 所以这条判据不钉「hud_color 那一处」，钉的是**行为**：
+    页面自己刷新一遍之后，回执必须还在。
+    """
+    page = _open(main_window, qapp, page_id)
+    _set_switch(page, qapp, False)
+    assert eff.ACTION_BAR_OFF_TEXT in page.action_bar.message_label.text(), (
+        f"{page_id}：拨完开关，底栏那条回执就没出现")
+
+    import inspect
+
+    called = []
+    for name in REFRESH_ENTRIES:
+        fn = getattr(page, name, None)
+        if not callable(fn):
+            continue
+        # ⚠ 只调**不用给参数**的那些。第一版没查签名，`death_sound` 的
+        # `_refresh_style_overview(style)` 当场把判据炸成 TypeError ——
+        # ⭐ 那会读成「这一页坏了」，而其实是判据自己调错了。
+        try:
+            sig = inspect.signature(fn)
+            if any(prm.default is inspect.Parameter.empty
+                   and prm.kind in (prm.POSITIONAL_ONLY,
+                                    prm.POSITIONAL_OR_KEYWORD)
+                   for prm in sig.parameters.values()):
+                continue
+        except (TypeError, ValueError):        # 签名读不到就别碰
+            continue
+        fn()
+        called.append(name)
+        qapp.processEvents()
+    # ⚠ 反空转：一个方法都没调到的话，下面那条断言**永远为真**。
+    assert called, (
+        f"{page_id}：一个刷新入口都没命中 —— 这条判据在这一页上是空转的。\n"
+        "⭐ 名单在 REFRESH_ENTRIES，页面换了名字就把新名字加进去。")
+    assert eff.ACTION_BAR_OFF_TEXT in page.action_bar.message_label.text(), (
+        f"{page_id}：页面自己刷新了一遍（{called}），底栏那条回执被冲掉了。\n"
+        "⭐ 页面要改底栏那句话，只能走 `action_bar.set_message(...)`，"
+        "不许直接对 `message_label` 写字。")
