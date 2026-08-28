@@ -3807,6 +3807,65 @@ REVERTS = [
         "⭐ **一条判据要能被验证，它的失败必须是确定的。**",
     ),
 
+    # ============================================ RN-150：禁用了但看不出来
+    #
+    # ⭐ 这一族的度量花了四把尺子才定下来（1 / 41 / 14 / 1 四个不同的数）——
+    # 完整过程写在判据的模块 docstring 里。断点打在**最后那把尺子承重的地方**。
+    Revert(
+        "RN", "禁用的主按钮退回「暗一档的品牌色」",
+        "theme_manager.py",
+        "QPushButton#primaryButton:disabled {{\n"
+        "                background-color: {self._hex_to_rgba(c.bg_tertiary, 90)};",
+        "QPushButton#primaryButton:disabled {{\n"
+        "                background-color: {c.accent_hover};",
+        "tests/test_disabled_buttons_look_disabled.py::"
+        "test_a_disabled_button_stops_looking_like_the_brand_colour",
+        "RN-150：定点实测同一屏底栏两颗**都禁用**的按钮 —— "
+        "次按钮 `(0,0,0)`（透明露底）、主按钮 `(61,36,112)`（`#3d2470` 一块紫色填充）。"
+        "⭐ 这条原则本文件里早就写过（`#dangerButton:disabled` R7/D-06："
+        "「红色的语义是『点下去会毁数据』，禁用的语义是『你点不了』，两者同时出现是自相矛盾的」），"
+        "只是从没铺到主按钮 —— 品牌色的语义是「这是主要动作，点它」，同样自相矛盾。"
+        "⚠ 判据的阈值**由本主题的中性底色实算**，不是拍的数字："
+        "⭐⭐ **「中性」不是一个绝对值，是一个相对位置**",
+    ),
+    Revert(
+        "RN", "降权规则重新盖掉禁用态（禁用的和可点的长得一样）",
+        "theme_manager.py",
+        '            QFrame#card[masterOff="true"] QPushButton#primaryButton:disabled {{',
+        '            QFrame#card[masterOff="true"] QPushButton#primaryButtonXX:disabled {{',
+        "tests/test_disabled_buttons_look_disabled.py::"
+        "test_a_disabled_button_still_looks_like_a_button",
+        "RN-150 ⚠⚠ **这一条是「防止我自己改过头」的守卫逮到的，而它逮到的是别人埋的**："
+        "`QFrame#card[masterOff=\"true\"] QPushButton#primaryButton` 的特异度"
+        "（多一个 id + 一个属性）压过 `#primaryButton:disabled`，"
+        "于是在降权的卡片里，一颗**禁用**的主按钮和一颗**可点**的长得逐字节相同"
+        "（`kill_sound` 空库那颗实测）。⭐⭐ 那是批 16~20 五批降权留下的**背面代价** ——"
+        "⭐ **一条修法的代价，长在它自己修好的那件事的背面**（本工程第四次）",
+    ),
+    Revert(
+        "RN", "按钮扫描器只认加载过的页（分母塌成个位数）",
+        "tests/test_disabled_buttons_look_disabled.py",
+        "    for page_id in list(main_window._page_names.keys()):",
+        "    for page_id in list(main_window.pages.keys()):",
+        "tests/test_disabled_buttons_look_disabled.py::"
+        "test_the_sweep_actually_sees_the_buttons",
+        "RN-150：第一版就是这么写的 —— 那时只有 1 页加载过，**量到 7 颗按钮，"
+        "而全站有 247 颗**，而且它不报错。"
+        "⭐ **一个算错分母的扫描器，长得和「这份界面很干净」一模一样。** "
+        "页面名单的真源是 `win._page_names`（`ui_shot_capture:286` 一直这么写）",
+    ),
+    Revert(
+        "RN", "阳性对照被摘掉（判据退化成「我改过的那一类被我改过了」）",
+        "tests/test_disabled_buttons_look_disabled.py",
+        '    secondary = [r for r in swept if r[1] == "secondaryButton"]',
+        '    secondary = [r for r in swept if r[1] == "nope"]',
+        "tests/test_disabled_buttons_look_disabled.py::"
+        "test_the_secondary_buttons_are_the_positive_control",
+        "RN-150：次按钮是全站最多的一类（150 颗），**本来就合格** ⇒ 免费的阳性对照。"
+        "⭐ 没有它，上面那条判据可能只是在证明「我改过的那一类被我改过了」"
+        "（批 17 那条教训：没有阳性对照的尺子，和一把只会读出一种答案的尺子分不开）",
+    ),
+
     # ============================================ RN-429：覆盖层的运行前提
     #
     # ⭐ 这一族的分母**不是 import 图**：`kill_icon_page` 只负责配置，

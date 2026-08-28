@@ -129,7 +129,11 @@ class ThemeColors:
     accent_primary: str      # 主题色（主要强调色）
     accent_hover: str        # 主题色悬停
     accent_pressed: str      # 主题色按下
-    accent_disabled: str     # 主题色禁用
+    # ⛔ RN-150：`accent_disabled`（主题色暗一档）已删除。
+    #    它全仓只有一处引用 —— `#primaryButton:disabled` 的背景，
+    #    而那一处正是缺陷本身：禁用的主按钮看着仍是「可以点的品牌色」。
+    #    ⭐ 改完之后它成了**没人用的字段**，而一个留着的死字段会让
+    #    下一个人以为「禁用态该用这个色」，然后又去调它（RN-001 那一族）。
 
     # 边框颜色
     border_primary: str      # 主要边框
@@ -449,6 +453,22 @@ class Theme:
             QFrame#card[masterOff="true"] QPushButton#primaryButton {{
                 background: {idle};
                 color: {idle_text};
+            }}
+            /* ⚠⚠ RN-150：上面那条的**特异度压过了 `#primaryButton:disabled`**
+             * （多一个 id + 一个属性），于是在降权的卡片里，
+             * 一颗**禁用**的主按钮和一颗**可点**的主按钮长得一模一样 ——
+             * 玩家分不出「这按钮点不了」和「整页降权了」。
+             * 实测：`kill_sound` 空库引导那颗「去社区拿一套…」，
+             * 启用/禁用两态**整块像素逐字节相同**。
+             *
+             * ⭐⭐ 这是批 16~20 那五批降权留下的**背面代价** ——
+             *   而逮到它的是我这一批为「防止自己改过头」加的那条守卫判据。
+             *   ⭐ **一条为防止自己改过头而加的守卫，逮到的是别人早就埋下的东西。**
+             *
+             * ⇒ 补一条特异度更高的（多一个伪类），让禁用态重新说得上话。 */
+            QFrame#card[masterOff="true"] QPushButton#primaryButton:disabled {{
+                background: {self._hex_to_rgba(c.bg_tertiary, 90)};
+                color: {c.text_on_disabled};
             }}
 
             /* ⚠⚠ RN-427（批 19）：上面那组选择器全都要求控件**住在一张 card 里**，
@@ -1219,9 +1239,13 @@ class Theme:
                 padding: {max(0, button.primary_padding_vertical - 2)}px {max(0, button.primary_padding_horizontal - 2)}px;
             }}
 
+            /* RN-150：禁用的主按钮**退回中性**，不用「暗一档的品牌色」。
+             * 完整的实测数据与「为什么不是自己再调一个色」写在判据里：
+             * `tests/test_disabled_buttons_look_disabled.py`。
+             * ⚠ 这里复用 `#dangerButton:disabled`（R7/D-06）那套已验过对比度的组合。 */
             QPushButton#primaryButton:disabled {{
-                background-color: {c.accent_disabled};
-                color: {c.text_disabled};
+                background-color: {self._hex_to_rgba(c.bg_tertiary, 90)};
+                color: {c.text_on_disabled};
             }}
             
             QPushButton#secondaryButton {{
@@ -2212,7 +2236,6 @@ class DarkTheme(Theme):
             accent_primary="#7c3aed",     # 主强调（violet）
             accent_hover="#8b4af2",       # hover 提亮
             accent_pressed="#6929d0",     # 按下加深
-            accent_disabled="#3d2470",    # 禁用
 
             # v5 新加：dual accent
             accent_secondary="#06b6d4",   # 次强调（cyan）— 链接/次要 CTA
@@ -2261,7 +2284,6 @@ class LightTheme(Theme):
             accent_primary="#007aff",
             accent_hover="#3395ff",
             accent_pressed="#0062cc",
-            accent_disabled="#a0c8f0",
 
             # 边框颜色 — v2.2 加深以提升卡片可见度
             border_primary="#bdbcb8",
@@ -2303,7 +2325,6 @@ class GreenTheme(Theme):
             accent_primary="#4eca6a",
             accent_hover="#6edd84",
             accent_pressed="#3ab856",
-            accent_disabled="#2a5e38",
 
             border_primary="#2e3b32",
             border_secondary="#252f28",
@@ -2341,7 +2362,6 @@ class PurpleTheme(Theme):
             accent_primary="#9b6dff",
             accent_hover="#b48fff",
             accent_pressed="#8455e8",
-            accent_disabled="#4a3570",
 
             border_primary="#302a3c",
             border_secondary="#272230",
@@ -2379,7 +2399,6 @@ class WarmTheme(Theme):
             accent_primary="#e07830",
             accent_hover="#f09048",
             accent_pressed="#c86820",
-            accent_disabled="#c8a888",
 
             border_primary="#ccc4ba",
             border_secondary="#ddd6cc",
@@ -2417,7 +2436,6 @@ class ContrastTheme(Theme):
             accent_primary="#4dabff",
             accent_hover="#70c0ff",
             accent_pressed="#3090e0",
-            accent_disabled="#2a5580",
 
             border_primary="#404040",
             border_secondary="#2a2a2a",
@@ -2455,7 +2473,6 @@ class RoseTheme(Theme):
             accent_primary="#d4507a",
             accent_hover="#e06890",
             accent_pressed="#c04068",
-            accent_disabled="#c8a0b0",
 
             border_primary="#ccc2c8",
             border_secondary="#ddd4d8",
@@ -2493,7 +2510,6 @@ class OceanTheme(Theme):
             accent_primary="#38b0d0",
             accent_hover="#50c8e8",
             accent_pressed="#2898b8",
-            accent_disabled="#1e5060",
 
             border_primary="#283040",
             border_secondary="#202838",
@@ -2530,7 +2546,6 @@ class MinimalTheme(Theme):
             accent_primary="#808080",
             accent_hover="#999999",
             accent_pressed="#666666",
-            accent_disabled="#dddddd",
             border_primary="#e8e8e8",
             border_secondary="#f5f5f5",
             border_focus="#999999",

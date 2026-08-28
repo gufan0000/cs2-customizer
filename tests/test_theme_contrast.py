@@ -217,7 +217,7 @@ def test_derived_tokens_are_auto_filled():
         text_tertiary="#b8b8b8",  # 故意给一个白底上只有 ~1.8:1 的值
         text_disabled="#cccccc",
         accent_primary="#4eca6a", accent_hover="#3fb85a", accent_pressed="#2fa74a",
-        accent_disabled="#a8e0b6", border_primary="#e0e0e0",
+        border_primary="#e0e0e0",
         border_secondary="#eeeeee", border_focus="#4eca6a",
         success="#2e9e4f", warning="#d08700", error="#d13438", info="#0a84ff",
         scrollbar_bg="#ffffff", scrollbar_handle="#dddddd",
@@ -241,7 +241,7 @@ def test_explicit_token_overrides_are_respected():
         bg_elevated="#242424", text_primary="#f0f0f0", text_secondary="#c0c0c0",
         text_tertiary="#808080", text_disabled="#505050",
         accent_primary="#7c3aed", accent_hover="#8b4bf5", accent_pressed="#6b2ad8",
-        accent_disabled="#3d2470", border_primary="#303030",
+        border_primary="#303030",
         border_secondary="#282828", border_focus="#7c3aed",
         success="#22c55e", warning="#f59e0b", error="#ef4444", info="#3b82f6",
         scrollbar_bg="#101010", scrollbar_handle="#383838",
