@@ -402,6 +402,63 @@ def _first_accent_control(page):
     return None
 
 
+def _pixels_of(widget) -> bytes:
+    """抓一个控件此刻的像素。
+
+    ⚠⚠ **RN-433：这里必须把 QImage 先落到一个变量上。** 原来写的是一行链式：
+
+        widget.grab().toImage().bits().tobytes()
+
+    `bits()` 返回的是**指向那张 QImage 缓冲区的裸指针**，而链式写法里
+    `QPixmap` 和 `QImage` 都是**没有任何 Python 引用的临时对象** ——
+    `.tobytes()` 执行时它们可能已经被回收，于是读的是**已释放的内存**。
+    实测：同一条判据连跑四次，**崩一次**（`Windows fatal exception:
+    access violation`，rc=139），另外三次正常通过。
+
+    ⭐⭐ 而它的**失败方式**才是要害：这不是"判据变红"，是**进程当场死掉**。
+    `revert_verify` 的基线阶段只看 `returncode == 0` ⇒ 报成「基线就不绿」，
+    **整台回退验证停摆**，而真正的原因一个字都没提（同 RN-194）。
+    ⇒ ⭐ **一条判据的失败方式不止「红」一种；而只有「红」那一种会说人话。**
+
+    ⚠ 更该记的是它活了多久：这条判据是批 19 写的，**两轮收工门禁全绿**
+    （批 19、批 20）。⭐ **一次没发生的崩溃，和一条正常工作的判据，长得一模一样。**
+    """
+    image = widget.grab().toImage()          # ← 引用留住，别让它变成临时对象
+    return image.constBits().tobytes()
+
+
+def test_the_pixel_grab_keeps_the_image_alive():
+    """RN-433：抓像素时不许把 QImage 当临时对象用。
+
+    ⚠ **这条必须是静态的（走 AST），不能靠"多跑几次看崩不崩"** ——
+    悬空指针是**随机**崩的（实测 4 次崩 1 次），
+    而一条随机失败的判据在回退验证里会给出时红时绿的结果。
+    ⭐ **一条判据要能被验证，它的失败必须是确定的。**
+
+    形状：`x.toImage().bits()` / `x.toImage().constBits()` ——
+    即**在一个 `toImage()` 的返回值上直接取缓冲区**，中间没落到变量上。
+    """
+    src = Path(__file__).read_text(encoding="utf-8")
+    dangling = []
+    for node in ast.walk(ast.parse(src)):
+        if not isinstance(node, ast.Call):
+            continue
+        fn = node.func
+        if not isinstance(fn, ast.Attribute) or fn.attr not in ("bits", "constBits"):
+            continue
+        inner = fn.value
+        if (isinstance(inner, ast.Call) and isinstance(inner.func, ast.Attribute)
+                and inner.func.attr == "toImage"):
+            dangling.append(node.lineno)
+
+    assert not dangling, (
+        f"第 {dangling} 行在 `toImage()` 的返回值上直接取缓冲区 —— "
+        "那张 QImage 没有任何 Python 引用，取到的是**指向已释放内存的裸指针**，"
+        "进程会随机 access violation（不是判据变红，是当场死掉）。\n"
+        "⭐ 先把 QImage 落到一个变量上，再 `constBits()`。"
+    )
+
+
 def test_the_de_emphasis_actually_changes_pixels(main_window, qapp):
     """⭐⭐⭐ **判据绿不代表屏幕上有东西 —— 那就去量屏幕。**
 
@@ -424,10 +481,10 @@ def test_the_de_emphasis_actually_changes_pixels(main_window, qapp):
             continue
         _set_switch(page, qapp, True)
         qapp.processEvents()
-        on_pixels = widget.grab().toImage().bits().tobytes()
+        on_pixels = _pixels_of(widget)
         _set_switch(page, qapp, False)
         qapp.processEvents()
-        off_pixels = widget.grab().toImage().bits().tobytes()
+        off_pixels = _pixels_of(widget)
         assert on_pixels != off_pixels, (
             f"{page_id}：总开关关着，`{type(widget).__name__}` 画出来的像素"
             "跟开着时**一模一样** —— 降权在屏幕上没有发生。\n"

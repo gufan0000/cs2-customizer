@@ -3494,7 +3494,15 @@ REVERTS = [
         "RN", "产品代码点名一条还没结的 RN，登记册那一格没人管",
         "pages/gun_sound_page.py",
         "# 属 RN-167 族（文案点名了这一页不存在的东西）",
-        "# 属 RN-199 族（文案点名了这一页不存在的东西）",
+        # ⚠⚠ 2026-08-28 批 21 全组跑判它**假绿**：这里原来写的是 `RN-199`，
+        #    而 **RN-199 已于批 15 关档**（删整条教程线）⇒ 判据不再报，
+        #    因为它报的是「代码点名了一条**还没结**的 RN」。
+        #    ⭐ 又一次「一条靠巧合成立的红，会在巧合消失的那一刻变成假绿」
+        #      （批 12 已记过一次，那次也是我自己写的断点）。
+        #    改指 RN-104（「资源·异常 N」红标无原因，跨页 8 页）——
+        #    ⚠ 它同样会有关档的那一天；⭐ **这类断点没有结构性的修法，
+        #      只有"全组跑"这一个发现机制** ⇒ 收工只跑新组是不够的。
+        "# 属 RN-104 族（文案点名了这一页不存在的东西）",
         "tests/test_renovation_registry_does_not_rot.py::"
         "test_product_code_that_names_an_rn_is_not_still_open",
         "RN-198：登记册是全工程唯一一个**没有棘轮**的真相源。一次对账查出 **14 条**"
@@ -3780,6 +3788,79 @@ REVERTS = [
         "⭐ 上面那几条文案判据**全都能被「在四个地方各抄一份 if」满足** ——"
         "所以必须另有一条直接查调用点的",
     ),
+    Revert(
+        "RN", "抓像素那行又变回悬空指针（判据随机把进程打死）",
+        "tests/test_master_switch_effect_is_honest.py",
+        "    image = widget.grab().toImage()          # ← 引用留住，别让它变成临时对象\n"
+        "    return image.constBits().tobytes()",
+        "    return widget.grab().toImage().bits().tobytes()",
+        "tests/test_master_switch_effect_is_honest.py::"
+        "test_the_pixel_grab_keeps_the_image_alive",
+        "RN-433：`bits()` 返回的是指向 QImage 缓冲区的**裸指针**，"
+        "链式写法里那张 QImage 没有任何 Python 引用 ⇒ 读已释放内存。"
+        "⭐⭐ 要害是它的**失败方式**：不是判据变红，是**进程当场死掉**，"
+        "而 `revert_verify` 的基线阶段只看退出码 ⇒ 报成「基线就不绿」，"
+        "整台回退验证停摆（RN-194 同族）。"
+        "⭐ **一条判据的失败方式不止「红」一种；只有「红」那一种会说人话。**"
+        "⚠ 所以这条断点**不能**指向 `..._changes_pixels` 自己 —— 那条被改坏之后"
+        "是**随机**崩，回退验证会拿到一个时红时绿的结果。"
+        "⭐ **一条判据要能被验证，它的失败必须是确定的。**",
+    ),
+
+    # ============================================ RN-430：并入关系与旧账归宿
+    #
+    # ⚠ 同 RN-408：被测对象（登记册）在另一个仓，断点只能打在**判据自己的
+    # 承重逻辑**上。而这一组比 RN-408 更需要这么打 —— 它新增的
+    # 「并入」是一个**结项**状态，一旦判据空转，被并掉的条目就会
+    # 从未结清单里静默消失，而那正是本工程最贵的一类腐烂。
+    Revert(
+        "RN", "并入解析器瞎了（0 条，①②⑤ 全部无条件通过）",
+        "tests/test_renovation_registry_merges_are_traceable.py",
+        "        m = _MERGE.match(re.sub(r\"\\*+\", \"\", status).lstrip(\"⚠⭐⛔ \"))",
+        "        m = None",
+        "tests/test_renovation_registry_merges_are_traceable.py::"
+        "test_the_real_registry_is_not_read_as_empty",
+        "RN-430：「并入」算已结，而它算已结的**安全性不是自带的** ——"
+        "来自「目标必须真实存在」「不许自己也是并入」这两条。"
+        "⭐ **一个「结项」状态的安全性，来自另一条判据保证它指向的东西真的还在。**"
+        "解析器一瞎，`并入 RN-999` 就成了一句让条目凭空消失的咒语，"
+        "而且消失得毫无痕迹（它在统计里算结了）",
+    ),
+    Revert(
+        "RN", "旧账逐页表解析器瞎了（归宿格与关档对账全部空转）",
+        "tests/test_renovation_registry_merges_are_traceable.py",
+        "        if header is None or \"主题\" not in header or page is None:",
+        "        if True or header is None or \"主题\" not in header or page is None:",
+        "tests/test_renovation_registry_merges_are_traceable.py::"
+        "test_the_real_registry_is_not_read_as_empty",
+        "RN-430：旧账那 104 行**没有状态列**（RN-198 已声明的盲区），"
+        "本组是唯一够得着它们的判据。⭐ 分母塌了的时候，"
+        "「这一页的旧账都有归宿」和「这一页根本没被读到」长得一模一样",
+    ),
+    Revert(
+        "RN", "页面清单的已关档页认成 0 个（关档对账无条件通过）",
+        "tests/test_renovation_registry_merges_are_traceable.py",
+        "        if tuple(cells) == PAGE_TABLE_HEADER:",
+        "        if False and tuple(cells) == PAGE_TABLE_HEADER:",
+        "tests/test_renovation_registry_merges_are_traceable.py::"
+        "test_the_real_registry_is_not_read_as_empty",
+        "RN-430：页面清单里**四张表**都有「状态」格、都会出现「已关档」"
+        "（批次台账 / 里程碑 / 交叉链路 / 页面表）⇒ 必须按表头挑，不能按关键字扫。"
+        "⭐ 同 RN-189：分母要取真源，不是「凡是像的都算」",
+    ),
+    Revert(
+        "RN", "「并入」被判成还开着（真源和并入方重复计一次）",
+        "tests/test_renovation_registry_does_not_rot.py",
+        "     \"记录不做\", \"实测后不成立\", \"并入\"}",
+        "     \"记录不做\", \"实测后不成立\"}",
+        "tests/test_renovation_registry_merges_are_traceable.py::"
+        "test_the_synthetic_defects_are_actually_caught",
+        "RN-430：状态词表是**唯一真相源**，两支判据共用它。"
+        "把「并入」从 CLOSED_WORDS 里拿掉，被并的条目就重新出现在未结清单里 ——"
+        "⭐ 那时账面上和**没并过**一模一样，而登记册看起来完全正常。"
+        "⚠ 这条断点故意打在**另一支**判据的常量上：本组的判据要能发现"
+        "它依赖的那个词表被改坏了，而不是只管自己那几条",
+    ),
     # ============================================ RN-408：页面清单的棘轮
     #
     # ⚠ 这一组的**被测对象在另一个仓**（页面清单、总纲都是纯文档仓里的文件），
@@ -3889,8 +3970,18 @@ REVERTS = [
     Revert(
         "RN", "降权只降卡片外壳，说话的那些控件一个像素不动",
         "widgets/master_switch_effect.py",
-        "            if isinstance(child, _ACCENT_BEARING) or (",
-        "            if False or (",
+        # ⚠⚠ 2026-08-28 批 21 全组跑判它**假绿**。原来的破坏是把 ②b 那步
+        #    「repolish 卡片里的强调色后代」关掉（`if False or (`）——
+        #    而**批 19 加的 ②c 是一条独立路径**（属性直接挂在控件自己身上、
+        #    自己 repolish），它把同一片像素照样改了 ⇒ 判据不再变红。
+        #    ⭐⭐ **一条断点模拟的缺陷，可以被后来加的第二条路径补偿掉；
+        #      那时它不再证明那条判据有效，而它看起来毫无变化。**
+        #    ⇒ 改成关掉 `_repolish` 本身 —— 那才是这条判据当初要防的那个缺陷
+        #      的**忠实形态**：属性设上了、QSS 写对了、**没人叫控件重算样式**。
+        "    style = widget.style()\n"
+        "    style.unpolish(widget)\n"
+        "    style.polish(widget)",
+        "    return",
         "tests/test_master_switch_effect_is_honest.py::"
         "test_the_de_emphasis_actually_changes_pixels",
         "⚠⚠ **这条断点第一次指的是 `..._is_de_emphasised_when_the_switch_is_off`，"
@@ -4007,8 +4098,15 @@ REVERTS = [
         "widgets/master_switch_effect.py",
         "            if not isinstance(w, _VALUE_ACCENT):",
         "            if True:",
+        # ⚠⚠ 2026-08-28 批 21 全组跑判它**假绿**。这个破坏让
+        #    `parameter_area_controls()` 对每一页都返回**空**，
+        #    而原来的 selector 是那条按页判据「没有控件还留着强调色」——
+        #    分母一空，它就**无条件通过**。
+        #    ⭐⭐ **对一条"断言没有坏东西"的判据，任何缩小分母的破坏
+        #      都只会让它更绿。** 能接住这类破坏的只有反空转那一条。
+        #    ⇒ selector 改指反空转判据（它断言 15 页里至少 10 页找得到控件）。
         "tests/test_master_switch_effect_is_honest.py::"
-        "test_no_control_in_the_parameter_area_stays_brand_coloured[music]",
+        "test_the_parameter_area_definition_can_still_find_controls",
         "RN-427 ⚠⚠ 批 16 把「参数区」等同于「objectName 叫 card 的 QFrame」——"
         "那是一个**代理**，而代理会漏：`music` 的「允许游戏状态自动控制音乐」和"
         "`voice_output` 的三颗转发复选框住在 **`QGroupBox`** 里，一张卡都不沾，"
