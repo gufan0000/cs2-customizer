@@ -53,6 +53,9 @@ from kill_icon_overlay import (
 )
 from resource_manager import ResourceManager
 
+#: RN-429 覆盖层的运行前提。击杀图标画在游戏画面上，同上。⚠ 配置它的 `kill_icon_page` 与本模块之间**没有任何 import 关系**（页面只配置，播放由 GSI 事件链驱动）—— 所以那一页的表态只能靠它自己写，任何 import 分母都够不着。
+DRAWN_OVER_THE_GAME = True
+
 logger = get_logger("KillIconPlayer")
 
 #: 支持的击杀等级。>5 杀由 `gsi_handler_kills` 那边钳到 5，这里不重复判断。

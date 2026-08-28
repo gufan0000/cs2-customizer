@@ -22,6 +22,10 @@ from widgets.master_switch_link import make_master_switch_row
 from widgets.page_action_bar import PageActionBar
 from widgets.settings_card import SettingsCard
 from widgets.page_header import PageHeader
+from widgets.overlay_requirement import make_overlay_requirement_label
+
+#: RN-429：边缘特效由 `screen_effect_overlay` 画在游戏画面上。
+DRAWS_OVER_THE_GAME = True
 
 
 PRESET_ORDER = [
@@ -114,6 +118,11 @@ class ScreenEffectsPage(QWidget):
         status_row.addWidget(self.status_badge_label, 1)
         status_row.addStretch()
         status_card_layout.addLayout(status_row)
+
+        # RN-429：边缘特效是**画在游戏画面上**的覆盖层，独占全屏下一个像素都出不来。
+        # ⚠ 这条前提本页原来只写在**折叠的帮助面板**里（`ui_help_panel.py:564`）
+        #   —— 玩家在开始配之前看不到它，等于没写。
+        status_card_layout.addWidget(make_overlay_requirement_label("屏幕特效"))
 
         # RN-009: 这里原先还有一个 `summary_label` —— 建出来就 `hide()`，
         # 而全仓**没有任何一处**让它再显示（离屏实证：`isVisible()` 恒为 False，

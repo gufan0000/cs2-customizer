@@ -3807,6 +3807,76 @@ REVERTS = [
         "⭐ **一条判据要能被验证，它的失败必须是确定的。**",
     ),
 
+    # ============================================ RN-429：覆盖层的运行前提
+    #
+    # ⭐ 这一族的分母**不是 import 图**：`kill_icon_page` 只负责配置，
+    # 播放它的 `kill_icon_player` 在 GSI 事件链上 —— 两者之间没有任何 import 边。
+    # 三种自动取法（一跳 / 传递闭包 / 两跳+标 False）全部要么漏要么滥，
+    # 所以分母是**页面自己的声明**，由下面这几条断点看着别塌。
+    Revert(
+        "RN", "覆盖层模块不再表态自己画给谁看",
+        "crosshair_overlay.py",
+        "DRAWN_OVER_THE_GAME = True",
+        "DRAWN_OVER_THE_GAME_TODO = True",
+        "tests/test_overlay_pages_state_their_requirement.py::"
+        "test_every_always_on_top_module_says_who_it_is_drawn_for",
+        "RN-429：`crosshair_overlay` 和 `ui_toast` 在代码上长得一模一样（都置顶），"
+        "差别只在**画给谁看** —— 而那个差别机器推不出来。"
+        "⭐ 所以它必须被写下来，且不许沉默：新写一个覆盖层的人会被这条逼着回答一次",
+    ),
+    Revert(
+        "RN", "那句运行前提从屏幕上消失",
+        "pages/kill_icon_page.py",
+        '        status_card_layout.addWidget(make_overlay_requirement_label("击杀图标"))',
+        "        pass",
+        "tests/test_overlay_pages_state_their_requirement.py::"
+        "test_every_page_that_draws_over_the_game_says_so_out_loud",
+        "RN-429：`kill_icon` 是这一族里**任何 import 分母都够不着**的那一页 —— "
+        "它进得了判据，靠的是本页自己声明 `DRAWS_OVER_THE_GAME`。"
+        "⚠ 判据量的是**渲染出来的屏幕文案**，不是页面源码里的字符串："
+        "那句话住在共用件里，页面文件里一个字都没有。"
+        "⭐⭐ **判据问的必须是「屏幕上有没有」，不是「这个文件里有没有」**",
+    ),
+    Revert(
+        "RN", "那句话只说了一半（不说独占全屏会怎样）",
+        "widgets/overlay_requirement.py",
+        'f"——独占全屏会把它整个盖住，什么都不会显示。"',
+        'f"。"',
+        "tests/test_overlay_pages_state_their_requirement.py::"
+        "test_every_page_that_draws_over_the_game_says_so_out_loud",
+        "RN-429：这句话必须同时说清**该怎么做**和**否则会怎样**。"
+        "⭐ 语序按批 18 的账：动作在前、后果在后 —— 同一句话换个语序，"
+        "「他知不知道该干什么」从 57% 到 100%。"
+        "⚠ 判据认的是**语义**不是措辞（`advanced` 写「全屏独占」、"
+        "`fun` 写「全屏窗口化」，都算过）—— 同义词表列成数据，"
+        "有人换第三种说法时红的是那张表，不是那一页",
+    ),
+    Revert(
+        "RN", "这条前提跟着总开关一起变淡",
+        "widgets/overlay_requirement.py",
+        '    label.setObjectName(OVERLAY_HINT_OBJECT_NAME)',
+        '    label.setObjectName("hintLabel")',
+        "tests/test_overlay_pages_state_their_requirement.py::"
+        "test_the_requirement_does_not_fade_with_the_master_switch",
+        "RN-429：这条前提**与总开关无关** —— 不管开没开它都成立。"
+        "⭐ 而开关关着的时候玩家正在配，**那恰恰是最需要看到它的时刻**；"
+        "把它卷进「关着 ⇒ 整页降权」就是「越需要越看不见」。"
+        "⚠ 量的是**像素**不是属性：批 19 证过属性设上了、QSS 写对了，"
+        "屏幕上照样可以一个像素都不变；反过来也一样",
+    ),
+    Revert(
+        "RN", "阳性对照被摘掉（判据退化成「我改过的页面被我改过了」）",
+        "pages/fun_page.py",
+        "DRAWS_OVER_THE_GAME = True",
+        "DRAWS_OVER_THE_GAME = False",
+        "tests/test_overlay_pages_state_their_requirement.py::"
+        "test_the_declaration_has_not_quietly_emptied_itself",
+        "RN-429：`advanced` 与 `fun_afterlife` **早在本条立案之前就用自己的话**"
+        "写了这条前提 ⇒ 它们是免费的阳性对照。"
+        "⭐ **没有阳性对照的尺子，和一把只会读出一种答案的尺子分不开**（批 17）"
+        "—— 少了它们，判据 ② 就只能证明「我改过的页面被我改过了」",
+    ),
+
     # ============================================ RN-430：并入关系与旧账归宿
     #
     # ⚠ 同 RN-408：被测对象（登记册）在另一个仓，断点只能打在**判据自己的

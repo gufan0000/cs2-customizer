@@ -15,6 +15,10 @@ from widgets.page_header import PageHeader
 from widgets.page_action_bar import PageActionBar
 import os
 import json
+from widgets.overlay_requirement import make_overlay_requirement_label
+
+#: RN-429：准心由 `crosshair_overlay` 画在游戏画面上。
+DRAWS_OVER_THE_GAME = True
 
 
 #: 样式的中文名——**这是本文件里唯一一份**。
@@ -711,6 +715,11 @@ class CrosshairPage(QWidget):
 
         self.status_badge_label = create_badge_label()
         layout.addWidget(self.status_badge_label)
+
+        # RN-429：准心是**画在游戏画面上**的覆盖层，独占全屏下一个像素都出不来。
+        # ⚠ 这一页原来**全仓零命中**，而页头只说了「不改动游戏的任何配置文件」
+        #   —— 那句话让人更相信「装好就能用」。外审改前一轮 6 发判高。
+        layout.addWidget(make_overlay_requirement_label("准心"))
 
         self.crosshair_summary_label = QLabel("")
         self.crosshair_summary_label.setObjectName("hintLabel")

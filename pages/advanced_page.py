@@ -27,6 +27,9 @@ from widgets.page_header import PageHeader
 from widgets.page_action_bar import PageActionBar
 from widgets.settings_card import SettingsCard
 
+#: RN-429：本页配的「功能状态变化时在屏幕角落弹提示」由 `ui_osd` 画在游戏画面上。⭐ 本页**早在 RN-429 立案之前就自己写了**这条前提（`advanced_page.py` 那句「CS2 需使用无边框窗口模式;全屏独占下不可见。」）⇒ 它是本组判据的**阳性对照**：判据认的是「这一页说没说」，不是「有没有用共用件」。
+DRAWS_OVER_THE_GAME = True
+
 
 class AdvancedPage(QWidget):
     """高级设置页面"""

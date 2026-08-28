@@ -38,6 +38,9 @@ from widgets.my_presets_section import MyPresetsMixin
 from widgets.settings_card import SettingsCard
 from widgets.page_header import PageHeader
 
+#: RN-429：本页两跳能够到 `ui_osd`，但那是**切预设时顺带弹的提示**，不是玩家在这一页配置的产出物。⭐ 判据问的是「这一页配的东西会不会画到游戏上」，不是「能不能够到覆盖层」。
+DRAWS_OVER_THE_GAME = False
+
 
 class PresetCenterPage(MyPresetsMixin, QWidget, DirtyPageMixin):
     def __init__(self, parent=None):

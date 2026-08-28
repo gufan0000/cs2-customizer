@@ -10,6 +10,13 @@ import time as _boot_time
 
 _BOOT_T0 = _boot_time.perf_counter()  # 启动相位计时起点(必须先于一切重 import)
 
+#: RN-429 覆盖层的运行前提。启动闪屏，属于软件自己的 UI。
+#: ⚠ 位置是**特意选的**：放在最后一条 import 之后会落进
+#: `oss_sync` 那个语义补丁的上下文窗口里，让它 `does not apply`。
+#: ⭐ RN-156：**语义补丁的上下文窗口是看不见的** —— 我自己的新增把它顶开了。
+DRAWN_OVER_THE_GAME = False
+
+
 import sys
 import os
 import multiprocessing

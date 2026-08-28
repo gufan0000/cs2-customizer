@@ -37,6 +37,9 @@ from PySide6.QtWidgets import QApplication, QWidget
 
 from core.utils.logger import get_logger
 
+#: RN-429 覆盖层的运行前提。准心画在游戏画面上 —— 玩家会在 CS2 里看它，所以独占全屏下它不存在。
+DRAWN_OVER_THE_GAME = True
+
 logger = get_logger("CrosshairOverlay")
 
 #: 画布边长（物理像素）。R8a 之前就定下的 100x100，迁移时原样保住——

@@ -52,6 +52,10 @@ from widgets.kill_icon_style_strip import KillIconStyleStrip
 from widgets.page_header import PageHeader
 from widgets.page_action_bar import PageActionBar
 from widgets.settings_card import SettingsCard
+from widgets.overlay_requirement import make_overlay_requirement_label
+
+#: RN-429：击杀图标由 `kill_icon_player` 画在游戏画面上。⚠ 本页与那个模块之间**没有任何 import 关系**（页面只配置，播放由 GSI 事件链驱动）—— 所以这条只能靠本页自己声明，任何 import 分母都够不着它。
+DRAWS_OVER_THE_GAME = True
 
 #: 试播用哪一个等级。5 杀（ACE）通常是一套风格里最好看的那一张；
 #: 没有素材时会自动往下找，见 `_test_level`。
@@ -177,6 +181,10 @@ class KillIconPage(QWidget):
         status_row.addWidget(self.status_badge_label, 1)
         status_row.addStretch()
         status_card_layout.addLayout(status_row)
+
+        # RN-429：击杀图标是**画在游戏画面上**的覆盖层，独占全屏下一个像素都出不来。
+        # ⚠ 这一页原来**全仓零命中** —— 任何地方都没提过这个前提。
+        status_card_layout.addWidget(make_overlay_requirement_label("击杀图标"))
 
         self.summary_label = QLabel("")
         self.summary_label.setObjectName("hintLabel")

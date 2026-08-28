@@ -24,6 +24,9 @@ from widgets.page_header import PageHeader
 from widgets.settings_card import SettingsCard
 from widgets.settings_row import SettingsRow
 
+#: RN-429：死亡刷短视频用的是**贴屏浏览器窗口**（不是 Qt 覆盖层），但受同一条前提约束，本页同样早就自己写了 ⇒ 第二个阳性对照。
+DRAWS_OVER_THE_GAME = True
+
 # GSI map.mode 的取值 → 中文名。列常见的即可，勾了才生效。
 MODE_OPTIONS = [
     ("deathmatch", "死亡竞赛"),

@@ -11,6 +11,9 @@ from PySide6.QtWidgets import QApplication, QWidget
 
 from core.utils.logger import get_logger
 
+#: RN-429 覆盖层的运行前提。击杀/爆头的边缘特效画在游戏画面上，同上。
+DRAWN_OVER_THE_GAME = True
+
 
 DEFAULT_SCREEN_EFFECT_PRESET = "impact_sparks"
 DEFAULT_SCREEN_EFFECT_PLAY_MODE = "streak"

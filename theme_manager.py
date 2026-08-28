@@ -514,6 +514,34 @@ class Theme:
                 padding: 2px 8px 2px 6px;
             }}
 
+            /* RN-429 覆盖层的运行前提。⭐⭐ **它靠形状跳出来，不靠颜色。**
+             *
+             * 第一版就是一行普通文字，改完复跑 **32/33 发**说同一件事：
+             * 「关键前置条件**混在弱提示文本中**」「淹没在普通正文里」——
+             * 内容对了，层级不对。
+             *
+             * ⛔ 而第一直觉（染成橙色警示条）**在这套界面里是错的**：
+             *   上面那段刚写着「任何一块饱和的色都读作『亮着 = 在运行』」，
+             *   一条橙色的条会被读成"有什么东西亮着"，
+             *   直接撞坏批 16~20 用五批建起来的「中性 = 没在跑」。
+             *   ⭐ **一条修法的代价，长在它自己修好的那件事的背面。**
+             *
+             * ⇒ 提层级只用**形状**：整圈边框（不是只有左竖杠）+ 正文字号
+             *   （不缩到 sm）+ 加粗 + 独占一行的内外边距。
+             *   字色仍是 `text_secondary`（已被对比度判据盯着 ≥4.5:1）。
+             *
+             * ⚠ 这条与总开关**无关** —— 不管开没开它都成立，所以它
+             *   **不参与降权**。开关关着的时候玩家正在配，那恰恰是最需要它的时刻。 */
+            QLabel#overlayRequirementHint {{
+                color: {c.text_secondary};
+                background-color: {self._hex_to_rgba(c.text_tertiary, 22)};
+                border: 1px solid {self._hex_to_rgba(c.text_secondary, 90)};
+                border-radius: {radius.sm}px;
+                font-weight: 600;
+                padding: 7px 10px;
+                margin: 2px 0px;
+            }}
+
             QLabel#previewEffectCaption {{
                 color: {c.text_secondary};
                 font-size: {font.sm}px;

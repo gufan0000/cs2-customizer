@@ -17,6 +17,9 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QWidget
 
 from config import config
 
+#: RN-429 覆盖层的运行前提。功能状态变化时在屏幕角落弹的提示，也是画在游戏画面上的。
+DRAWN_OVER_THE_GAME = True
+
 _CORNERS = ("top_left", "top_right", "bottom_left", "bottom_right")
 _MARGIN = 28
 _SHOW_MS = 1600
