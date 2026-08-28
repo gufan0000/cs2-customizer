@@ -1121,3 +1121,47 @@ def test_the_receipt_survives_the_page_refreshing_itself(main_window, qapp, page
         f"{page_id}：页面自己刷新了一遍（{called}），底栏那条回执被冲掉了。\n"
         "⭐ 页面要改底栏那句话，只能走 `action_bar.set_message(...)`，"
         "不许直接对 `message_label` 写字。")
+
+
+@pytest.mark.parametrize("page_id", sorted(EXPECTED_KEYS))
+def test_the_status_strip_is_titled_by_what_it_actually_lists(
+        main_window, qapp, page_id):
+    """⚖ **RN-428：那条胶囊的标题叫「当前状态」，而它列的是配置。**
+
+    ⚠⚠ 本条立案时我写的说法是「**「当前」这两个字在说时间**」——
+    **枚举一遍就把它推翻了**：`crosshair` 有 **7 条**「当前X」摘要
+    （当前样式：点 / 当前颜色：红色 / 当前档位…），而它在外审枚举轮
+    **3/3 报 NONE**。⇒ 触发误读的不是那两个字。
+
+    真正在触发的是**描述「某件事发生时会自动做什么」**的条目：
+
+        music        「当前策略：**阵亡后自动开始/继续播放** · 存活时自动降低到 20%」
+        voice_output 「当前路由：… **本地监听开启**」
+        hud_color    「**事件 · 2 项**」
+        utility      「地图 · **未检测到**」（探测器语气）
+
+    而「当前样式：点」是**静态属性**，没有「在跑」的东西可想象。
+    ⭐⭐ **一个读起来像实时读数 / 像规则引擎的东西，光是存在就在暗示
+    有个进程在跑；而一个静态属性不会。**
+
+    ⇒ 这条改动**不去逐句改那些摘要**，只改一处**共用**的东西：
+    胶囊组的标题。它一次性给整条胶囊重新定性 ——
+    关着的时候，那一条列的是**配置**，不是**状态**。
+    ⭐ 标题是这条胶囊里唯一一个「说这一整条是什么」的位置。
+    """
+    page = _open(main_window, qapp, page_id)
+    label = eff.status_strip_title(page)
+    # ⚠ 反空转：找不到那个标题的话，下面两条断言**永远为真**。
+    assert label is not None, (
+        f"{page_id}：在状态卡里没找到那条胶囊的标题 —— "
+        "这条判据在这一页上是空转的（多半是标题改了名或搬了家）。")
+
+    _set_switch(page, qapp, True)
+    assert label.text() == eff.STRIP_TITLE_ON, (
+        f"{page_id}：开着的时候标题是「{label.text()}」，该是「{eff.STRIP_TITLE_ON}」")
+
+    _set_switch(page, qapp, False)
+    assert label.text() == eff.STRIP_TITLE_OFF, (
+        f"{page_id}：关着的时候标题还写着「{label.text()}」——"
+        f"该是「{eff.STRIP_TITLE_OFF}」。\n"
+        "⭐ 没在跑的时候，那一条列的是配置，不是状态。")

@@ -236,6 +236,38 @@ def parameter_area_controls(page) -> list[QWidget]:
     return out
 
 
+#: 状态卡里那条胶囊的标题（RN-428，批 20）。
+#: ⚠⚠ 立案时我写的说法是「**「当前」这两个字在说时间**」——**枚举一遍就推翻了**：
+#: `crosshair` 有 7 条「当前X」摘要，而它在外审枚举轮 **3/3 报 NONE**。
+#: 触发误读的是**描述「某件事发生时会自动做什么」**的条目
+#: （「阵亡后自动继续播放」「本地监听开启」「事件 · 2 项」「地图 · 未检测到」），
+#: 而「当前样式：点」这种**静态属性**不会。
+#: ⭐⭐ **一个读起来像实时读数 / 像规则引擎的东西，光是存在就在暗示有个进程在跑。**
+#: ⇒ 不逐句改那些摘要，只改这一处**共用**的标题：它一次性给整条胶囊重新定性。
+STRIP_TITLE_ON = "当前状态"
+STRIP_TITLE_OFF = "当前配置"
+#: 那个标题的 objectName。15 页统一（各页各建一个 QLabel，但名字一致）。
+STRIP_TITLE_OBJECT_NAME = "statusLabel"
+
+
+def status_strip_title(page) -> QWidget | None:
+    """状态卡里那条胶囊的标题控件；找不到就 None。
+
+    ⭐ 认**位置 + objectName + 它现在说的那两个词**三条一起 ——
+    状态卡里叫 `statusLabel` 的标签不止一个（还有别的说明文字），
+    只有这一个是那条胶囊的抬头。
+    """
+    host = status_card_of(page)
+    if host is None:
+        return None
+    for label in host.findChildren(QLabel):
+        if label.objectName() != STRIP_TITLE_OBJECT_NAME:
+            continue
+        if label.text() in (STRIP_TITLE_ON, STRIP_TITLE_OFF):
+            return label
+    return None
+
+
 def undimmed_cards(page) -> list[QWidget]:
     """检查器：现在**还没**降权的参数卡。判据拿它数数。"""
     return [c for c in parameter_cards(page) if not c.property(CARD_DIM_PROPERTY)]
@@ -335,6 +367,11 @@ def apply_effect_state(page, enabled: bool) -> None:
         for chip in host.findChildren(QLabel):
             if chip.objectName() == "audioStatusChip":
                 _repolish(chip)
+
+    # ②d 那条胶囊的**标题**（RN-428）：没在跑的时候，它列的是配置。
+    title = status_strip_title(page)
+    if title is not None:
+        title.setText(STRIP_TITLE_ON if enabled else STRIP_TITLE_OFF)
 
     # ③ 预览说出后果。⚠ 预览**照常渲染**——把它关掉才是那条 6/6 高的判词。
     caption = PREVIEW_ON_TEXT if enabled else PREVIEW_OFF_TEXT
