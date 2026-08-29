@@ -1145,7 +1145,13 @@ def test_the_receipt_survives_the_page_refreshing_itself(main_window, qapp, page
     """
     page = _open(main_window, qapp, page_id)
     _set_switch(page, qapp, False)
-    assert eff.ACTION_BAR_OFF_TEXT in page.action_bar.message_label.text(), (
+    # ⚠ 批 24：回执现在有两套 —— 自动保存的页一套、手动保存的页另一套
+    #   （`SAVES_AUTOMATICALLY`）。这条判据钉的是**行为**（刷新之后回执还在），
+    #   所以它要问「这一页该用哪一句」，而不是写死其中一句。
+    #   ⭐ 一条钉行为的判据，不该把某个具体取值抄进自己身上。
+    expected = (eff.ACTION_BAR_OFF_TEXT if eff.saves_automatically(page)
+                else eff.ACTION_BAR_OFF_TEXT_MANUAL)
+    assert expected and expected in page.action_bar.message_label.text(), (
         f"{page_id}：拨完开关，底栏那条回执就没出现")
 
     import inspect
@@ -1174,7 +1180,7 @@ def test_the_receipt_survives_the_page_refreshing_itself(main_window, qapp, page
     assert called, (
         f"{page_id}：一个刷新入口都没命中 —— 这条判据在这一页上是空转的。\n"
         "⭐ 名单在 REFRESH_ENTRIES，页面换了名字就把新名字加进去。")
-    assert eff.ACTION_BAR_OFF_TEXT in page.action_bar.message_label.text(), (
+    assert expected in page.action_bar.message_label.text(), (
         f"{page_id}：页面自己刷新了一遍（{called}），底栏那条回执被冲掉了。\n"
         "⭐ 页面要改底栏那句话，只能走 `action_bar.set_message(...)`，"
         "不许直接对 `message_label` 写字。")

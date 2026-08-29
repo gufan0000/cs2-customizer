@@ -54,6 +54,12 @@ EVENT_LABELS = [
 
 class HudColorPage(QWidget):
     """统一 HUD 规则设置页面"""
+    #: RN-175 / 批 24：**这一页不是自动保存的。** HUD 规则要点一下「保存 HUD 规则」才写进游戏的 cfg。
+    #: ⚠ 底栏那条共用回执默认说「改动已自动保存，不用点任何按钮」——
+    #:   而这一页同一行右边就摆着那颗必须点的按钮。实测 15 页里 2 页如此。
+    #: ⭐ 共用件省的是重复，不是判断。
+    SAVES_AUTOMATICALLY = False
+
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -214,7 +220,12 @@ class HudColorPage(QWidget):
         self.profile_combo.setFixedHeight(34)
         profile_row.addWidget(self.profile_combo)
 
-        self.apply_profile_btn = QPushButton("应用预设")
+        # ⚠⚠ RN-175（外审 4/6 票）：这颗按钮原来叫「**应用**预设」，
+        # 而它的**行为**一直是对的 —— 只 `_apply_rules_to_ui` + `_set_dirty(True)`，
+        # 一个字节都没写进游戏。错的是那个词：「应用」读起来像一次提交，
+        # 于是它和底栏那颗「保存」构成**双重确认**，玩家分不清哪一步才算数。
+        # ⭐ **一个动作只有一个生效点** —— 这一颗只负责把预设填进编辑区。
+        self.apply_profile_btn = QPushButton("载入这套")
         self.apply_profile_btn.setObjectName("secondaryButton")
         self.apply_profile_btn.setMinimumHeight(34)
         self.apply_profile_btn.clicked.connect(self._apply_preset)
@@ -222,7 +233,9 @@ class HudColorPage(QWidget):
         profile_row.addStretch()
         profile_column.addLayout(profile_row)
 
-        profile_tip = QLabel("预设会决定颜色节奏和动态效果，适合先快速确认整体方向。")
+        profile_tip = QLabel(
+            "载入只是把这套规则填进下面的编辑区，还没写进游戏；"
+            "确认好了再点右下角保存。")
         profile_tip.setObjectName("hintLabel")
         profile_tip.setWordWrap(True)
         profile_column.addWidget(profile_tip)
@@ -391,7 +404,14 @@ class HudColorPage(QWidget):
             ("info", f"预设 · {profile_text}"),
             ("positive" if key_count else "info", f"数字键 · {key_count} 项"),
             ("positive" if event_count else "info", f"事件 · {event_count} 项"),
-            ("warning" if self._dirty else "positive", "保存 · 待同步" if self._dirty else "保存 · 已同步"),
+            # ⚠⚠ RN-426：原来写「保存 · 已同步 / 待同步」。
+            # 那句话**在总开关关着时也是真话**（它由 `_dirty` 决定，说的是
+            # 「你的改动已经写出去了」）—— 所以它不是假话，是**一词两义**：
+            # 「同步」同时指「写盘」和「在游戏里跑起来」，而玩家读的是后一个。
+            # ⭐⭐ **一句真话被读成另一件事，和一句假话，要用两种修法**：
+            #   前者不能靠「改成正确的说法」修，它本来就正确；只能换掉那个词。
+            ("warning" if self._dirty else "positive",
+             "保存 · 有改动没存" if self._dirty else "保存 · 已存下"),
         ]
 
         detail_text = (
@@ -400,7 +420,9 @@ class HudColorPage(QWidget):
             f"默认颜色：{default_color}\n"
             f"数字键映射：{key_count} 项\n"
             f"事件响应：{event_count} 项\n"
-            f"保存状态：{'待同步' if self._dirty else '已同步'}\n"
+            # ⚠ 同 RN-426：这张卡的 tooltip 里也有一份，改的时候差点漏掉 ——
+            #   ⭐ 判据扫的是整个 `_sync_status_strip` 的字面量，所以它没漏。
+            f"保存状态：{'有改动没存' if self._dirty else '已存下'}\n"
             f"CFG 目录：{'已配置' if getattr(config, 'csgo_dir', '') else '未配置'}"
         )
         render_badges(self.status_badge_label, badges, detail_tooltip=detail_text)
@@ -466,11 +488,22 @@ class HudColorPage(QWidget):
             # 拨完开关时回执还在，跑一次 `_refresh_dirty_ui()`（用户改任何一个
             # 设置都会触发）之后就只剩这一句了。
             # ⭐⭐ **守卫建在入口上，而这一页拿到了入口里面那个控件的引用。**
-            self.action_bar.set_message("有未保存修改，请点击右侧保存")
+            # ⚠⚠ RN-131：这句必须回答「保存完之后，游戏里怎么才见效」——
+            # 那条指令原来**只在保存成功的模态框里出现过一次**，关掉就没了，
+            # 于是外审仍有 3 发在问「是自动生效还是要在控制台输入指令」。
+            # ⭐ **一句只在模态框里出现过的说明，等于没有说明。**
+            # ⚠ 措辞只描述代码真做过的事（`write_cs2customizer_cfg` + `setup_autoexec`）：
+            #   ⛔ 不写「下次进游戏会自动生效」—— 那是**游戏**会不会执行 autoexec，
+            #   我没有证据。⭐ **描述我们做了什么，不承诺别人会怎样**（RN-011 / RN-254）。
+            self.action_bar.set_message(
+                "有改动还没保存 —— 点保存写进游戏的 cfg（并挂进 autoexec）；"
+                "当局要立刻见效，在游戏控制台敲 exec cs2customizer.cfg。")
             self.save_hint_label.setStyleSheet("color: #f7b955;")
         else:
             self.save_btn.setText("保存 HUD 规则")
-            self.action_bar.set_message("HUD 规则要点一下保存才会写入")
+            self.action_bar.set_message(
+                "已写进游戏的 cfg（并挂进 autoexec）；"
+                "当局要立刻见效，在游戏控制台敲 exec cs2customizer.cfg。")
             self.save_hint_label.setStyleSheet("")
         self._sync_status_strip()
 

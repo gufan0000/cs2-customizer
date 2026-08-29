@@ -65,7 +65,6 @@ except Exception:
 
 class _StatusTrackingLabel(QLabel):
     """Hidden label that refreshes the overview card when text changes."""
-
     def __init__(self, text="", parent=None, on_change=None):
         super().__init__(text, parent)
         self._on_change = on_change
@@ -82,6 +81,12 @@ class _StatusTrackingLabel(QLabel):
 
 class MagnifierPage(QWidget):
     """开镜放大页面"""
+    #: RN-175 / 批 24：**这一页不是自动保存的。** 倍率与偏移要点一下「应用」才写下去。
+    #: ⚠ 底栏那条共用回执默认说「改动已自动保存，不用点任何按钮」——
+    #:   而这一页同一行右边就摆着那颗必须点的按钮。实测 15 页里 2 页如此。
+    #: ⭐ 共用件省的是重复，不是判断。
+    SAVES_AUTOMATICALLY = False
+
 
     # P2.1: 热键注册中心里的功能域标识
     HOTKEY_OWNER = "开镜放大"

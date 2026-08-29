@@ -695,7 +695,11 @@ def test_hud_color_page_status_strip_tracks_dirty_state(qapp, monkeypatch):
     assert "生效 · 规则已启用" in chips
     assert not any(text.startswith("总开关 · ") for text in chips), (
         f"徽章又在复述那颗就在同一张卡上的开关：{chips}")
-    assert "保存 · 已同步" in chips
+    # ⚠ RN-426（批 24）：这颗徽章原来写「保存 · 已同步」。那句话**是真的**
+    #   （由 `_dirty` 决定，说的是「你的改动已经写出去了」），但「同步」一词两义 ——
+    #   它同时指「写盘」和「在游戏里跑起来」，而玩家读的是后一个。
+    #   ⭐⭐ **一句真话被读成另一件事，和一句假话，要用两种修法。**
+    assert "保存 · 已存下" in chips
     initial_event_badge = next(text for text in chips if text.startswith("事件 · "))
     assert "当前预设：" in page.preset_summary_label.text()
     assert page.preset_content_layout.direction() == QBoxLayout.LeftToRight
@@ -704,7 +708,7 @@ def test_hud_color_page_status_strip_tracks_dirty_state(qapp, monkeypatch):
     page.event_checkboxes["kill"].setChecked(True)
 
     chips = _visible_audio_status_chip_texts(page.status_badge_label)
-    assert "保存 · 待同步" in chips
+    assert "保存 · 有改动没存" in chips  # RN-426：同上，去掉一词两义的「同步」
     assert "数字键 · 1 项" in chips
     updated_event_badge = next(text for text in chips if text.startswith("事件 · "))
     assert updated_event_badge != initial_event_badge or "项" in updated_event_badge

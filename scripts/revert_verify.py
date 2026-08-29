@@ -3807,6 +3807,77 @@ REVERTS = [
         "⭐ **一条判据要能被验证，它的失败必须是确定的。**",
     ),
 
+    # ============================================ RN-175 族：一个动作一个生效点
+    #
+    # ⭐ 这一页的**行为**一直是对的（`_apply_preset` 一个字节都没写进游戏），
+    # 错的是三个词。所以断点分两种：管措辞的，和管行为的 —— 谁也替不了谁。
+    Revert(
+        "RN", "预设按钮退回听起来像一次提交的词",
+        "pages/hud_color_page.py",
+        'QPushButton("载入这套")',
+        'QPushButton("应用预设")',
+        "tests/test_hud_color_has_one_commit_point.py::"
+        "test_the_preset_button_does_not_sound_like_a_commit",
+        "RN-175：外审 4/6 票说「应用预设」和底栏「保存 HUD 规则」构成**双重确认**。"
+        "⭐ 查实这颗按钮的行为一直只是「填进编辑区」—— **错的只是那个词**。"
+        "⭐ 一个动作只有一个生效点",
+    ),
+    Revert(
+        "RN", "预设动作变成第二个生效点",
+        "pages/hud_color_page.py",
+        "        self._apply_rules_to_ui(profile, preset_rules)\n"
+        "        self._set_dirty(True)",
+        "        self._apply_rules_to_ui(profile, preset_rules)\n"
+        "        self._set_dirty(True)\n        config.save_config()",
+        "tests/test_hud_color_has_one_commit_point.py::"
+        "test_applying_a_preset_still_writes_nothing_to_the_game",
+        "RN-175：⭐ **一条管措辞的判据，和一条管行为的判据，谁也替不了谁** ——"
+        "词改对了、哪天有人给它加一句 `save_config()`，双重确认就又回来了，"
+        "而管措辞那条全绿",
+    ),
+    Revert(
+        "RN", "状态胶囊退回一词两义的「同步」",
+        "pages/hud_color_page.py",
+        '"保存 · 已存下"',
+        '"保存 · 已同步"',
+        "tests/test_hud_color_has_one_commit_point.py::"
+        "test_the_save_state_chip_does_not_say_synced",
+        "RN-426：那句「已同步」**在总开关关着时也是真话**（它由 `_dirty` 决定，"
+        "说的是「你的改动已经写出去了」）。⭐⭐ **一句真话被读成另一件事，"
+        "和一句假话，要用两种修法** —— 前者不能靠「改成正确的说法」修，"
+        "它本来就正确；只能换掉那个一词两义的词",
+    ),
+    Revert(
+        "RN", "「怎么在游戏里生效」退回只活在模态框里",
+        "pages/hud_color_page.py",
+        '                "已写进游戏的 cfg（并挂进 autoexec）；"\n'
+        '                "当局要立刻见效，在游戏控制台敲 exec cs2customizer.cfg。")',
+        '                "HUD 规则要点一下保存才会写入")',
+        "tests/test_hud_color_has_one_commit_point.py::"
+        "test_the_bottom_bar_says_how_it_takes_effect_in_game",
+        "RN-131：那条指令原来**只在保存成功的模态框里出现过一次**，关掉就没了，"
+        "而外审仍有 3 发在问「是自动生效还是要在控制台输入指令」。"
+        "⭐ **一句只在模态框里出现过的说明，等于没有说明。** "
+        "⚠ 措辞只描述代码真做过的事 —— ⛔ 不写「下次进游戏会自动生效」，"
+        "那是**游戏**会不会执行 autoexec，我没有证据",
+    ),
+    Revert(
+        "RN", "共用回执重新把「自动保存」当成全站事实",
+        "pages/hud_color_page.py",
+        "    SAVES_AUTOMATICALLY = False",
+        "    SAVES_AUTOMATICALLY = True",
+        "tests/test_hud_color_has_one_commit_point.py::"
+        "test_no_page_says_no_button_needed_while_showing_a_button",
+        "RN-436：批 16 把「改动已自动保存，**不用点任何按钮**」当成全站事实铺到 15 页，"
+        "而实测**15 页里 2 页不是**（`hud_color` 摆着「保存 HUD 规则」、"
+        "`magnifier` 摆着「应用」）—— 同一行底栏里，左边说「不用点任何按钮」，"
+        "右边就是那颗必须点的按钮。"
+        "⭐⭐ **一句被当成全站事实的话，只要有一页不成立，它在那一页就是假的** —— "
+        "而共用件让它假得整整齐齐，15 页一个模子。⭐ **共用件省的是重复，不是判断。** "
+        "⚠ 判据的分母**由机器自己找**（带总开关的页 × 页上带提交词的可见按钮），"
+        "不是手写名单 —— 将来哪一页加了保存按钮，它会自己报到",
+    ),
+
     # ============================================ RN-150：禁用了但看不出来
     #
     # ⭐ 这一族的度量花了四把尺子才定下来（1 / 41 / 14 / 1 四个不同的数）——
@@ -4075,8 +4146,17 @@ REVERTS = [
     Revert(
         "RN", "底栏那句回执又变回**无条件**的「已保存」",
         "widgets/page_action_bar.py",
-        "            parts.append(ACTION_BAR_ON_TEXT if enabled else ACTION_BAR_OFF_TEXT)",
-        "            parts.append(ACTION_BAR_ON_TEXT)",
+        # ⚠⚠ 批 24 改到现在的代码上：那一行已经拆成 if/else 四分支
+        #   （自动保存 / 手动保存 各两句），旧锚点在源码里出现 0 次
+        #   —— **失效体检当场报出来，而它已经空转了整整这一批**。
+        #   ⭐ **一条锚点失效的断点，和一条正常工作的断点，在跑之前长得一模一样。**
+        # ⚠ 我第一次改的锚点是 `auto = saves_automatically(…)` → `auto = True`，
+        #   **验出来是空转**：这条判据跑的那些页本来就是自动保存的，
+        #   把 `auto` 钉成 True 对它们一个字都不改。
+        #   ⭐ **一个破坏要能被看见，它必须落在判据真正在看的那条轴上** ——
+        #     这条判据看的是「回执跟不跟总开关走」，不是「用哪一套措辞」。
+        "        if enabled is not None:",
+        "        if enabled is not None and enabled:",
         "tests/test_master_switch_effect_is_honest.py::"
         "test_the_action_bar_receipt_follows_the_master_switch",
         "RN-407：这正是批 10 我自己写进去的那句话的形态 ——"
@@ -4250,12 +4330,16 @@ REVERTS = [
     Revert(
         "RN", "hud_color 底栏那句又说「点保存就生效」",
         "pages/hud_color_page.py",
-        # ⚠ 判据跑的是 **else 分支**（页面此刻不脏），所以要破坏的是那一支；
-        #   而那句话在建页时也出现一次 ⇒ 带上上一行让锚点唯一。
-        '            self.save_btn.setText("保存 HUD 规则")\n'
-        '            self.action_bar.set_message("HUD 规则要点一下保存才会写入")',
-        '            self.save_btn.setText("保存 HUD 规则")\n'
-        '            self.save_hint_label.setText("修改后请点击保存，设置才会生效")',
+        # ⚠ 判据跑的是 **else 分支**（页面此刻不脏），所以要破坏的是那一支。
+        # ⚠⚠ 批 24 改到现在的代码上：那两句文案已经换了（RN-131 补上了
+        #   「怎么在游戏里生效」），旧锚点在源码里出现 0 次 —— 失效体检当场报出来，
+        #   而它**已经空转了整整这一批**。⭐ 这正是失效体检存在的理由：
+        #   **一条锚点失效的断点，和一条正常工作的断点，在跑之前长得一模一样。**
+        #   破坏方式不变：绕过 `set_message` 这个入口，直接对入口里面那个控件 setText。
+        '            self.action_bar.set_message(\n'
+        '                "已写进游戏的 cfg（并挂进 autoexec）；"',
+        '            self.save_hint_label.setText(\n'
+        '                "已写进游戏的 cfg（并挂进 autoexec）；"',
         "tests/test_master_switch_effect_is_honest.py::"
         "test_the_receipt_survives_the_page_refreshing_itself[hud_color]",
         "RN-427 ⭐⭐ **一条守卫的输入如果能被一次常规操作顺手改写，那条守卫就不是"

@@ -67,6 +67,20 @@ class PageActionBar(QFrame):
             node = node.parentWidget()
         return None
 
+    def _owner_page(self):
+        """沿父链找到**挂着总开关的那个节点** —— 那就是这一页。
+
+        ⚠ 走的是和 `_effect_state()` 完全同一条路径，不另开一条 ——
+        ⭐ 两条各自遍历的查找逻辑，会在某一天指向不同的对象，
+          而那一天没有任何一处会报错（RN-002 那 9 份名单的形态）。
+        """
+        node = self.parentWidget()
+        while node is not None:
+            if getattr(node, "master_switch_row", None) is not None:
+                return node
+            node = node.parentWidget()
+        return None
+
     def refresh_effect_state(self):
         """总开关动了 —— 把这一条回执重算一遍。"""
         self._render_message()
@@ -89,14 +103,27 @@ class PageActionBar(QFrame):
         回执随时会被下一次刷新冲掉，而且不会有任何一处报错。
         ⭐⭐ 一条守卫的输入如果能被一次常规操作顺手改写，那条守卫就不是守卫。
         """
+        # ⚠⚠ 批 24：这两句里都写着「自动保存 / 不用点任何按钮」，而批 16
+        # 把它当成了**全站事实**。实测 15 页里 **2 页不是**（`hud_color` 摆着
+        # 「保存 HUD 规则」、`magnifier` 摆着「应用」）—— 于是同一行底栏里，
+        # 左边说「不用点任何按钮」，右边就是那颗必须点的按钮。
+        # ⭐⭐ **一句被当成全站事实的话，只要有一页不成立，它在那一页就是假的** ——
+        #   而共用件让它假得整整齐齐，15 页一个模子。
+        # ⇒ 那句话跟着**这一页的真实行为**走（`SAVES_AUTOMATICALLY`）。
         from widgets.master_switch_effect import (
-            ACTION_BAR_OFF_TEXT, ACTION_BAR_ON_TEXT,
+            ACTION_BAR_OFF_TEXT, ACTION_BAR_OFF_TEXT_MANUAL,
+            ACTION_BAR_ON_TEXT, ACTION_BAR_ON_TEXT_MANUAL,
+            saves_automatically,
         )
 
         enabled = self._effect_state()
         parts = []
         if enabled is not None:
-            parts.append(ACTION_BAR_ON_TEXT if enabled else ACTION_BAR_OFF_TEXT)
+            auto = saves_automatically(self._owner_page())
+            if enabled:
+                parts.append(ACTION_BAR_ON_TEXT if auto else ACTION_BAR_ON_TEXT_MANUAL)
+            else:
+                parts.append(ACTION_BAR_OFF_TEXT if auto else ACTION_BAR_OFF_TEXT_MANUAL)
         if self._base_message:
             parts.append(self._base_message)
         message = "".join(parts)
