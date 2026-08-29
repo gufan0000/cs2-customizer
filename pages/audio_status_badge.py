@@ -48,6 +48,17 @@ class AudioStatusBadgeBar(QFrame):
             chip.setAlignment(Qt.AlignCenter)
             chip.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
             chip.setTextInteractionFlags(Qt.NoTextInteraction)
+            # ⚠⚠ RN-121 在这儿又现身了一次（批 26）：`fix_text_display()` 会给
+            # **每一个** QLabel 无条件 `setWordWrap(True)`，而一个会折行的 QLabel
+            # 在横排里**把自己的宽度报小**（实测 hint 128px，而文字要 130px）——
+            # 布局就照那个窄宽给它，于是它折成两行、比同排高 4px，
+            # RN-185 那条「同排徽章高度一致」判红。
+            # ⭐ 状态胶囊按设计就是**一行**的东西，让它有折行的可能本身就是错的。
+            # ⚠ 必须走 `keep_single_line()`：光 `setWordWrap(False)`
+            #   会被 `fix_text_display()` 改回去（RN-121 的原话）。
+            from ui_style_applier import keep_single_line
+
+            keep_single_line(chip)
             chip.setMinimumHeight(28)
             chip.hide()
             self._chip_pool.append(chip)

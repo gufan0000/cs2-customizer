@@ -4434,6 +4434,79 @@ REVERTS = [
         "⚠ 而立案说的「入口太多、第一步不聚焦」实测**不成立**"
         "（行为题 11/12 一眼选中同一颗）⇒ 真正的毛病是**指令有两处**",
     ),
+    Revert(
+        "RN", "状态胶囊退回「闭合的圆角空框」",
+        "theme_manager.py",
+        # ⚠ 锚点用 `\n` 不是 `\r\n`：本文件是 `read_text()` 读的（**通用换行**），
+        #   CRLF 到这儿已经归一成 LF。⭐ 第一版写成 `\r\n`，四条断点全部
+        #   「锚点出现 0 次」被跳过 —— 而失效体检把它报成「一直在空转」，
+        #   ⭐⭐ **一条从没匹配上过的断点，和一条腐烂掉的断点，报出来是同一句话。**
+        "                background-color: transparent;\n"
+        "                border: none;\n"
+        "                border-left: 3px solid {c.text_tertiary};\n"
+        "                border-radius: 0px;\n",
+        "                background-color: {c.bg_card};\n"
+        "                border: 1px solid {c.border_secondary};\n"
+        "                border-radius: 13px;\n",
+        "tests/test_status_chips_do_not_look_clickable.py::test_a_status_chip_is_not_drawn_as_a_closed_box",
+        "RN-103：胶囊是**全站唯一一个「按钮尺寸 + 闭合轮廓」的不可点元素**"
+        "（可点的 267 个全带描边；不可点还带描边的只剩 card 和一条横贯整行的告示条，"
+        "都大一个数量级）。⭐⭐⭐ 它不可点，却长着这套界面里「可点」的那个形状 —— "
+        "实测胶囊轮廓 1.02~1.59:1、填充与卡底 1.00:1，而 `secondaryButton` "
+        "是 1.12~1.90:1 / 1.00:1：**两者在像素上是同一种东西**",
+    ),
+    Revert(
+        "RN", "只改基础规则、忘了 warn 那条特化（框只剩警告那几颗留着）",
+        "theme_manager.py",
+        "                color: {self._chip_text(c.accent_warm)};\n"
+        "                background-color: transparent;\n"
+        "                border: none;\n"
+        "                border-left: 3px solid {self._chip_text(c.accent_warm)};\n",
+        "                color: {self._chip_text(c.accent_warm)};\n"
+        "                background-color: {self._hex_to_rgba(c.accent_warm, 28)};\n"
+        "                border: 1px solid {self._hex_to_rgba(self._chip_text(c.accent_warm), 120)};\n",
+        "tests/test_status_chips_do_not_look_clickable.py::test_a_status_chip_is_not_drawn_as_a_closed_box",
+        "RN-103 ⭐ **一条规则有几个特化分支，就要判几次**：候选 D 就是只给警告留了框，"
+        "而外审残留的 4 发**逐字抄的正是那两颗还有框的** —— 框就是那个信号",
+    ),
+    Revert(
+        "RN", "降权那条把闭合轮廓加回来（总开关关着的页面上又变回框）",
+        "theme_manager.py",
+        "                border: none;\n"
+        "                border-left: 3px solid {c.text_tertiary};\n"
+        "            }}\n\n            /* ⚠⚠ **这两处原来是橙色的",
+        "                border: 1px solid {c.border_secondary};\n"
+        "            }}\n\n            /* ⚠⚠ **这两处原来是橙色的",
+        "tests/test_status_chips_do_not_look_clickable.py::test_a_status_chip_is_not_drawn_as_a_closed_box",
+        "RN-103 ⚠ `QFrame#card[masterOffHost=\"true\"]` 那条**特异度比 level 那几条都高**，"
+        "它会把闭合轮廓整个加回来 —— 而且只在总开关关着的页面上。"
+        "⭐ 破坏验证第一轮它是**空转**的：标本没有那个祖先属性，规则就够不着 ⇒ "
+        "**一条只在某个祖先属性下才生效的规则，需要一个带那个祖先的标本**",
+    ),
+    Revert(
+        "RN", "左侧色条也删了（胶囊什么都不画）",
+        "theme_manager.py",
+        "                border-left: 3px solid {c.text_tertiary};\n"
+        "                border-radius: 0px;\n",
+        "                border-radius: 0px;\n",
+        "tests/test_status_chips_do_not_look_clickable.py::test_the_chip_still_has_something_on_its_left",
+        "RN-103：色条是它**还在说「这是一组状态项」**的唯一凭据。"
+        "⭐ 这条不是靠票数立的（四个候选 12/12 都答「分得开」），"
+        "是**给未来的自己留的下界**",
+    ),
+    Revert(
+        "RN", "胶囊又能折行了（同排高度不齐）",
+        "pages/audio_status_badge.py",
+        "            keep_single_line(chip)",
+        "            chip.setWordWrap(True)",
+        "tests/test_status_chips_do_not_look_clickable.py::test_no_status_chip_is_allowed_to_wrap",
+        "RN-121 在批 26 的又一次现身：`fix_text_display()` 给每个 QLabel 无条件"
+        "`setWordWrap(True)`，而会折行的 QLabel **把自己的宽度报小**"
+        "（实测 hint 128px、文字要 130px）⇒ 折成两行、比同排高 4px。"
+        "⭐⭐ 而它是被我**压矮了其余那些**才暴露的 —— 那两颗一直在折行，"
+        "只是以前同排的比它高，看不出来。"
+        "⭐ **「同排一致」这类判据，改「其余那些」和改「那一个」是等价的破坏。**",
+    ),
     # ⛔⛔ 新断点一律加在**这一行之上**。
     #
     # 下面这个标记是开源同步那个语义补丁的**锚点**：开源版在这个位置追加它自己的

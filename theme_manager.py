@@ -550,7 +550,11 @@ class Theme:
             QFrame#card[masterOffHost="true"] QLabel#audioStatusChip {{
                 color: {c.text_muted};
                 background-color: transparent;
-                border: 1px solid {c.border_secondary};
+                /* RN-103（批 26）：这条原来会把闭合轮廓**加回来** ——
+                 * 它比 level 那几条特异度高，于是总开关关着的页面上，
+                 * 胶囊仍然是一个圆角空框。⇒ 跟着基础规则走，只留左侧色条。 */
+                border: none;
+                border-left: 3px solid {c.text_tertiary};
             }}
 
             /* ⚠⚠ **这两处原来是橙色的，那是错的。**
@@ -1082,14 +1086,32 @@ class Theme:
             /* v5 Phase 6: audioStatusChip 去圣诞树效应
              * 策略:正常态(success/info)统一灰底,只用文字色标记语义;
              *      异常态(warning/danger)保持满色块,确保一眼可见. */
+            /* ⚠⚠ RN-103（批 26）：胶囊原来是**一个圆角空框**，而这套界面里
+             * `secondaryButton` 也正是一个圆角空框 —— 实测两者在像素上是同一种东西。
+             * ⭐⭐⭐ **它不可点，却长着这套界面里"可点"的那个形状。**
+             * ⇒ 改成「无闭合轮廓 + 左侧 3px 色条」（这套语言下面
+             *   `#masterOffNotice` 批 16 就在用，只是没铺到胶囊上）。
+             * 完整实测（全站分母、四个候选的票数、两条被数堵死的修法、
+             * 八主题对比度）全在判据里：
+             * `tests/test_status_chips_do_not_look_clickable.py`。 */
             QLabel#audioStatusChip {{
                 color: {c.text_primary};
-                background-color: {c.bg_card};
-                border: 1px solid {c.border_secondary};
-                border-radius: 13px;
-                padding: 5px 12px;
+                background-color: transparent;
+                border: none;
+                border-left: 3px solid {c.text_tertiary};
+                border-radius: 0px;
+                /* ⚠ 纵向内边距**保持 5px**（调研那版用的是 3px）。
+                 * 3px 会把单行胶囊从 38px 压到 34px，而
+                 * 「预设 · 平衡默认（推荐）」「模式 · 连杀增强（推荐）」这两颗**本来就换行**，
+                 * 于是它们 38px、同排其余 34px ⇒ RN-185 那条「同排徽章高度一致」当场判红。
+                 * ⭐⭐ 换行的那两颗一直在换行，**只是以前同排的比它高，看不出来** ——
+                 *   我把别人压矮，就等于把它们抬了出来。
+                 *   （批 24 记过它的镜像：我把文案改长 ⇒ 那一颗换行、比同排高一截。）
+                 * ⭐ **同排一致这类判据，改「其余那些」和改「那一个」是等价的破坏。**
+                 * ⇒ 横向照调研那版（10/9，给左侧色条让位），纵向不动。 */
+                padding: 5px 10px 5px 9px;
                 font-size: 12px;
-                font-weight: 600;
+                font-weight: 500;
                 min-height: 28px;
             }}
 
@@ -1101,16 +1123,20 @@ class Theme:
             QLabel#audioStatusChip[level="positive"],
             QLabel#audioStatusChip[level="info"] {{
                 color: {c.text_secondary};
-                background-color: {c.bg_card};
-                border: 1px solid {self._hex_to_rgba(c.text_tertiary, 120) if self._is_light_theme() else c.border_secondary};
+                background-color: transparent;
+                border: none;
+                border-left: 3px solid {c.text_tertiary};
             }}
 
-            /* 警告/错误：保持高对比度，让异常一眼可见 */
+            /* 警告/错误：满色块拿掉之后，**颜色是它唯一的通道**，字色与色条同色。
+             * ⭐ `_chip_text()` 收敛的目标一直就是 `bg_card`，所以去掉薄染
+             *   不可能让文字更难读 —— 这一条前人已经防住了（见它自己的注释）。 */
             QLabel#audioStatusChip[level="warn"],
             QLabel#audioStatusChip[level="warning"] {{
                 color: {self._chip_text(c.accent_warm)};
-                background-color: {self._hex_to_rgba(c.accent_warm, 28)};
-                border: 1px solid {self._hex_to_rgba(self._chip_text(c.accent_warm), 120)};
+                background-color: transparent;
+                border: none;
+                border-left: 3px solid {self._chip_text(c.accent_warm)};
             }}
 
             /* UP-050: StatusChip 声明了 error / neutral 两个 level,但 QSS 里原本
@@ -1118,15 +1144,17 @@ class Theme:
              * 渲染成和正常态一模一样的中性灰,异常反而看不出来。补齐两态。 */
             QLabel#audioStatusChip[level="neutral"] {{
                 color: {c.text_muted};
-                background-color: {c.bg_card};
-                border: 1px solid {c.border_secondary};
+                background-color: transparent;
+                border: none;
+                border-left: 3px solid {c.text_tertiary};
             }}
 
             QLabel#audioStatusChip[level="danger"],
             QLabel#audioStatusChip[level="error"] {{
                 color: {self._chip_text(c.error)};
-                background-color: {self._hex_to_rgba(c.error, 28)};
-                border: 1px solid {self._hex_to_rgba(self._chip_text(c.error), 120)};
+                background-color: transparent;
+                border: none;
+                border-left: 3px solid {self._chip_text(c.error)};
             }}
             
             /* ========== 卡片/容器样式 ========== */

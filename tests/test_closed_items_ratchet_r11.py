@@ -48,7 +48,17 @@ ROOT = Path(__file__).resolve().parents[1]
 #: ⭐ 第一版我把那整段 20 行的说明写进了 QSS，这条棘轮当场报 +20 ——
 #:   它是对的：**理由该住在判据里，QSS 里只留一行指路**。
 #:   ⇒ 一条「不许长」的棘轮，逼出来的不是「别修」，是「把话写到该写的地方」。
-GENERATE_STYLESHEET_MAX_LINES = 1547
+#: ⚠ 2026-08-30 破例 +21（1547 → 1568）：RN-103 把状态胶囊从「闭合的圆角空框」
+#: 改成「无框 + 左侧 3px 色条」。五条规则（基础 / success·positive·info /
+#: warn·warning / neutral / danger·error）各要把 `background-color` + `border`
+#: 换成 `border: none` + `border-left`，**每条净 +2~3 行**，加上
+#: `masterOffHost` 那条（它原来会把闭合轮廓加回来）—— 属性行合计约 +13；
+#: 其余 8 行是三段指路注释。
+#: ⭐ 第一版我把整套实测（全站分母、四个候选票数、八主题对比度）写进了 QSS，
+#:   这条棘轮当场报 **+37** —— 和批 23 那次一模一样，它又一次是对的：
+#:   **理由该住在判据里，QSS 里只留一行指路**。⇒ 已把说明搬进
+#:   `tests/test_status_chips_do_not_look_clickable.py`，QSS 只留指针。
+GENERATE_STYLESHEET_MAX_LINES = 1568
 
 
 def test_generate_stylesheet_does_not_grow():
