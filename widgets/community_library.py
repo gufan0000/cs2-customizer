@@ -122,6 +122,12 @@ class EmptyLibraryCallout:
             pass
         self.button.clicked.connect(lambda: callback())
         style_as_primary_button(self.button)
+        # RN-439：这颗按钮开的是浏览器 —— 总开关关着它照样成立，
+        # 所以降权不许把它压成中性灰。⭐ 一处声明覆盖七页，
+        # 因为「空了该长什么样」在批 3 就已经收成了这唯一一份（RN-165）。
+        from widgets.master_switch_effect import mark_ungoverned_by_master
+
+        mark_ungoverned_by_master(self.button)
         # 提示行已并进底栏那句话（RN-185/186 那一轮把这张卡压成一行）。
         # 留空是为了不在同一屏上把第 2、3 步说两遍。
         self.hint.setText("")

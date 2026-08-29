@@ -256,6 +256,19 @@ class Theme:
             return base
         return fixed
 
+    def _primary_button_background(self, base: str | None = None) -> str:
+        """主按钮那块底 —— **全仓只有这一份**。
+
+        ⚠ 提出来不是为了短，是因为 RN-439 要在降权规则里把它**再写一次**
+        （「这颗按钮不归总开关管 ⇒ 保持原样」）。抄第二份的话，
+        哪天改了渐变，被豁免的那几颗就会悄悄留在旧配色上 ——
+        ⭐ **判据的输入有第二份副本时，它就不再是判据**（RN-198 那条的第四次现身）。
+        """
+        c = self.colors
+        base = base or c.accent_primary
+        return (f"qlineargradient(x1:0, y1:0, x2:1, y2:1, "
+                f"stop:0 {self._accent_gradient_top(base)}, stop:1 {base})")
+
     def _danger_bg(self) -> str:
         """危险按钮底色——压到文字能达标为止（暖橙/玫瑰主题白字只有 4.41:1）。
 
@@ -411,6 +424,9 @@ class Theme:
         #   （滑块填充、单选框圈），WCAG 那一档的下限就是 3:1。）
         from core.utils.contrast import AA_NORMAL, ensure_contrast
 
+        # RN-439：豁免属性的名字从**声明它的那个模块**取，不在这儿写第二份字面量。
+        from widgets import master_switch_effect as eff
+
         idle = c.text_tertiary
         idle_text = ensure_contrast(self._on_color(idle), (idle,), AA_NORMAL)
         return f"""
@@ -454,6 +470,29 @@ class Theme:
                 background: {idle};
                 color: {idle_text};
             }}
+
+            /* ⚠⚠ RN-439：上面那条按**控件的 objectName** 施加降权，
+             * 而该不该降权取决于**这颗按钮干什么**。实测（15 页 101 颗按钮）
+             * 两态会变的 9 颗里 **7 颗是错的** —— 全是空库时唯一走得通的
+             * 「去（社区）拿一套 X」，它开的是浏览器，跟总开关毫无关系。
+             * 而空库 + 总开关关，正是**全新用户的定义**：
+             * ⭐⭐⭐ 两条各自正确的规则（批 2/3 铺引导、批 16~20 铺降权）
+             *   在交集处出错，而必然踩进那个交集的，正好是这条引导唯一服务的那个人。
+             *
+             * ⭐ 判别标准这个文件里早就写着 —— 下面 RN-427 那组的注释：
+             *   「紫色主按钮编码的是『这是主要动作』，不是『这件事正在发生』」。
+             *   它只被应用到了两组选择器里的一组。
+             *
+             * ⚠ 位置必须在 `:disabled` 那条**之前**：两条特异度相同（2 个 id +
+             *   2 个属性/伪类），Qt 按**后来者胜**，禁用态才不会被这条豁免顶掉。
+             *   ⭐ 一条靠"排在谁前面"生效的规则，挪一次位置就会静默失效 ——
+             *     所以判据里有一条专门盯"禁用的豁免按钮仍然看得出禁用"。*/
+            QFrame#card[masterOff="true"]
+            QPushButton#primaryButton[{eff.UNGOVERNED_PROPERTY}="true"] {{
+                background: {self._primary_button_background()};
+                color: {c.text_on_primary};
+            }}
+
             /* ⚠⚠ RN-150：上面那条的**特异度压过了 `#primaryButton:disabled`**
              * （多一个 id + 一个属性），于是在降权的卡片里，
              * 一颗**禁用**的主按钮和一颗**可点**的主按钮长得一模一样 ——
@@ -1211,8 +1250,7 @@ class Theme:
             
             /* ========== 按钮样式 ========== */
             QPushButton#primaryButton {{
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 {self._accent_gradient_top()}, stop:1 {c.accent_primary});
+                background: {self._primary_button_background()};
                 color: {c.text_on_primary};
                 border: none;
                 border-radius: {button.primary_border_radius}px;
@@ -1224,13 +1262,11 @@ class Theme:
             }}
             
             QPushButton#primaryButton:hover {{
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 {self._accent_gradient_top(c.accent_hover)}, stop:1 {c.accent_hover});
+                background: {self._primary_button_background(c.accent_hover)};
             }}
 
             QPushButton#primaryButton:pressed {{
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 {self._accent_gradient_top(c.accent_pressed)}, stop:1 {c.accent_pressed});
+                background: {self._primary_button_background(c.accent_pressed)};
             }}
 
             /* v5 Phase 9: focus ring — 键盘 Tab 切换可见 */

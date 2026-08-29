@@ -409,3 +409,152 @@ def test_clicking_a_stocked_page_does_not_open_a_browser(stocked_page, monkeypat
     stocked_page.test_btn.click()
     assert not opened, f"有风格时点主按钮却打开了浏览器：{opened}"
     assert played, "有风格时点主按钮没有试播"
+
+
+# ============================================ 3. RN-405：一屏之内说了几遍「空」
+
+#: 「这里是空的」这件事的说法。⚠ 判据数的是**渲染出来的文字**，
+#: 不是源码里的字面量 —— 批 22 那条教训：那句话住在共用件里，
+#: 扫页面源码一个字都扫不到。
+_EMPTY_WORDS = ("空的", "还没有", "没有任何", "无素材", "还没有图标")
+
+#: 上限。改前实测 **6 句**（页头 / 徽章「风格 · 还没有」/ 卡里「风格库是空的。」/
+#: 风格条「还没有任何风格…」/ 大预览「还没有图标」/ 底栏），
+#: 而立案（RN-405②）数的是 **2 句**。
+#: ⭐ 认出「这是重复」是免费的，数清「重复了几次」不是（批 21 同一形状）。
+#: 外审逐句抄写复核：整页图 6/6 发数出 5 句（它不把徽章算成一句话）。
+MAX_EMPTY_SENTENCES = 4
+
+#: 指路动词。⚠ 这是个**代理**，不是定义 —— 它管的只是这一页空库态那几句
+#: 我自己写的提示，不是拿去全站找缺陷（批 20 那次「当前」词表就是反例：
+#: 拿词表去猜"哪句让人以为在跑"，枚举当场推翻了词表）。
+_DIRECTIVE_WORDS = ("点", "去", "拖", "先")
+
+
+def _visible_texts(page):
+    """这一屏上用户读得到的每一句话。
+
+    ⚠ 必须把 `QPainter.drawText` 画的那些也算进来 —— 大预览的占位
+    **一个控件都不是**。⭐ 判据要数的是用户看得见的文字，不是控件个数
+    （RN-145 档案原话：只数按钮漏一处，只数文案漏两处）。
+    """
+    from PySide6.QtWidgets import QCheckBox, QLabel, QPushButton
+
+    out = []
+    for kind in (QLabel, QPushButton, QCheckBox):
+        for widget in page.findChildren(kind):
+            if not widget.isVisibleTo(page):
+                continue
+            text = (widget.text() or "").strip()
+            if text:
+                out.append((widget.objectName() or type(widget).__name__, text))
+    preview = getattr(page, "hero_preview", None)
+    if preview is not None and preview.isVisibleTo(page):
+        placeholder = str(getattr(preview, "_placeholder", "") or "").strip()
+        if placeholder:
+            out.append(("hero_preview(drawText)", placeholder))
+    return out
+
+
+def _empty_sentences(page):
+    return [(name, text) for name, text in _visible_texts(page)
+            if any(word in text for word in _EMPTY_WORDS)]
+
+
+def test_the_empty_state_does_not_say_it_is_empty_six_times(empty_page):
+    """⭐⭐ RN-405②：同一件事，一屏之内不许说这么多遍。
+
+    外审（S4，整页图 3/3 + 折线图 3/3）：「『总开关关着』『风格库是空的』
+    在界面三处/四处重复解释，大段说明文字反而导致无耐心用户直接忽略所有信息」。
+    """
+    said = _empty_sentences(empty_page)
+    assert len(said) <= MAX_EMPTY_SENTENCES, (
+        f"空库时一屏上有 {len(said)} 句在说「这里是空的」"
+        f"（上限 {MAX_EMPTY_SENTENCES}）：\n  "
+        + "\n  ".join(f"[{n}] {t}" for n, t in said)
+    )
+
+
+def test_only_one_sentence_tells_the_newcomer_where_to_click(empty_page):
+    """⭐⭐⭐ 比"说了几遍"更要命的：**同一屏上有两处在下达"第一步"指令。**
+
+    改前实测：页头副标题说「先去社区拿一套图标包」，
+    而风格条那一句说「点右边的「＋ 导入」装一套」——
+    两句各自都对，摆在一起就变成了「到底听谁的」。
+
+    ⚠ 而外审的**行为题**（12 发，题面给了「不知道」和「选不出」两个台阶）
+    实测 **11/12 一眼选中页头指的那颗**、12/12 说它最醒目 ——
+    ⭐ 所以立案说的「新手难以一眼确定第一步该点哪个」**不成立**，
+    真正的毛病是**指令有两处**，不是"入口太多"。
+    ⭐⭐ **票数衡量的是「玩家困惑是真的」，不是「归因是对的」**（RN-174 原话）。
+    """
+    directive = [
+        (name, text) for name, text in _empty_sentences(empty_page)
+        if any(word in text for word in _DIRECTIVE_WORDS)
+    ]
+    assert len(directive) <= 1, (
+        f"空库时有 {len(directive)} 句在指挥用户「第一步去点哪儿」：\n  "
+        + "\n  ".join(f"[{n}] {t}" for n, t in directive)
+        + "\n⇒ 只留页头那一句，别的退成纯说明。"
+    )
+    assert directive, (
+        "一句指路的都没有了 —— 空库时这一页必须有**一句**告诉他去哪儿拿素材"
+        "（RN-145：一条做不到的引导等于没有引导，一条都没有更是）"
+    )
+
+
+#: 声称**一套都没有**的说法。⚠ 和上面那张表**故意不是同一张**。
+#:
+#: ⭐⭐ 这条区分是这份判据自己逼出来的：反面守卫第一版沿用了 `_EMPTY_WORDS`，
+#: 当场把装了风格的页面判红 —— 它抓到的是大预览那句
+#: 「**这套**风格还没有素材，拖一个图标包进来」。那句话是**对的**：
+#: 库里有风格、而当前选中这一套确实没素材，是一个真实存在的第三种状态。
+#: ⭐ **「这一套没素材」和「一套都没有」是两句不同的话，
+#:   而我那张词表把它们当成了同一句** —— 一张为"数重复"划的范围，
+#:   拿去"抓谎话"就太宽了。
+#: ⇒ 正面判据数的是**说了几遍空**（宽），反面守卫查的是**有没有撒谎说库空**（窄）。
+_LIBRARY_EMPTY_CLAIMS = ("没有任何", "风格库是空的", "还没有图标")
+
+
+def test_a_stocked_library_stops_claiming_it_has_nothing(stocked_page):
+    """反面守卫：上面两条都能靠「永远显示空态引导」通过。装上风格必须变回去。"""
+    said = [(name, text) for name, text in _visible_texts(stocked_page)
+            if any(word in text for word in _LIBRARY_EMPTY_CLAIMS)]
+    assert not said, (
+        "风格库不空了，屏幕上还在声称一套都没有：\n  "
+        + "\n  ".join(f"[{n}] {t}" for n, t in said)
+    )
+
+
+def test_the_import_card_sits_evenly_inside_the_style_strip(empty_page, qapp):
+    """RN-405①：「＋ 导入」卡在风格条里的上下留白必须一样。
+
+    ⚠ 外审报的是「卡片**向上戳出**内层深色容器的上边缘」，
+    **实测越界 0px**（卡 127px 完整落在 139px 的视口里，纵向滚动范围 0~0）——
+    和 RN-170 那次那三条几何断言一样是假的。
+    ⭐ 但**「不整齐」可信，「哪个维度不整齐」不可信**：真正错的是
+    `AlignTop` 让卡片贴死上沿，**上 0px、下 12px**，看起来就是顶出去了。
+    ⇒ 这条判据同时管两件事：不许越界（回归守卫），且上下留白差 ≤ 2px。
+    """
+    from PySide6.QtCore import Qt
+
+    empty_page.setAttribute(Qt.WA_DontShowOnScreen, True)
+    empty_page.resize(1060, 640)
+    empty_page.show()
+    for _ in range(3):
+        qapp.processEvents()
+    empty_page._sync_strip_height(_deferred=True)
+    qapp.processEvents()
+
+    scroll = empty_page.style_scroll
+    viewport = scroll.viewport()
+    card = empty_page.style_strip.add_card
+    top = card.mapTo(viewport, card.rect().topLeft()).y()
+    bottom = viewport.height() - (top + card.height())
+
+    assert top >= 0 and bottom >= 0, (
+        f"「＋ 导入」卡戳出了风格条视口：上 {top}px / 下 {bottom}px "
+        f"（卡高 {card.height()}，视口 {viewport.height()}）")
+    assert abs(top - bottom) <= 2, (
+        f"「＋ 导入」卡上下留白差 {abs(top - bottom)}px（上 {top} / 下 {bottom}）"
+        " —— 贴着一边就会被读成「戳出去了」")

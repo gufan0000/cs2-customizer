@@ -233,10 +233,26 @@ class KillIconStyleStrip(QWidget):
 
         self.add_card = KillIconStyleAddCard(self)
         self.add_card.clicked.connect(self.import_requested)
-        self._layout.addWidget(self.add_card, 0, Qt.AlignTop)
+        # ⚠⚠ RN-405①（批 25）：外审报「「＋ 导入」卡向上戳出内层深色容器的上边缘」。
+        # 实测**越界 0px**（卡 127px 全在 139px 的视口里，纵向滚动范围 0~0）——
+        # 这条断言和 RN-170 那次那三条几何断言一样是假的。
+        # ⭐ 但**"不整齐"是真的，"哪个维度不整齐"是错的**（CLAUDE.md 那条网站教训）：
+        #   `AlignTop` + 视口比卡高 12px ⇒ **上边 0px、下边 12px**，
+        #   卡片贴死在深色区的上沿，看起来就是"顶出去了"。
+        # ⇒ 改成垂直居中，12px 分成 6/6。
+        self._layout.addWidget(self.add_card, 0, Qt.AlignVCenter)
         self._layout.addStretch(1)
 
-        self.empty_label = QLabel("还没有任何风格，点右边的「＋ 导入」装一套。")
+        # ⚠⚠ RN-405②（批 25）：这一句原来写「还没有任何风格，点右边的「＋ 导入」
+        # 装一套。」—— 它给的是这一屏上的**第二个"第一步"**：页头那句说的是
+        # 「先去社区拿一套图标包」，这一句说的是「点「＋ 导入」」。
+        # ⭐⭐ **两句引导各自都对，摆在同一屏上就变成了「到底听谁的」** ——
+        #   而外审的行为题实测（12 发）恰恰不是"选不出"：11/12 一眼选中页头指的那颗。
+        #   ⇒ 真正的毛病不是"入口太多"，是**同一屏上有两处在下达第一步指令**。
+        # ⇒ 这一句退成纯说明：它解释这一行是干什么的，不再指挥去点哪儿。
+        # ⚠ 不能整句删掉 —— RN-124 修的就是"这句引导在真正空的时候不显示"，
+        #   删了等于把那一批的成果撤回去。⭐ 改措辞和删控件是两件事。
+        self.empty_label = QLabel("装好的图标包会排在这一行 —— 现在还是空的。")
         self.empty_label.setObjectName("hintLabel")
         # RN-121：这是**横排里的一行提示**，不许折行。
         # 折行的 QLabel 在 QHBoxLayout 里报的宽度很窄，布局就照那个窄宽给它 ——
@@ -271,7 +287,8 @@ class KillIconStyleStrip(QWidget):
                 card.clicked.connect(self.style_selected)
                 self.cards[name] = card
             self._layout.removeWidget(card)
-            self._layout.insertWidget(index, card, 0, Qt.AlignTop)
+            # RN-405①：和「＋ 导入」卡同一条对齐口径，见 `__init__` 那处注释。
+            self._layout.insertWidget(index, card, 0, Qt.AlignVCenter)
 
         self.empty_label.setVisible(not styles)
         self.set_selected(selected or self._selected)

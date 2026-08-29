@@ -343,11 +343,43 @@ def make_master_switch_notice() -> QLabel:
 #:   「所有控件均为高亮紫色激活态 ⇒ 以为正在运行」：**说话的那个东西我没动**。
 _ACCENT_BEARING = (QCheckBox, QPushButton, QRadioButton, QSlider)
 
+#: RN-439：这颗按钮做的事**不归总开关管**（开浏览器、弹选文件框），
+#: 所以降权不许碰它。值同样必须是字符串 `"true"`（见 `CARD_DIM_PROPERTY`）。
+#:
+#: ⚠⚠ **判别标准不是控件类型，是这颗按钮的动作受不受总开关影响。**
+#: 而这条标准 `theme_manager.py` 里早就写着 —— RN-427 那组挂在控件自身属性上的
+#: 选择器，注释逐字写着「紫色主按钮编码的是『这是主要动作』，不是『这件事正在发生』」，
+#: 却只被应用到了两组选择器里的一组。
+#: ⭐ **一条判别标准写在注释里，只会被应用到写它的人当时正在看的那一处。**
+#:
+#: 实测（15 页 101 颗可见可用按钮，拨总开关量两态填充色）：**9 颗会变，7 颗错**。
+#: 错的那 7 颗全是空库时**唯一走得通**的那条路（「去（社区）拿一套 X」）——
+#: 而空库 + 总开关关，正是**全新用户的定义**。
+#: ⭐⭐⭐ **两条各自正确的规则，在交集处出错；而必然踩进那个交集的，
+#:   正好是这条引导唯一服务的那个人。**
+UNGOVERNED_PROPERTY = "notGovernedByMaster"
+
 
 def _repolish(widget: QWidget) -> None:
     style = widget.style()
     style.unpolish(widget)
     style.polish(widget)
+
+
+def mark_ungoverned_by_master(button, ungoverned: bool = True) -> None:
+    """声明「这颗按钮不归总开关管」/ 撤销这个声明。
+
+    ⚠ **撤销那一路是必须的，不是对称性洁癖**：`kill_icon` 那颗按钮
+    空库时是「去拿一套图标包」（开浏览器，不归总开关管），
+    装上素材之后同一颗变成「▶ 在屏幕上试播」——含义换了，归属也换了。
+    ⭐ **一颗按钮换了含义，门禁条件要跟着换**（RN-145 原话）；
+    只标不撤的话，这条豁免会跟着那颗按钮一直留到它不该有豁免的状态里。
+    """
+    value = "true" if ungoverned else None
+    if button.property(UNGOVERNED_PROPERTY) == value:
+        return
+    button.setProperty(UNGOVERNED_PROPERTY, value)
+    _repolish(button)
 
 
 def apply_effect_state(page, enabled: bool) -> None:

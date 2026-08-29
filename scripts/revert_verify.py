@@ -3643,13 +3643,18 @@ REVERTS = [
     Revert(
         "RN", "单行提示表被清空（判据静默什么都不测）",
         "tests/test_single_line_hints_stay_single_line.py",
-        '    ("kill_icon", "还没有任何风格",',
-        '    ("kill_icon_DISABLED", "还没有任何风格",',
+        '    ("kill_icon", "装好的图标包会排在这一行",',
+        '    ("kill_icon_DISABLED", "装好的图标包会排在这一行",',
         "tests/test_single_line_hints_stay_single_line.py::"
         "test_the_hint_is_still_one_line_after_the_page_is_fully_built",
         "RN-174：删掉 crosshair 那一格之后这张表只剩 1 条。"
         "⚠ pytest 对「参数化了零个用例」是**静默通过**的 —— 报告上看不出区别。"
-        "⭐ 一条会随产品一起缩小的清单，必须有人盯着它的下界",
+        "⭐ 一条会随产品一起缩小的清单，必须有人盯着它的下界。"
+        "⚠ 2026-08-29 批 25 改过一次锚点（那句文案退成了纯说明）—— "
+        "⭐⭐ 而这次**不是失效体检先发现的，是回退验证的基线直接判红**："
+        "那条判据自己带着分母守卫（找不到标签就报「判据在空转」），"
+        "所以文案一改它当场喊疼。对照批 24 那两条改完文案照样绿的锚点 ⇒ "
+        "⭐ **一条判据的锚点腐烂时会不会喊疼，取决于它有没有替自己写一条分母守卫**",
     ),
     # ============================================ RN-087：文案指路去一个不必去的地方
     Revert(
@@ -4370,6 +4375,64 @@ REVERTS = [
         "实测（枚举轮，同分母 15 页 ×3 发）：**状态胶囊组那一类的抱怨 15 → 7**，"
         "而**我没碰的「勾选着的子开关」那一类 14 → 14 一动没动** —— "
         "⭐⭐⭐ **那个没动的类别正好证明动了的那一类的下降不是「它今天话少」**",
+    ),
+    Revert(
+        "RN", "空库那颗唯一的出路按钮不再声明「不归总开关管」",
+        "pages/kill_icon_page.py",
+        "                mark_ungoverned_by_master(self.test_btn)",
+        "                pass  # 回退验证：这一处声明被拿掉",
+        "tests/test_the_way_out_is_not_dimmed_by_the_master_switch.py::"
+        "test_the_only_way_out_does_not_change_with_the_master_switch",
+        "RN-439：空库 + 总开关关 = **全新用户的定义**，而这两个默认值同时成立时，"
+        "这一页唯一走得通的那颗按钮被降权压成灰蓝 (110,112,129)。"
+        "⭐⭐⭐ **两条各自正确的规则，在交集处出错；而必然踩进那个交集的，"
+        "正好是这条引导唯一服务的那个人**",
+    ),
+    Revert(
+        "RN", "共用引导件那颗不再声明（一处塌，七页里的六页跟着塌）",
+        "widgets/community_library.py",
+        "        mark_ungoverned_by_master(self.button)",
+        "        pass  # 回退验证：这一处声明被拿掉",
+        "tests/test_the_way_out_is_not_dimmed_by_the_master_switch.py::"
+        "test_the_only_way_out_does_not_change_with_the_master_switch",
+        "RN-439：⭐ 一处声明覆盖七页，是批 3（RN-165）把「空了该长什么样」"
+        "收成唯一一份换来的现金价值 —— 而它同时意味着**一处塌就是六页一起塌**",
+    ),
+    Revert(
+        "RN", "QSS 里那条豁免规则没人消费（属性照挂、屏幕照旧）",
+        "theme_manager.py",
+        'QPushButton#primaryButton[{eff.UNGOVERNED_PROPERTY}="true"] {{',
+        'QPushButton#primaryButtonXX[{eff.UNGOVERNED_PROPERTY}="true"] {{',
+        "tests/test_the_way_out_is_not_dimmed_by_the_master_switch.py::"
+        "test_the_only_way_out_does_not_change_with_the_master_switch",
+        "RN-439：⚠ `setProperty` 本身**不改变任何一个像素** —— "
+        "QSS 里没有对应选择器的话，那就是个空转属性，"
+        "而**空转属性和生效属性在代码里长得一模一样**（同 RN-407 那条老坑）",
+    ),
+    Revert(
+        "RN", "豁免规则盖住了禁用态（禁用的和可点的又长得一样了）",
+        "theme_manager.py",
+        'QPushButton#primaryButton[{eff.UNGOVERNED_PROPERTY}="true"] {{',
+        'QPushButton#primaryButton[{eff.UNGOVERNED_PROPERTY}="true"]:disabled, '
+        'QPushButton#primaryButton[{eff.UNGOVERNED_PROPERTY}="true"] {{',
+        "tests/test_the_way_out_is_not_dimmed_by_the_master_switch.py::"
+        "test_the_exemption_does_not_swallow_the_disabled_look",
+        "RN-439 ⚠ 豁免那条和 `#primaryButton:disabled` **特异度完全相同**"
+        "（各 2 个 id + 2 个属性/伪类），Qt 按后来者胜 ⇒ 它靠**排在前面**生效。"
+        "⭐ **一条靠「排在谁前面」生效的规则，挪一次位置就会静默失效** —— "
+        "而失效的样子正是 RN-150 花一整批修掉的那颗「禁用了但看着能点」的按钮",
+    ),
+    Revert(
+        "RN", "风格条那句退回去指路（同一屏上出现第二个「第一步」）",
+        "widgets/kill_icon_style_strip.py",
+        'self.empty_label = QLabel("装好的图标包会排在这一行 —— 现在还是空的。")',
+        'self.empty_label = QLabel("还没有任何风格，点右边的「＋ 导入」装一套。")',
+        "tests/test_kill_icon_empty_library_guidance.py::"
+        "test_only_one_sentence_tells_the_newcomer_where_to_click",
+        "RN-405②：页头说「先去社区拿一套图标包」、风格条说「点右边的「＋ 导入」」——"
+        "⭐⭐ **两句引导各自都对，摆在同一屏上就变成了「到底听谁的」**。"
+        "⚠ 而立案说的「入口太多、第一步不聚焦」实测**不成立**"
+        "（行为题 11/12 一眼选中同一颗）⇒ 真正的毛病是**指令有两处**",
     ),
     # ⛔⛔ 新断点一律加在**这一行之上**。
     #

@@ -50,6 +50,7 @@ from widgets.kill_icon_level_grid import DROP_EXTENSIONS
 from widgets.kill_icon_preview import KillIconPositionMap, KillIconPreview
 from widgets.kill_icon_style_strip import KillIconStyleStrip
 from widgets.page_header import PageHeader
+from widgets.master_switch_effect import mark_ungoverned_by_master
 from widgets.page_action_bar import PageActionBar
 from widgets.settings_card import SettingsCard
 from widgets.overlay_requirement import make_overlay_requirement_label
@@ -656,8 +657,19 @@ class KillIconPage(QWidget):
             # 留下的那一颗在首屏「当前图标」卡里 —— 也就是**空白发生的地方**，
             # 而不是页尾的工具条（网站那轮的原话：解释放在困惑发生之后 = 没放）。
             self.action_bar.configure_primary("", None, visible=False)
-            # 这一行也不复述页头那段引导，只报状态。
-            self.action_bar.set_message("风格库是空的，还没有任何图标可用。")
+            # ⚠⚠ RN-405②（批 25）：这一行原来写「风格库是空的，还没有任何图标可用。」
+            # 而**同一屏上说「这里是空的」的句子实测有 6 句**（立案时数的是 2 句）：
+            # 页头副标题 / 徽章「风格 · 还没有」 / 卡里「风格库是空的。」 /
+            # 风格条「还没有任何风格…」 / 大预览占位「还没有图标」 / 加上这一句。
+            # 外审逐句抄写复核：整页图 6/6 发数出 5 句（它不把徽章算成一句话）。
+            # ⭐ 立案说「重复了两句」是对的，**只是数少了三倍** ——
+            #   认出「这是重复」是免费的，数清「重复了几次」不是（批 21 同一形状）。
+            #
+            # ⇒ 这一行改成说**后果**，不再复述那个事实。后果这一屏上没有第二处在说，
+            #   而且它正好补上共用回执的一个缺口：总开关开着时那句
+            #   「现在就在游戏里生效」，在一套素材都没有的时候是句空话。
+            self.action_bar.set_message(
+                "装上一套图标之前，游戏里不会出现任何击杀图标。")
             return
 
         self.action_bar.configure_primary(
@@ -734,9 +746,12 @@ class KillIconPage(QWidget):
         if hasattr(self, "style_summary_label"):
             self.style_summary_label.setText(
                 # 空库时不许再报那三个数：它们描述的是一套不存在的风格。
-                # 这里**只陈述事实**，怎么办已经在页头说完了 —— 一屏之内
-                # 把同一句引导说三遍，比说一遍还难读。
-                "风格库是空的。"
+                # ⚠ RN-405②（批 25）：这里原来写「风格库是空的。」——
+                # 而**紧挨着它的大预览已经写了「还没有图标」**，同一张卡上两句话
+                # 说同一件事，中间隔着 12px。⇒ 空库时这一行整个留空，
+                # 由预览占位那一句代表这张卡说话。
+                # ⭐ 删掉一句重复不是"少说了"，是**让剩下那一句被读到**。
+                ""
                 if empty else
                 f"当前风格：{self._current_style() or '未设置'}"
                 f" · 素材 {len(ready_levels)}/{len(LEVELS)} 个等级"
@@ -759,6 +774,11 @@ class KillIconPage(QWidget):
                 # "指向它的东西没跟上"。
                 self.test_btn.setText(self._empty_primary_text())
                 self.test_btn.setEnabled(True)
+                # RN-439：这时它开的是浏览器 / 选文件框 —— **跟总开关无关**。
+                # 而全新用户的总开关默认关着，降权会把这条唯一的出路压成灰。
+                # ⭐ 和上面那条 `player_ready` 是同一个形状的第二次现身：
+                #   一颗按钮换了含义，**每一个门禁条件都要跟着换**，不只是我上次想到的那个。
+                mark_ungoverned_by_master(self.test_btn)
                 # 空库时它是这一页**唯一**的行动点（底栏那颗已经收掉），
                 # 所以给它主按钮的分量。`actionButton` 是描边档，在一片空白里
                 # 跟旁边的「调整位置和大小」看着一样重。
@@ -773,6 +793,9 @@ class KillIconPage(QWidget):
                 # 播放器没接上时试播是个空动作，灰掉比点了没反应强
                 self.test_btn.setText(NORMAL_PRIMARY_TEXT)
                 self.test_btn.setEnabled(player_ready)
+                # RN-439：装上素材之后同一颗变成「试播」——那是本功能自己的动作，
+                # 豁免要**撤掉**。⚠ 只标不撤的话，豁免会跟着按钮留到它不该有豁免的状态。
+                mark_ungoverned_by_master(self.test_btn, False)
                 self._set_primary_look(self.test_btn, False)
                 self.test_btn.setToolTip(
                     "按当前设置在屏幕上真播一次，位置和大小所见即所得"
