@@ -253,6 +253,16 @@ class CrosshairPage(QWidget):
         except Exception:
             self.logger.exception("准心页拖拽导入初始化失败(不影响其它功能)")
 
+        # RN-415：先把滑块原本的说明存下来（禁用时要换一句话，切回去要换回来），
+        # 再按当前样式过一遍可用性。⚠ 存**建页时**那一份 —— 等它被换过之后再存，
+        # 存下来的就是那句替换文案了（同 RN-093「锚点会随代码一起腐烂」的形态）。
+        self._original_slider_tips = {
+            attr: getattr(self, attr).toolTip()
+            for names in self.STYLE_DEAD_SLIDERS.values() for attr in names
+            if getattr(self, attr, None) is not None
+        }
+        self._sync_slider_availability()
+
         self.logger.info("准心设置页面初始化完成")
     
     def set_crosshair_animation(self, animation_system):
@@ -512,6 +522,12 @@ class CrosshairPage(QWidget):
         # ⚠ 「导出准心」没数据时**置灰而不是藏掉**：藏掉的话用户看到的是
         #   "这个功能不存在"，而不是"还没有东西可导"（同 RN-197）。
         self.action_bar.configure_extra("导入准心", self._import_crosshair, visible=True)
+        # RN-410（批 27）：这句话原来只躺在页尾（y=1000），而这颗按钮在 y=681 ——
+        # 说明在**按钮下方 319px、折线之外**，而按钮自己的 tooltip 是空的。
+        # ⭐ 解释要放在困惑发生的地方；这颗按钮就是困惑发生的地方。
+        self.action_bar.extra_btn.setToolTip(
+            "收本软件导出的 .xchr（.json 也能直接拖进页面）；"
+            "CS2 官方分享码（CSGO-…）暂不支持。")
         self.action_bar.configure_secondary("导出准心", self._export_crosshair, visible=True)
         self.action_bar.secondary_btn.setEnabled(custom_points > 0)
         self.action_bar.secondary_btn.setToolTip(
@@ -775,6 +791,26 @@ class CrosshairPage(QWidget):
         self.preview_label = QLabel()
         self.preview_label.setAlignment(Qt.AlignCenter)
         preview_layout.addWidget(self.preview_label)
+
+        # ⭐⭐ RN-414（批 27）：选中「自定义」而一个点都没画时，**这块预览框就是入口**。
+        #
+        # 天然对照实验（同一页、同一状态、同一个模型，变量只有"看不看得见折线以下"）：
+        #     窗口图（用户真正看到的那一屏） ①3/3「不知道」 ②3/3「不知道」
+        #     整页无折线图                  ①3/3「绘制准心」②3/3「知道，在这一屏上」
+        # ⇒ 入口不是难找，是**根本不在第一屏上**（实测：单选 y=456、按钮 y=948，
+        #   相距 492px，而可视区只有 750px）。
+        #
+        # ⚠ 不能就地再放一颗「绘制准心」：`test_draw_crosshair_appears_exactly_once`
+        #   明令这一屏只许有一颗（RN-404 族 —— 同页两颗同名同功能的按钮）。
+        # ⭐⭐ 而登记册里记着批 12 我自己造的那半条：给预览框加空状态文字之后，
+        #   4 发改说「大面积黑框**看着像画板却点不动**」。
+        #   ⇒ 那句抱怨是对的，而修法不是把它变得不像画板 —— 是**让它真的可点**。
+        #   批 26 立的是「不可点的东西不许长按钮的形状」，这里是它的反面：
+        #   **看着可点的东西，要么真的可点，要么别长那个样子。**
+        self.preview_frame.setToolTip("")
+        self.preview_frame.mouseReleaseEvent = self._on_preview_clicked
+        self._preview_is_entry = False
+        preview_frame.setObjectName("crosshairPreviewFrame")
         
         # 居中预览框
         preview_container = QHBoxLayout()
@@ -1155,9 +1191,17 @@ class CrosshairPage(QWidget):
         # 本软件导出的 json —— 不写明就是"点了才发现不支持"。
         # ⚠ 措辞不许承诺没做的事：分享码解码没实现，就写"暂不支持"，
         #   判据 test_the_copy_does_not_promise_share_code_support 盯着这件事。
+        # ⚠⚠ RN-410（批 27）：这句话原来写「只认本软件导出的 **.json**」——
+        # **那是假的**。导出默认写 `my_crosshair.xchr`，两个文件对话框都只列
+        # `*.xchr`；`.json` 只有**拖拽**那条路收（`enable_file_drop`）。
+        # ⭐ 于是唯一一句解释这件事的话，让用户去找一个软件根本不产出的文件。
+        # ⚠ 而它同时是**放错地方**的：实测这句在 y=1000，而「导入准心」按钮在
+        #   y=681 —— 它在按钮**下方 319px**，且在 750px 折线之外。
+        #   ⭐ **解释性文字放在困惑发生的位置之前，不是页尾；放页尾 = 没放。**
+        #   ⇒ 同一句话现在也挂在那颗按钮身上（见 `_sync_action_bar`）。
         self.custom_hint_label = QLabel(
-            "导入 / 导出在页面底部操作栏，只认本软件导出的 .json；"
-            "CS2 官方分享码（CSGO-…）暂不支持。"
+            "导入 / 导出在页面底部操作栏，收本软件导出的 .xchr"
+            "（.json 也能直接拖进来）；CS2 官方分享码（CSGO-…）暂不支持。"
         )
         self.custom_hint_label.setObjectName("hintLabel")
         self.custom_hint_label.setWordWrap(True)
@@ -1234,6 +1278,80 @@ class CrosshairPage(QWidget):
         self.custom_color_btn.setText(f"自定义颜色：{value}" if value else "自定义颜色…")
         self.clear_custom_color_btn.setVisible(bool(value))
 
+    #: RN-415：`_paint_custom` 画的是一张 30×30 的像素画，**没有"中心间隙"这个概念**
+    #: —— 图案自己就带着它的空隙。实测（改两个值比像素）：自定义样式下
+    #: `size` / `thickness` / `outline` / `alpha` 四条都改得动画面，
+    #: **只有 `gap` 一个像素都不动**。
+    #: ⚠ 不能反过来"让 gap 对自定义生效"：那要去改用户手画的图案，
+    #:   而 `_paint_custom` 的 docstring 明写着换算方式不许动
+    #:   （「否则用户存量的自定义图案会整体缩放变形」）。
+    #: ⇒ 只在自定义样式下把它禁掉，并且**说出为什么**。
+    STYLE_DEAD_SLIDERS = {"custom": ("gap_slider",)}
+
+    #: 那几条被禁掉时该说的话。⚠ 原来的 tooltip 是「准星中心留空多少像素。
+    #: 0 表示两条线穿过圆心，会挡住瞄准点。」—— 在自定义样式下**那是假的**。
+    #: ⭐ 一句只在某些状态下为真的说明，在别的状态里就是一句谎（RN-407 原话）。
+    DEAD_SLIDER_REASON = {
+        "gap_slider": "自定义准心是你自己画的图案，中心间隙由图案本身决定 ——"
+                      "这条滑块只对「十字 / T 型」这类内置样式有用。",
+    }
+
+    def _on_preview_clicked(self, event):
+        """预览框被点了。⚠ **只有它此刻真的是入口时才响应。**
+
+        ⭐ 反过来的守卫和正面一样重要：一个"有时候能点、有时候不能点、
+        而外观从不变化"的东西，比一个从来不能点的还糟
+        （批 26 那条的另一面）。所以可点与否**只由 `_preview_is_entry` 说了算**，
+        而它和外观（手型光标 + 那句「点这里开始画」）由同一处同时设置。
+        """
+        from PySide6.QtCore import Qt as _Qt
+
+        if not self._preview_is_entry:
+            return
+        if event is not None and event.button() != _Qt.LeftButton:
+            return
+        self._open_custom_editor()
+
+    def _sync_preview_entry(self):
+        """预览框此刻是不是「点这里开始画」的入口 —— 外观与行为一起切。"""
+        from PySide6.QtCore import Qt as _Qt
+
+        is_entry = bool(self._custom_style_is_blank())
+        self._preview_is_entry = is_entry
+        if not hasattr(self, "preview_frame"):
+            return
+        self.preview_frame.setCursor(
+            _Qt.PointingHandCursor if is_entry else _Qt.ArrowCursor)
+        self.preview_frame.setProperty("clickable", "true" if is_entry else None)
+        self.preview_frame.setToolTip(
+            "点这里打开绘制板，画一个自己的准心" if is_entry else "")
+        style = self.preview_frame.style()
+        if style is not None:
+            style.unpolish(self.preview_frame)
+            style.polish(self.preview_frame)
+
+    def _sync_slider_availability(self):
+        """让「改不动画面的滑块」在那个样式下**看得出来改不动**。
+
+        ⭐ 这是 RN-145 / RN-439 那一族的第三次现身：
+        **门禁条件要跟着含义走** —— 这里含义由**样式**决定，不由控件决定。
+        ⚠ 禁用而不是藏掉：藏掉的话用户下次切回十字会发现「刚才那条滑块呢」，
+          而且**藏起来的东西不会解释自己为什么不在**（RN-197 那条规矩）。
+        """
+        style_value = str(getattr(config, "crosshair_style", "") or "")
+        dead = set(self.STYLE_DEAD_SLIDERS.get(style_value, ()))
+        for attr in {name for names in self.STYLE_DEAD_SLIDERS.values()
+                     for name in names}:
+            slider = getattr(self, attr, None)
+            if slider is None:
+                continue
+            is_dead = attr in dead
+            slider.setEnabled(not is_dead)
+            if is_dead:
+                slider.setToolTip(self.DEAD_SLIDER_REASON.get(attr, ""))
+            elif attr in self._original_slider_tips:
+                slider.setToolTip(self._original_slider_tips[attr])
+
     def _on_style_changed(self, style_value):
         """准心样式改变"""
         config.crosshair_style = style_value
@@ -1241,6 +1359,8 @@ class CrosshairPage(QWidget):
         self._update_preview()
         self._update_crosshair_system()
         self._sync_overview_status()
+        # RN-415：样式换了，「哪几条滑块还说得上话」也跟着换。
+        self._sync_slider_availability()
         self.logger.info(f"准心样式更新: {style_value}")
     
     def _on_color_changed(self, color_value):
@@ -1434,13 +1554,18 @@ class CrosshairPage(QWidget):
                 # ⚠ 措辞要短到**不会在窄卡片里折出半个词**：第一版
                 # 「此时游戏里不会显示任何准心」实测折成
                 # 「…不会显示任何 / 准心」，断在词中间。
-                self.preview_label.setText("还没画过自定义准心\n游戏里不会显示准心")
+                # ⭐ RN-414（批 27）：这块框现在**就是入口**，所以第三行要把
+                # 「点这里」说出来 —— 手型光标只有把鼠标移过去才看得到，
+                # 而实测的困惑发生在**还没移过去**的时候（3/3「不知道」）。
+                self.preview_label.setText(
+                    "还没画过自定义准心\n游戏里不会显示准心\n\n点这里开始画")
                 self.preview_label.setWordWrap(True)
             else:
                 self.preview_label.setText("")
                 pixmap = QPixmap.fromImage(image)
                 pixmap.setDevicePixelRatio(dpr)
                 self.preview_label.setPixmap(pixmap)
+            self._sync_preview_entry()
 
         except Exception as e:
             self.logger.error(f"更新预览失败: {e}")

@@ -1157,6 +1157,20 @@ class Theme:
                 border-left: 3px solid {self._chip_text(c.error)};
             }}
             
+            /* RN-414（批 27）：准心预览框在「选了自定义但还没画」这一刻**就是入口**。
+             * ⭐ 用批 26 刚立下的那套形状语言：**闭合轮廓 = 可点** ——
+             *   所以给它描一圈和按钮同一个 token 的边，而**不用品牌色**
+             *   （批 22：这套深色界面里任何一块饱和的色都读作「亮着 = 在运行」）。
+             * ⚠ 只在 `clickable="true"` 时才有边：其余时候它必须长得不可点，
+             *   否则就退回成「看着能点却点不动」的那条缺陷本身。 */
+            QFrame#crosshairPreviewFrame[clickable="true"] {{
+                border: 1px solid {c.border_primary};
+                border-radius: {container.card_border_radius}px;
+            }}
+            QFrame#crosshairPreviewFrame[clickable="true"]:hover {{
+                background-color: {self._hex_to_rgba(c.text_tertiary, 28)};
+            }}
+
             /* ========== 卡片/容器样式 ========== */
             /* v5: bg_card 比 bg_secondary 提亮一档,让阴影对比看得见 */
             QFrame#card {{

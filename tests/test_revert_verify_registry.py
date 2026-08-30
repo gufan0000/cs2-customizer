@@ -71,29 +71,64 @@ def test_every_selector_resolves_to_a_real_test():
     "not found" 当成基线不绿，**整组在第一条之前就中止**，
     而报错文字让人以为是产品坏了。
 
-    用 `--collect-only` 一次性收集全部 selector，比逐条起 pytest 快得多。
+    用 `--collect-only` 收集 selector，比逐条起 pytest 快得多。
+
+    ⚠⚠ 2026-08-30（批 27）：**这条判据被它自己撑破过一次。**
+    登记册长到 361 条 selector 时，一次性拼出来的命令行是 **33232 字符**，
+    而 Windows `CreateProcess` 的上限是 **32767** —— 于是 `subprocess.run`
+    抛 `FileNotFoundError: [WinError 206] 文件名或扩展名太长`，
+    **判据红了，但红的理由和它要防的事情毫无关系**，报错文字还让人以为是产品坏了
+    （和 RN-093「基线不绿」那次是同一个陷阱的两种写法）。
+    ⭐ **一条会随登记册一起变长的判据，必须自己声明它的长度上界** ——
+      而最好的声明方式不是断言"别超"，是**分批，让上界根本不存在**。
+    ⇒ 现在按字符预算切块跑。切块引入一个新的假绿风险（某一块整体崩掉时
+      它一行 `not found` 都不会打，于是"没发现问题"和"没跑成"长得一样），
+      所以下面对**每一块**都验了它确实产出了 pytest 的收集输出。
     """
     selectors = sorted({r.selector for r in REVERTS})
-    proc = subprocess.run(
-        [sys.executable, "-m", "pytest", "--collect-only", "-q", *selectors],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
-    # ⚠ pytest 打的是**绝对路径**：`ERROR: not found: H:\...\tests\x.py::name`。
-    # 本条判据的第一版写成 `f"not found: {selector}" in output`（selector 是仓库
-    # 相对路径），中间隔着绝对路径前缀，于是永远匹配不上——判据自己假绿，
-    # 而它要防的恰恰是假绿。所以这里改成：先把"not found"的目标解析出来，
-    # 再用后缀匹配。
-    normalized = ((proc.stdout or "") + (proc.stderr or "")).replace("\\", "/")
+    #: 命令行字符预算。真实上限 32767，留一半余量给解释器绝对路径与固定参数——
+    #: 这个数只影响跑几趟，给小了不会错，只会慢一点。
+    budget = 16000
+    chunks: list[list[str]] = [[]]
+    used = 0
+    for sel in selectors:
+        if chunks[-1] and used + len(sel) + 1 > budget:
+            chunks.append([])
+            used = 0
+        chunks[-1].append(sel)
+        used += len(sel) + 1
+
     marker = "not found: "
-    reported = {
-        line.split(marker, 1)[1].strip()
-        for line in normalized.splitlines()
-        if marker in line
-    }
+    reported: set[str] = set()
+    for chunk in chunks:
+        proc = subprocess.run(
+            [sys.executable, "-m", "pytest", "--collect-only", "-q", *chunk],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        # ⚠ pytest 打的是**绝对路径**：`ERROR: not found: H:\...\tests\x.py::name`。
+        # 本条判据的第一版写成 `f"not found: {selector}" in output`（selector 是仓库
+        # 相对路径），中间隔着绝对路径前缀，于是永远匹配不上——判据自己假绿，
+        # 而它要防的恰恰是假绿。所以这里改成：先把"not found"的目标解析出来，
+        # 再用后缀匹配。
+        normalized = ((proc.stdout or "") + (proc.stderr or "")).replace("\\", "/")
+        # 分块之后必须验"这一块真的跑起来了"：pytest 收集成功会打
+        # `N tests collected`，有找不到的会打 `error`/`not found`。
+        # 两样都没有 ⇒ 这一块根本没执行到收集（环境炸了 / 参数被吃掉），
+        # 此时它贡献的"零条 not found"是假的。
+        assert ("collected" in normalized or marker in normalized), (
+            f"这一块 {len(chunk)} 条 selector 的 pytest 收集没有产出任何结果，"
+            "这一块贡献的『没问题』是假的：\n"
+            f"  returncode={proc.returncode}\n  输出前 500 字：{normalized[:500]}"
+        )
+        reported |= {
+            line.split(marker, 1)[1].strip()
+            for line in normalized.splitlines()
+            if marker in line
+        }
     missing = [s for s in selectors if any(t.endswith(s) for t in reported)]
     assert not missing, (
         "这些断点的 selector 指向不存在的用例：\n  " + "\n  ".join(missing) + "\n"

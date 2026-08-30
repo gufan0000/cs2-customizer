@@ -58,7 +58,12 @@ ROOT = Path(__file__).resolve().parents[1]
 #:   这条棘轮当场报 **+37** —— 和批 23 那次一模一样，它又一次是对的：
 #:   **理由该住在判据里，QSS 里只留一行指路**。⇒ 已把说明搬进
 #:   `tests/test_status_chips_do_not_look_clickable.py`，QSS 只留指针。
-GENERATE_STYLESHEET_MAX_LINES = 1568
+#: ⚠ 2026-08-30 破例 +14（1568 → 1582）：RN-414 给准心预览框加「它此刻是入口」
+#: 那一档外观（`[clickable="true"]` 的描边 + hover），两条规则共 8 行 +
+#: 6 行指路注释。⭐ 用的是批 26 刚立下的形状语言（闭合轮廓 = 可点），
+#: **不用品牌色**（批 22：饱和色读作「在运行」）。
+#: 完整实测在 `tests/test_crosshair_says_what_it_actually_does.py`。
+GENERATE_STYLESHEET_MAX_LINES = 1582
 
 
 def test_generate_stylesheet_does_not_grow():

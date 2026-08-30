@@ -4507,6 +4507,73 @@ REVERTS = [
         "只是以前同排的比它高，看不出来。"
         "⭐ **「同排一致」这类判据，改「其余那些」和改「那一个」是等价的破坏。**",
     ),
+    Revert(
+        "RN", "gap 滑块在自定义样式下又变回可点",
+        "pages/crosshair_page.py",
+        'STYLE_DEAD_SLIDERS = {"custom": ("gap_slider",)}',
+        'STYLE_DEAD_SLIDERS = {}',
+        "tests/test_crosshair_says_what_it_actually_does.py::test_a_slider_that_changes_nothing_is_disabled",
+        "RN-415：`_paint_custom` 画的是一张 30×30 的像素画，**没有「中心间隙」这个概念**。"
+        "实测（改两个值比像素）：自定义样式下 size/thickness/outline/alpha 四条都改得动，"
+        "**只有 gap 一个像素不动**，而五条在页面上全是 enabled。"
+        "⭐ 判据不点名 gap —— 它自己量出谁是死的，加第六条一样会红",
+    ),
+    Revert(
+        "RN", "自定义样式下把五条滑块全禁掉（过度修正）",
+        "pages/crosshair_page.py",
+        'STYLE_DEAD_SLIDERS = {"custom": ("gap_slider",)}',
+        'STYLE_DEAD_SLIDERS = {"custom": ("gap_slider", "size_slider",'
+        ' "thickness_slider", "outline_slider", "alpha_slider")}',
+        "tests/test_crosshair_says_what_it_actually_does.py::test_the_sliders_that_do_work_stay_usable",
+        "RN-415 阳性对照：那四条对自定义**是真的有用**。⭐ 缺了这条，"
+        "上一条可以靠「全禁掉」全绿 —— 而批 17 实测大面积置灰读作「软件坏了」",
+    ),
+    Revert(
+        "RN", "页面又声称我们导出 .json",
+        "pages/crosshair_page.py",
+        '"导入 / 导出在页面底部操作栏，收本软件导出的 .xchr"',
+        '"导入 / 导出在页面底部操作栏，收本软件导出的 .json"',
+        "tests/test_crosshair_says_what_it_actually_does.py::test_no_sentence_claims_we_export_a_format_we_do_not",
+        "RN-410：导出默认写 `my_crosshair.xchr`、两个对话框只列 `*.xchr`，"
+        "而唯一一句解释这件事的话写着「只认本软件导出的 .json」——"
+        "⭐ **用户照那句话去找一个软件根本不产出的文件**。"
+        "⚠ 判据只比**紧跟在「导出的」后面**的那个扩展名：第一版收「整句里出现过的」，"
+        "把讲拖拽的 .json 也算成了谎话 ⇒ "
+        "⭐ 一句话是真是假，要拿它自己声称的那件事去比",
+    ),
+    Revert(
+        "RN", "导入按钮的说明又被拿掉（只剩页尾那一份）",
+        "pages/crosshair_page.py",
+        "        self.action_bar.extra_btn.setToolTip(",
+        "        _ = (lambda *a: None)(",
+        "tests/test_crosshair_says_what_it_actually_does.py::test_the_import_button_itself_explains_what_it_takes",
+        "RN-410：那句话原来在 y=1000，而导入按钮在 y=681 —— "
+        "说明在按钮**下方 319px、且在 750px 折线之外**，按钮自己 tooltip 是空的。"
+        "⭐ **解释性文字放在困惑发生的位置之前，不是页尾；放页尾 = 没放**",
+    ),
+    Revert(
+        "RN", "空白预览框不再是入口（回到「看着像画板却点不动」）",
+        "pages/crosshair_page.py",
+        "        is_entry = bool(self._custom_style_is_blank())",
+        "        is_entry = False",
+        "tests/test_crosshair_says_what_it_actually_does.py::test_the_preview_becomes_the_entry_when_custom_is_blank",
+        "RN-414 ⭐⭐ **天然对照实验**（同页同状态同模型，变量只有看不看得见折线以下）："
+        "窗口图 ①3/3「不知道」②3/3「不知道」；整页无折线图 ①3/3「绘制准心」"
+        "②3/3「知道，在这一屏上」⇒ 入口不是难找，是**根本不在第一屏上**"
+        "（单选 y=456、按钮 y=948，相距 492px，可视区 750px）。"
+        "⚠ 不能就地再放一颗「绘制准心」（另一条判据明令只许一颗，RN-404 族）⇒ "
+        "让批 12 我自己造出来的那块「看着像画板却点不动」的黑框**真的可点**。"
+        "改后窗口图 ①3/3「点这里开始画」②3/3「知道，在这一屏上」，安全轴 3/3 不动",
+    ),
+    Revert(
+        "RN", "画过之后预览框仍然可点（有时候能点、而外观从不变化）",
+        "pages/crosshair_page.py",
+        "        is_entry = bool(self._custom_style_is_blank())",
+        "        is_entry = True",
+        "tests/test_crosshair_says_what_it_actually_does.py::test_a_drawn_preview_is_not_clickable",
+        "RN-414 反面守卫：⭐ 一个「有时候能点、有时候不能点、而外观从不变化」的东西，"
+        "比一个从来不能点的还糟 —— 那是批 26「不可点的东西不许长按钮的形状」的镜像",
+    ),
     # ⛔⛔ 新断点一律加在**这一行之上**。
     #
     # 下面这个标记是开源同步那个语义补丁的**锚点**：开源版在这个位置追加它自己的
