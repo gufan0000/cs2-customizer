@@ -63,7 +63,13 @@ ROOT = Path(__file__).resolve().parents[1]
 #: 6 行指路注释。⭐ 用的是批 26 刚立下的形状语言（闭合轮廓 = 可点），
 #: **不用品牌色**（批 22：饱和色读作「在运行」）。
 #: 完整实测在 `tests/test_crosshair_says_what_it_actually_does.py`。
-GENERATE_STYLESHEET_MAX_LINES = 1582
+#: ⚠ 2026-08-30（RN-447·批 29）：1582 → **1610**。新增 `QPushButton#dangerButton[nothingToLose="true"]` 三态共 12 行 + 16 行注释。
+#: ⭐⭐ 为什么必须写在 QSS 而不是换 objectName：`dangerButton` 最小宽 **116**、
+#:   `secondaryButton` **118** —— 换名等于给槽位行凭空加 2px，而那一行里
+#:   那个 `Expanding` 的文件名标签本来就只剩 43px，一挤就变成 41px / 需 42px ⇒ 折行。
+#:   ⭐⭐ **改「警报级别」不许付出像素** ⇒ 同名不同属性，只换填充色。
+#: 完整实测在 `tests/test_the_slider_says_one_thing_and_shows_another.py`。
+GENERATE_STYLESHEET_MAX_LINES = 1610
 
 
 def test_generate_stylesheet_does_not_grow():

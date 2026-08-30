@@ -1512,6 +1512,34 @@ class Theme:
             QPushButton#dangerButton:pressed {{
                 background-color: {self._darken_color(c.error, 0.7)};
             }}
+
+            /* ⭐⭐ 批 29：**没有东西可丢的时候，危险按钮不占用危险色。**
+             *
+             * `style_as_danger_button` 的文档第 3 行就写着「红色语义要稀缺才有效；
+             * 到处都是红的等于没有红的」——而 voice_output 全新用户那一屏上是
+             * **5 颗高饱和红**，每一颗管的都是「删掉一个什么都没有的行」。
+             *
+             * ⚠⚠ 为什么走**属性**而不是换 objectName（第一版就是换名，被数堵回来了）：
+             *   `dangerButton` 的最小宽是 **116**、`secondaryButton` 是 **118** ——
+             *   换名等于给这一行凭空加 2px，而同一行里那个 Expanding 的
+             *   「未选择」标签本来就只剩 43px，2px 一挤就变成 41px / 需 42px ⇒ 折行。
+             *   ⭐⭐ **我改的是「警报级别」，付出的却是两个像素，
+             *     而代价落在同一行另一个控件上。**
+             * ⇒ 同名不同属性：`border` 保持 `none`、padding / min-width 一律不动，
+             *   **只换填充色**。几何零变化。 */
+            QPushButton#dangerButton[nothingToLose="true"] {{
+                background-color: {c.bg_tertiary};
+                color: {c.text_secondary};
+            }}
+
+            QPushButton#dangerButton[nothingToLose="true"]:hover {{
+                background-color: {c.bg_elevated};
+                color: {c.text_primary};
+            }}
+
+            QPushButton#dangerButton[nothingToLose="true"]:pressed {{
+                background-color: {c.bg_secondary};
+            }}
             
             /* 统一按钮文字显示修复 */
             QPushButton {{

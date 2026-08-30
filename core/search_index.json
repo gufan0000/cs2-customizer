@@ -2756,14 +2756,6 @@
   },
   {
    "page": "voice_output",
-   "text": "就绪",
-   "card": "",
-   "tab": "",
-   "kind": "label",
-   "src": "runtime"
-  },
-  {
-   "page": "voice_output",
    "text": "开麦键",
    "card": "",
    "tab": "语音设置",
@@ -2848,6 +2840,14 @@
    "card": "",
    "tab": "语音设置",
    "kind": "tab",
+   "src": "runtime"
+  },
+  {
+   "page": "voice_output",
+   "text": "还没有操作",
+   "card": "",
+   "tab": "",
+   "kind": "label",
    "src": "runtime"
   },
   {

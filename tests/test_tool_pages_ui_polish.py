@@ -2111,12 +2111,15 @@ def test_voice_output_page_status_card_tracks_runtime_and_forwarding(qapp, monke
     assert "主音量：65%" in page.status_card.toolTip()
     assert "PTT：V · 已启用" in page.status_card.toolTip()
     assert "中断键：F8" in page.status_card.toolTip()
-    assert "最近状态：就绪" in page.summary_label.toolTip()
+    # ⚠ 2026-08-30（RN-448·批 29）：「最近操作：就绪」已改。
+    #   「就绪」是建出来就写死的初始占位符，而同一屏上徽章写着「驱动 · 待安装」；
+    #   「最近状态」这个词又同时能读成「现在是否就绪」。外审 S4 13 处提及。
+    assert "最近操作：还没有操作" in page.summary_label.toolTip()
     assert page.action_bar.secondary_btn.isHidden() is False
     assert page.action_bar.primary_btn.isHidden() is False
     assert page.action_bar.primary_btn.text() == "添加槽位"
     assert "当前标签：语音设置" in page.action_bar.message_label.text()
-    assert "最近状态：就绪" in page.action_bar.message_label.text()
+    assert "最近操作：还没有操作" in page.action_bar.message_label.text()
 
     page.tab_widget.setCurrentIndex(1)
     qapp.processEvents()
@@ -2125,8 +2128,8 @@ def test_voice_output_page_status_card_tracks_runtime_and_forwarding(qapp, monke
     assert "转发已启用 3/8" in page.action_bar.message_label.text()
 
     page._set_status_text("▶ 播放: Demo Clip")
-    assert "最近状态：▶ 播放: Demo Clip" in page.status_card.toolTip()
-    assert "最近状态：▶ 播放: Demo Clip" in page.action_bar.message_label.text()
+    assert "最近操作：▶ 播放: Demo Clip" in page.status_card.toolTip()
+    assert "最近操作：▶ 播放: Demo Clip" in page.action_bar.message_label.text()
 
     page._update_volume(40)
     assert "主音量：40%" in page.status_card.toolTip()

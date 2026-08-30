@@ -84,6 +84,8 @@ class VoiceOutputPage(QWidget):
         
         # 音板槽位数据 {slot_id: {key: str, audio: str, volume: float, name: str}}
         self.soundboard_slots = {}
+        #: 槽位号 → 那颗「删除」。⚠ 槽位字典里原来没存它，而 `_sync_slot_affordance` 要按状态改它的警报级别（批 29）。
+        self._slot_delete_buttons = {}
         self.initial_slots = 5  # 初始槽位数
         self.max_slots = 50  # 最大槽位数
         self.current_slot_count = 0
@@ -178,7 +180,7 @@ class VoiceOutputPage(QWidget):
             text = label.text().strip()
             if text:
                 return text
-        return "就绪"
+        return "还没有操作"
 
     def _current_tab_text(self):
         tab_widget = getattr(self, "tab_widget", None)
@@ -204,7 +206,7 @@ class VoiceOutputPage(QWidget):
             self.action_bar.configure_primary("导出配置", self._export_config, visible=True)
             action_message = (
                 f"当前标签：{current_tab} · 转发{'已启用' if forwarding_enabled else '未启用'}"
-                f"{f' {sfx_enabled}/{sfx_total}' if sfx_total else ''}；最近状态：{runtime_text}"
+                f"{f' {sfx_enabled}/{sfx_total}' if sfx_total else ''}；最近操作：{runtime_text}"
             )
         else:
             slot_total = len(getattr(self, "soundboard_slots", {}) or {})
@@ -213,7 +215,7 @@ class VoiceOutputPage(QWidget):
             self.action_bar.configure_primary("添加槽位", self._add_slot, visible=True)
             action_message = (
                 f"当前标签：{current_tab} · 已配置 {slot_configured}/{slot_total} 个槽位，"
-                f"已绑定 {hotkey_configured} 个快捷键；最近状态：{runtime_text}"
+                f"已绑定 {hotkey_configured} 个快捷键；最近操作：{runtime_text}"
             )
 
         self.action_bar.set_message(action_message)
@@ -270,7 +272,7 @@ class VoiceOutputPage(QWidget):
             f"快捷键已绑定：{hotkey_configured}",
             f"音效转发：{'已启用' if forwarding_enabled else '未启用'}"
             + (f"（{sfx_enabled}/{sfx_total}）" if sfx_total else ""),
-            f"最近状态：{runtime_text}",
+            f"最近操作：{runtime_text}",
         ]
 
         summary_text = "\n".join(detail_lines)
@@ -333,7 +335,10 @@ class VoiceOutputPage(QWidget):
             if self._driver_ready():
                 self.driver_hint_label.setText("虚拟驱动已就绪，可直接使用音板或语音转发。")
             else:
-                self.driver_hint_label.setText("当前缺少 VB-Cable，安装后才能把音频可靠送进游戏语音。")
+                # ⚠ RN-143（批 29）：原文 25 字 = 321px，而这一格分到 320px ——
+                #   **又是差 1 个像素**（批 28 的 magnifier 也是 336/335）。
+                #   ⭐ 这一族最常见的形态不是「文案太长」，是**刚好长 1 个字**。
+                self.driver_hint_label.setText("当前缺少 VB-Cable，安装后才能把音频送进游戏语音。")
 
         if hasattr(self, "routing_summary_label"):
             volume_percent = int(round(float(getattr(config, "voice_output_volume", 1.0)) * 100))
@@ -347,7 +352,7 @@ class VoiceOutputPage(QWidget):
             slot_total = len(getattr(self, "soundboard_slots", {}) or {})
             self.config_summary_label.setText(
                 f"当前麦克风：{self._current_microphone_text()} · 已配置 {slot_configured}/{slot_total} 个槽位"
-                f" · 最近状态 {self._current_runtime_text()}"
+                f" · 最近操作 {self._current_runtime_text()}"
             )
 
         if hasattr(self, "control_frame") and self.control_frame.layout() is not None:
@@ -521,6 +526,23 @@ class VoiceOutputPage(QWidget):
         self.volume_slider.setRange(0, 200)
         self.volume_slider.setValue(int(config.voice_output_volume * 100))
         self.volume_slider.setMinimumWidth(160)
+        # ⭐⭐ RN-064（批 29）：量程是 0~200（支持放大到 200%），值 100 ⇒
+        #   **手柄正好停在正中间**，而右边那个数字写着 100% ——
+        #   外审 24 发（8 张图 × 3）**24/24 全部**答出「滑块位置约 50~75%，
+        #   而右侧数字写 100%，互相矛盾」。
+        # ⭐ 机制不是「有人写错了数」，是**量程这个信息已经走到了显示函数的
+        #   参数表里、然后被丢掉**：`format_percent(value, hi=2.0)` 拿 hi 只做夹紧，
+        #   它从不出现在结果字符串里。⇒ 不是没人知道上限是 200%，
+        #   是**知道的那一层没有把它说出来**。
+        # ⇒ 两样一起给：刻度把「这条轨道有多长」画在控件自己身上，
+        #   下面那句话把「多长是多少」写出来。
+        # ⚠⚠ 此处**试过 `setTickPosition(TicksBelow)`，已删**：
+        #   它在这套 QSS 下把滑块从 20px 拉到 28px，而多出来的
+        #   y=24..27 四行实测是**纯色 #404252，一个像素都没画**。
+        #   ⭐⭐ **它占了位置，没占画面** —— 而我第一遍是拿
+        #   「高度变了 + 颜色种类变多了」当成「画出来了」的（批 26
+        #   那一批“我以为那一层就是那一层”的又一例）。
+        #   ⭐ **判据不许去钉一个屏幕上不存在的属性。**
         self.volume_slider.valueChanged.connect(self._update_volume)
         volume_row.addWidget(self.volume_slider, 1)
 
@@ -530,6 +552,14 @@ class VoiceOutputPage(QWidget):
         self.volume_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         volume_row.addWidget(self.volume_label)
         routing_layout.addLayout(volume_row)
+
+        # RN-064：把量程写出来。⚠ 这句话必须挨着滑块 ——
+        # 矛盾发生在手柄那里，解释放到别处等于没放（批 27 那条「解释性文字放在
+        # 困惑发生的位置之前，不是页尾」的同一条）。
+        volume_scale_hint = QLabel("滑块中点就是 100%（原音量）；往右可以放大，最高 200%。")
+        volume_scale_hint.setObjectName("hintLabel")
+        volume_scale_hint.setWordWrap(True)
+        routing_layout.addWidget(volume_scale_hint)
 
         route_options_row = QHBoxLayout()
         route_options_row.setSpacing(8)
@@ -668,6 +698,19 @@ class VoiceOutputPage(QWidget):
         # 那是一份列表控件，不是被高度上限钉死的固定内容。排版审计第 5 条判据
         # 按 objectName 在 `NESTED_SCROLL_ALLOWED` 里放行它，所以这个名字不能改
         # （改了例外就失配，判据会当成新缺陷报出来 —— 那是它该有的行为）。
+        # ⭐ 一行说清每一列是干什么的（外审 2 发判高：「连续多个无标签按钮
+        #   （未设置/未选择/选择），玩家不知道哪里是设快捷键、哪里是选音效」），
+        #   同时把槽位滑块的量程也在这里交代掉（RN-064 的另外 5 颗）。
+        # ⛔ 不做真正的列标题行：那要和每一列的宽度对齐，而这一页的按钮宽度
+        #   （`_apply_compact_button(width=...)`）**是一句死声明** —— 样式层
+        #   只抬 min 不动 max，实际渲染出来比声明的宽（RN-442）。
+        #   照声明的宽度去排一行表头，排出来必然对不齐。
+        slot_legend = QLabel(
+            "每一行：编号 · 快捷键 · 音频文件 · 试听 · 音量（中点 100%，最高 200%） · 删除")
+        slot_legend.setObjectName("hintLabel")
+        slot_legend.setWordWrap(True)
+        layout.addWidget(slot_legend)
+
         scroll = QScrollArea()
         scroll.setObjectName("voiceSlotList")
         scroll.setWidgetResizable(True)
@@ -765,7 +808,15 @@ class VoiceOutputPage(QWidget):
         status_layout = QHBoxLayout(status_frame)
         status_layout.setContentsMargins(10, 5, 10, 5)
         
-        self.status_label = QLabel("就绪")
+        # ⭐⭐ RN-107 族（批 29）：这一格原来建出来就是字面量「就绪」，
+        # 只有发生过某个操作才会被改写 —— 于是全新用户的那一屏上，
+        # 徽章写着「驱动 · 待安装」、卡片写着「⚡ VB-Cable 未安装」，
+        # 而这里和底栏写着「最近状态：就绪」。外审多发判**高**。
+        # ⭐ **「就绪」是一个初始占位符，而它长得像一个判断结果。**
+        # ⭐⭐ 「最近状态」这个词同时能读成「最近一次操作的结果」和
+        #   「现在是否就绪」—— 而它只实现了前者，初值又恰好是一个
+        #   听起来像后者的词（同 RN-428 那族）。
+        self.status_label = QLabel("还没有操作")
         self.status_label.setFont(QFont("Microsoft YaHei", 10))
         status_layout.addWidget(self.status_label)
         
@@ -844,6 +895,8 @@ class VoiceOutputPage(QWidget):
         volume_slider.setRange(0, 200)
         volume_slider.setValue(100)
         volume_slider.setFixedWidth(110)
+        # RN-064：量程由槽位列表上方那一行图例交代。
+        # （刻度在这套 QSS 下不画，见主音量那处的实测。）
         volume_slider.valueChanged.connect(lambda v: self._update_slot_volume(slot_id, v))
         slot_layout.addWidget(volume_slider)
         
@@ -860,6 +913,7 @@ class VoiceOutputPage(QWidget):
         style_as_danger_button(delete_button)
         delete_button.clicked.connect(lambda: self._delete_slot(slot_id))
         slot_layout.addWidget(delete_button)
+        self._slot_delete_buttons[slot_id] = delete_button
         
         # 添加到布局
         self.slots_layout.addWidget(slot_frame)
@@ -884,9 +938,60 @@ class VoiceOutputPage(QWidget):
             if str(slot_id) in slots_config:
                 slot_data = slots_config[str(slot_id)]
                 self._load_slot_config(slot_id, slot_data)
-        
+
+        self._sync_slot_affordance(slot_id)
         self.logger.info(f"添加音板槽位 #{slot_id + 1}")
         self._sync_overview_status()
+
+    def _sync_slot_affordance(self, slot_id):
+        """一个槽位里「能不能试听」和「删掉会不会真的丢东西」由**同一个条件**说了算。
+
+        ## 缺陷（批 29）
+
+        `style_as_danger_button` 的文档第 3 行逐字写着：
+
+        > D-06 的口径：仅用于**不可逆的数据丢失**……
+        > **红色语义要稀缺才有效；到处都是红的等于没有红的。**
+
+        而全新用户打开这一页看到的是 **5 颗高饱和红**（`rgb(239,68,68)`，
+        全页唯一的饱和色），每一颗管的都是「删掉一个什么都没有的行」。
+        外审整页图 **6/6** 在「这一屏最扎眼的是什么」和
+        「哪个按钮会把你设好的东西弄没」两问上**都**答「删除」。
+
+        ⭐ 而**同一行里的「试听」早就知道自己该禁用** —— 那道门
+        （`preview_button.setEnabled(bool(audio))`）一直在，只是没给「删除」接上。
+        ⭐⭐ **一条判别标准写在注释里，只会被应用到写它的人当时正在看的那一处。**
+
+        ⚠ **不禁用「删除」**：槽位数由用户决定（初始 5、上限 50），
+        删掉一个空槽位是正当动作。改的只是**警报级别** ——
+        红色跟着「有没有东西可丢」走。
+        """
+        slot = self.soundboard_slots.get(slot_id)
+        if not slot:
+            return
+        has_audio = bool(slot.get("audio"))
+        preview = slot.get("preview_button")
+        if preview is not None:
+            preview.setEnabled(has_audio)
+        button = self._slot_delete_buttons.get(slot_id)
+        if button is None:
+            return
+        # ⚠⚠ **第一版是换 objectName（danger ↔ secondary），被数堵回来了**：
+        #   `dangerButton` 最小宽 **116**、`secondaryButton` **118** —— 换名等于给
+        #   这一行凭空加 2px，而同一行里那个 Expanding 的「未选择」标签本来就只剩
+        #   43px，一挤就变成 41px / 需 42px ⇒ 折行。排版审计当场 11 → 16。
+        #   ⭐⭐ **我改的是「警报级别」，付出的却是两个像素，
+        #     而代价落在同一行另一个控件上。**
+        # ⇒ 改成**同名不同属性**：objectName 一直是 dangerButton（几何完全不动），
+        #   由 `#dangerButton[nothingToLose="true"]` 那条 QSS 只换填充色。
+        want = None if has_audio else "true"
+        if button.property("nothingToLose") == want:
+            return
+        button.setProperty("nothingToLose", want)
+        style = button.style()
+        if style is not None:
+            style.unpolish(button)
+            style.polish(button)
     
     def _load_slot_config(self, slot_id, slot_data):
         """加载槽位配置"""
@@ -899,7 +1004,9 @@ class VoiceOutputPage(QWidget):
             slot["audio"] = slot_data["audio"]
             slot["name"] = slot_data.get("name", "")
             slot["audio_label"].setText(slot["name"] or slot["audio"])
-            slot["preview_button"].setEnabled(True)
+            # ⭐ 批 29：能不能试听、删掉会不会真的丢东西，走**同一个**入口。
+            #   原来这里只开「试听」，而「删除」的红从建出来那一刻就一直亮着。
+            self._sync_slot_affordance(slot_id)
         
         # 加载快捷键
         if "key" in slot_data and slot_data["key"]:
@@ -930,6 +1037,7 @@ class VoiceOutputPage(QWidget):
             slot = self.soundboard_slots[slot_id]
             slot["frame"].deleteLater()
             del self.soundboard_slots[slot_id]
+            self._slot_delete_buttons.pop(slot_id, None)
             self._save_config()
             self.logger.info(f"删除音板槽位 #{slot_id + 1}")
     
@@ -948,7 +1056,7 @@ class VoiceOutputPage(QWidget):
                 slot["audio"] = file_path
                 slot["name"] = file_path.split("/")[-1]  # 获取文件名
                 slot["audio_label"].setText(slot["name"])
-                slot["preview_button"].setEnabled(True)
+                self._sync_slot_affordance(slot_id)   # 批 29：试听 + 删除同一个门
                 self._save_config()
                 self.logger.info(f"槽位 #{slot_id + 1} 选择音频: {file_path}")
     
@@ -1925,7 +2033,7 @@ class VoiceOutputPage(QWidget):
     
     def _clear_status(self):
         """清除状态标签"""
-        self.status_label.setText("就绪")
+        self.status_label.setText("还没有操作")
         self._sync_overview_status()
 
     def _set_status_text(self, text):

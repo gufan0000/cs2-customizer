@@ -4651,6 +4651,86 @@ REVERTS = [
         "**差 1 个像素**就折成两行。⭐ 它证明「被挤到折行」和「放不下」完全不是一回事："
         "1px 的缺口，任何「有没有溢出 / 有没有截断」的判据眼里都一切正常",
     ),
+    # ------------------------------------------------------- 批 29（voice_output）
+    Revert(
+        "RN", "主音量旁边那句量程说明被删（滑块又只剩一个孤零零的 100%）",
+        "pages/voice_output_page.py",
+        'volume_scale_hint = QLabel("滑块中点就是 100%（原音量）；往右可以放大，最高 200%。")',
+        'volume_scale_hint = QLabel("")',
+        "tests/test_the_slider_says_one_thing_and_shows_another.py"
+        "::test_a_slider_whose_full_scale_is_not_100_percent_says_so",
+        "RN-064：量程 `[0,200]` + 值 100 ⇒ **手柄正好停在正中间**，而右边写着 100%。"
+        "外审 **24 发 24/24** 全部答出「滑块位置约 50~75%，右侧数字写 100%，互相矛盾」。"
+        "⭐ 机制不是有人写错了数，是**量程已经走到了显示函数的参数表里再被丢掉**："
+        "`format_percent(value, hi=2.0)` 拿 hi 只做夹紧，它从不出现在结果字符串里 ⇒ "
+        "**不是没人知道上限是 200%，是知道的那一层没有把它说出来**",
+    ),
+    Revert(
+        "RN", "槽位列表那行图例被删（五条槽位滑块又没人解释量程）",
+        "pages/voice_output_page.py",
+        '            "每一行：编号 · 快捷键 · 音频文件 · 试听 · 音量（中点 100%，最高 200%） · 删除")',
+        '            "")',
+        "tests/test_the_slider_says_one_thing_and_shows_another.py"
+        "::test_a_slider_whose_full_scale_is_not_100_percent_says_so",
+        "⚠⚠ 这条断点**逼着判据改了一次**：第一版判据只要求「页面上任意一处出现 200%」，"
+        "于是删掉这行图例它照样绿 —— 而主音量那句话在页面另一头，"
+        "离这五条滑块隔着一整屏。⭐ **「这一屏某处写过」不等于「解释放在困惑发生的地方」**"
+        "（批 27 那条）⇒ 判据改成沿**祖先链**找、且不许一路走到页面根",
+    ),
+    Revert(
+        "RN", "「就绪」这个初始占位符又回来了（驱动明明还没装）",
+        "pages/voice_output_page.py",
+        '        self.status_label = QLabel("还没有操作")',
+        '        self.status_label = QLabel("就绪")',
+        "tests/test_the_slider_says_one_thing_and_shows_another.py"
+        "::test_nothing_claims_ready_while_the_driver_is_not",
+        "同屏矛盾：徽章「驱动 · 待安装」+ 卡片「⚡ VB-Cable 未安装」，而底栏与状态条"
+        "写着「最近状态：就绪」。外审多发判**高**。"
+        "⭐ **「就绪」是一个初始占位符，而它长得像一个判断结果。**"
+        "⭐⭐ 「最近状态」这个词同时能读成「最近一次操作的结果」和「现在是否就绪」，"
+        "而它只实现了前者、初值又恰好是一个听起来像后者的词（同 RN-428 那族）。"
+        "⚠ 判据第一版的词表**太宽**，把「先确认 VB-Cable 是否就绪」这句**提问**"
+        "也报成了假话 ⇒ 只认断言式说法（整句就是「就绪」，或出现「状态：就绪」）",
+    ),
+    Revert(
+        "RN", "空槽位的「删除」又变回危险红",
+        "pages/voice_output_page.py",
+        # ⚠ 锚点在同一批里改过一次：第一版修法是换 objectName，
+        #   被「换名会多占 2px」的数堵回来之后改成了属性。
+        #   ⭐ **改了修法要顺手把断点也改到新的代码上**（批 28 刚踩过）。
+        '        want = None if has_audio else "true"',
+        '        want = None',
+        "tests/test_the_slider_says_one_thing_and_shows_another.py"
+        "::test_an_empty_slot_does_not_get_the_scarce_red",
+        "`style_as_danger_button` 的文档第 3 行逐字写着「红色语义要稀缺才有效；"
+        "**到处都是红的等于没有红的**」——而全新用户打开这一页看到的是 **5 颗高饱和红**"
+        "（`rgb(239,68,68)`，全页唯一的饱和色），每一颗管的都是「删掉一个什么都没有的行」。"
+        "外审整页图 **6/6** 在「最扎眼的是什么」和「哪个按钮会弄没东西」两问上**都**答「删除」。"
+        "⭐ 而同一行里的「试听」早就知道自己该禁用 —— 那道门一直在，只是没给「删除」接上。"
+        "⭐⭐ **一条判别标准写在注释里，只会被应用到写它的人当时正在看的那一处。**",
+    ),
+    Revert(
+        "RN", "有音频的槽位也不给红了（把「稀缺」做成了「没有」）",
+        "pages/voice_output_page.py",
+        '        want = None if has_audio else "true"',
+        '        want = "true"',
+        "tests/test_the_slider_says_one_thing_and_shows_another.py"
+        "::test_a_slot_with_audio_does_get_the_red",
+        "阳性对照：装了音频的槽位，删除是一次**真正不可逆的丢失**"
+        "（文件路径 + 全局热键绑定 + 音量 + 名称，且当场落盘、无 undo 无快照）。"
+        "⭐ 缺了这条，上一条可以靠「把红色整个删掉」全绿 —— 那比现在更糟",
+    ),
+    Revert(
+        "RN", "「试听」和「删除」又各读各的条件",
+        "pages/voice_output_page.py",
+        "        has_audio = bool(slot.get(\"audio\"))",
+        "        has_audio = True",
+        "tests/test_the_slider_says_one_thing_and_shows_another.py"
+        "::test_preview_and_delete_read_the_same_gate",
+        "⭐ 这条缺陷的形状不是「删除按钮颜色不对」，是**同一行里，「试听」知道自己"
+        "没东西可播，而「删除」不知道自己没东西可删**。判据钉的是「两颗按钮读同一个条件」，"
+        "不是「删除按钮此刻是什么颜色」",
+    ),
     # ⛔⛔ 新断点一律加在**这一行之上**。
     #
     # 下面这个标记是开源同步那个语义补丁的**锚点**：开源版在这个位置追加它自己的
