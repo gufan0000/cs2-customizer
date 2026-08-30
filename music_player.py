@@ -966,7 +966,32 @@ class MusicPlayer:
         self.playlist.clear()
         self.current_index = -1
         self._save_playlist()
-        
+
+    def restore_playlist(self, tracks):
+        """把当前列表整体还原成 `tracks`（**撤销专用**，RN-457）。
+
+        ⚠⚠ 2026-08-31 实测：两处「删除」的撤销回调原来直接改
+        `config.music_playlists[...]`，而那是**下游** ——
+        真源是 `self.playlist`，它由 `_save_playlist()` **单向**写进 config。
+        于是点完撤销：**config 回到 5 首，`player.playlist` 和屏幕都停在 4 首**。
+
+        ⭐⭐⭐ 这比「撤销没用」更坏：它是**撤销半成功**。
+        用户看到什么都没发生，以为撤销坏了；而那首歌其实躺在配置里，
+        下次启动会自己回来 —— 而在此之前，**任何一次删除都会把它再覆盖掉**
+        （`_save_playlist` 拿 `self.playlist` 整个盖过去）。
+
+        ⭐ **撤销必须写在真源上；写在下游的撤销，会安静地把内存和磁盘拆成两份。**
+
+        ⛔ 不碰 `config.music_current_index`：那个键同时决定**底部控制条建不建**
+        （`playback_has_ever_started`，RN-195）。在这里顺手清它，等于让一次撤销
+        把老用户的播放控制面整个撤掉。
+        """
+        self.playlist = [dict(track) for track in (tracks or [])]
+        if self.current_index >= len(self.playlist):
+            self.current_index = len(self.playlist) - 1
+        self._save_playlist()
+
+
     def _get_track_duration(self, track: Dict) -> int:
         if not mutagen_available:
             return 0

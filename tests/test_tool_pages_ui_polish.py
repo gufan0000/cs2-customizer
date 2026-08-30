@@ -1977,7 +1977,14 @@ def test_music_page_status_cards_track_link_mode_and_playlist(qapp, monkeypatch)
 
     page = music_page_module.MusicPage()
 
-    assert page.summary_label.isHidden() is True
+    # ⚠⚠ RN-458（批 32）：这里原来断言 `page.summary_label.isHidden() is True`
+    #   —— 那是 `music_summary_label` 的**别名**，一个建出来就 hide、
+    #   全仓 0 处 show 的死控件（RN-009 族）。控件已删。
+    # ⭐⭐⭐ 而这一行值得单独记一笔：它是**第四条**钉住那个死控件的判据，
+    #   而前三条我都是按真名 `music_summary_label` 搜出来的，**这一条用的是别名**，
+    #   所以按真名搜的没找到、按全等名搜的棘轮也没找到。
+    #   **同一个别名，让两条按名字找的判据先后看漏了同一个控件。**
+    assert not hasattr(page, "summary_label")
     chips = _visible_audio_status_chip_texts(page.status_badge_label)
     assert len(chips) == 5
     assert "联动 · 已启用" in chips
@@ -1988,7 +1995,6 @@ def test_music_page_status_cards_track_link_mode_and_playlist(qapp, monkeypatch)
     assert "当前策略：联动已启用" in page.link_policy_label.text()
     assert "阵亡后自动开始/继续播放" in page.death_summary_label.text()
     assert "存活时自动降低到 40%" in page.alive_summary_label.text()
-    assert "当前模式：列表循环" in page.play_mode_summary_label.text()
     assert "当前曲目：Inferno Pulse" in page.playlist_meta_label.text()
     assert "来源 本地 2 / URL 1" in page.playlist_meta_label.text()
     assert page.playlist_widget.maximumHeight() == 320
@@ -2002,7 +2008,6 @@ def test_music_page_status_cards_track_link_mode_and_playlist(qapp, monkeypatch)
     page.play_mode_group.button(1).click()
     qapp.processEvents()
     assert dummy.play_mode == "shuffle"
-    assert "当前默认模式为随机播放" in page.play_mode_hint_label.text()
 
     page.game_link_checkbox.setChecked(False)
     qapp.processEvents()

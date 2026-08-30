@@ -1550,9 +1550,13 @@ REVERTS = [
     Revert(
         "RN", "又加了一个建出来就 hide 的 summary_label",
         "tests/test_no_invisible_summary_label.py",
-        # ⚠ 锚点跟着棘轮走：M3-b 清掉 viewmodel + flash 之后是 18。
-        # 上一版锚的是 `= 20`，清完就成了空转断点（失效体检逮到）。
-        "MAX_REMAINING = 17",
+        # ⚠ 锚点跟着棘轮走：M3-b 之后是 18，批 32 放宽分母（全等 → 后缀）
+        # 并清掉 music 之后，完整产品是 19、**本仓库（子集，没有 account 页）是 18**。
+        # ⚠⚠ 这个字面量上**钉了两条断点**（另一条在下面 viewmodel 那一组），
+        # 而失效体检一次只报**还在失效**的那一条 —— 批 32 修了一条就以为修完了，
+        # 下一轮全组跑才把另一条顶出来。
+        # ⭐ **锚在同一个会变的数上的断点，要么一次全找出来，要么就会分两轮暴露。**
+        "MAX_REMAINING = 18",
         "MAX_REMAINING = 17",
         "tests/test_no_invisible_summary_label.py::"
         "test_invisible_summary_label_count_only_shrinks",
@@ -2557,11 +2561,14 @@ REVERTS = [
     Revert(
         "RN", "viewmodel 又建一个建出来就 hide 的 summary_label",
         "tests/test_no_invisible_summary_label.py",
-        "MAX_REMAINING = 17",
+        "MAX_REMAINING = 18",
         "MAX_REMAINING = 20",
         "tests/test_no_invisible_summary_label.py::"
         "test_ratchet_is_tightened_when_pages_are_cleaned",
-        "RN-009：棘轮清了两页（viewmodel + flash）就必须收紧到 18。"
+        "RN-009：棘轮清一页就得跟着收紧一格（本仓库现在 18）。"
+        "⚠ 这条锚点在批 32 更新过：那一批放宽了分母"
+        "（`summary_label` 全等 → `*_summary_label` 后缀）并清掉 music。"
+        "⭐ **锚在一个会变的数上的断点，那个数一动它就空转。**"
         "**棘轮不收紧等于没有棘轮** —— 松着的两格会把下一次回归静默吃掉",
     ),
     # ==================================== 2026-08-18 关档自查补的两条旧账
@@ -3751,6 +3758,91 @@ REVERTS = [
         "的注释里，而我在普查脚本里用对了、换到判据里又自己抄了一遍 ——"
         "**一个教训只修在它被发现的那条通路上，等于只修了一份副本**",
     ),
+    # ======================= RN-455 / RN-457 / RN-458 / RN-459：music 说的话得是真的
+    Revert(
+        "RN", "页头又把新用户指向那条还没建的控制栏",
+        "pages/music_page.py",
+        '            description="放本地音乐或在线 URL，双击列表里的歌就开始放；"',
+        '            description="放本地音乐或在线 URL。底部控制栏是手动播放；"',
+        "tests/test_music_page_tells_the_truth_about_playing.py::"
+        "test_the_page_header_does_not_point_at_a_bar_that_may_not_be_there",
+        "RN-455：`playback_has_ever_started()` 为假时那条栏**根本没建**（RN-195/批 9）。"
+        "⭐⭐⭐ **一个正确的收窄，把它自己的入口关在了自己后面。**"
+        "外审在「有歌、没播过」那一档 7/8 判高，而空列表那档只有 1/8 ——"
+        "⭐ 遮住它的不是产品做对了，是那一档本身让人问不出这个问题",
+    ),
+    Revert(
+        "RN", "帮助面板第 2 步又教人去用那条控制栏",
+        "ui_help_panel.py",
+        '        "2. <b>双击列表里的歌名开始播放</b>——这一页本身没有播放按钮<br>"',
+        '        "2. 使用底部控制栏播放、暂停、切换曲目<br>"',
+        "tests/test_music_page_tells_the_truth_about_playing.py::"
+        "test_the_help_panel_does_not_point_at_a_bar_that_may_not_be_there",
+        "RN-455 的另一半。⚠ 这条断点**故意钉在另一个文件上**：同一条缺陷"
+        "同时住在页面和帮助面板里，只钉一处的话，另一处腐烂了没人知道",
+    ),
+    Revert(
+        "RN", "撤销又写回下游（config），屏幕和播放器不动",
+        "pages/music_page.py",
+        '                self.player.restore_playlist(tracks)\n'
+        '                self.refresh_playlist_display()\n'
+        '                self.logger.info(f"撤销删除 {len(entries)} 首音乐")',
+        '                config.music_playlists[name] = tracks\n'
+        '                config.save_config()\n'
+        '                self.refresh_playlist_display()\n'
+        '                self.logger.info(f"撤销删除 {len(entries)} 首音乐")',
+        "tests/test_music_page_tells_the_truth_about_playing.py::"
+        "test_undo_actually_puts_the_tracks_back_on_screen",
+        "RN-457：⭐⭐⭐ **撤销半成功比撤销没用更坏。**实测原状点完撤销："
+        "config 5 首、`player.playlist` 4 首、屏幕 4 首 —— 用户看到什么都没发生。"
+        "⭐ **写在下游的撤销，会安静地把内存和磁盘拆成两份。**"
+        "⚠ 这条断点钉的是**行为**不是「有没有调 toast_undo」——"
+        "后者在这个破坏下照样是绿的（调是调了，写错了地方）",
+    ),
+    Revert(
+        "RN", "三颗红里又有一颗没有撤销",
+        "pages/music_page.py",
+        '                toast_undo(f"已清空 {len(backup)} 首音乐", _undo)',
+        '                pass  # 清空列表不给撤销',
+        "tests/test_music_page_tells_the_truth_about_playing.py::"
+        "test_every_red_button_on_the_music_page_can_be_undone",
+        "RN-457：外审 18/18 说「三颗红没有区分危险程度」，16/18 猜「删除」最难挽回，"
+        "只有 2/18 提到这一颗 —— 而它才是唯一真挽不回的。"
+        "⭐⭐ **他们按「名字听起来多严重」排序，而那个排序和真实的可挽回性正好错开。**"
+        "⇒ 修法不是把颜色改得不一样，是把「三颗一样」这句话变成真的",
+    ),
+    Revert(
+        "RN", "又长出一个建了就 hide 的死控件",
+        "pages/music_page.py",
+        '        scroll_layout.addWidget(overview_card)',
+        '        self.music_summary_label = QLabel("")\n'
+        '        self.music_summary_label.hide()\n'
+        '        overview_layout.addWidget(self.music_summary_label)\n'
+        '        scroll_layout.addWidget(overview_card)',
+        "tests/test_music_page_tells_the_truth_about_playing.py::"
+        "test_no_judge_pins_text_inside_a_control_nobody_can_see",
+        "RN-458 / RN-009 族。⚠ 这条断点**不钉那条棘轮**（`MAX_REMAINING`）——"
+        "棘轮只判「总数变没变大」，而这里加回来的是 music 自己那一份，"
+        "总数会从 19 变 20，棘轮确实会红。但真正该守的是**这一页**，"
+        "所以钉页级那条。⭐⭐⭐ 顺带记住批 32 查出来的那件事："
+        "这条棘轮**从来没数过 music** —— 它按属性名全等匹配 `summary_label`，"
+        "而这一个叫 `music_summary_label`。"
+        "**一个按名字找的判据，被一次改名绕开了，而改名的人并不是想绕开它**",
+    ),
+    Revert(
+        "RN", "同一件事又在一张卡里说了五遍",
+        "pages/music_page.py",
+        '        self.play_settings_group.setToolTip(detail_text)',
+        '        self.play_mode_hint_label = QLabel(\n'
+        '            f"当前默认模式为{mode_text}，只影响底部常驻播放器的默认切歌策略。")\n'
+        '        self.play_settings_group.setToolTip(detail_text)',
+        "tests/test_music_page_tells_the_truth_about_playing.py::"
+        "test_the_play_mode_card_does_not_say_the_same_thing_five_times",
+        "RN-459：那张卡真正的内容只有 4 个单选钮，而「只影响底部常驻播放器」"
+        "在里面出现 5 处。⭐ 外审 18/18 全部答对了这个设置管的是谁 ——"
+        "**这件事早就传达成功了，多说的那几遍是纯成本**",
+    ),
+
     # ============================================ RN-404 / RN-416 / RN-452：一个动作一个入口
     Revert(
         "RN", "卡里又放了一颗底栏已经有的按钮",

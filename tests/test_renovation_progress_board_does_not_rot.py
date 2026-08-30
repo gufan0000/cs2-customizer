@@ -502,6 +502,97 @@ def test_a_batch_row_only_claims_closures_the_registry_agrees_with():
     )
 
 
+def _batch_row_line_numbers(text: str) -> list[int]:
+    """批次台账那些行在原文里的行号（0 基）。
+
+    ⚠ 故意**不复用** `_batch_rows`：那个函数只交出格子内容，
+    而这条判据要问的恰恰是「这些行在文件里是怎么摆的」。
+    """
+    firsts = {shape[0] for shape in KNOWN_BOARD_SHAPES}
+    out, header = [], None
+    for i, line in enumerate(text.splitlines()):
+        if not line.startswith("|"):
+            continue
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if set("".join(cells)) <= set("-: "):
+            continue
+        if cells[0] in firsts and len(cells) > 1:
+            header = tuple(cells)
+            continue
+        if header == BATCH_LOG_SHAPE and len(cells) == len(header):
+            out.append(i)
+    return out
+
+
+def test_the_batch_log_is_one_unbroken_table_in_order():
+    """⭐⭐ **一条为了不被某种噪声骗到而对它免疫的判据，就再也看不见那种噪声变成的腐烂。**
+
+    2026-08-31 实测：批次台账已经被**空行劈成四张表**（批 1~24 / 25 / 26 / 27+31），
+    后三张全是**无表头**的裸行 —— markdown 渲染出来就是三坨断掉的管道符；
+    而且行序是 25/26/27/**31**/28/29/30，批 31 那一行还落在
+    `## 一、页面档案（28）` 这个二级标题**之前**，把台账从中间劈开。
+
+    ⚠ 上面那几条对账判据**一条都没红**，而且不是它们瞎了 —— 是**故意**这样造的：
+    `_board_rows` 的注释逐字写着「别按空行分表（那份登记册的表中间就是有空行的，
+    第一版因此把分母从 66% 缩到 13%，而且不报错）」。
+    ⇒ 它为了不被空行骗到而对空行免疫，于是空行造成的腐烂它**结构上看不见**。
+
+    ⭐ 机器读得懂 ≠ 人读得懂。这份文件的读者是**下一轮开工的人**，
+    渲染坏了就是坏了，哪怕每一格的内容都对得上。
+
+    这条只查摆放，不查内容：**必须是连续的行、号必须递增。**
+    """
+    text = _require_board()
+    nums = [int(re.search(r"(\d+)", _strip(c[0])).group(1))
+            for c in _batch_rows(text) if re.search(r"\d", c[0])]
+    lines = _batch_row_line_numbers(text)
+    assert len(lines) == len(nums) >= 20, (
+        f"批次台账只解析出 {len(lines)} 行 —— 这条判据已经瞎了"
+    )
+    broken = [(lines[i], lines[i + 1]) for i in range(len(lines) - 1)
+              if lines[i + 1] != lines[i] + 1]
+    assert not broken, (
+        "批次台账不是一张连续的表，这几处中间夹了别的东西："
+        + "".join(f"\n  第 {a + 1} 行之后隔到第 {b + 1} 行" for a, b in broken)
+        + "\n⇒ 夹进去的多半是空行（markdown 会就地断表，后面的行全变成无表头裸行）"
+        "\n   或者是一个二级标题（那会把台账劈成两半）。"
+    )
+    assert nums == sorted(nums), (
+        f"批次台账的行序不是递增的：{nums}\n"
+        "⭐ 新的一批往**末尾**加，别插在中间 —— 插错位置不会有任何一条对账判据变红。"
+    )
+
+
+def test_the_one_table_check_catches_both_ways_of_breaking_it():
+    """⭐ 先证明它咬得动，再让它去断言「没问题」（RN-169）。
+
+    两种破法各造一份：夹空行、乱序。两份都不碰真文件。
+    """
+    good = _SYNTHETIC_BOARD.replace("| 批 3 |", "| 批 2 |")
+
+    def _check(board: str) -> str | None:
+        nums = [int(re.search(r"(\d+)", _strip(c[0])).group(1))
+                for c in _batch_rows(board) if re.search(r"\d", c[0])]
+        lines = _batch_row_line_numbers(board)
+        if any(lines[i + 1] != lines[i] + 1 for i in range(len(lines) - 1)):
+            return "断表"
+        if nums != sorted(nums):
+            return "乱序"
+        return None
+
+    assert _check(good) is None, "干净的合成台账不该被报"
+    split = good.replace("| 批 2 | 2026-01-03", "\n| 批 2 | 2026-01-03")
+    assert _check(split) == "断表", "夹了空行没被逮住"
+    swapped = "\n".join(
+        ["| 批 2 | 2026-01-03 | 丙页 | RN-903 | RN-904 | 0 发 |"
+         if ln.startswith("| 批 1 ") else
+         "| 批 1 | 2026-01-01 | 甲页 | RN-901 | — | 0 发 |"
+         if ln.startswith("| 批 2 ") else ln
+         for ln in good.splitlines()]
+    )
+    assert _check(swapped) == "乱序", "乱序没被逮住"
+
+
 def test_a_page_in_progress_has_something_open_in_the_registry():
     """⭐ 卡在中间态而名下一条未结都没有 = 活干完了没回来改状态。
 

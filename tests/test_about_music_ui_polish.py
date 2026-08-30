@@ -121,11 +121,14 @@ def test_music_page_overview_badges_sync(qapp, monkeypatch):
     assert any(text == "播放 · 播放中" for text in chips)
     play_mode_chips = _visible_audio_status_chip_texts(page.play_mode_badge_label)
     assert play_mode_chips == ["当前 · 随机播放", "范围 · 底部播放器"]
-    assert "当前默认模式为随机播放" in page.play_mode_hint_label.text()
-    assert page.music_summary_label.isHidden() is True
-    assert "游戏联动：已启用" in page.music_summary_label.text()
-    assert "当前曲目：Demo Track" in page.music_summary_label.text()
-    assert "播放状态：播放中" in page.music_summary_label.toolTip()
+    # ⚠ RN-458（批 32）：这几行原来断言的是 `music_summary_label` ——
+    #   一个建出来就 hide()、全仓 0 处 show() 的死控件（RN-009 族）。
+    #   ⭐⭐⭐ **一个死控件活下来的机制，是有人给它写了判据。**
+    #   现在改钉同一份详情真正到达用户的那一处：卡片的 tooltip。
+    assert not hasattr(page, "music_summary_label")
+    assert "游戏联动：已启用" in page.status_card.toolTip()
+    assert "当前曲目：Demo Track" in page.status_card.toolTip()
+    assert "播放状态：播放中" in page.status_card.toolTip()
     assert "淡出效果：已启用 · 0.5 秒" in page.status_card.toolTip()
 
     page.play_mode_group.button(3).click()
@@ -134,13 +137,12 @@ def test_music_page_overview_badges_sync(qapp, monkeypatch):
     assert any(text == "模式 · 列表循环" for text in chips)
     play_mode_chips = _visible_audio_status_chip_texts(page.play_mode_badge_label)
     assert play_mode_chips == ["当前 · 列表循环", "范围 · 底部播放器"]
-    assert "当前默认模式为列表循环" in page.play_mode_hint_label.text()
-    assert "播放模式：列表循环" in page.music_summary_label.text()
+    assert "播放模式：列表循环" in page.status_card.toolTip()
 
     page.game_link_checkbox.setChecked(False)
     chips = _visible_audio_status_chip_texts(page.status_badge_label)
     assert any(text == "联动 · 已关闭" for text in chips)
-    assert "游戏联动：已关闭" in page.music_summary_label.text()
+    assert "游戏联动：已关闭" in page.status_card.toolTip()
 
     page.deleteLater()
     qapp.processEvents()

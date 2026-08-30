@@ -133,7 +133,17 @@ class MusicPage(QWidget):
         # 这次重构不动一个像素，四种并存的字号是另一回事（UP-092）。
         header = PageHeader(
             "音乐播放 / 联动设置",
-            description="放本地音乐或在线 URL。底部控制栏是手动播放；「音乐联动」只管游戏要不要自动接管。",
+            # ⚠⚠ RN-455（批 32）：这里原来写「底部控制栏是手动播放」——
+            # 而对**没放过音乐的用户，那条栏根本没建**
+            # （`playback_has_ever_started()` 为假 ⇒ 不建，RN-195/批 9，我自己改的）。
+            # ⭐⭐⭐ **一个正确的收窄，把它自己的入口关在了自己后面**：
+            # 控制栏要放过音乐才出现，而放音乐这件事原本就该由它来做。
+            # 真正的入口只有双击列表项，而页面上提到它的只有一句在折线之下的小字。
+            # 外审在「有歌、没播过」那一档 **7/8 发判高**（空列表那档只有 1/8 ——
+            # 没歌当然放不了，那一档把问题遮住了）。
+            description="放本地音乐或在线 URL，双击列表里的歌就开始放；"
+                        "放起来之后窗口底部会常驻一条控制栏管暂停/切歌/音量。"
+                        "「音乐联动」只管游戏要不要自动接管。",
             title_font_size=None,
             spacing=12,
         )
@@ -179,14 +189,31 @@ class MusicPage(QWidget):
         status_row.addStretch()
         overview_layout.addLayout(status_row)
 
-        self.music_summary_label = QLabel("")
-        self.music_summary_label.setObjectName("hintLabel")
-        self.music_summary_label.setWordWrap(True)
-        self.music_summary_label.hide()
-        self.summary_label = self.music_summary_label
-        overview_layout.addWidget(self.music_summary_label)
+        # ⚠⚠ RN-458（批 32）：这里原来是 `music_summary_label` —— RN-009 那一族
+        # 「建出来就 hide()、全仓 0 处 show()」的死控件（AST 实测），
+        # 而每次同步都往里写 9 行 115 个字。
+        # ⭐⭐⭐ 这一个多出来一层：**它身上挂着判据。**三条测试逐字断言那 9 行里
+        # 写了什么，于是删它的成本被我们自己抬高了一整级 ——
+        # **一个死控件活下来的机制，是有人给它写了判据。**
+        # ⇒ 详情文本留着（它喂 `music_overview_card` 的 tooltip，用户悬停够得着），
+        #   只把那个永远不会出现在屏幕上的载体删掉。
         scroll_layout.addWidget(overview_card)
         
+        # ⚠⚠ RN-456（批 32）：**播放列表原来排在最后**，于是这一页 24 个可交互
+        # 控件里 12 个露出 0%（第一屏只装得下 42%），而露出 0% 的正好是
+        # 「播放模式」四选一 + 整个播放列表区 —— 一个叫「音乐播放」的页面，
+        # 第一屏上一件跟「放音乐」有关的事都做不了。
+        #
+        # ⭐⭐⭐ 而这一条是被 RN-455 的修法**逼出来的**：我把真正的入口
+        # （双击列表）写进了页头，改完复跑当场 **8/8** 报同一句新话 ——
+        # 「文案提示『双击列表里的歌开始放』，但界面完全看不到歌曲列表」
+        # （改前一发都没有）。⇒ 我把入口从「**不存在**的控件」改成了
+        # 「**存在但在折线之下**的控件」。
+        # ⭐⭐⭐ **一句正确的指路，会把「路的那一头看不见」变成一个新缺陷。**
+        # ⇒ 两条不能分批做。列表是这一页的**内容**，联动是**配置**；内容在前。
+        playlist_group = self._create_playlist_management()
+        scroll_layout.addWidget(playlist_group)
+
         self.top_settings_row = QBoxLayout(QBoxLayout.LeftToRight)
         self.top_settings_row.setSpacing(12)
         game_link_group = self._create_game_link_settings()
@@ -214,9 +241,6 @@ class MusicPage(QWidget):
         self.top_settings_row.addWidget(self.play_settings_column, 2)
         scroll_layout.addLayout(self.top_settings_row)
 
-        playlist_group = self._create_playlist_management()
-        scroll_layout.addWidget(playlist_group)
-        
         scroll_layout.addStretch()
         scroll.setWidget(scroll_content)
         settings_layout.addWidget(scroll)
@@ -509,16 +533,7 @@ class MusicPage(QWidget):
             ],
             detail_tooltip=detail_text,
         )
-        self.play_mode_hint_label.setText(
-            f"当前默认模式为{mode_text}，只影响底部常驻播放器的默认切歌策略。"
-        )
-        self.play_mode_hint_label.setToolTip(detail_text)
         self.play_settings_group.setToolTip(detail_text)
-        if hasattr(self, "play_mode_summary_label"):
-            self.play_mode_summary_label.setText(
-                f"当前模式：{mode_text}，新曲目与底部常驻播放器将默认按这个规则切换。"
-            )
-            self.play_mode_summary_label.setToolTip(detail_text)
 
     def on_master_switch_synced(self):
         """总开关被别处拨动后，把本页状态重算一遍（RN-189）。
@@ -569,8 +584,7 @@ class MusicPage(QWidget):
         ]
         detail_text = "\n".join(detail_lines)
         render_badges(self.status_badge_label, badges, detail_tooltip=detail_text)
-        self.music_summary_label.setText(detail_text)
-        self.music_summary_label.setToolTip(detail_text)
+        # RN-458：详情只往用户够得着的两处送 —— 胶囊条的 tooltip 和卡片的 tooltip。
         if hasattr(self, "music_overview_card"):
             self.music_overview_card.setToolTip(detail_text)
         self._sync_game_link_panel()
@@ -739,16 +753,12 @@ class MusicPage(QWidget):
         self.play_mode_badge_label = create_badge_label()
         layout.addWidget(self.play_mode_badge_label)
 
-        self.play_mode_hint_label = QLabel("")
-        self.play_mode_hint_label.setObjectName("hintLabel")
-        self.play_mode_hint_label.setWordWrap(True)
-        layout.addWidget(self.play_mode_hint_label)
-
-        self.play_mode_summary_label = QLabel("")
-        self.play_mode_summary_label.setObjectName("hintLabel")
-        self.play_mode_summary_label.setWordWrap(True)
-        layout.addWidget(self.play_mode_summary_label)
-
+        # ⚠ RN-459（批 32）：这里原来还有两行 `hintLabel`，说的都是
+        # 「只影响底部常驻播放器的默认切歌策略」——**同一件事在这张卡里说了 5 遍**
+        # （胶囊「范围 · 底部播放器」+ 这两行 + 卡片描述 + tooltip），
+        # 而这张卡真正的内容只有 4 个单选钮；当前值「顺序播放」还另外出现 3 次。
+        # ⭐ 外审 18/18 发全部答对了「这个设置管的是底部播放器」——
+        # **这件事早就传达成功了，多说的那几遍是纯成本。**
         self.play_mode_group = QButtonGroup()
         sequential_radio = QRadioButton("顺序播放")
         random_radio = QRadioButton("随机播放")
@@ -782,7 +792,10 @@ class MusicPage(QWidget):
         )
         mode_layout.addLayout(mode_grid)
         layout.addWidget(mode_card)
-        group.setToolTip("这里只决定底部全局播放器的默认模式，不影响你手动切歌。")
+        # ⚠ 这里原来还有一句 `group.setToolTip("这里只决定底部全局播放器…")`，
+        # 而 `_sync_play_settings_panel` 每次同步都对同一个 group `setToolTip(detail_text)`
+        # ——它在 `load_settings()` 里就被调过了。⇒ **那句静态 tooltip 从建页那一刻起
+        # 就被覆盖掉，一次都没生效过。**又一个「写了没人看得到」（RN-009 同族）。
         return group
     
     def _create_playlist_management(self):
@@ -837,8 +850,6 @@ class MusicPage(QWidget):
         self.playlist_meta_label.setObjectName("hintLabel")
         self.playlist_meta_label.setWordWrap(True)
         toolbar_layout.addWidget(self.playlist_meta_label)
-        layout.addWidget(toolbar_card)
-
         self.playlist_status_badge_label = create_badge_label()
         layout.addWidget(self.playlist_status_badge_label)
 
@@ -871,6 +882,17 @@ class MusicPage(QWidget):
         bottom_control_layout.addWidget(clear_btn)
 
         layout.addLayout(bottom_control_layout)
+
+        # ⚠⚠ RN-456 第二刀（批 32 二版）：这张「列表切换」卡原来排在**这一组的最前面**，
+        # 占掉 ~230px，把曲目列表往下顶。二版复跑 B 场景 ux 4/4 + render 4/4 报
+        # 「歌曲列表被挤出视口」——⚠ **那句话假一半**：实测前 3 首清清楚楚，
+        # 第 3 首被折线切一半，真相是「5 首只看得见 3 首」。
+        # ⭐ 但机制被外审自己点破了：「把歌单管理（新建/重命名/删除）放在正中，
+        #   导致新手把『歌单』误当成『歌曲』，找不到真正的曲目列表。」
+        # ⇒ 同一条规则再降一层：**内容在前，管理在后。**
+        # ⭐ 一个改动同时解决两条：列表往上顶 ~230px，而那颗删整张歌单的红按钮
+        #   （12 发里 6 发点名它是第一屏最扎眼的东西）跟着退出第一屏。
+        layout.addWidget(toolbar_card)
         self.playlist_widget.setToolTip("支持本地文件和 URL，双击列表项即可立即切换到对应曲目。")
         group.setToolTip("支持本地文件和 URL，双击列表项即可立即切换到对应曲目。")
         return group
@@ -1158,12 +1180,16 @@ class MusicPage(QWidget):
             self.refresh_playlist_display()
 
             def _undo(name=playlist_name, entries=backup):
-                tracks = config.music_playlists.get(name)
-                if tracks is None:
-                    return  # 列表已不存在,放弃
+                # ⚠⚠ RN-457（批 32）：这里原来往 `config.music_playlists` 里插回，
+                # 而那是**下游** —— 真源是 `player.playlist`，它单向写进 config。
+                # 实测点完撤销：config 5 首、`player.playlist` 4 首、屏幕 4 首。
+                # ⭐ **写在下游的撤销，会安静地把内存和磁盘拆成两份。**
+                if name != self.player.current_playlist_name:
+                    return  # 撤销窗口内切走了别的列表，不越俎代庖
+                tracks = list(self.player.get_playlist() or [])
                 for row, track in entries:  # 升序插回原位
                     tracks.insert(min(row, len(tracks)), track)
-                config.save_config()
+                self.player.restore_playlist(tracks)
                 self.refresh_playlist_display()
                 self.logger.info(f"撤销删除 {len(entries)} 首音乐")
 
@@ -1182,13 +1208,37 @@ class MusicPage(QWidget):
             QMessageBox.information(self, "提示", "播放列表已经是空的!")
             return
         
-        reply = QMessageBox.question(self, "确认清空", 
+        reply = QMessageBox.question(self, "确认清空",
                                      f"确定要清空当前播放列表的所有 {len(playlist)} 首音乐吗?",
                                      QMessageBox.Yes | QMessageBox.No)
         if reply == QMessageBox.Yes:
+            # ⚠ RN-457（批 32）：这颗按钮跟旁边两颗红得**一模一样**，
+            # 却是三颗里唯一完全没有撤销的一颗 —— 而它一次弄没的东西最多。
+            # 外审 18/18 说「三颗红没有区分危险程度」，16/18 猜「删除」最难挽回，
+            # 只有 2/18 提到这一颗。⭐ 他们按「名字听起来多严重」排序，
+            # 而那个排序和真实的可挽回性正好错开。
+            # ⇒ 修法不是把颜色改得不一样，是**把「三颗一样」这句话变成真的**。
+            playlist_name = self.player.current_playlist_name
+            backup = [dict(track) for track in playlist]
             self.player.clear_playlist()
             self.refresh_playlist_display()
             self.logger.info("清空播放列表")
+
+            def _undo(name=playlist_name, tracks=backup):
+                if name != self.player.current_playlist_name:
+                    return  # 撤销窗口内切走了别的列表
+                if self.player.get_playlist():
+                    return  # 撤销窗口内又加了歌，不覆盖用户新做的事
+                self.player.restore_playlist(tracks)
+                self.refresh_playlist_display()
+                self.logger.info(f"撤销清空播放列表: {name}（{len(tracks)} 首）")
+
+            try:
+                from ui_toast import toast_undo
+
+                toast_undo(f"已清空 {len(backup)} 首音乐", _undo)
+            except Exception:
+                pass
     
     def refresh_playlist_display(self, selected_rows=None):
         """刷新播放列表显示，并尽量保留当前选择。"""
@@ -1200,7 +1250,8 @@ class MusicPage(QWidget):
         self.selected_indices = set()
 
         if not playlist:
-            item = QListWidgetItem("播放列表为空\n使用底部操作栏添加音乐")
+            # RN-455：原来只讲怎么加，不讲加完怎么放 —— 而这一页没有任何播放控件。
+            item = QListWidgetItem("播放列表为空\n点右下角「添加音乐」，加完双击歌名就开始放")
             item.setTextAlignment(Qt.AlignCenter)
             item.setFlags(Qt.NoItemFlags)
             self.playlist_widget.addItem(item)

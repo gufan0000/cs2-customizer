@@ -103,7 +103,8 @@ def test_music_page_playlist_panel_and_action_bar_sync(qapp, monkeypatch):
 
     page.death_volume_group.button(1).click()
     page.death_volume_slider.setValue(65)
-    assert "65%" in page.music_summary_label.text()
+    # RN-458：改钉 tooltip —— 那个死控件已经删了。
+    assert "65%" in page.status_card.toolTip()
 
     page.deleteLater()
     qapp.processEvents()
