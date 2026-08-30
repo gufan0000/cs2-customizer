@@ -17,7 +17,7 @@ RN-188 立案时把顺序写死了：
 |---|---|---|
 | 恰好一颗 | 21 | —— |
 | **同屏 >1 颗** | **4** | `viewmodel` / `voice_output` / `account` / `about` |
-| 一颗都没有 | 2 | `fun_afterlife` / `audio_task_panel` |
+| 一颗都没有 | 2 | `fun_afterlife` / `audio_task_panel`（2026-08-30 批 28 起 +`magnifier`，见 `KNOWN_NO_PRIMARY`）|
 | **数不可复现** | 1 | `audio_health`（后台线程，见 `TIMING_DEPENDENT_PAGES`）|
 
 ⚠ 最后那一行是**两支工装打架打出来的**：普查脚本扫到 0 颗、本文件扫到 1 颗。
@@ -90,7 +90,14 @@ KNOWN_DUPLICATE_PRIMARIES = {
 #:   · `fun_afterlife`：源码里一次 `configure_primary` 都没有；
 #:   · `audio_task_panel`：没有任务时 `configure_primary("", None, visible=False)`
 #:     ——**状态相关**，而全新配置恰好是空任务态。
-KNOWN_NO_PRIMARY = {"fun_afterlife", "audio_task_panel"}
+#:   · `magnifier`（2026-08-30 批 28 加入，RN-277）：底栏主按钮位原来放的是
+#:     「全选武器 / 全不选武器」——54 把武器默认全勾，于是**每个新用户看到的都是
+#:     那颗写着「全不选武器」的紫按钮**，点一下 54 个复选框全清空、当场落盘、
+#:     没有确认也没有撤销。而它作用的那 54 个复选框在**第二~三屏**。
+#:     ⭐⭐ 外审行为题 12 发：「点它是靠近目标还是反方向」**12/12「反方向」**。
+#:     这一页的改动全是即时保存（偏移的 X/Y 有它自己那张卡上的「应用」），
+#:     **没有该由底栏承担的动作** ⇒ 主按钮位空着（同 crosshair 批 10）。
+KNOWN_NO_PRIMARY = {"fun_afterlife", "audio_task_panel", "magnifier"}
 
 #: ⚠⚠ **数不可复现的页，不许进上面两张表。**
 #:

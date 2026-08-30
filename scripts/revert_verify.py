@@ -4574,6 +4574,83 @@ REVERTS = [
         "RN-414 反面守卫：⭐ 一个「有时候能点、有时候不能点、而外观从不变化」的东西，"
         "比一个从来不能点的还糟 —— 那是批 26「不可点的东西不许长按钮的形状」的镜像",
     ),
+    # ---------------------------------------------------------- 批 28（magnifier）
+    Revert(
+        "RN", "底栏主按钮位又摆回「全不选武器」",
+        "pages/magnifier_page.py",
+        '        self.action_bar.configure_primary("", None, visible=False)',
+        '        self.action_bar.configure_primary("全不选武器",'
+        ' self._deselect_all_weapons, visible=True)',
+        "tests/test_the_loudest_button_is_not_the_undo_button.py"
+        "::test_no_page_puts_a_destructive_action_in_the_loudest_slot",
+        "RN-277：54 把武器 `setChecked(True)` 默认全勾 ⇒ **每一个第一次打开这一页的人**"
+        "看到的都是那颗写着「全不选武器」的紫按钮 —— 全页唯一的高亮控件。"
+        "点一下 54 个复选框全清空、当场落盘、没有确认也没有撤销。"
+        "⭐⭐ 而它作用的那 54 个复选框在第二~三屏，按钮却钉在第一屏 ——"
+        "**它唯一能改的东西，一个都不在用户眼前**（批 27「入口不在第一屏上」的背面）。"
+        "外审行为题 12 发：④「靠近目标还是反方向」⇒ **12/12「反方向」**；"
+        "而 ② 12/12 答「先点总开关」—— 用户知道该点哪儿，这不是入口问题",
+    ),
+    Revert(
+        "RN", "底栏主按钮又显示出来（哪怕文案换成中性的）",
+        "pages/magnifier_page.py",
+        '        self.action_bar.configure_primary("", None, visible=False)',
+        '        self.action_bar.configure_primary("应用", None, visible=True)',
+        "tests/test_the_loudest_button_is_not_the_undo_button.py"
+        "::test_magnifier_leaves_the_loudest_slot_empty",
+        "RN-277：这一页没有该由底栏承担的动作。⭐ 换个中性文案挡不住这条 ——"
+        "批 10 的判词是「一颗灰着的、紫色的、蹲在右下角的按钮，"
+        "**形状本身就在说『这里有个保存动作』**」，而这一页同样没有保存动作",
+    ),
+    Revert(
+        "RN", "武器卡里的「全不选」被一起删掉（把撤走做成了删功能）",
+        "pages/magnifier_page.py",
+        '        deselect_all_btn = QPushButton("全不选")',
+        '        deselect_all_btn = QPushButton("")',
+        "tests/test_the_loudest_button_is_not_the_undo_button.py"
+        "::test_the_action_itself_survives_in_the_card",
+        "RN-277 反向守卫：⭐ 把按钮从底栏撤走**不等于**把这个动作删掉。"
+        "它本来就在武器卡表头，紧贴那 54 个复选框 —— 在那儿点，用户看得见自己改了什么",
+    ),
+    Revert(
+        "RN", "底栏那句话不再说「要不要点什么」",
+        "pages/magnifier_page.py",
+        '            "改完就存下了；只有「偏移校准」里的 X / Y 要点那张卡上的「应用」才算数。"',
+        '            ""',
+        "tests/test_the_loudest_button_is_not_the_undo_button.py"
+        "::test_the_bar_message_tells_the_truth_about_what_needs_clicking",
+        "RN-277：本页 `SAVES_AUTOMATICALLY = False`，共用回执**不替它说存不存**（批 24）。"
+        "两颗按钮撤走之后，这句话是唯一还在回答「我到底要不要点什么」的东西。"
+        "⭐ 判据不比「有没有『保存』两个字」，比的是**它自己声称的那件事**："
+        "说了「应用」就必须真有那颗按钮，说了「存下」就必须真有 "
+        "`stateChanged.connect(self.save_settings)`（AST 验）",
+    ),
+    Revert(
+        "RN", "方向键那一行又变回不能换行的 QHBoxLayout",
+        "pages/magnifier_page.py",
+        # ⚠ 锚点在批 28 的**二版修法**里改过一次（h_spacing 6 → 15，因为组间距
+        #   不再靠 `addSpacing` 而靠 FlowLayout 自己的水平间距）——第一版断点当场
+        #   被失效体检报成「锚点出现 0 次」。
+        #   ⭐ **改了修法要顺手把断点也改到新的代码上**（RN-085 那条教训又中一次）。
+        "        adjust_wrap, adjust_layout = make_flow_container(h_spacing=15, v_spacing=6)",
+        "        adjust_wrap = QWidget(); adjust_layout = QHBoxLayout(adjust_wrap)",
+        "tests/test_the_loudest_button_is_not_the_undo_button.py::test_the_nudge_row_can_wrap",
+        "RN-196 横向那 29px 的根因：8 颗方向键代码里写 `setFixedSize(QSize(30, 26))`，"
+        "实际渲染 **80×50** —— `_style_button` 只抬 min 不动 max ⇒ min > max ⇒ Qt 取 min，"
+        "**调用点写的固定尺寸一个像素都不生效**，一行 ~800px 顶穿整页最小宽。"
+        "⭐ **一句无效的声明不是无害的，它被放大了两倍半。** "
+        "改成 FlowLayout 之后紧凑档横向溢出 29px → 0",
+    ),
+    Revert(
+        "RN", "两句被挤到折行的提示又长回去",
+        "pages/magnifier_page.py",
+        '            "主武器和手枪各自指定放大热键，并选长按还是单击切换。",',
+        '            "主武器和手枪各自指定放大热键，并选长按触发还是单击切换。",',
+        "tests/test_the_loudest_button_is_not_the_undo_button.py::test_these_hints_do_not_grow_back",
+        "RN-143 在本页最极端的一个样本：原文 27 字要 336px，而这一格分到 335px ——"
+        "**差 1 个像素**就折成两行。⭐ 它证明「被挤到折行」和「放不下」完全不是一回事："
+        "1px 的缺口，任何「有没有溢出 / 有没有截断」的判据眼里都一切正常",
+    ),
     # ⛔⛔ 新断点一律加在**这一行之上**。
     #
     # 下面这个标记是开源同步那个语义补丁的**锚点**：开源版在这个位置追加它自己的

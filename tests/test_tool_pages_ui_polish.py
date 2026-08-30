@@ -2403,11 +2403,26 @@ def test_magnifier_page_status_card_tracks_runtime_and_weapon_scope(qapp, monkey
     assert "当前武器：未识别" in page.status_card.toolTip()
     assert "主武器热键：右键 · 手枪热键：右键" in page.status_card.toolTip()
     assert "灵敏度联动：未启用 · 预设" in page.status_card.toolTip()
-    assert page.action_bar.secondary_btn.isHidden() is False
-    assert page.action_bar.primary_btn.isHidden() is False
-    assert page.action_bar.secondary_btn.text() == "应用偏移"
-    assert page.action_bar.primary_btn.text() == "全选武器"
-    assert "当前分类：手枪" in page.action_bar.message_label.text()
+    # ⚠⚠ 2026-08-30（RN-277·批 28）：**这四行原来钉的是缺陷本身** ——
+    #   原文逐字要求 `primary_btn.text() == "全选武器"`，而下面还有一行
+    #   要求全选之后它变成 `"全不选武器"`。那颗按钮是全页唯一的高亮控件，
+    #   54 把武器默认全勾 ⇒ 每个新用户看到的就是「全不选武器」，
+    #   点一下 54 个复选框全清空、当场落盘、没有确认也没有撤销。
+    #   外审行为题 12 发：「点它是靠近目标还是反方向」**12/12「反方向」**。
+    # ⭐ 这是 RN-084 那一族的又一个实例：**一条要求缺陷必须存在的判据** ——
+    #   它比「判据假绿」更隐蔽，假绿是没人看着，这个是**有人按着不让改**。
+    # ⇒ 底栏两个槽位现在都空着（这一页没有该由底栏承担的动作），
+    #   而「全选 / 全不选 / 应用」三颗仍在各自的卡里 ——
+    #   由 `test_the_loudest_button_is_not_the_undo_button.py` 的三条反向守卫钉住。
+    assert page.action_bar.secondary_btn.isHidden() is True
+    assert page.action_bar.primary_btn.isHidden() is True
+    assert page.action_bar.secondary_btn.text() == ""
+    assert page.action_bar.primary_btn.text() == ""
+    # 底栏那句话现在负责回答「我到底要不要点什么」（本页 SAVES_AUTOMATICALLY=False，
+    # 共用回执不替它说存不存 —— 批 24 定的分工）。
+    assert "改完就存下了" in page.action_bar.message_label.text()
+    assert "应用" in page.action_bar.message_label.text()
+    assert "已勾选" in page.action_bar.message_label.text()
 
     page.base_sensitivity_input.setFocus()
     page.base_sensitivity_input.selectAll()
@@ -2424,18 +2439,22 @@ def test_magnifier_page_status_card_tracks_runtime_and_weapon_scope(qapp, monkey
     page.update_current_weapon("weapon_awp")
     qapp.processEvents()
     assert "当前武器：AWP" in page.status_card.toolTip()
-    assert "当前武器 AWP" in page.action_bar.message_label.text()
+    # ⚠ 底栏那句话不再复述「当前武器」（RN-277 重写时删的，另见旧账 RN-279 →
+    #   RN-445：现象没了，但「软件认没认出武器」这个问题一个字都没被回答）。
+    #   它仍然在状态卡的详情里 —— 上一行就是。
 
     page.weapon_tabview.setCurrentIndex(3)
     qapp.processEvents()
     chips = _visible_audio_status_chip_texts(page.status_badge_label)
     assert any(text.startswith("分类 · 狙击枪") for text in chips)
     assert "当前分类：狙击枪" in page.status_card.toolTip()
-    assert "当前分类：狙击枪" in page.action_bar.message_label.text()
 
     page._select_all_weapons()
     qapp.processEvents()
-    assert page.action_bar.primary_btn.text() == "全不选武器"
+    # ⭐ 原来这里断言它变成「全不选武器」—— 那正是缺陷。现在断言它**保持空着**：
+    #   底栏不该跟着勾选状态长出一颗破坏性按钮。
+    assert page.action_bar.primary_btn.text() == ""
+    assert page.action_bar.primary_btn.isHidden() is True
 
     page.trigger_mode_combo.setCurrentText("单击切换")
     qapp.processEvents()

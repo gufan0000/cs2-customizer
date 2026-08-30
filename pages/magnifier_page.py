@@ -235,17 +235,43 @@ class MagnifierPage(QWidget):
 
         enabled_weapon_count = self._enabled_weapon_count()
         total_weapon_count = len(self.weapon_enabled_vars)
-        current_weapon_text = self.weapon_label.text().strip() if hasattr(self, "weapon_label") else "未识别"
 
-        self.action_bar.configure_secondary("应用偏移", self._apply_offset, visible=True)
-        if total_weapon_count and enabled_weapon_count >= total_weapon_count:
-            self.action_bar.configure_primary("全不选武器", self._deselect_all_weapons, visible=True)
-        else:
-            self.action_bar.configure_primary("全选武器", self._select_all_weapons, visible=True)
+        # ⭐⭐ RN-277（批 28）：底栏主按钮位原来放的是「全选武器 / 全不选武器」。
+        # 54 把武器 `setChecked(True)  # 默认启用` ⇒ **每一个第一次打开这一页的人**
+        # 看到的都是那颗写着「全不选武器」的紫按钮 —— 全页唯一的高亮控件。
+        # 点一下：54 个复选框全部清空、`save_settings()` 当场落盘，
+        # **没有确认，也没有撤销**。
+        #
+        # ⚠ 而它作用的那 54 个复选框在**第二~三屏**（可视区 750px，武器卡从
+        #   y≈1050 起），按钮却钉在第一屏 ——
+        #   ⭐⭐ **它唯一能改的东西，一个都不在用户眼前。**
+        #   （批 27「入口不在第一屏上」的背面：这次是**出口**在第一屏上。）
+        #
+        # 外审行为题 12 发，四问四答全票一致：
+        #   ① 12/12 读对了「全不选武器」并正确预期「清空 54 把」
+        #   ② 12/12 答「先点总开关」—— **用户知道该点哪儿**，这不是入口问题
+        #   ③ 12/12 指认它是会把已设好的东西弄没的那颗
+        #   ④ **12/12「反方向」**
+        # ⚠ 外审从没说「我会误点它」，它每次都读对了字。
+        #   ⭐ **「这颗按钮指着反方向」是实测；「用户会误点」是推论，别混着写。**
+        #
+        # ⇒ 这一页没有该由底栏承担的动作：改动即时保存，偏移的 X / Y 有它自己
+        #   那张卡上的「应用」，就在两个输入框旁边。主按钮位空着（同 crosshair
+        #   批 10：那一轮外审的判词是「一颗灰着的、紫色的、蹲在右下角的按钮，
+        #   形状本身就在说『这里有个保存动作』」——而这一页同样没有保存动作）。
+        # ⚠ 全选 / 全不选**没有被删**：它们本来就在武器卡的表头上，紧贴那 54 个
+        #   复选框 —— 在那儿点，用户看得见自己改了什么。
+        # ⭐ 顺带解决 RN-143 在本页的一处：底栏那句话原来只分到 543px（需 758），
+        #   两颗按钮撤走之后它拿回整行。
+        self.action_bar.configure_primary("", None, visible=False)
+        self.action_bar.configure_secondary("", None, visible=False)
 
         action_message = (
-            f"当前分类：{self._current_tab_text()} · 当前武器 {current_weapon_text or '未识别'}"
-            f" · 倍率 {self.zoom_factor:.1f}x / 偏移 {self._current_offset_text()}"
+            # ⚠ 本页 `SAVES_AUTOMATICALLY = False`（批 24），所以共用回执**不会**
+            # 替它说存不存。撤掉底栏按钮之后，这句话是唯一还在回答
+            # 「我到底要不要点什么」的东西 —— 它必须说准。
+            "改完就存下了；只有「偏移校准」里的 X / Y 要点那张卡上的「应用」才算数。"
+            f"当前：倍率 {self.zoom_factor:.1f}x · 偏移 {self._current_offset_text()}"
             # ⚠ RN-407 家族（批 18）：这里数的是**勾选了几把武器**，不是
             # 「几件事正在跑」。写「已启用 12/18 项」时，如果总开关关着，
             # 这行字就在替一件没发生的事作证 —— 而它和底栏那句「不生效」
@@ -629,7 +655,12 @@ class MagnifierPage(QWidget):
         self.sensitivity_multiplier_input.editingFinished.connect(self._on_sensitivity_values_changed)
         sensitivity_inputs_layout.addWidget(self.sensitivity_multiplier_input, 1, 1)
         sensitivity_inputs_layout.addWidget(
-            QLabel("即使暂时关闭联动，也可以先在这里录入预设数值。"),
+            # ⚠ RN-143（批 28）：原文 22 字，在紧凑档只分到 198px 而需要 322px，
+            # 于是折成 6 行 —— 而它旁边**空着 230px**。
+            # ⭐ 折行不是「放不下」，是「我说我能折行」（RN-121 的机制）：
+            #   折行的 QLabel 在横排里把自己的宽度报小，布局就照那个窄宽给它。
+            # 这一格是 2×1 跨行的说明位，压到一行放得下的长度即可。
+            QLabel("联动关着也能先把数值填好。"),
             0,
             2,
             2,
@@ -656,7 +687,12 @@ class MagnifierPage(QWidget):
 
         trigger_card, trigger_layout = self._create_inner_panel_card(
             "热键与触发",
-            "主武器和手枪各自指定放大热键，并选长按触发还是单击切换。",
+            # ⚠ RN-143（批 28）：原文 27 字 = 336px，而这一格分到 335px ——
+            # **差 1 个像素**，于是折成两行。完整档同样差 4px（需 420 / 得 416）。
+            # ⭐ 这是这一族最极端的一个样本：它证明「被挤到折行」和「放不下」
+            #   完全不是一回事 —— 1px 的缺口，任何「有没有溢出 / 有没有截断」的
+            #   判据眼里都一切正常。
+            "主武器和手枪各自指定放大热键，并选长按还是单击切换。",
         )
 
         primary_layout = QHBoxLayout()
@@ -790,38 +826,67 @@ class MagnifierPage(QWidget):
         self.offset_profile_label.setWordWrap(True)
         offset_layout.addWidget(self.offset_profile_label)
         
-        adjust_layout = QHBoxLayout()
-        adjust_layout.setSpacing(6)
-        adjust_layout.addWidget(QLabel("微调:"))
-        
-        # 1像素调整
+        # ⭐⭐ RN-196 横向那 29px（批 28 查实的根因）
+        #
+        # 这一行摆着 **8 颗方向键**。代码里写的是 `setFixedSize(QSize(30, 26))`，
+        # 而它们实际渲染出来是 **80×50** —— `ui_style_applier._style_button` 在
+        # 页面建完之后无条件把最小尺寸抬上去：
+        #     if button.minimumWidth() < min_width: button.setMinimumWidth(min_width)
+        # `setFixedSize` 把 min 和 max 都设成 (30,26)，这两行只抬 min、不动 max，
+        # 于是 min > max，Qt 取 min ⇒ **调用点写的固定尺寸一个像素都不生效**。
+        # ⇒ 这一行的最小宽从 ~300px 变成 ~800px，直接顶穿整页最小宽度。
+        # ⭐ **一句无效的声明不是无害的** —— 它把这一行撑成了两倍半。
+        # （全站实测 146/247 颗可见按钮的固定尺寸声明都是死的，已另立 RN-442；
+        #   这里只治它在本页造成的那个后果。）
+        #
+        # ⛔ 不走「把按钮真的缩回 30×26」：那是把点击目标砍掉 3/4，
+        #    换一条更糟的缺陷。改成**放得下就一行、放不下就换行**。
+        # ⭐ 而这个语言 **同一个方法里 30 行开外就在用** —— `_init_ui` 的锚点条
+        #   就是 `make_flow_container`（UP-059）。本工程第 N 次撞见
+        #   「修法要用的东西，早就在这个文件里」。
+        # ⚠⚠ **改完复跑当场逮住了我这一版修法自己的缺陷**（外审紧凑档整页图
+        #   3/3 全票）：第一版是把 8 颗按钮和两个标签**平铺**进 FlowLayout，
+        #   于是换行点落在了「大幅」那一组的**中间** —— 前 3 颗留在上一行，
+        #   第 4 颗 `v` 掉到下一行最左边，和自己那组脱节。
+        #   判词逐字：「按钮组断裂错位」。
+        #   ⭐⭐ **我修掉了「放不下就溢出」，换来了「放不下就断在一组的中间」。**
+        #     换行本身没错，错在**可换行的单位选错了**：
+        #     ⭐ **能换行的单位应该是「一组」，不是「一颗」。**
+        # ⇒ 每一组（标签 + 它的 4 颗方向键）先包成一个不可拆的小控件，
+        #   再把这两个小控件丢进 FlowLayout。这样要么整组在上一行，要么整组下来。
+        from widgets.flow_layout import make_flow_container
+
+        adjust_wrap, adjust_layout = make_flow_container(h_spacing=15, v_spacing=6)
+
+        # ⚠ 这一句留着是为了让「意图」还写在调用点上：它**目前不生效**
+        # （原因见上），删掉会让下一个人以为这里从来没人管过尺寸。
         btn_size = QSize(30, 26)
-        for text, axis, amount in [("<", 'x', -1), (">", 'x', 1), ("^", 'y', -1), ("v", 'y', 1)]:
-            btn = QPushButton(text)
-            btn.setFixedSize(btn_size)
-            btn.setToolTip(f"{'向左' if text=='<' else '向右' if text=='>' else '向上' if text=='^' else '向下'}调整1像素")
-            btn.clicked.connect(lambda checked, a=axis, amt=amount: self._adjust_offset(a, amt))
-            self._arrow_buttons.append(btn)
-            keep_inline_style(btn)  # UP-019: 样式由 token 现算,免于统一清理
-            btn.setStyleSheet(self._get_arrow_button_style())
-            adjust_layout.addWidget(btn)
-        
-        adjust_layout.addSpacing(15)
-        adjust_layout.addWidget(QLabel("大幅:"))
-        
-        # 10像素调整
-        for text, axis, amount in [("<", 'x', -10), (">", 'x', 10), ("^", 'y', -10), ("v", 'y', 10)]:
-            btn = QPushButton(text)
-            btn.setFixedSize(btn_size)
-            btn.setToolTip(f"{'向左' if text=='<' else '向右' if text=='>' else '向上' if text=='^' else '向下'}调整10像素")
-            btn.clicked.connect(lambda checked, a=axis, amt=amount: self._adjust_offset(a, amt))
-            self._arrow_buttons.append(btn)
-            keep_inline_style(btn)  # UP-019: 样式由 token 现算,免于统一清理
-            btn.setStyleSheet(self._get_arrow_button_style())
-            adjust_layout.addWidget(btn)
-        
-        adjust_layout.addStretch()
-        offset_layout.addLayout(adjust_layout)
+
+        def _make_nudge_group(title, step):
+            group = QWidget()
+            group_layout = QHBoxLayout(group)
+            group_layout.setContentsMargins(0, 0, 0, 0)
+            group_layout.setSpacing(6)
+            group_layout.addWidget(QLabel(title))
+            for text, axis, amount in [("<", 'x', -step), (">", 'x', step),
+                                       ("^", 'y', -step), ("v", 'y', step)]:
+                btn = QPushButton(text)
+                btn.setFixedSize(btn_size)
+                arrow = {'<': '向左', '>': '向右', '^': '向上'}.get(text, '向下')
+                btn.setToolTip(f"{arrow}调整{step}像素")
+                btn.clicked.connect(
+                    lambda checked, a=axis, amt=amount: self._adjust_offset(a, amt))
+                self._arrow_buttons.append(btn)
+                keep_inline_style(btn)  # UP-019: 样式由 token 现算,免于统一清理
+                btn.setStyleSheet(self._get_arrow_button_style())
+                group_layout.addWidget(btn)
+            return group
+
+        adjust_layout.addWidget(_make_nudge_group("微调:", 1))
+        adjust_layout.addWidget(_make_nudge_group("大幅:", 10))
+
+        # FlowLayout 自己就是左对齐、放不下才换行，不需要 addStretch 顶右边。
+        offset_layout.addWidget(adjust_wrap)
         card_layout.addWidget(offset_card)
         self._refresh_basic_panel_summary()
     

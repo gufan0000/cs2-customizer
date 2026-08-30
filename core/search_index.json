@@ -1396,14 +1396,6 @@
   },
   {
    "page": "magnifier",
-   "text": "全不选武器",
-   "card": "",
-   "tab": "",
-   "kind": "button",
-   "src": "runtime"
-  },
-  {
-   "page": "magnifier",
    "text": "启用开镜灵敏度联动",
    "card": "",
    "tab": "",
@@ -1432,14 +1424,6 @@
    "card": "",
    "tab": "",
    "kind": "label",
-   "src": "runtime"
-  },
-  {
-   "page": "magnifier",
-   "text": "应用偏移",
-   "card": "",
-   "tab": "",
-   "kind": "button",
    "src": "runtime"
   },
   {
