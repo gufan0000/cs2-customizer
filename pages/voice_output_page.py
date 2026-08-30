@@ -378,7 +378,23 @@ class VoiceOutputPage(QWidget):
         # 这次重构不动一个像素，四种并存的字号是另一回事（UP-092）。
         header = PageHeader(
             "语音输出",
-            description="三件事：把文字转成语音说进游戏、用快捷键放音板、把击杀音效转给队友听。都要先装好虚拟声卡。",
+            # ⭐⭐⭐ RN-451（批 30）：这句话原来的第一件事是
+            #   「把文字转成语音说进游戏」—— 而**这一页没有任何文本输入控件，
+            #   全仓也没有任何 TTS 引擎**（AST 扫 pyttsx/gtts/edge_tts/sapi/… 共 0 处）。
+            #   用户会照着它去找一个不存在的输入框。
+            #
+            # ⭐⭐⭐ 它是怎么来的（`git log -S` 查出来的）：
+            #   e7f5a31（2026-08-16，标题是「修 7 条渲染缺陷 + **2 类文案缺陷**」）
+            #     - "这里统一管理**语音播放**、音板快捷键和音效转发，……"
+            #     + "三件事：把**文字转成语音**说进游戏、用快捷键放音板、……"
+            #   旧文案含糊，但**是真的**；新文案具体，而且**是假的**。
+            #   ⇒ **一次「把文案写具体」的改动，把真话改成了假话。**
+            #
+            # ⚠ 而这个说法不是凭空来的：帮助面板里那句「输入文字后按快捷键即可
+            #   将语音送进游戏语音」从 **2026-04-19 的 2.0 重构前基线**就在，
+            #   中间还活过了 RN-001 那一轮（删掉 237 行**从没被读到过的**帮助文案）。
+            #   ⭐⭐⭐ **一份没人读的文档不会被证伪，但它会被当成真源抄走。**
+            description="两件事：用快捷键把音频放进游戏语音、把击杀音效转给队友听。都要先装好虚拟声卡。",
             title_font_size=None,
             spacing=12,
         )
@@ -940,8 +956,54 @@ class VoiceOutputPage(QWidget):
                 self._load_slot_config(slot_id, slot_data)
 
         self._sync_slot_affordance(slot_id)
+        # ⭐⭐ RN-184（批 30）：**点「添加槽位」之后，新那一行落在视口外面。**
+        #   实测（改前）：加到第 6 个时新行在内容坐标 y=434，而槽位列表的可视范围
+        #   只到 314 ⇒ **露出 0%**，滚动条纹丝不动停在 0。
+        #   ⭐⭐ 而「添加槽位」正是底栏那颗紫色主按钮（批 29 实测：
+        #     「这一屏最扎眼的是什么」18/24 答它）——
+        #     **全页最响的那颗按钮，点下去在屏幕上不产生任何可见变化。**
+        #   ⭐ 这是批 28 那条的另一面：那次是「按钮在第一屏，它作用的对象在第三屏」，
+        #     这次是「按钮在第一屏，**它造出来的东西落在视口外**」。
+        # ⚠ `auto_init` 那一路是建页时铺 5 个初始槽位，不该跟着滚 ——
+        #   开页就停在列表底部，反而看不见第一个。
+        if not auto_init:
+            self._scroll_slot_into_view(slot_frame)
         self.logger.info(f"添加音板槽位 #{slot_id + 1}")
         self._sync_overview_status()
+
+    def _scroll_slot_into_view(self, frame):
+        """把刚加出来的那一行滚进槽位列表的视口。
+
+        ⚠⚠ **只 `QTimer.singleShot(0, ...)` 不够** —— 第一版就是那么写的，实测
+        滚是滚了（视口从 0~292 变成 136~428），但新行在 434~510，**还是差一截**：
+        定时器回调跑的时候**滚动条的量程还停在旧内容高上**（max 仍是 114），
+        `ensureWidgetVisible` 于是「已经滚到底了」。
+        ⭐ **「布局还没算完」不只是控件几何没算完，滚动条的量程也没算完** ——
+          而后者报不出任何错，它只是安静地滚不到位。
+        ⇒ 回调里先把内层控件的尺寸重算一遍，再滚。
+        """
+        from PySide6.QtCore import QTimer
+        from PySide6.QtWidgets import QScrollArea
+
+        scroll = None
+        node = frame.parentWidget()
+        while node is not None:
+            if isinstance(node, QScrollArea) and node.objectName() == "voiceSlotList":
+                scroll = node
+                break
+            node = node.parentWidget()
+        if scroll is None:
+            return
+
+        def _go():
+            inner = scroll.widget()
+            if inner is not None:
+                if inner.layout() is not None:
+                    inner.layout().activate()
+                inner.adjustSize()
+            scroll.ensureWidgetVisible(frame, 0, 8)
+
+        QTimer.singleShot(0, _go)
 
     def _sync_slot_affordance(self, slot_id):
         """一个槽位里「能不能试听」和「删掉会不会真的丢东西」由**同一个条件**说了算。

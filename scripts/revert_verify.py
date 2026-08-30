@@ -4731,6 +4731,60 @@ REVERTS = [
         "没东西可播，而「删除」不知道自己没东西可删**。判据钉的是「两颗按钮读同一个条件」，"
         "不是「删除按钮此刻是什么颜色」",
     ),
+    # ------------------------------------------------- 批 30（voice_output 第二刀）
+    Revert(
+        "RN", "页头又承诺「把文字转成语音」（一个不存在的功能）",
+        "pages/voice_output_page.py",
+        'description="两件事：用快捷键把音频放进游戏语音、把击杀音效转给队友听。都要先装好虚拟声卡。"',
+        'description="三件事：把文字转成语音说进游戏、用快捷键放音板、把击杀音效转给队友听。都要先装好虚拟声卡。"',
+        "tests/test_the_page_promises_a_feature_it_does_not_have.py"
+        "::test_no_page_asks_for_typing_it_cannot_accept",
+        "RN-451：这一页 **0 个文本输入控件**，全仓 **0 个 TTS 引擎**（AST 扫 "
+        "pyttsx/gtts/edge_tts/sapi/… 命中的只有两处做音量闪避和贴屏浏览器的 comtypes）。"
+        "⇒ 用户照着这句话去找一个不存在的输入框。"
+        "⭐⭐⭐ 它是 `e7f5a31`（2026-08-16，标题写着「修…2 类**文案缺陷**」）加上去的："
+        "旧文案「语音播放」含糊但**是真的**，新文案「把文字转成语音」具体而且**是假的** ⇒ "
+        "**一次「把文案写具体」的改动，把真话改成了假话**",
+    ),
+    Revert(
+        "RN", "帮助面板又说「输入文字后按快捷键」",
+        "ui_help_panel.py",
+        '"• <b>虚拟声卡设置</b> — 装好 VB-Cable，再选麦克风、调主音量和播放模式<br>"',
+        '"• <b>语音输出</b> — 输入文字后按快捷键即可将语音送进游戏语音<br>"',
+        "tests/test_the_page_promises_a_feature_it_does_not_have.py"
+        "::test_the_help_panel_does_not_promise_it_either",
+        "⭐⭐ **那句假话就是从这儿抄进页头的。** 它从 **2026-04-19 的 2.0 重构前基线**就在，"
+        "中间还活过了 RN-001 那一轮（删掉 237 行**从没被读到过的**帮助文案）—— "
+        "没被读，所以也没被证伪，然后在四个月后被当成真源抄走。"
+        "⭐⭐⭐ **一份没人读的文档不会被证伪，但它会被当成真源抄走。**",
+    ),
+    Revert(
+        "RN", "加完槽位又不滚到新行（点了等于没反应）",
+        "pages/voice_output_page.py",
+        "        if not auto_init:\n            self._scroll_slot_into_view(slot_frame)",
+        "        if False:\n            self._scroll_slot_into_view(slot_frame)",
+        "tests/test_the_page_promises_a_feature_it_does_not_have.py"
+        "::test_a_newly_added_slot_is_actually_on_screen",
+        "RN-184：实测（改前）加到第 6 个时新行在内容坐标 y=434，而槽位列表可视范围只到 314 "
+        "⇒ **露出 0%**，滚动条纹丝不动停在 0。"
+        "⭐⭐ 而「添加槽位」正是底栏那颗紫色主按钮（批 29：「这一屏最扎眼的是什么」18/24 答它）"
+        "⇒ **全页最响的那颗按钮，点下去在屏幕上不产生任何可见变化。**"
+        "⭐ 这是批 28 那条的另一面：那次是「按钮在第一屏，它作用的对象在第三屏」，"
+        "这次是「按钮在第一屏，**它造出来的东西落在视口外**」。"
+        "⚠⚠ 只 `QTimer.singleShot(0,…)` 不够 —— 回调跑时**滚动条量程还停在旧内容高上**，"
+        "`ensureWidgetVisible` 于是「已经滚到底了」（视口滚到 136~428，而新行在 434~510）。"
+        "⭐ **「布局还没算完」不只是控件几何没算完，滚动条的量程也没算完**，而后者一声不吭",
+    ),
+    Revert(
+        "RN", "建页铺初始槽位也跟着滚（一开页就停在列表底部）",
+        "pages/voice_output_page.py",
+        "        if not auto_init:\n            self._scroll_slot_into_view(slot_frame)",
+        "        if True:\n            self._scroll_slot_into_view(slot_frame)",
+        "tests/test_the_page_promises_a_feature_it_does_not_have.py"
+        "::test_opening_the_page_does_not_land_at_the_bottom_of_the_list",
+        "RN-184 反向守卫：⭐ 缺了它，上一条可以靠「每加一个都滚到底」全绿 —— "
+        "包括建页时那 5 个初始槽位，于是用户一打开这一页就停在列表末尾，第一个槽位反而看不见",
+    ),
     # ⛔⛔ 新断点一律加在**这一行之上**。
     #
     # 下面这个标记是开源同步那个语义补丁的**锚点**：开源版在这个位置追加它自己的
