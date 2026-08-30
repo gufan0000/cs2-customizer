@@ -198,12 +198,32 @@ class VoiceOutputPage(QWidget):
         runtime_text = self._current_runtime_text()
         current_tab = self._current_tab_text()
 
-        self.action_bar.configure_secondary("使用说明", self._show_instructions, visible=True)
+        # ⛔ RN-452（批 31 撤除）：这里原来是第二颗「使用说明」。
+        #
+        # ⭐⭐⭐ 这一对是本批最该记的一条：**外审在窗口图上 8 发 8/8 报的就是它**，
+        #   而它**一颗紫的都不是**（两颗都是 `secondaryButton`）。
+        #   RN-188 那次普查只数 `primaryButton`，于是它**结构上不可能被看见** ——
+        #   ⭐ **重复跟颜色无关，而那条判据的分母是颜色。**
+        # ⭐ 留卡内那颗：它就在「驱动与说明」卡里、紧挨着「安装驱动」，
+        #   而这份说明讲的正是 VB-Cable 怎么装。底栏这颗脱了语境，外审 8 发一律说
+        #   「无法判断底栏那颗是整页教程还是又打开驱动教程」。
+        self.action_bar.configure_secondary("", None, visible=False)
 
         if current_tab == "音效转发":
             forwarding_enabled = bool(getattr(config, "sfx_forwarding_enabled", False))
             sfx_enabled, sfx_total = self._enabled_sfx_option_count()
-            self.action_bar.configure_primary("导出配置", self._export_config, visible=True)
+            # ⛔ RN-452（批 31 撤除）：这里原来是「导出配置」，接的正是
+            #   「输入设备与配置」卡里那颗「导出」的同一个方法 `_export_config`。
+            #
+            # ⭐⭐⭐ 这一对是**第三种形态**，而它把两条判据的分工暴露出来了：
+            #   两颗按钮**文案不同**（「导出」/「导出配置」）⇒ 按文案找重复的
+            #   那条运行时判据看不见它；只有按「绑同一个方法」找的 AST 那条能。
+            #   而 `about` 那一对正好相反（文案相同、方法被复制成两份）——
+            #   ⭐ **两条判据各自都有对方看不见的那一半，所以两条都得跑。**
+            # ⭐ 留卡内那颗：导出和导入是一对，拆开就只剩半个来回；
+            #   而底栏这颗**只在「音效转发」这一个页签上才出现**，
+            #   同一张「输入设备与配置」卡却在两个页签下都露着 ⇒ 同屏两个入口。
+            self.action_bar.configure_primary("", None, visible=False)
             action_message = (
                 f"当前标签：{current_tab} · 转发{'已启用' if forwarding_enabled else '未启用'}"
                 f"{f' {sfx_enabled}/{sfx_total}' if sfx_total else ''}；最近操作：{runtime_text}"
@@ -520,10 +540,12 @@ class VoiceOutputPage(QWidget):
         self.install_button.clicked.connect(self._install_vb_cable)
         driver_actions.addWidget(self.install_button)
 
-        help_button = QPushButton("使用说明")
-        self._apply_compact_button(help_button, width=100)
-        help_button.clicked.connect(self._show_instructions)
-        driver_actions.addWidget(help_button)
+        # ⭐ RN-452（批 31）：这颗现在是「使用说明」在本页的**唯一**入口
+        #   （底栏那颗副本已撤），所以给它一个名字，让判据指得到它。
+        self.driver_help_button = QPushButton("使用说明")
+        self._apply_compact_button(self.driver_help_button, width=100)
+        self.driver_help_button.clicked.connect(self._show_instructions)
+        driver_actions.addWidget(self.driver_help_button)
         driver_actions.addStretch()
         driver_layout.addLayout(driver_actions)
         top_row.addWidget(driver_card, 4, Qt.AlignTop)
@@ -675,36 +697,41 @@ class VoiceOutputPage(QWidget):
         controls_grid = QGridLayout()
         controls_grid.setHorizontalSpacing(12)
         controls_grid.setVerticalSpacing(8)
-        controls_grid.setColumnStretch(6, 1)
+        controls_grid.setColumnStretch(5, 1)
 
-        add_slot_button = QPushButton("添加槽位")
-        self._apply_compact_button(add_slot_button, width=116, primary=True)
-        add_slot_button.clicked.connect(self._add_slot)
-        controls_grid.addWidget(add_slot_button, 0, 0)
-
+        # ⛔ RN-416（批 31 撤除）：这里原来有第二颗「添加槽位」。
+        #
+        # ⭐⭐ 它是这一族里**唯一一个「在像素上根本不是紫的」**：实测填充
+        #   `(110,112,129)` 一块中性灰，而同屏底栏那颗是 `(130,64,243)` ——
+        #   因为它住在一张 `masterOff="true"` 的卡里，被批 16~20 那条降权规则压掉了，
+        #   而底栏不在降权规则的分母里。**同一个动作、同一个 objectName、同一屏，
+        #   一颗灰一颗紫。**
+        # ⭐ 再加一层：默认状态下它在折线之下，**露出 0%**。
+        #   一颗看不见、且看见了也不像能点的按钮，不能当这个动作的入口。
+        # ⇒ 添加槽位归底栏那颗（批 30 已给它接上「点完把新那一行滚进视口」）。
         stop_label = QLabel("中断键:")
         self._apply_compact_label(stop_label, width=56)
-        controls_grid.addWidget(stop_label, 0, 1)
+        controls_grid.addWidget(stop_label, 0, 0)
 
         self.stop_key_button = QPushButton(config.voice_output_stop_key or "未设置")
         self._apply_compact_button(self.stop_key_button, width=100)
         self.stop_key_button.clicked.connect(self._set_stop_key)
-        controls_grid.addWidget(self.stop_key_button, 0, 2)
+        controls_grid.addWidget(self.stop_key_button, 0, 1)
 
         ptt_label = QLabel("开麦键:")
         self._apply_compact_label(ptt_label, width=56)
-        controls_grid.addWidget(ptt_label, 0, 3)
+        controls_grid.addWidget(ptt_label, 0, 2)
 
         self.ptt_key_button = QPushButton(self.ptt_key)
         self._apply_compact_button(self.ptt_key_button, width=100)
         self.ptt_key_button.clicked.connect(self._set_ptt_key)
-        controls_grid.addWidget(self.ptt_key_button, 0, 4)
+        controls_grid.addWidget(self.ptt_key_button, 0, 3)
 
         self.ptt_enabled_check = QCheckBox("启用PTT")
         self.ptt_enabled_check.setFont(QFont("Microsoft YaHei", 11))
         self.ptt_enabled_check.setChecked(self.ptt_enabled)
         self.ptt_enabled_check.stateChanged.connect(self._update_ptt_enabled)
-        controls_grid.addWidget(self.ptt_enabled_check, 0, 5)
+        controls_grid.addWidget(self.ptt_enabled_check, 0, 4)
 
         tools_layout.addLayout(controls_grid)
         layout.addWidget(tools_frame)

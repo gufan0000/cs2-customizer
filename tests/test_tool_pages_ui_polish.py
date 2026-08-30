@@ -2115,7 +2115,11 @@ def test_voice_output_page_status_card_tracks_runtime_and_forwarding(qapp, monke
     #   「就绪」是建出来就写死的初始占位符，而同一屏上徽章写着「驱动 · 待安装」；
     #   「最近状态」这个词又同时能读成「现在是否就绪」。外审 S4 13 处提及。
     assert "最近操作：还没有操作" in page.summary_label.toolTip()
-    assert page.action_bar.secondary_btn.isHidden() is False
+    # ⭐ RN-452（批 31）：底栏次位原来是「使用说明」，而「驱动与说明」卡里
+    #   紧挨着「安装驱动」还有一颗一模一样的 —— 外审窗口图 8 发 8/8 报的就是这一对，
+    #   而两颗都是 `secondaryButton`（**一颗紫的都不是**）。说明归那张卡，底栏空着。
+    assert page.action_bar.secondary_btn.isHidden() is True
+    assert page.driver_help_button.text() == "使用说明"
     assert page.action_bar.primary_btn.isHidden() is False
     assert page.action_bar.primary_btn.text() == "添加槽位"
     assert "当前标签：语音设置" in page.action_bar.message_label.text()
@@ -2123,7 +2127,10 @@ def test_voice_output_page_status_card_tracks_runtime_and_forwarding(qapp, monke
 
     page.tab_widget.setCurrentIndex(1)
     qapp.processEvents()
-    assert page.action_bar.primary_btn.text() == "导出配置"
+    # ⭐ RN-452：底栏原来是「导出配置」，接的是「输入设备与配置」卡里那颗「导出」
+    #   的同一个方法 —— **文案不同、动作相同**，所以按文案找重复的判据看不见它。
+    assert page.action_bar.primary_btn.isHidden() is True
+    assert page.export_button.text() == "导出"
     assert "当前标签：音效转发" in page.action_bar.message_label.text()
     assert "转发已启用 3/8" in page.action_bar.message_label.text()
 

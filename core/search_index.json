@@ -1220,6 +1220,14 @@
   },
   {
    "page": "viewmodel",
+   "text": "保存到CFG",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "viewmodel",
    "text": "启用自动切换",
    "card": "",
    "tab": "",
@@ -1280,14 +1288,6 @@
    "card": "CFG 同步",
    "tab": "",
    "kind": "card",
-   "src": "runtime"
-  },
-  {
-   "page": "viewmodel",
-   "text": "保存到CFG",
-   "card": "CFG 同步",
-   "tab": "",
-   "kind": "button",
    "src": "runtime"
   },
   {
@@ -2814,7 +2814,7 @@
    "page": "voice_output",
    "text": "添加槽位",
    "card": "",
-   "tab": "语音设置",
+   "tab": "",
    "kind": "button",
    "src": "runtime"
   },
@@ -4068,6 +4068,22 @@
   },
   {
    "page": "about",
+   "text": "打开项目仓库",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "about",
+   "text": "查看发布记录",
+   "card": "",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "about",
    "text": "CS2 Customizer",
    "card": "产品信息",
    "tab": "",
@@ -4108,14 +4124,6 @@
   },
   {
    "page": "about",
-   "text": "打开项目仓库",
-   "card": "反馈与求助",
-   "tab": "",
-   "kind": "button",
-   "src": "runtime"
-  },
-  {
-   "page": "about",
    "text": "提交 Issue",
    "card": "反馈与求助",
    "tab": "",
@@ -4128,14 +4136,6 @@
    "card": "开源与发布",
    "tab": "",
    "kind": "card",
-   "src": "runtime"
-  },
-  {
-   "page": "about",
-   "text": "查看发布记录",
-   "card": "开源与发布",
-   "tab": "",
-   "kind": "button",
    "src": "runtime"
   }
  ]

@@ -6,8 +6,7 @@
 """
 
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QScrollArea, QFrame, QLineEdit, QSlider, QCheckBox, QGridLayout, QMessageBox
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea, QFrame, QLineEdit, QSlider, QCheckBox, QGridLayout, QMessageBox
 )
 from PySide6.QtCore import Qt, QThread, Signal
 
@@ -16,7 +15,6 @@ from core.utils.logger import get_logger
 from pages.audio_status_badge import create_badge_label, render_badges
 from theme_manager import get_theme_manager
 from cfg_utils import setup_autoexec
-from page_theme_helper import style_as_primary_button
 from ui_help_panel import install_help_panel, PAGE_HELP_TEXTS
 from widgets.page_header import PageHeader
 from widgets.page_action_bar import PageActionBar
@@ -96,6 +94,9 @@ class ViewmodelPage(QWidget):
 
         # 加载中标志（防止 load_settings 触发未保存提示）
         self._loading = True
+
+        # CFG 脏标记的唯一真源（RN-452，见 `_cfg_is_dirty` 的注释）
+        self._cfg_dirty = False
 
         # 初始化UI
         self._init_ui()
@@ -311,20 +312,22 @@ class ViewmodelPage(QWidget):
         self.cfg_summary_label.setWordWrap(True)
         cfg_layout.addWidget(self.cfg_summary_label)
 
-        # ⚠ RN-078：这颗和底栏那颗是**同一个动作**，以前一个叫「保存设置到CFG」、
-        # 一个叫「保存到CFG」。两个名字会让人以为是两件事（外审报「同一操作出现两次」）。
-        # 名字统一，位置先都留着 —— 底栏那颗在滚到页面下方时是唯一还看得见的。
-        save_btn = QPushButton("保存到CFG")
-        # UP-070: 此前这颗按钮的"主操作"外观是 ui_style_applier 按文案里有"保存"
-        # 二字猜出来的——全站唯一还在吃那条猜测的按钮。猜测逻辑已删，这里显式声明。
-        # UP-080: 用 style_as_primary_button 而不是裸 setObjectName ——
-        # 后者会让 `_apply_widget_style` 提前 return，把手型光标一起丢掉
-        # （我最初正是这么写的，"观感变化为零"的说法因此是错的）。
-        style_as_primary_button(save_btn)
-        save_btn.setMinimumHeight(36)
-        save_btn.clicked.connect(self._save_viewmodel_cfg)
-        cfg_layout.addWidget(save_btn)
-
+        # ⛔ RN-404（批 31 撤除）：这里原来有第二颗「保存到CFG」。
+        #
+        # RN-078 当初把两个名字统一成一个，解决了「以为是两件事」，
+        # **却造出了两颗一模一样的紫按钮**；当时留着它的理由写在这行注释里 ——
+        # 「底栏那颗在滚到页面下方时是唯一还看得见的」。⭐ 那句话是真的，
+        # 而它恰恰说明**该留的是底栏那颗**：实测滚到底时卡内这颗露出 0%、底栏那颗 100%。
+        #
+        # ⭐⭐ 外审行为题 4 发 4/4 答「我会点右下角那颗」，理由一律是
+        #   「右下角常驻按钮通常代表整页生效」；而 4/4 同时答「担心点错」，
+        #   逐字写「两个名字极度相似的 CFG 写入按钮」。
+        # ⚠ 还有一层只在**窗口图**上才看得见：这颗按钮正好压在滚动区的下边缘，
+        #   文字被切掉一半 ⇒ 3/4 发把它读成了另一个按钮名「写入到 CFG」。
+        #   ⭐ **两颗同名按钮里有一颗被切掉了字，于是它看起来不再同名 ——
+        #     而这让情况更糟，不是更好**：读者以为那是另一个动作。
+        #
+        # ⇒ 保存这个动作归底栏（`_sync_action_bar` 里那一颗），本卡只说状态。
         self._cfg_status_label = QLabel("")
         self._cfg_status_label.setObjectName("cfgStatusLabel")
         self._cfg_status_label.setWordWrap(True)
@@ -399,8 +402,7 @@ class ViewmodelPage(QWidget):
         if not hasattr(self, "action_bar"):
             return
 
-        cfg_text = self._cfg_status_label.text().strip() if hasattr(self, "_cfg_status_label") else ""
-        is_dirty = ("未保存" in cfg_text) or ("已修改" in cfg_text)
+        is_dirty = self._cfg_is_dirty()
         cycle_key = self._compact_badge_text(
             self.cycle_key_input.text() if hasattr(self, "cycle_key_input") else "",
             "CAPSLOCK",
@@ -428,8 +430,7 @@ class ViewmodelPage(QWidget):
         self.action_bar.set_message(action_message)
 
     def _sync_panel_summaries(self):
-        cfg_text = self._cfg_status_label.text().strip() if hasattr(self, "_cfg_status_label") else ""
-        is_dirty = ("未保存" in cfg_text) or ("已修改" in cfg_text)
+        is_dirty = self._cfg_is_dirty()
         cycle_key = (
             self.cycle_key_input.text().strip()
             if hasattr(self, "cycle_key_input") and self.cycle_key_input.text().strip()
@@ -486,8 +487,7 @@ class ViewmodelPage(QWidget):
             self.presets_summary_label.setToolTip(presets_text)
 
     def _sync_status_strip(self):
-        cfg_text = self._cfg_status_label.text().strip() if hasattr(self, "_cfg_status_label") else ""
-        is_dirty = ("未保存" in cfg_text) or ("已修改" in cfg_text)
+        is_dirty = self._cfg_is_dirty()
         cycle_key = self._compact_badge_text(
             self.cycle_key_input.text() if hasattr(self, "cycle_key_input") else "",
             "CAPSLOCK",
@@ -654,19 +654,60 @@ class ViewmodelPage(QWidget):
 
     # ========== CFG 同步状态 ==========
 
+    def _cfg_is_dirty(self):
+        """这一页的改动写进 CFG 了没有 —— **唯一真源**。
+
+        ⚠⚠ **RN-452（批 31）**：这三处调用点原来各自写着
+
+            cfg_text = self._cfg_status_label.text().strip()
+            is_dirty = ("未保存" in cfg_text) or ("已修改" in cfg_text)
+
+        —— **整页的状态是靠对一句屏幕上的文案做子串匹配算出来的**：
+        底栏那句回执、三张卡的摘要、五颗状态芯片，全部读它。
+
+        ⭐⭐⭐ 于是本批只是把那句话从「⚠ 设置已修改，未保存到CFG」改成
+        「⚠ 设置改过了，还没写进 CFG —— 点右下角那颗「保存到CFG」。」，
+        **整页的脏/净判断就当场反了** —— 新句子里既没有「未保存」也没有「已修改」。
+        ⭐ **一句文案同时是这一页的状态真源时，任何一次文字润色都是一次行为变更。**
+        （逮住它的是既有判据 `test_viewmodel_page_status_strip_tracks_dirty_state`，
+        不是我 —— 它断言的是芯片文案，而芯片正好在这条链的下游。）
+
+        ⇒ 真源改成一个布尔，文案从它渲染出来，方向是单向的。
+        """
+        return bool(getattr(self, "_cfg_dirty", False))
+
     def _mark_unsaved(self):
         """标记设置已修改但未保存到 CFG"""
         if getattr(self, '_loading', True):
             return
+        self._cfg_dirty = True
         if hasattr(self, '_cfg_status_label'):
-            self._cfg_status_label.setText("⚠ 设置已修改，未保存到CFG")
+            self._cfg_status_label.setText(
+                "⚠ 设置改过了，还没写进 CFG —— 点右下角那颗「保存到CFG」。")
             self._cfg_status_label.setStyleSheet("color: #e6a23c; font-size: 12px;")
         self._sync_status_strip()
 
     def _mark_saved(self):
-        """标记设置已同步到 CFG"""
+        """标记设置已同步到 CFG。
+
+        ⚠⚠ **RN-452（批 31 改完复跑逮到的，3/3）**：这两句原来是
+        「⚠ 设置已修改，未保存到CFG」/「✓ 已同步到CFG」——
+        两句都是**短动词短语 + 一个符号**，而它们所在的位置，
+        正是本批刚撤掉的那颗「保存到CFG」按钮留下的空位（卡片最下面一行）。
+        改前 4 发**没有一发**提过这行字；改后同题同图 **3/3** 说
+        「分不清左边那个是可点击的同步按钮还是状态展示」，
+        一发逐字写「左侧的更像状态展示或**已置灰的按钮**」。
+
+        ⭐⭐⭐ **我撤掉了一颗按钮，它留下的那行字接管了那颗按钮的位置和读法** ——
+        一个控件怎么被读，由它的邻居决定；撤走邻居，它就换了一种读法。
+        （批 26「不可点的东西不许长按钮的形状」的又一个实例，而这次是我自己造的。）
+
+        ⇒ 改成**整句**，并且在未保存那一支里**指出动作去哪儿了** ——
+        撤掉入口的那张卡，有义务说清楚入口搬到了哪里（同批 24 RN-131）。
+        """
+        self._cfg_dirty = False
         if hasattr(self, '_cfg_status_label'):
-            self._cfg_status_label.setText("✓ 已同步到CFG")
+            self._cfg_status_label.setText("这一页的设置已经写进 CFG 了。")
             self._cfg_status_label.setStyleSheet("color: #67c23a; font-size: 12px;")
         self._sync_status_strip()
 

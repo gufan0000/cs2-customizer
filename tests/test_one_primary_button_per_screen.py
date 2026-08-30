@@ -75,14 +75,24 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
 
 PRIMARY_OBJECT_NAME = "primaryButton"
 
-#: 2026-08-26 实测存量债：页 → (文案, 颗数)。⚠ **数等于实测值**，不是上限。
+#: 存量债：页 → (文案, 颗数)。⚠ **数等于实测值**，不是上限。
 #: 每一条都必须指得出它归哪个登记册条目管 —— 一条没有主人的债会永远躺着。
-KNOWN_DUPLICATE_PRIMARIES = {
-    "viewmodel":    ("保存到CFG", 2),        # RN-404
-    "voice_output": ("添加槽位", 2),         # RN-416
-    "account":      ("登录账号", 2),         # RN-416
-    "about":        ("查看更新日志", 3),     # RN-416（另有一颗「去 GitHub 点 Star」）
-}
+#:
+#: ⭐⭐ **2026-08-30 批 31：这张表清空了**（RN-404 / RN-416 一并结清）。
+#: 原来那四行是 viewmodel「保存到CFG」×2 / voice_output「添加槽位」×2 /
+#: account「登录账号」×2 / about「查看更新日志」×3。
+#:
+#: ⚠⚠ 清空它的时候，是**第三向那条判据**（`..._does_not_become_a_museum`）
+#: 把我拦下来的 —— 改完产品之后它当场红了四行「债表写 N 颗，实测只剩 1 颗」。
+#: ⭐ 一张只判「有没有变坏」的表，在缺陷修好之后会静静地留在那里，
+#:   而它留下的样子和「还没修」一模一样。
+#:
+#: ⛔ 但**清空不等于这件事结束了**：RN-188 那次普查的分母是「紫色的」，
+#: 而批 31 换成「同一个动作有没有第二个入口」之后量到的是 **14 页 36 处**。
+#: 剩下那 10 页记在 `tests/test_one_action_one_entrance.py` 的
+#: `BAR_CARD_DUPLICATE_ACTIONS` 里。⭐ **这张表空了，只说明「按颜色数」这个问法
+#: 已经问不出东西了。**
+KNOWN_DUPLICATE_PRIMARIES: dict[str, tuple[str, int]] = {}
 
 #: 一颗主按钮都没有的页。**这也是信息**：那几页没有明确的主动作。
 #: ⚠ 不判它对错 —— 「该不该有主按钮」是产品裁定，不是排版规则。
@@ -98,6 +108,46 @@ KNOWN_DUPLICATE_PRIMARIES = {
 #:     这一页的改动全是即时保存（偏移的 X/Y 有它自己那张卡上的「应用」），
 #:     **没有该由底栏承担的动作** ⇒ 主按钮位空着（同 crosshair 批 10）。
 KNOWN_NO_PRIMARY = {"fun_afterlife", "audio_task_panel", "magnifier"}
+
+#: 产品注册的 28 个页面 id → 它的实现文件名（2026-08-30 批 31 加）。
+#:
+#: ⭐⭐⭐ **它必须是手写的**：这份名单的用途是发现「某一页被从导航注册表里拿掉了」，
+#: 而拿产品自己的注册表当分母，那件事永远发现不了 ——
+#: **一条判据要能发现「东西被从名单里拿掉了」，它的分母就不能来自那份名单。**
+#:
+#: ⚠ `basic` 内联在 `gui_widget.py` 里，没有独立实现文件（值写 `""`）。
+#: ⚠ `fun_afterlife` 的文件叫 `fun_page.py` —— ⭐ **文件名不是 id，哪怕 27/28 次都是**
+#:   （第一版靠 glob 推 id，首跑当场红在这一格上）。
+EXPECTED_PAGE_IDS = {
+    "about": "about_page.py",
+    "account": "account_page.py",
+    "advanced": "advanced_page.py",
+    "audio_health": "audio_health_page.py",
+    "audio_import_wizard": "audio_import_wizard_page.py",
+    "audio_replay": "audio_replay_page.py",
+    "audio_task_panel": "audio_task_panel_page.py",
+    "basic": "",
+    "config_snapshot": "config_snapshot_page.py",
+    "crosshair": "crosshair_page.py",
+    "death_sound": "death_sound_page.py",
+    "flash": "flash_page.py",
+    "fun_afterlife": "fun_page.py",
+    "gun_sound": "gun_sound_page.py",
+    "hud_color": "hud_color_page.py",
+    "kill_icon": "kill_icon_page.py",
+    "kill_sound": "kill_sound_page.py",
+    "kill_voice": "kill_voice_page.py",
+    "magnifier": "magnifier_page.py",
+    "music": "music_page.py",
+    "preset_center": "preset_center_page.py",
+    "reload_sound": "reload_sound_page.py",
+    "screen_effects": "screen_effects_page.py",
+    "special_sound": "special_sound_page.py",
+    "switch_weapon": "switch_weapon_page.py",
+    "utility": "utility_page.py",
+    "viewmodel": "viewmodel_page.py",
+    "voice_output": "voice_output_page.py",
+}
 
 #: ⚠⚠ **数不可复现的页，不许进上面两张表。**
 #:
@@ -187,6 +237,60 @@ def test_the_scan_actually_sees_the_pages(sitewide_primaries):
     assert total >= 20, (
         f"全站只找到 {total} 颗 `{PRIMARY_OBJECT_NAME}` —— "
         "objectName 是不是改名了？那样这条判据会永远绿。")
+
+
+def test_every_page_whose_file_exists_was_actually_scanned(sitewide_primaries):
+    """⚠⚠ **2026-08-30 批 31 补的，而补它的原因是一次假绿。**
+
+    这条断言原来住在 `test_the_debt_table_does_not_become_a_museum` 里，
+    分母是 `KNOWN_DUPLICATE_PRIMARIES`：
+
+        missing = [p for p in sorted(KNOWN_DUPLICATE_PRIMARIES) if p not in sitewide_primaries]
+        for page_id in missing:
+            assert not (repo / "pages" / f"{page_id}_page.py").exists(), ...
+
+    批 31 把那张表**清空**了（缺陷修完了）⇒ `missing` 恒为空 ⇒
+    整段循环一次都不跑，而守着它的那条回退断点（把 `viewmodel` 的导航项注释掉）
+    **当场被判假绿**。
+
+    ⭐⭐⭐ **这一批里，「判据的对象被修没了」出现了三种不同的失败方式**：
+      ① **恒真** —— `test_the_two_save_buttons_have_the_same_name`
+         （集合里只剩一个元素），安静地绿着；
+      ② **红着指一件不存在的事** —— 降权那条阳性对照的样本没了，
+         `findChildren` 抓到底栏那颗，而底栏根本不在降权规则的分母里；
+      ③ **空转** —— 就是这一条，循环的分母空了。
+    ⭐ 只有 ② 会来找你。
+
+    ⇒ 分母换成 `EXPECTED_PAGE_IDS`（**声明式**）。
+
+    ⚠⚠ 这里有一个非做不可的取舍，值得写下来：
+    ⭐⭐⭐ **一条判据要能发现「东西被从名单里拿掉了」，它的分母就不能来自那份名单。**
+    产品自己的导航注册表 `win._page_names` 是最省事的分母，而**断点破坏的正是它**
+    —— 拿它当分母，这条断言永远发现不了导航项被注释掉。
+    ⇒ 只能手写一份，代价是它得有人维护；换来的是它**独立于被测对象**。
+
+    ⚠ 第一版想省掉手写：拿 `pages/*_page.py` глоб 出来、去掉 `_page` 后缀当 page_id。
+    首跑当场红在 `fun` 上 —— 实现文件叫 `fun_page.py`，而注册的 id 是 `fun_afterlife`。
+    ⭐ **文件名不是 id，哪怕 27/28 次都是。**
+    """
+    from pathlib import Path
+    import _audit_neutralize as neutral
+    repo = Path(__file__).resolve().parent.parent
+    unscanned, absent = [], []
+    for page_id, impl_name in sorted(EXPECTED_PAGE_IDS.items()):
+        if page_id in sitewide_primaries or page_id in neutral.unsafe_pages():
+            continue
+        if not (repo / "pages" / impl_name).exists():
+            absent.append(page_id)      # 发行版子集里整页不存在（cs2-customizer 的 account）
+            continue
+        unscanned.append(page_id)
+    assert not unscanned, (
+        f"这些页的实现文件还在，却一页都没被扫到：{unscanned}\n"
+        "⇒ 那不是发行版缺项，是**一整页被摘出了导航**（`_page_names` 里没有它）。\n"
+        "⚠ 别把它当成扫描器的毛病 —— 用户也一样点不到那一页。")
+    assert len(absent) < len(EXPECTED_PAGE_IDS) // 2, (
+        f"{len(absent)}/{len(EXPECTED_PAGE_IDS)} 页的实现文件都不在 —— "
+        "这不像发行版子集，像是这份名单已经和产品对不上了。")
 
 
 def test_no_page_grows_a_new_pair_of_identical_primary_buttons(sitewide_primaries):

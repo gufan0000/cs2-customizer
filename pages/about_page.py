@@ -17,7 +17,7 @@ from config import VERSION
 from core.utils.logger import get_logger
 from pages.audio_status_badge import create_badge_label, render_badges
 from theme_manager import get_color, get_theme_manager
-from page_theme_helper import style_as_primary_button, style_as_secondary_button
+from page_theme_helper import style_as_secondary_button
 from widgets.page_header import PageHeader
 from widgets.page_action_bar import PageActionBar
 from widgets.settings_card import SettingsCard
@@ -237,19 +237,15 @@ class AboutPage(QWidget):
         repo_label.setObjectName("hintLabel")
         repo_label.setWordWrap(True)
 
+        # ⛔ RN-416（批 31 撤除）：这里原来是第二颗「查看发布记录」（紫色，160px 宽）。
+        #
+        # ⭐ 实测它在默认状态下**露出 0%** —— 页比可视区高得多，而底栏那颗常驻可见。
+        #   ⇒ 一颗看不见的按钮不能当这个动作的入口。
+        # ⭐ 另外这张卡上真正该被强调的是仓库地址本身，而紫色给了「查看发布记录」。
         button_layout = QHBoxLayout()
         button_layout.setSpacing(8)
         button_layout.addWidget(repo_label, 1)
-
-        releases_button = QPushButton("查看发布记录")
-        releases_button.setFixedHeight(40)
-        releases_button.setMinimumWidth(160)
-        releases_button.setFont(QFont("Microsoft YaHei", 13))
-        style_as_primary_button(releases_button)
-        releases_button.clicked.connect(self._open_releases)
         button_layout.addStretch()
-        button_layout.addWidget(releases_button)
-
         release_layout.addLayout(button_layout)
         layout.addWidget(release_card)
 
@@ -262,12 +258,9 @@ class AboutPage(QWidget):
         fb_row = QHBoxLayout()
         fb_row.setSpacing(8)
 
-        self.open_repo_button = QPushButton("打开项目仓库")
-        style_as_secondary_button(self.open_repo_button)
-        self.open_repo_button.setFixedHeight(36)
-        self.open_repo_button.clicked.connect(self._open_repository)
-        fb_row.addWidget(self.open_repo_button)
-
+        # ⛔ RN-452（批 31 撤除）：这里原来是第二颗「打开项目仓库」，
+        #   和底栏次位那颗接的是同一个 `_open_repository`，而它同样在折线之下。
+        #   ⭐ **同一个动作，一页只许有一个入口。**
         self.open_issues_button = QPushButton("提交 Issue")
         style_as_secondary_button(self.open_issues_button)
         self.open_issues_button.setFixedHeight(36)

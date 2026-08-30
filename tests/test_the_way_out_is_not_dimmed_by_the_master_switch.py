@@ -307,7 +307,22 @@ def test_the_buttons_the_switch_really_governs_still_dim(main_window, qapp):
     缺了这一条，上一条判据可以靠「把降权整层拆掉」全绿，
     而那正是批 16~20 五批要解决的问题。
     """
-    cases = [("crosshair", "绘制准心"), ("voice_output", "添加槽位")]
+    # ⚠⚠ **2026-08-30 批 31（RN-452）：这份样本被产品改动掏空了一半。**
+    #
+    # 原来是 `[("crosshair", "绘制准心"), ("voice_output", "添加槽位")]`。
+    # 批 31 撤掉了 `voice_output` 卡内那颗「添加槽位」（它和底栏那颗是同一个动作），
+    # 于是下面这段 `findChildren` 抓到的变成了**底栏**那颗 —— 而底栏根本不在
+    # 降权规则的分母里（那条选择器是 `QFrame#card[masterOff="true"] ...`）。
+    # ⇒ 这条阳性对照当场变红，报的却是一件**不存在**的缺陷。
+    #
+    # ⭐⭐⭐ **一条判据的样本被删掉，有两种失败方式**：
+    #   ① 它变成一条**恒真**的断言，安安静静地绿着（同批 31 的
+    #      `test_the_two_save_buttons_have_the_same_name`）；
+    #   ② 它**红**，而且指着一个没发生的问题。
+    # ⭐ 后者更吵，但**前者更危险** —— 只有后者会来找你。
+    #
+    # ⇒ 样本收窄到「卡内那一档」（本来就是这条规则的分母），并显式说明。
+    cases = [("crosshair", "绘制准心")]
     monkeypatch = pytest.MonkeyPatch()
     seen, dead = 0, []
     try:
@@ -322,9 +337,22 @@ def test_the_buttons_the_switch_really_governs_still_dim(main_window, qapp):
             row = getattr(page, "master_switch_row", None)
             if page is None or row is None:
                 continue
+            bar = getattr(page, "action_bar", None)
+
+            def _in_bar(w, _page=page, _bar=bar):
+                node = w
+                while node is not None and node is not _page:
+                    if _bar is not None and node is _bar:
+                        return True
+                    node = node.parentWidget()
+                return False
+
+            # ⭐ 只认**卡内**那一档：降权那条选择器写的就是
+            #   `QFrame#card[masterOff="true"] QPushButton#primaryButton`，
+            #   底栏不在它的分母里。拿底栏那颗当对照，是在量另一件事。
             hits = [b for b in page.findChildren(QPushButton)
                     if b.isVisibleTo(page) and b.text().strip() == label
-                    and b.objectName() == "primaryButton"]
+                    and b.objectName() == "primaryButton" and not _in_bar(b)]
             if not hits:
                 continue
             btn = hits[0]

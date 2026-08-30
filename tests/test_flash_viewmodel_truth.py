@@ -455,22 +455,36 @@ def test_viewmodel_tab_order_follows_the_screen(qapp):
         "键盘用户会在两列之间来回跳。")
 
 
-def test_the_two_save_buttons_have_the_same_name(qapp):
-    """RN-078：同一个动作在一屏里出现两次时，至少不许有两个名字。
+def test_there_is_exactly_one_save_to_cfg_button(qapp):
+    """RN-078 → RN-404：这条判据在批 31 换了问题，因为**它的问题被答完了**。
 
-    卡内那颗曾叫「保存设置到CFG」、底栏那颗叫「保存到CFG」——
-    两个名字会让人以为是两件事（外审报「同一操作出现两次」）。
+    ⚠⚠ 原来问的是「这两颗保存按钮是不是同一个名字」：
+
+    > 卡内那颗曾叫「保存设置到CFG」、底栏那颗叫「保存到CFG」——
+    > 两个名字会让人以为是两件事
+
+    RN-078 把名字统一了，于是这条判据从那天起就一直绿；
+    而批 31 把卡内那颗**撤掉**之后，它变成了**结构上不可能变红**的一条：
+    集合里只剩一个元素，`len(saves) == 1` 恒真。
+    ⭐⭐ **一条判据的对象被修没了，它不会报错，它会变成一条永远通过的断言。**
+    ⭐ RN-078 的裁定当年解决了「两个名字」，却造出了「两颗一模一样的紫按钮」（RN-404）
+      —— 而**这条判据正好卡在那两件事中间**：它盯着名字，看不见颗数。
+
+    ⇒ 现在问的是颗数：**整页只许有一颗「保存到CFG」，且它在底栏。**
     """
     from PySide6.QtWidgets import QPushButton
 
     page = _page("viewmodel")
     page._sync_action_bar()
-    bar_label = page.action_bar.primary_btn.text()
-    saves = {b.text() for b in page.findChildren(QPushButton)
-             if "保存" in b.text() and "CFG" in b.text().upper()}
-    saves.add(bar_label)
+    saves = [b for b in page.findChildren(QPushButton)
+             if b.isVisibleTo(page) and "保存" in b.text() and "CFG" in b.text().upper()]
     assert len(saves) == 1, (
-        f"同一个「写入 CFG」动作有 {len(saves)} 个名字：{sorted(saves)}（RN-078）。")
+        f"「写入 CFG」这个动作有 {len(saves)} 个入口：{[b.text() for b in saves]}"
+        "（RN-404：卡内那颗已在批 31 撤除，动作归底栏）。")
+    assert saves[0] is page.action_bar.primary_btn, (
+        "唯一那颗「保存到CFG」不在底栏 —— 它作用于整页设置，"
+        "而底栏是唯一在任何滚动位置都看得见的地方"
+        "（实测：滚到底时卡内那一带露出 0%、底栏 100%）。")
 
 
 @pytest.mark.parametrize("page_id", ["flash", "viewmodel"])

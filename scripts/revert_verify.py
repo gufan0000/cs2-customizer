@@ -2501,12 +2501,21 @@ REVERTS = [
         "外审 3/3 判「高」：「作为『局内视角设置』页却完全找不到 FOV/XYZ 与预设编辑入口」",
     ),
     Revert(
-        "RN", "同一个保存动作又有两个名字",
+        "RN", "「保存到CFG」又长出第二个入口",
         "pages/viewmodel_page.py",
-        '        save_btn = QPushButton("保存到CFG")',
-        '        save_btn = QPushButton("保存设置到CFG")',
-        "tests/test_flash_viewmodel_truth.py::test_the_two_save_buttons_have_the_same_name",
-        "RN-078：卡内和底栏是**同一个动作**，两个名字会让人以为是两件事",
+        '        self._cfg_status_label = QLabel("")\n'
+        '        self._cfg_status_label.setObjectName("cfgStatusLabel")',
+        '        from PySide6.QtWidgets import QPushButton as _QPB2\n'
+        '        _dup2 = _QPB2("保存到CFG")\n'
+        '        cfg_layout.addWidget(_dup2)\n'
+        '        self._cfg_status_label = QLabel("")\n'
+        '        self._cfg_status_label.setObjectName("cfgStatusLabel")',
+        "tests/test_flash_viewmodel_truth.py::test_there_is_exactly_one_save_to_cfg_button",
+        "RN-078 → RN-404。⚠⚠ 这个断点在批 31 **换了模拟的缺陷**，因为原来那条"
+        "（把卡内那颗改名成「保存设置到CFG」）的锚点随卡内那颗按钮一起没了。"
+        "⭐⭐ 而更该记的是：它守着的那条判据当时**已经变成一条恒真的断言** —— "
+        "集合里只剩一个元素，`len(saves) == 1` 永远成立。"
+        "**一条判据的对象被修没了，它不会报错，它会变成一条永远通过的断言**",
     ),
     Revert(
         "RN", "又用「左侧」给导航指路",
@@ -3707,12 +3716,12 @@ REVERTS = [
     ),
     Revert(
         "RN", "债表变成博物馆（修好了不回来删）",
-        "tests/test_one_primary_button_per_screen.py",
-        '    "account":      ("登录账号", 2),         # RN-416',
-        '    "account":      ("登录账号", 9),         # RN-416',
-        "tests/test_one_primary_button_per_screen.py::"
-        "test_the_debt_table_does_not_become_a_museum",
-        "RN-188：只判「变没变坏」的棘轮，在缺陷修好之后会**永远停在旧数上** ——"
+        "tests/test_one_action_one_entrance.py",
+        '    "preset_center": ("_save_changes",),',
+        '    "preset_center": ("_save_changes", "_this_one_was_fixed_long_ago"),',
+        "tests/test_one_action_one_entrance.py::"
+        "test_the_rest_of_the_debt_only_shrinks",
+        "RN-188 / RN-452：只判「变没变坏」的棘轮，在缺陷修好之后会**永远停在旧数上** ——"
         "从「守着一条线」退化成「记录一个历史」，而且**没有任何东西会说它退化了**。"
         "⇒ 三向都要红：新增 / 变多 / **已经不该在册**。同 RN-196 的 `KNOWN_COMPACT_DEBT`",
     ),
@@ -3722,7 +3731,7 @@ REVERTS = [
         '                ("viewmodel", "局内视角"),',
         '                # ("viewmodel", "局内视角"),',
         "tests/test_one_primary_button_per_screen.py::"
-        "test_the_debt_table_does_not_become_a_museum",
+        "test_every_page_whose_file_exists_was_actually_scanned",
         "RN-188：这张债表记的是**完整产品**的实测值，而派生的功能子集里每一格都可能不同"
         "（实测：子集里 `account` 整页不存在、`about` 的按钮被机械替换改名且少一颗）。"
         "⭐ 「照闭源版文件集写死的断言，在子集仓里不是「更严」，是「错」」——**一周内第三次**。"
@@ -3741,6 +3750,86 @@ REVERTS = [
         "会**静默 return** ⇒ 28 页只走到 22 页。⭐ 那条教训逐字写在 `_ui_mode.goto` "
         "的注释里，而我在普查脚本里用对了、换到判据里又自己抄了一遍 ——"
         "**一个教训只修在它被发现的那条通路上，等于只修了一份副本**",
+    ),
+    # ============================================ RN-404 / RN-416 / RN-452：一个动作一个入口
+    Revert(
+        "RN", "卡里又放了一颗底栏已经有的按钮",
+        "pages/viewmodel_page.py",
+        '        self._cfg_status_label = QLabel("")',
+        '        from PySide6.QtWidgets import QPushButton as _QPB\n'
+        '        _dup = _QPB("保存到CFG")\n'
+        '        _dup.clicked.connect(self._save_viewmodel_cfg)\n'
+        '        cfg_layout.addWidget(_dup)\n'
+        '        self._cfg_status_label = QLabel("")',
+        "tests/test_one_action_one_entrance.py::"
+        "test_the_four_renovated_pages_have_exactly_one_entrance",
+        "RN-404：同一个动作两个入口。外审行为题 16 发 16/16 逐字报出这一对，"
+        "理由一律是「无法判断它们是不是同一件事」，而 16/16 同时答「担心点错」。"
+        "⭐ RN-078 的裁定亲手造出了它：把两个名字统一成一个，"
+        "解决了「以为是两件事」，却造出了「两颗一模一样的紫按钮」",
+    ),
+    Revert(
+        "RN", "撤重复撤过头：两颗一起没了",
+        "pages/viewmodel_page.py",
+        '        self.action_bar.configure_primary("保存到CFG", self._save_viewmodel_cfg, visible=True)',
+        '        self.action_bar.configure_primary("", None, visible=False)',
+        "tests/test_one_action_one_entrance.py::"
+        "test_removing_the_copy_did_not_remove_the_action",
+        "RN-452 反面守卫：撤的是**副本**，不是动作本身。"
+        "⭐⭐ **这种错不会让主刀那条判据变红** —— 重复确实没有了，"
+        "只是这件事从此没人能做了。"
+        "⭐ 一条只判「坏东西没了」的判据，挡不住「好东西也一起没了」",
+    ),
+    Revert(
+        "RN", "同文案但不同方法的第二个入口（AST 看不见的那一半）",
+        "pages/about_page.py",
+        '        self.copy_diag_button = QPushButton("复制诊断信息")',
+        '        _fake = QPushButton("打开官网")\n'
+        '        _fake.clicked.connect(lambda: None)\n'
+        '        fb_row.addWidget(_fake)\n'
+        '        self.copy_diag_button = QPushButton("复制诊断信息")',
+        "tests/test_one_action_one_entrance.py::"
+        "test_no_visible_button_text_appears_both_in_a_card_and_in_the_bar",
+        "RN-452：`about` 那一对「打开官网」**绑的不是同一个方法** —— "
+        "底栏接 `_open_website`、卡内接 `_open_official_site`，"
+        "而两个方法的函数体逐字相同。⇒ **一条按「绑同一个方法」找重复的判据，"
+        "挡不住「先把方法复制一遍」**。所以按文案的这条运行时判据必须同时存在。"
+        "（反过来，`voice_output` 的「导出 / 导出配置」文案不同、方法相同，"
+        "只有 AST 那条看得见 —— ⭐ **两条判据各自都有对方看不见的那一半**）",
+    ),
+    Revert(
+        "RN", "撤走按钮后，剩下那行字不说动作去哪儿了",
+        "pages/viewmodel_page.py",
+        '                "⚠ 设置改过了，还没写进 CFG —— 点右下角那颗「保存到CFG」。")',
+        '                "⚠ 未同步")',
+        "tests/test_one_action_one_entrance.py::"
+        "test_the_card_that_lost_its_button_says_where_the_action_went",
+        "RN-452：改前 4 发没有一发提过这行字；撤掉卡内那颗按钮之后，"
+        "同题同图 **3/3** 说「分不清左边那个是可点击的同步按钮还是状态展示」。"
+        "⭐⭐⭐ **一个控件怎么被读，由它的邻居决定** —— "
+        "那行字一个字都没改，只是它的邻居没了，于是它接管了按钮的位置和读法",
+    ),
+    Revert(
+        "RN", "脏标记又从屏幕上的文案里读回来",
+        "pages/viewmodel_page.py",
+        "        return bool(getattr(self, \"_cfg_dirty\", False))",
+        "        cfg_text = self._cfg_status_label.text().strip()\n"
+        "        return (\"未保存\" in cfg_text) or (\"已修改\" in cfg_text)",
+        "tests/test_one_action_one_entrance.py::"
+        "test_the_dirty_flag_is_not_read_back_out_of_a_label",
+        "RN-452：这一页的脏/净判断原来是对一句**屏幕上的文案**做子串匹配算出来的，"
+        "而底栏回执、三张卡摘要、五颗状态芯片全都读它。"
+        "⭐⭐⭐ **一句文案同时是状态真源时，任何一次文字润色都是一次行为变更** —— "
+        "批 31 只是把那句话改得更像一句话，整页的脏/净判断当场反了",
+    ),
+    Revert(
+        "RN", "扫描器认不出底栏配置调用（判据空转）",
+        "tests/test_one_action_one_entrance.py",
+        '        if n.func.attr in ("configure_primary", "configure_secondary") and len(n.args) >= 2:',
+        '        if n.func.attr in ("configure_primary_RENAMED",) and len(n.args) >= 2:',
+        "tests/test_one_action_one_entrance.py::test_the_scan_is_not_blind",
+        "RN-169：`configure_primary` 一旦改名，下面每一条断言都会**无条件通过**。"
+        "⭐ 先证明它看得见东西，再让它去断言「没问题」",
     ),
     # ============================================ RN-406：选中自定义却什么都不画
     Revert(

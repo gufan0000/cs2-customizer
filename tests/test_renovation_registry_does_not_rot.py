@@ -139,7 +139,16 @@ CITED_AS_PRECEDENT = {
     #   就地再放一颗「绘制准心」** —— 引用的是那条既有判据背后的族
     #   （「卡片里放一颗主操作 + 底栏再放一颗」这个版式会稳定产出同名同功能的两颗）。
     #   RN-404 本体（viewmodel 那两颗「保存到CFG」）**仍未结**。
-    "RN-404": "「同页两颗同名同功能的主操作」的族名引用；本体在 viewmodel，仍未结",
+    # ⭐ 2026-08-30 批 31：**RN-404 从这里被顶出去了 —— 第三次。**
+    #   它在批 31 结清（viewmodel 卡内那颗「保存到CFG」已撤），于是不再需要免检；
+    #   而 `crosshair_page.py` 里那处引用照旧留着，引用的是它抽象出来的那条族规。
+    #   ⭐⭐ **一张允许清单的双向断言，会在被允许的那件事本身变了性质的那一刻报到**
+    #   （RN-107 批 21、RN-154 批 25，这是第三次）。
+    #
+    # ⚠ RN-453 是**前向引用**：`account_page.py` 那段注释写的是
+    #   「顶栏那颗按钮在这一页上点了什么都不会发生 ⇒ **另立 RN-453**」——
+    #   它解释的是一条**仍然存在**的缺陷，不是「这条做完了」。
+    "RN-453": "在 account_page 里被前向引用（『另立 RN-453』），本体未结 [仅见于 pages/account_page.py]",
     # ⭐ 2026-08-30 批 28：`magnifier_page.py` 两处点名都是**「为什么这里长这样」
     #   的溯源注释**，不是「这条做完了」：
     #   · RN-196 —— 那条债的两个数（纵向 82→48、横向 29→0）里，横向那一格是被
@@ -640,7 +649,23 @@ def test_the_precedent_allowlist_does_not_rot():
     """
     status = _statuses(_require_registry())
     hits = _product_code_citations()
-    gone = sorted(rid for rid in CITED_AS_PRECEDENT if rid not in hits)
+
+    # ⚠⚠ **派生的功能子集里，点名它的那个文件可能整个不在。**
+    # 实测（批 31，开源验收门逮到）：`RN-453` 只被 `pages/account_page.py` 点名，
+    # 而 `cs2-customizer` 里 `account` 整页不存在 ⇒ 这条断言在子集仓里
+    # 会要求我「把 RN-453 从允许清单里删掉」，而那样一来完整产品那边就没人替它留门了。
+    # ⭐ **照闭源版文件集写死的断言，在子集仓里不是「更严」，是「错」**（第 N 次）。
+    # ⇒ 允许清单可以在理由里写 `[仅见于 <路径>]`；那个文件不在本 build 里就跳过这一条。
+    import re as _re
+    from pathlib import Path as _Path
+    _repo = _Path(__file__).resolve().parent.parent
+    absent = set()
+    for rid, why in CITED_AS_PRECEDENT.items():
+        m = _re.search(r"\[仅见于 ([^\]]+)\]", why)
+        if m and not (_repo / m.group(1)).exists():
+            absent.add(rid)
+    gone = sorted(rid for rid in CITED_AS_PRECEDENT
+                  if rid not in hits and rid not in absent)
     closed = sorted(
         rid for rid in CITED_AS_PRECEDENT
         if rid in status and not _is_open(status[rid])
