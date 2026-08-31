@@ -514,10 +514,15 @@ def test_utility_page_status_strip_tracks_loaded_utilities(qapp):
     assert any(text == "阵营 · CT" for text in chips)
     assert any(text == "道具 · 3 项" for text in chips)
     assert "3" in page.status_card.toolTip()
-    assert page.action_bar.secondary_btn.isHidden() is False
-    assert page.action_bar.primary_btn.isHidden() is False
-    assert page.action_bar.secondary_btn.text() == "打开道具文件夹"
-    assert page.action_bar.primary_btn.text() == "刷新道具列表"
+    # ⚠ 2026-08-31 批 36（RN-303/RN-452）：底栏这两个位置原来放的是
+    # `open_folder_btn` / `refresh_btn` 的**第二份**，已撤 ⇒ 两位都空着。
+    # ⭐ 这条判据原本逐字钉住那两颗按钮的文案 —— 也就是说，
+    #   **它把「这里有一份副本」写成了产品的规格**。撤副本时它必然变红，
+    #   而那是对的：它在要求我确认这次变的是不是我想变的东西。
+    assert page.action_bar.secondary_btn.isHidden() is True
+    assert page.action_bar.primary_btn.isHidden() is True
+    # ⭐ 而**回执那半留着** —— 撤的是按钮副本，不是底栏本身。
+    #   这一行是这条判据现在唯一还在保护的东西，别一起删掉。
     assert "当前标签：基础设置" in page.action_bar.message_label.text()
 
     page.tab_widget.setCurrentIndex(2)
@@ -529,7 +534,10 @@ def test_utility_page_status_strip_tracks_loaded_utilities(qapp):
     assert "已载入 3 项道具" in page.manage_context_label.text()
     assert page.empty_utility_state_widget.isHidden() is True
     assert page.utility_list_text.isHidden() is False
-    assert page.action_bar.primary_btn.text() == "打开当前阵营文件夹"
+    # ⚠ 批 36：这一格原来按「有没有地图/阵营」在底栏放三种主按钮
+    # （打开当前阵营文件夹 / 打开当前地图文件夹 / 刷新道具列表），三个都是卡内那几颗的副本。
+    # ⭐ 撤掉之后，**底栏在这一页只剩回执** —— 下面两行才是它现在的活。
+    assert page.action_bar.primary_btn.isHidden() is True
     assert "当前标签：道具管理" in page.action_bar.message_label.text()
     assert "已载入 3 项道具" in page.action_bar.message_label.text()
 

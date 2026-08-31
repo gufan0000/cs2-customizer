@@ -5173,6 +5173,104 @@ REVERTS = [
         "RN-184 反向守卫：⭐ 缺了它，上一条可以靠「每加一个都滚到底」全绿 —— "
         "包括建页时那 5 个初始槽位，于是用户一打开这一页就停在列表末尾，第一个槽位反而看不见",
     ),
+    # ------------------------------------------------- 批 36（utility：话只说了一半）
+    Revert(
+        "RN", "底栏又把卡内那颗按钮放第二遍",
+        "pages/utility_page.py",
+        '        self.action_bar.configure_secondary("", None, visible=False)',
+        '        self.action_bar.configure_secondary('
+        '"打开道具文件夹", self._open_utility_folder, visible=True)',
+        "tests/test_utility_finishes_its_sentences.py"
+        "::test_the_action_bar_is_not_a_second_copy_of_the_cards",
+        "RN-452：批 31 量过全站 36 处「同一个绑定既配在底栏、又接在卡内按钮上」，"
+        "**没有一处是底栏独有的动作**，而这一页独占 **5 处**，是全站最多的一页 ⇒ "
+        "底栏在这里是那条结论的极端形态。⭐ 外审行为题改前 **6/6 答「有两颗按钮做同一件事」**，"
+        "逐字点名「打开道具文件夹」和「刷新道具列表」；撤完 **6/6 答「没有」**",
+    ),
+    Revert(
+        "RN", "点不动的按钮不说自己为什么点不动",
+        "pages/utility_page.py",
+        '        self.open_map_folder_btn.setToolTip(\n'
+        '            "要先进对局：软件靠 GSI 认出你当前在哪张图，才知道该打开哪个文件夹。")\n',
+        "",
+        "tests/test_utility_finishes_its_sentences.py"
+        "::test_a_disabled_button_says_why_it_is_disabled",
+        "RN-302：外审 **6/6 答「有置灰按钮，而画面上没说为什么」**。"
+        "⭐ 这条跟 RN-150（批 23，「禁用了但看不出来」）**不是一件事**："
+        "那一条问「看不看得出它禁用了」，这一条问「**知不知道为什么**」—— "
+        "两个问题，两条判据，缺一条就会有一半的用户以为软件坏了",
+    ),
+    Revert(
+        "RN", "没装 GSI 配置时也让人去「进对局」（一句假的指路）",
+        "pages/utility_page.py",
+        '                missing.append(\n'
+        '                    "「地图」和「阵营」现在还认不出来：软件要先往 CS2 里写一份配置文件才读得到，"\n'
+        '                    "去「高级设置」页选一次 CS2 安装目录就会自动写好")',
+        '                missing.append("「地图」和「阵营」要进对局才认得出来")',
+        "tests/test_utility_finishes_its_sentences.py"
+        "::test_the_empty_state_explains_itself_on_the_screen_it_happens_on",
+        "⭐⭐⭐ 这条断点钉的是**我自己那一版修法里的缺陷**：三颗「未检测到」旁边补的"
+        "指路句第一版写「要进对局才认得出来（软件靠 GSI 读）」，"
+        "而**在 GSI 配置还没写进游戏时那句话是假的** —— 这种玩家进多少局都不会有地图。"
+        "改完复跑外审两轮 6 发都判高（「未说明是否需安装 CS2 配置文件」），核下来它说对了。"
+        "⭐ 批 32 那条的第二次现身：**一句正确的指路，会把「路的那一头看不见」变成一个新缺陷** —— "
+        "这次「路的那一头」是一个**前置步骤**。"
+        "⚠ 判据把两支都打桩跑一遍，否则它只在装了 CS2 的机器上是对的（flaky 比没有更坏）",
+    ),
+    Revert(
+        "RN", "同排两张卡各按自己的内容取高（底部差 34px）",
+        "pages/utility_page.py",
+        "        top_cards_row.addWidget(settings_frame, 3)\n"
+        "        top_cards_row.addWidget(button_frame, 5)",
+        "        top_cards_row.addWidget(settings_frame, 3, Qt.AlignTop)\n"
+        "        top_cards_row.addWidget(button_frame, 5, Qt.AlignTop)",
+        "tests/test_side_by_side_cards_end_together.py"
+        "::test_the_page_under_review_is_actually_flush",
+        "RN-470：`Qt.AlignTop` 配上 `QSizePolicy.Maximum` —— **两句各自都正确**"
+        "（不想让卡无限拉伸、想让它贴顶），合在一起才产出「谁内容少谁短一截」"
+        "（实测 158px vs 192px）。⭐ 又一次「两条各自正确的规则在交集处出错」（批 25）。"
+        "⚠ 外审同一轮报的另一条几何问题（「当前配置」被横线贯穿）**是假的**："
+        "放大 8 倍看原图一条线都没有，那是「当/前/配/置」四个字各自的横画落在同一条 y 上 ⇒ "
+        "⭐⭐ **中文里「文字被横线贯穿」是一类系统性假阳性**",
+    ),
+    Revert(
+        "RN", "把同排卡片的棘轮调大（放水）",
+        "tests/test_side_by_side_cards_end_together.py",
+        "MAX_RAGGED_ROWS = 4",
+        "MAX_RAGGED_ROWS = 9",
+        "tests/test_side_by_side_cards_end_together.py"
+        "::test_side_by_side_cards_do_not_get_more_ragged",
+        "⭐ 棘轮的两条断言互相兜底：调大上限会被 `>=` 那半边逮住。"
+        "⚠ 这一条**不是**「同排必须齐」的铁规 —— `viewmodel` 那一排差 482px 是长列表"
+        "挨着短设置卡，硬拉齐会造出一张 480px 全空的卡。所以它只挡「变多」",
+    ),
+    Revert(
+        "RN", "卡片副标题又开始讲版面（手搓卡片那条通路）",
+        "pages/utility_page.py",
+        'button_hint = QLabel("打开存放点位图的文件夹，或让软件重新读一遍里面的图片。")',
+        'button_hint = QLabel("常用文件夹和刷新动作收在一起，方便边游戏边维护素材。")',
+        "tests/test_no_layout_self_talk_at_runtime.py"
+        "::test_no_card_subtitle_on_screen_talks_about_layout",
+        "RN-077 的**第四条漏网通路**。⚠ 这条断点**故意不钉在 RN-077 那条判据上** —— "
+        "钉上去它根本不会红：那条判据走 AST 认卡片工厂的 `description=` 实参，"
+        "而这一页的卡是手搓的 `QFrame(objectName=\"card\")` + 裸 `QLabel`，"
+        "**整条通路在它视野之外**。"
+        "⭐⭐⭐ 同一条教训第四次现身（前三次逐字写在 RN-077 自己的 docstring 里："
+        "分母只有 2 页 → `PAGE_LEAD` 类常量 → `description=` 收的是名字不是字面量），"
+        "而每一次的修法都是「再补一条通路」，补完仍然只覆盖**我当时想得到的那些**。"
+        "⇒ 这条换个问法：**不问文案是怎么造出来的，只问用户屏幕上有没有这句话**",
+    ),
+    Revert(
+        "RN", "运行期扫描把词表抄了一份（从此只补一边）",
+        "tests/test_no_layout_self_talk_at_runtime.py",
+        "from test_no_layout_self_talk_sitewide import LAYOUT_PATTERNS, LAYOUT_WORDS",
+        "LAYOUT_PATTERNS = []\nLAYOUT_WORDS = [\"放在一起\"]",
+        "tests/test_no_layout_self_talk_at_runtime.py"
+        "::test_the_word_list_is_the_shared_one",
+        "批 33 那条：**手写一份共用件的内容，等于把自己从后续每一次改进里摘出去。**"
+        "RN-077 的词表是攒了好几轮外审才长成现在这样的（「压成」「概况卡」是改完复跑那轮补的）；"
+        "抄一份就意味着下一轮补的词只补在一边，而两边都是绿的",
+    ),
     # ⛔⛔ 新断点一律加在**这一行之上**。
     #
     # 下面这个标记是开源同步那个语义补丁的**锚点**：开源版在这个位置追加它自己的

@@ -116,6 +116,20 @@ class UtilityPage(QWidget):
         status_row.addStretch()
         status_card_layout.addLayout(status_row)
 
+        # ⚠⚠⚠ RN-300（批 36）：三颗「未检测到 / 未载入」胶囊就在这张卡上，
+        # 而解释它们的话**一句都不在这一屏** —— 页面别处确实写了五处
+        # （「等待进入对局」「进入对局后会自动识别…」等），但它们在
+        # **「道具管理」页签**和折叠的帮助面板里，而默认页签是「基础设置」。
+        # 外审 **6/6 答「不知道接下来该做什么」**。
+        # ⭐ 修法不是「补一句指引」（已经有五句），是**把它放到困惑发生的位置**
+        #   （批 32 那条）—— 也就是这三颗胶囊的正下方。
+        # ⚠ 三颗的成因**不一样**：地图/阵营要**进对局**，道具要**放素材再刷新** ⇒
+        #   一句笼统的「去社区拿」在这里是错的答案，得按当前状态分别说。
+        self.state_hint_label = QLabel("")
+        self.state_hint_label.setObjectName("hintLabel")
+        self.state_hint_label.setWordWrap(True)
+        status_card_layout.addWidget(self.state_hint_label)
+
         self.summary_label = QLabel("")
         self.summary_label.setObjectName("hintLabel")
         self.summary_label.setWordWrap(True)
@@ -215,30 +229,34 @@ class UtilityPage(QWidget):
         hotkey_text = self.hotkey_button.text().strip() if hasattr(self, "hotkey_button") else (config.utility_guide_hotkey or "")
         mode_text = "长按" if getattr(config, "utility_guide_mode", "hold") == "hold" else "切换"
         utility_count = self._current_utility_count()
-        self.action_bar.configure_secondary("打开道具文件夹", self._open_utility_folder, visible=True)
+        # ⚠⚠⚠ RN-452（批 36）：这里原来按页签往底栏放五个位置，而**五个都是
+        # 卡内某颗按钮的第二份**（次位「打开道具文件夹」= `open_folder_btn`；
+        # 主位「预览显示」= `preview_btn`；「打开当前阵营/地图文件夹」=
+        # `open_team_folder_btn` / `open_map_folder_btn`；「刷新道具列表」= `refresh_btn`）。
+        # ⭐⭐⭐ 批 31 量过全站 36 处这种重复，**没有一处是底栏独有的动作**；
+        #   而这一页占 5 处，是**最多的一页** —— 底栏在这里是它那条结论的极端形态。
+        # ⇒ 按批 31 的裁定规则②（都看得见时，留**离它作用的对象最近**的那一颗）：
+        #   卡内那几颗就在它们的语境里（「快速操作」卡 / 显示设置卡），底栏这五个全撤。
+        # ⚠ 底栏**留着** —— 那句回执（总开关关着 + 当前标签摘要）是它自己的活，
+        #   不是副本。⭐ 同一条规则在 `fun_afterlife` 上给出的是相反答案
+        #   （那一页没有页级主操作，连底栏都不加）——**而那正是它有内容的证据**。
+        self.action_bar.configure_secondary("", None, visible=False)
+        self.action_bar.configure_primary("", None, visible=False)
 
         if current_tab == "显示设置":
             opacity_text = self.opacity_label.text() if hasattr(self, "opacity_label") else "100%"
             scale_text = self.scale_label.text() if hasattr(self, "scale_label") else "100%"
-            self.action_bar.configure_primary("预览显示", self._preview_display, visible=True)
             action_message = (
                 f"当前标签：{current_tab} · 图片透明度 {opacity_text} / 缩放 {scale_text}，"
                 "调完参数后可直接预览效果。"
             )
         elif current_tab == "道具管理":
-            if self.current_map and self.current_team:
-                self.action_bar.configure_primary("打开当前阵营文件夹", self._open_current_team_folder, visible=True)
-            elif self.current_map:
-                self.action_bar.configure_primary("打开当前地图文件夹", self._open_current_map_folder, visible=True)
-            else:
-                self.action_bar.configure_primary("刷新道具列表", self._refresh_utilities, visible=True)
             action_message = (
                 f"当前标签：{current_tab} · 地图 {self.current_map_label.text() if hasattr(self, 'current_map_label') else '未检测到'}"
                 f" / 阵营 {self.current_team_label.text() if hasattr(self, 'current_team_label') else '未检测到'}"
                 f" · 已载入 {utility_count} 项道具。"
             )
         else:
-            self.action_bar.configure_primary("刷新道具列表", self._refresh_utilities, visible=True)
             action_message = (
                 f"当前标签：{current_tab} · 热键 {hotkey_text or '未设置'} / 模式 {mode_text}"
                 f" · 当前已载入 {utility_count} 项道具。"
@@ -252,6 +270,42 @@ class UtilityPage(QWidget):
         少了这一下，开关动了而徽章不动 —— 同屏两处说法不一致（RN-107 族）。
         """
         self._sync_status_strip()
+
+    def _gsi_cfg_ready(self) -> bool:
+        """游戏里那份 GSI 配置文件在不在。
+
+        ⚠ **结果缓存**：`_sync_status_strip` 每次刷新状态都会走到这里
+        （切页签、改热键、GSI 每帧回调都算），不能每次去 stat 一次磁盘。
+        ⭐ 缓存在「重选 CS2 目录」之后会过期 —— 那条路径会重写 cfg，
+          而这一页不订阅它。所以缓存只在**本页实例的生命周期内**有效，
+          切走再回来（懒加载页会保留实例）拿到的仍是旧值。
+          ⚠ 这是**明写出来的取舍**，不是没想到：这句话的用途是「别把人推错方向」，
+          而设完目录之后它退化成「进对局」那一句 —— 那一句在那个状态下是对的。
+
+        ⚠ 查不出来的时候返回 **False**（＝显示「先去设目录」），不是 True。
+        ⭐ 两个方向都会错，但错的代价不一样：
+          说「进对局」而其实没配置 ⇒ 玩家进十局也没反应，判定软件坏了；
+          说「去设目录」而其实已配置 ⇒ 玩家白跑一趟设置页，看见目录已经填好了。
+        """
+        cached = getattr(self, "_gsi_cfg_ready_cache", None)
+        if cached is not None:
+            return cached
+        ready = False
+        try:
+            csgo_dir = str(getattr(config, "csgo_dir", "") or "").strip()
+            if csgo_dir:
+                ready = os.path.isfile(os.path.join(
+                    csgo_dir, "game", "csgo", "cfg",
+                    "gamestate_integration_cs2customizer.cfg"))
+            if not ready:
+                from cfg_utils import find_cfg_path
+
+                path = find_cfg_path()
+                ready = bool(path) and os.path.isfile(path)
+        except Exception:
+            ready = False
+        self._gsi_cfg_ready_cache = ready
+        return ready
 
     def _sync_status_strip(self):
         hotkey_text = config.utility_guide_hotkey or ""
@@ -309,6 +363,30 @@ class UtilityPage(QWidget):
                 f"已载入 {utility_count} 项道具。"
             )
             self.manage_context_label.setToolTip(detail_text)
+        # RN-300：按当前状态说清「为什么是没有、接下来做什么」。
+        # ⚠⚠⚠ 这里的第一版写的是「要进对局才认得出来（软件靠 GSI 读）」——
+        # 改完复跑外审，**两轮 6 发都判高**：「未说明是否需安装 CS2 配置文件，
+        # 玩家无法确认游戏联动是否已配置就绪」。核下来它说对了，而且比它说的更糟：
+        # ⭐⭐⭐ **那句话在「GSI 配置文件还没写进游戏」这个状态下是假的** ——
+        #   这种玩家进多少局都不会有地图，而我的指路把他推去进对局，
+        #   然后他会得出「软件坏了」。
+        # ⭐ 这正是批 32 那条的第二次现身：**一句正确的指路，会把「路的那一头
+        #   看不见」变成一个新缺陷** —— 只是这次「路的那一头」是一个前置步骤。
+        missing = []
+        if not self.current_map or not self.current_team:
+            if self._gsi_cfg_ready():
+                missing.append("「地图」和「阵营」要进对局才认得出来（软件从游戏里实时读）")
+            else:
+                missing.append(
+                    "「地图」和「阵营」现在还认不出来：软件要先往 CS2 里写一份配置文件才读得到，"
+                    "去「高级设置」页选一次 CS2 安装目录就会自动写好")
+        if not utility_count:
+            missing.append("道具要先把图片放进道具文件夹，再点「刷新道具列表」")
+        self.state_hint_label.setText(
+            "；".join(missing) + "。" if missing
+            else "地图、阵营、道具都就位了，按热键就能在游戏里叫出来。"
+        )
+
         self._update_empty_utility_state()
         self.summary_label.setText(detail_text)
         self.summary_label.setToolTip(detail_text)
@@ -336,7 +414,12 @@ class UtilityPage(QWidget):
         settings_title = QLabel("快捷与模式")
         settings_title.setObjectName("statusLabel")
         settings_layout.addWidget(settings_title)
-        settings_hint = QLabel("热键和显示模式放在一起，改完可以立刻切到其他标签继续维护。")
+        # ⚠ RN-077（批 36）：这句原文是「热键和显示模式**放在一起**，改完可以立刻切到
+        # 其他标签继续维护」—— 讲的是**版面决策**，不是这张卡能干什么。
+        # ⭐ RN-077 那条判据（`test_no_layout_self_talk_sitewide`）**看不见它** ——
+        #   它走 AST 认卡片工厂的 `description=` 实参，而这一页的卡是手搓的
+        #   `QFrame(objectName="card")` + 裸 `QLabel`。⇒ 见批 36 那条新的运行期通路。
+        settings_hint = QLabel("设定呼出点位图的按键，以及按住才显示还是按一下常驻。")
         settings_hint.setObjectName("hintLabel")
         settings_hint.setWordWrap(True)
         settings_layout.addWidget(settings_hint)
@@ -382,7 +465,7 @@ class UtilityPage(QWidget):
         mode_layout.addStretch(1)
         settings_layout.addLayout(mode_layout)
 
-        settings_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+        settings_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
 
         button_frame = QFrame()
         button_frame.setObjectName("card")
@@ -393,7 +476,7 @@ class UtilityPage(QWidget):
         button_title = QLabel("快速操作")
         button_title.setObjectName("statusLabel")
         button_layout.addWidget(button_title)
-        button_hint = QLabel("常用文件夹和刷新动作收在一起，方便边游戏边维护素材。")
+        button_hint = QLabel("打开存放点位图的文件夹，或让软件重新读一遍里面的图片。")
         button_hint.setObjectName("hintLabel")
         button_hint.setWordWrap(True)
         button_layout.addWidget(button_hint)
@@ -440,6 +523,11 @@ class UtilityPage(QWidget):
         button_grid.addWidget(open_folder_btn, 0, 0)
         
         self.open_map_folder_btn = QPushButton("打开当前地图文件夹")
+        # ⚠ RN-302（批 36）：这颗按钮在没进对局时是禁用的，而**鼠标停上去什么都不说** ——
+        # 外审 6/6 答「有置灰按钮，但画面上没有说为什么」。
+        # ⭐ 批 23（RN-150）管的是「看不看得出它禁用了」；这一条问的是「知不知道为什么」。
+        self.open_map_folder_btn.setToolTip(
+            "要先进对局：软件靠 GSI 认出你当前在哪张图，才知道该打开哪个文件夹。")
         self.open_map_folder_btn.clicked.connect(self._open_current_map_folder)
         self.open_map_folder_btn.setEnabled(False)
         self.open_map_folder_btn.setCursor(Qt.PointingHandCursor)
@@ -448,6 +536,8 @@ class UtilityPage(QWidget):
         button_grid.addWidget(self.open_map_folder_btn, 0, 1)
         
         self.open_team_folder_btn = QPushButton("打开当前阵营文件夹")
+        self.open_team_folder_btn.setToolTip(
+            "要先进对局：阵营（T / CT）是进对局之后才知道的。")
         self.open_team_folder_btn.clicked.connect(self._open_current_team_folder)
         self.open_team_folder_btn.setEnabled(False)
         self.open_team_folder_btn.setCursor(Qt.PointingHandCursor)
@@ -463,11 +553,17 @@ class UtilityPage(QWidget):
         button_grid.addWidget(refresh_btn, 1, 1)
         button_layout.addLayout(button_grid)
 
-        button_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+        button_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         top_cards_row = QHBoxLayout()
         top_cards_row.setSpacing(12)
-        top_cards_row.addWidget(settings_frame, 3, Qt.AlignTop)
-        top_cards_row.addWidget(button_frame, 5, Qt.AlignTop)
+        # ⚠ RN-470（批 36）：这两句原来是 `addWidget(..., Qt.AlignTop)` 配上
+        # `QSizePolicy.Maximum` —— **两句各自都正确**（不想让卡无限拉伸、想让它贴顶），
+        # 合在一起才产出「谁内容少谁短一截」：实测 158px vs 192px，**底部差 34px**。
+        # ⭐ 又一次「两条各自正确的规则在交集处出错」（批 25）。
+        # ⇒ 去掉 AlignTop、把纵向策略从 Maximum 放到 Preferred，
+        #   HBox 就会把两张卡都拉到这一排的高度（= 两者中较高的那个）。
+        top_cards_row.addWidget(settings_frame, 3)
+        top_cards_row.addWidget(button_frame, 5)
         # v2.1.1: 稀疏内容上下夹 stretch 实现垂直居中, 避免底部大片空白
         layout.addStretch(1)
         layout.addLayout(top_cards_row)

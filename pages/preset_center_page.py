@@ -179,7 +179,10 @@ class PresetCenterPage(MyPresetsMixin, QWidget, DirtyPageMixin):
         actions_title = QLabel("快速操作")
         actions_title.setObjectName("statusLabel")
         actions_column.addWidget(actions_title)
-        actions_hint = QLabel("导出、导入和应用放在一起，连续处理预设包时更顺手。")
+        # ⚠ RN-077（批 36）：原文「导出、导入和应用**放在一起**，连续处理预设包时更顺手」
+        # 讲的是版面。同 `utility` 那两条，一起被 RN-077 的 AST 通路漏掉了
+        # （全站 213 条可见 hintLabel 里就这 3 条命中，3 条都是手搓卡片）。
+        actions_hint = QLabel("把当前设置存成预设包、读入别人的预设包，或把选中的预设应用到软件上。")
         actions_hint.setObjectName("hintLabel")
         actions_hint.setWordWrap(True)
         actions_column.addWidget(actions_hint)

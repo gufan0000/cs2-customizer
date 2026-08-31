@@ -93,12 +93,14 @@ BAR_CARD_DUPLICATE_ACTIONS = {
               "_reset_settings"),
     "kill_icon": ("_on_primary_clicked", "_open_workshop"),
     "preset_center": ("_save_changes",),
-    "utility": ("_open_current_map_folder", "_open_current_team_folder",
-                "_open_utility_folder", "_preview_display", "_refresh_utilities"),
+    # ⭐ `utility` 曾是这张表里**最长的一条（5 处，全站最多的一页）**，
+    #   2026-08-31 批 36 清零 ⇒ 移到下面 `RENOVATED_PAGES` 由那几条钉死。
 }
 
-#: 本批动刀的四页。清零之后**一处都不许再长回来**。
-RENOVATED_PAGES = ("about", "account", "viewmodel", "voice_output")
+#: 已动刀清零的页。清零之后**一处都不许再长回来**。
+#: ⭐ 2026-08-31 批 36 加入 `utility` —— 它是原债表里最长的一条（5 处），
+#:   而全站 36 处里这一页独占 5 处，是最多的一页。
+RENOVATED_PAGES = ("about", "account", "utility", "viewmodel", "voice_output")
 
 #: 本批撤掉的那七个入口，撤的是**副本**，不是动作本身。
 #: ⭐ 这张表是**反面守卫**：撤重复最容易犯的错是把两颗一起删掉，
@@ -116,6 +118,15 @@ SURVIVING_ENTRANCES = {
     ("account", "_open_website"): "card",
     ("about", "_show_changelog"): "bar",
     ("about", "_open_website"): "bar",
+    # ⚠ `utility` 五处**全部留卡内那颗**（批 31 裁定规则②：留离它作用的对象最近的）。
+    # ⭐ 底栏本身**留着** —— 那句共用回执（总开关状态 + 当前标签摘要）是它自己的活，
+    #   不是副本。同一条规则在 `fun_afterlife`（批 34）上给出的是相反答案
+    #   （那一页没有页级主操作，连底栏都不加）—— **而那正是它有内容的证据**。
+    ("utility", "_open_utility_folder"): "card",
+    ("utility", "_preview_display"): "card",
+    ("utility", "_open_current_map_folder"): "card",
+    ("utility", "_open_current_team_folder"): "card",
+    ("utility", "_refresh_utilities"): "card",
 }
 
 
@@ -323,7 +334,10 @@ def four_pages(qapp):
 def test_the_runtime_scan_sees_buttons(four_pages):
     """空转守卫之二：运行时那一半也要先证明自己看得见东西。"""
     assert set(four_pages) == set(_present(RENOVATED_PAGES)), (
-        f"只走到 {sorted(four_pages)} —— 页面没建出来？")
+        f"只走到 {sorted(four_pages)} —— 页面没建出来？"
+        "（这条 fixture 的名字还叫 `four_pages`，而 2026-08-31 批 36 之后是 5 页；"
+        "名字没改是因为改名会同时动 6 处引用而不带来任何信息 —— 分母走 "
+        "`RENOVATED_PAGES`，不走这个名字。）")
     for page_id, rows in four_pages.items():
         assert len(rows) >= 3, f"{page_id} 只扫到 {len(rows)} 颗可见按钮，扫描器瞎了"
 
