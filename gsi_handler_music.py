@@ -108,9 +108,16 @@ class GSIHandlerMusic:
         thread.start()
 
     def process_data(self, data):
+        # ⚠⚠ RN-454（批 33）：这里原来是**紧挨着的两行 return**，
+        #   第二行读的是 `config.music_game_link_enabled`。
+        #   AST 实测：那个键在整个产品里**只有这一个消费点**，其余全在
+        #   `pages/music_page.py` 自己身上（读它、写它、显示它）——
+        #   它是总开关的一个**纯 AND 项**，没有任何独立作用。
+        #   而两颗开关的默认值**相反**（总开关 False、子开关 True），
+        #   于是每个新用户看到的都是「总开关未开启 + 子开关已勾选」，
+        #   外审 **19/24 发**判高「双重开关逻辑冲突」。
+        # ⭐⭐⭐ **一件事一颗开关。**
         if not config.music_enabled:
-            return
-        if not config.music_game_link_enabled:
             return
 
         self._ensure_player()

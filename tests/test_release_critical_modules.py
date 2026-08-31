@@ -44,7 +44,14 @@ KNOWN_UNLISTED = {
     "core.io_validation", "core.magnifier_sensitivity", "core.presets",
     "core.resource_health", "core.resource_import_wizard", "core.runtime",
     "core.usage_reporter", "core.utils", "crosshair_overlay",
-    "flash_process_manager", "gsi_handler_music", "gsi_handler_utility",
+    # ⚠ `gsi_handler_music` 在批 33 从这张表里**摘掉了**，不是因为它变危险了，
+    #   而是因为它**不再是页面链路根**：RN-454 撤掉音乐页那颗子开关时，
+    #   页面里唯一那句 `from gsi_handler_music import ...` 跟着走了，
+    #   恢复联动态的动作搬到了 `gui_widget._on_switch_changed`。
+    #   它仍由 `main_widget:1301` 模块层 import ⇒ 打包照收。
+    #   ⭐ **一次「把动作搬到正确的开关上」，顺带改变了另一张表的成员资格** ——
+     #  而逮到它的是「挂账表不许留已经不是链路根的模块」那条反向判据。
+    "flash_process_manager", "gsi_handler_utility",
     "music_player", "page_theme_helper", "screen_effect_overlay",
     # ⚠ 2026-08-21（RN-153）：`service_urls` **又从页面链上下来了**。
     # 那道「开源版没有社区站」的守卫从 kill_icon 页搬进了

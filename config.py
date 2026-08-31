@@ -29,13 +29,41 @@ VERSION = "2.2.4"
 # P4.2: 配置 schema 版本。与软件 VERSION 解耦——只在"配置结构/语义发生需要
 # 迁移的变化"时 +1，并在 CONFIG_MIGRATIONS 注册对应迁移函数。
 # 旧配置文件读入后会从其记录的版本逐级迁移到 CONFIG_SCHEMA_VERSION。
-CONFIG_SCHEMA_VERSION = 1
+CONFIG_SCHEMA_VERSION = 2
 
 # 迁移函数表：{from_version: callable(config_obj, raw_config_dict)}。
 # 例：未来 v1->v2 把某字段语义改了，就写 def _migrate_1_to_2(cfg, raw): ...
-# 然后 CONFIG_MIGRATIONS = {1: _migrate_1_to_2} 并把 CONFIG_SCHEMA_VERSION 设为 2。
-# 当前 v0->v1 无破坏性结构变化（新增字段都靠 getattr 默认值向后兼容），故为空。
-CONFIG_MIGRATIONS = {}
+# 然后写 def _migrate_2_to_3(cfg, raw): ...，把它挂进 CONFIG_MIGRATIONS，
+# 并把 CONFIG_SCHEMA_VERSION 抬到 3。
+# ⚠ 举例时**别把真代码原样抄进注释**：批 33 这里原来写的例子和下面那行真代码
+#   一字不差，于是回退验证的锚点在文件里出现 2 次、当场判为失效。
+#   ⭐ **注释里的例子和它举例的那行代码长得一样时，机器就分不出哪个是真的。**
+def _migrate_1_to_2(cfg, raw):
+    """RN-454（批 33）：撤掉 `music_game_link_enabled` 这颗多余的子开关。
+
+    它原来是总开关 `music_enabled` 的一个**纯 AND 项**
+    （`gsi_handler_music.process_data` 里紧挨着的两行 return，全产品唯一消费点）。
+    撤掉之后，只剩总开关说了算。
+
+    ⚠ **老用户里有一种组合会被这一撤改变行为**：
+    总开关开着、子开关自己关掉了 ⇒ 今天「不联动」，撤完会变成「联动」。
+    ⇒ 把总开关一并关掉，**保住他当初表达的那个意思**（不联动）。
+    ⭐ 迁移的方向要朝「保住用户已经表达过的意图」那边倒，
+      不朝「保住某个键的字面值」那边倒。
+
+    其余三种组合（总开关关 / 两个都开）语义不变，不动。
+    """
+    try:
+        if bool(raw.get("music_enabled", False)) and not bool(
+                raw.get("music_game_link_enabled", True)):
+            cfg.music_enabled = False
+            logger.info("配置迁移 v1→v2：原来「总开关开 + 子开关关」= 不联动，"
+                        "撤掉子开关后把总开关一并关上以保持原意（RN-454）")
+    except Exception:
+        logger.exception("配置迁移 v1→v2 失败（已跳过）")
+
+
+CONFIG_MIGRATIONS = {1: _migrate_1_to_2}
 
 # 局内视角默认预设（单一数据源）：config 与 viewmodel 页面共用，
 # 避免 UI 与 config 各维护一套默认值导致分叉。
@@ -630,7 +658,6 @@ class Config:
         self.music_play_mode = "sequence"  # 播放模式: sequence/shuffle/repeat_one/repeat_all
         
         # 游戏联动设置
-        self.music_game_link_enabled = True  # 启用游戏状态联动
         self.music_death_action = "play"  # 死亡时动作: play/none
         self.music_death_volume_custom = False  # 是否使用自定义死亡音量
         self.music_death_volume = 1.0  # 死亡时音量
@@ -1431,7 +1458,8 @@ class Config:
                 self.music_play_mode = config_data.get("music_play_mode", self.music_play_mode)
                 
                 # 游戏联动设置
-                self.music_game_link_enabled = config_data.get("music_game_link_enabled", self.music_game_link_enabled)
+                # ⚠ RN-454（批 33）：`music_game_link_enabled` 已撤（总开关的纯 AND 项）。
+                #   它的旧值只在 `_migrate_1_to_2` 里被读一次，用来保住老用户的原意。
                 self.music_death_action = config_data.get("music_death_action", self.music_death_action)
                 self.music_death_volume_custom = config_data.get("music_death_volume_custom", self.music_death_volume_custom)
                 self.music_death_volume = config_data.get("music_death_volume", self.music_death_volume)
@@ -1873,7 +1901,6 @@ class Config:
                     "music_play_mode": self.music_play_mode,
                     
                     # 游戏联动设置
-                    "music_game_link_enabled": self.music_game_link_enabled,
                     "music_death_action": self.music_death_action,
                     "music_death_volume_custom": self.music_death_volume_custom,
                     "music_death_volume": self.music_death_volume,

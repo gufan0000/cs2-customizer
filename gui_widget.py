@@ -3160,6 +3160,23 @@ class MainWindow(QMainWindow):
         
         # 特殊处理：开镜放大开关
         # 2.2.0 丝滑化:建页/启停挪出点击帧——复选框即时回弹,重活下一拍做
+        # ⚠⚠ RN-454（批 33）：这一段原来**只挂在音乐页那颗子开关上**。
+        # 而真正决定联动跑不跑的是总开关（`process_data` 第一行就 return），
+        # 于是「关掉总开关」这条路只能等 GSI 断流看门狗 **15 秒**才恢复 ——
+        # 那 15 秒里音乐停在被暂停 / 被压低的状态，页面一个字都不说。
+        # ⭐⭐⭐ **一条为了防止「卡在联动态」而写的恢复链路，
+        #   挂在了一颗不决定联动跑不跑的开关上。**
+        # ⇒ 撤掉子开关时它必须跟着搬过来，否则就是「撤掉副本，把动作也撤了」。
+        if config_key == "music_enabled" and not checked:
+            try:
+                from gsi_handler_music import get_music_gsi_handler
+
+                handler = get_music_gsi_handler()
+                if handler is not None:
+                    handler.restore_game_link_state("关闭音乐联动总开关")
+            except Exception:
+                self.logger.exception("关闭音乐联动时恢复音乐状态失败")
+
         if config_key == "magnifier_enabled":
             from PySide6.QtCore import QTimer
             QTimer.singleShot(0, lambda: self._apply_magnifier_toggle(checked))

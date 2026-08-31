@@ -57,3 +57,69 @@ def test_migration_runs_registered_function(monkeypatch):
     cfg._run_schema_migrations({"config_schema_version": 0})
     assert calls == [0]
     assert cfg.config_schema_version == CONFIG_SCHEMA_VERSION
+
+
+# ==================================================================== 批 33
+# RN-454：撤掉 `music_game_link_enabled` 之后的 v1→v2 迁移
+# ====================================================================
+
+def _migrated(raw):
+    """拿一份原始配置字典跑一遍迁移，返回迁移后的 config 对象。"""
+    from config import Config
+
+    cfg = Config.__new__(Config)
+    cfg.music_enabled = bool(raw.get("music_enabled", False))
+    cfg.config_schema_version = 0
+    cfg._do_save_config = lambda: None      # 迁移完会想落盘，这里不写磁盘
+    cfg._run_schema_migrations(dict(raw, config_schema_version=1))
+    return cfg
+
+
+def test_the_migration_keeps_a_user_who_had_turned_linking_off():
+    """⭐⭐⭐ **迁移的方向要朝「保住用户已经表达过的意图」那边倒。**
+
+    老用户里只有一种组合会被这一撤改变行为：
+    **总开关开着、子开关自己关掉了** —— 他今天是「不联动」，
+    而撤掉子开关之后总开关说了算，他会**突然开始联动**。
+    ⇒ 把总开关一并关上，保住他当初表达的那个意思。
+
+    ⚠ 反过来做（保住某个键的字面值）在这里根本无从谈起：那个键要没了。
+    """
+    cfg = _migrated({"music_enabled": True, "music_game_link_enabled": False})
+    assert cfg.music_enabled is False, (
+        "「总开关开 + 子开关关」= 不联动。撤掉子开关后总开关必须跟着关，"
+        "否则这个用户下次进游戏音乐会自己动起来。"
+    )
+
+
+import pytest as _pytest  # noqa: E402
+
+
+@_pytest.mark.parametrize("raw", [
+    {"music_enabled": True, "music_game_link_enabled": True},     # 本来就联动
+    {"music_enabled": False, "music_game_link_enabled": True},    # 本来就不联动
+    {"music_enabled": False, "music_game_link_enabled": False},   # 两个都关
+    {"music_enabled": True},                                      # 没写过子开关（默认 True）
+])
+def test_the_migration_leaves_every_other_combination_alone(raw):
+    """另外三种组合语义不变 —— ⭐ 迁移只许动那**一个**会变意思的格子。"""
+    before = bool(raw.get("music_enabled", False))
+    assert _migrated(raw).music_enabled is before, f"这一组不该被动：{raw}"
+
+
+def test_the_migration_is_actually_registered():
+    """⭐ 先证明它真的挂在表上，再让上面那几条去断言它的行为。
+
+    ⚠ `CONFIG_MIGRATIONS` 在批 33 之前**一直是空的** —— 这个框架写好了、
+    接线了、有 4 条测试，但**从来没有跑过一个真正的迁移**。
+    ⭐⭐ **一条从没被走过的通路，和一条走不通的通路，平时长得一模一样。**
+    """
+    from config import CONFIG_MIGRATIONS, CONFIG_SCHEMA_VERSION
+
+    assert CONFIG_SCHEMA_VERSION >= 2
+    assert 1 in CONFIG_MIGRATIONS, "v1→v2 的迁移没注册，上面那几条在测一个不会被调用的函数"
+    for v in range(1, CONFIG_SCHEMA_VERSION):
+        assert v in CONFIG_MIGRATIONS, (
+            f"v{v}→v{v+1} 没有迁移函数 —— `_run_schema_migrations` 会在这里 break，"
+            "后面的迁移全部静默跳过。⭐ 版本号只许和迁移函数一起往上抬。"
+        )

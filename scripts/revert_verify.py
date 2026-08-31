@@ -3758,6 +3758,104 @@ REVERTS = [
         "的注释里，而我在普查脚本里用对了、换到判据里又自己抄了一遍 ——"
         "**一个教训只修在它被发现的那条通路上，等于只修了一份副本**",
     ),
+    # ================== RN-454 / RN-460 / RN-462 / RN-463：一件事一颗开关
+    Revert(
+        "RN", "GSI 闸门又长回两道（子开关复活）",
+        "gsi_handler_music.py",
+        "        if not config.music_enabled:\n            return\n",
+        "        if not config.music_enabled:\n            return\n"
+        "        if not getattr(config, 'music_game_link_enabled', True):\n            return\n",
+        "tests/test_music_page_tells_the_truth_about_playing.py::"
+        "test_the_game_link_has_exactly_one_switch",
+        "RN-454：那个键在整个产品里只有这一个消费点，而且就在总开关下面**紧挨着的一行** —— "
+        "它是纯 AND 项，没有任何独立作用，而两颗开关的默认值**相反**。"
+        "⭐⭐⭐ **一件事一颗开关。**"
+        "⚠ 这条断点用 AST 判（属性访问），不用字符串 —— "
+        "第一版按行做字符串匹配，当场把一行讲这条缺陷来历的 **docstring** 报成了使用。"
+        "⭐ **在源码上做字符串匹配，会把「讲这件事」和「做这件事」算成一件事**",
+    ),
+    Revert(
+        "RN", "撤开关撤过头：总开关也没了",
+        "pages/music_page.py",
+        '            self, "music_enabled", "音乐联动")',
+        '            self, "music_enabled_XX", "音乐联动")',
+        "tests/test_music_page_tells_the_truth_about_playing.py::"
+        "test_the_game_link_has_exactly_one_switch",
+        "RN-454 反面守卫：撤的是**副本**，不是这件事本身。"
+        "⭐⭐ 同批 31 那条：**一条只判「坏东西没了」的判据，"
+        "挡不住「好东西也一起没了」**",
+    ),
+    Revert(
+        "RN", "总开关关着又把整页置灰",
+        "pages/music_page.py",
+        # ⚠⚠ 这条断点第一版的"破坏"是加一行
+        #   `self.link_content_frame_pending_disable = True` —— 那行**什么都不做**，
+        #   于是判据当然绿，回退验证判它假绿。
+        #   ⭐ **一个模拟不出缺陷的破坏，得到的绿是无意义的。**
+        #   现在换成真的按总开关禁用那张卡 —— 也就是 RN-454 最顺手的那个错误修法。
+        "        layout.addWidget(self.link_content_frame)",
+        "        self.link_content_frame.setEnabled(bool(config.music_enabled))\n"
+        "        layout.addWidget(self.link_content_frame)",
+        "tests/test_music_page_tells_the_truth_about_playing.py::"
+        "test_turning_the_master_off_does_not_grey_out_the_page",
+        "RN-454 的第二道守卫：合并两颗开关时最顺手的写法是 "
+        "`link_content_frame.setEnabled(config.music_enabled)` —— 一行，看着对，"
+        "而它会把新用户的整页禁用控件从 **2 顶到 27**，"
+        "正是批 17 实测后改判为不做的 RN-421。"
+        "⭐ **一个正确的合并，可以把一条已经被否掉的方案偷偷放回来**",
+    ),
+    Revert(
+        "RN", "曲目列表又变回只能选一首",
+        "pages/music_page.py",
+        "        self.playlist_widget.setSelectionMode(QListWidget.ExtendedSelection)",
+        "        self.playlist_widget.setSelectionMode(QListWidget.SingleSelection)",
+        "tests/test_music_page_tells_the_truth_about_playing.py::"
+        "test_the_playlist_really_allows_what_the_page_promises",
+        "RN-460：按钮写「删除选中」、确认框写「选中的 N 首」、胶囊写「选中 · N 首」——"
+        "三处都在承诺多选。改前判断题「能不能一次删两首」**有歌的两档 11/12 答「做得到」**，"
+        "依据逐字就是那三处承诺 ⇒ **承诺被 100% 读到了，产品不兑现**。"
+        "⚠⚠ 改后同一题票数**一模一样**（B 场景 6/6「做得到」）——"
+        "⭐⭐⭐ **同一个票数，在修改前后指向的是两件相反的事实**；"
+        "看图看不见 `selectionMode`，所以这条只能由**行为**判据证",
+    ),
+    Revert(
+        "RN", "总开关旁边又不说它管哪一件事",
+        "pages/music_page.py",
+        "        overview_layout.addWidget(self.master_switch_scope_label)",
+        "        pass  # 范围说明不要了",
+        "tests/test_music_page_tells_the_truth_about_playing.py::"
+        "test_the_master_switch_says_what_it_does_not_block",
+        "RN-462：⭐⭐⭐ **我撤掉的那颗冗余开关，同时是唯一一处界定范围的说明** ——"
+        "「允许**游戏状态**自动控制音乐」身兼两职，我撤它时只看见了「它是一颗多余的开关」。"
+        "改后外审 7 发冒出「以为整个播放器未启用、不敢使用」（改前 0 发）。"
+        "⚠ 那句说明其实还在（联动卡里），只是批 32 把列表提到前面之后掉到了折线以下 ⇒ "
+        "⭐ **解释性文字要放在困惑发生的位置**",
+    ),
+    Revert(
+        "RN", "抬了 schema 版本号却不给迁移函数",
+        "config.py",
+        "CONFIG_MIGRATIONS = {1: _migrate_1_to_2}",
+        "CONFIG_MIGRATIONS = {}",
+        "tests/test_config_schema_migration.py::"
+        "test_the_migration_is_actually_registered",
+        "RN-463：`_run_schema_migrations` 遇到没注册的版本会 **break** ⇒ "
+        "后面的迁移**全部静默跳过**。⭐ **版本号只许和迁移函数一起往上抬。**"
+        "⚠ 这个框架从 P4.2 建起一直是空的：写好了、接线了、有 4 条测试，"
+        "**但从来没跑过一个真正的迁移** —— "
+        "⭐⭐ **一条从没被走过的通路，和一条走不通的通路，平时长得一模一样**",
+    ),
+    Revert(
+        "RN", "迁移把「本来不联动」的老用户改成联动",
+        "config.py",
+        "            cfg.music_enabled = False",
+        "            pass  # 不动总开关",
+        "tests/test_config_schema_migration.py::"
+        "test_the_migration_keeps_a_user_who_had_turned_linking_off",
+        "RN-454 的迁移：老用户里只有「总开关开 + 子开关关」这一种组合会被改变行为——"
+        "他今天是**不联动**，撤掉子开关后会突然开始联动。"
+        "⭐⭐⭐ **迁移的方向要朝「保住用户已经表达过的意图」那边倒，"
+        "不朝「保住某个键的字面值」那边倒。**",
+    ),
     # ======================= RN-455 / RN-457 / RN-458 / RN-459：music 说的话得是真的
     Revert(
         "RN", "页头又把新用户指向那条还没建的控制栏",
@@ -4475,7 +4573,11 @@ REVERTS = [
     Revert(
         "RN", "总开关关着，状态胶囊照旧写「已启用」",
         "pages/music_page.py",
-        '    return "已启用" if bool(getattr(config, "music_enabled", False)) else "已配置"',
+        # ⚠ 锚点在批 33 搬过一次家：那一批撤掉了子开关（RN-454），
+        # 「已配置」这个第三态（子开关开 + 总开关关）随着那个组合一起消失，
+        # 函数从三态收成两态。⭐ **一个状态词是为了描述某个组合而存在的，
+        # 组合没了，它就该跟着没** —— 而钉着它的断点得跟着走。
+        '    return "已启用" if link_enabled else "已关闭"',
         '    return "已启用"',
         "tests/test_master_switch_effect_is_honest.py::"
         "test_nothing_on_screen_claims_to_be_enabled_while_the_switch_is_off[music]",

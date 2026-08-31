@@ -2476,14 +2476,6 @@
   },
   {
    "page": "music",
-   "text": "允许游戏状态自动控制音乐",
-   "card": "",
-   "tab": "",
-   "kind": "check",
-   "src": "runtime"
-  },
-  {
-   "page": "music",
    "text": "列表循环",
    "card": "",
    "tab": "",

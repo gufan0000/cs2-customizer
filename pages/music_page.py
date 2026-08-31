@@ -46,9 +46,11 @@ def _link_state_word(link_enabled: bool) -> str:
     而「已启用」这三个字同时承担了这两个意思。
     ⇒ 三态：总开关关着 + 子开关开 = 「**已配置**」（配好了，但没在跑）。
     """
-    if not link_enabled:
-        return "已关闭"
-    return "已启用" if bool(getattr(config, "music_enabled", False)) else "已配置"
+    # ⚠⚠ RN-454（批 33）：子开关撤了，这里只剩总开关一个输入。
+    # 「已配置」那个第三态是批 18 为了描述「子开关开 + 总开关关」造的 ——
+    # 那个组合从此不存在。⭐ **一个状态词是为了描述某个组合而存在的，
+    # 组合没了，它就该跟着没。**
+    return "已启用" if link_enabled else "已关闭"
 
 
 class MusicPage(QWidget):
@@ -177,6 +179,31 @@ class MusicPage(QWidget):
         self.master_switch_row = make_master_switch_row(
             self, "music_enabled", "音乐联动")
         overview_layout.addWidget(self.master_switch_row)
+
+        # ⚠⚠⚠ RN-462（批 33 改完复跑逼出来的）：撤掉那颗子开关之后，
+        # 屏幕上说这件事的只剩「总开关」三个字 —— 而这一页有**两件事**
+        # （手动放歌 / 游戏联动），那三个字没说它管的是哪一件。
+        # 撤掉子开关之后这条抱怨从 **3 条涨到 5 条**：
+        #   「命名为『总开关』且默认关闭，新用户极易误以为当前功能未启用、
+        #     无法播放音乐」「不敢使用」。补上这句范围说明之后回落到 **2 条**，
+        #   **低于改前**。
+        # ⚠⚠ 我第一版在档案里写的是「改前 0 发」——**那是错的**，
+        #   来自一次没有逐行读过的 grep。⭐ **裁定权在有原始证据的一方，
+        #     而那一次原始证据是我自己没去看的那批文件。**
+        # ⭐⭐⭐ **我撤掉的那颗冗余开关，同时是唯一一处界定范围的说明** ——
+        #   「允许**游戏状态**自动控制音乐」这句话身兼两职，
+        #   我撤它的时候只看见了「它是一颗多余的开关」。
+        # ⭐⭐ 批 31 记过「一个控件怎么被读，由它的邻居决定」；
+        #   这条更进一步：**一个冗余的控件，可能同时是唯一一处非冗余的说明。**
+        # ⚠ 那句范围说明其实还在（联动卡里的 `desc_label`），但批 32 把播放列表
+        #   提到了前面 ⇒ 它掉到折线以下了。⭐ **解释性文字要放在困惑发生的位置**，
+        #   而困惑发生在第一屏这颗开关旁边。
+        self.master_switch_scope_label = QLabel(
+            "这颗开关只管「游戏里要不要自动接管音乐」；不开也能在这一页加歌、双击试听。"
+        )
+        self.master_switch_scope_label.setObjectName("hintLabel")
+        self.master_switch_scope_label.setWordWrap(True)
+        overview_layout.addWidget(self.master_switch_scope_label)
 
         status_row = QHBoxLayout()
         status_row.setSpacing(10)
@@ -470,7 +497,7 @@ class MusicPage(QWidget):
         if not hasattr(self, "link_policy_label"):
             return
 
-        link_enabled = bool(getattr(config, "music_game_link_enabled", False))
+        link_enabled = bool(getattr(config, "music_enabled", False))
         death_action = str(getattr(config, "music_death_action", "play") or "play")
         death_action_text = "阵亡后自动开始/继续播放" if death_action == "play" else "阵亡后不自动改动"
         death_volume_text = (
@@ -546,7 +573,7 @@ class MusicPage(QWidget):
     def _sync_overview_status(self):
         if not hasattr(self, "status_badge_label"):
             return
-        link_enabled = bool(config.music_game_link_enabled)
+        link_enabled = bool(config.music_enabled)
         mode_text = self._format_play_mode_text()
         playlist_name = str(
             self.player.current_playlist_name or getattr(config, "music_current_playlist", "") or "默认列表"
@@ -598,14 +625,21 @@ class MusicPage(QWidget):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(10)
         
-        # 启用开关
-        self.game_link_checkbox = QCheckBox("允许游戏状态自动控制音乐")
-        self.game_link_checkbox.setChecked(config.music_game_link_enabled)
-        self.game_link_checkbox.toggled.connect(self._on_game_link_toggled)
-        layout.addWidget(self.game_link_checkbox)
-
+        # ⚠⚠ RN-454（批 33）：这里原来有一颗复选框「允许游戏状态自动控制音乐」，
+        # 它是页面顶部那颗总开关的**第二个入口** —— AST 实测两者在
+        # `gsi_handler_music.process_data` 里是紧挨着的两行 AND，
+        # 而默认值相反（总开关 False、子开关 True）⇒ 每个新用户进来看到的都是
+        # 「总开关未开启 + 子开关已勾选」。外审 **19/24 发**判高。
+        # ⭐⭐⭐ **一件事一颗开关。**
+        # ⚠ 连带撤掉的还有 `link_content_frame.setEnabled(...)` 那道**真禁用** ——
+        #   实测它一开一关会让整页禁用控件在 2 和 27 之间跳，而 27 那一档正是
+        #   批 17 实测后改判为不做的「大面积置灰」（RN-421）。
+        #   ⭐⭐ **那 27 个置灰今天就存在，只是由子开关触发，
+        #     所以只拨总开关的那一轮普查结构上扫不到它。**
+        #   现在这张卡由既有的 `masterOff` 降权管。
         desc_label = QLabel(
-            "说明：底部音乐控制栏可随时手动播放；这里的设置只决定游戏是否自动播放、暂停或调整音量。"
+            "总开关开着时，游戏里的死活状态会自动播放 / 暂停 / 调整音量；"
+            "关着时这些设置照常可以先调好，只是游戏里还不生效。"
         )
         desc_label.setWordWrap(True)
         desc_label.setObjectName("hintLabel")
@@ -854,6 +888,11 @@ class MusicPage(QWidget):
         layout.addWidget(self.playlist_status_badge_label)
 
         self.playlist_widget = QListWidget()
+        # ⚠ RN-460（批 33）：按钮写「删除选中」、确认框写「选中的 N 首」、
+        # 胶囊写「选中 · N 首」—— 三处都在承诺多选，而这里原来是默认的
+        # `SingleSelection`，**N 永远是 1**。
+        # ⭐ 同批 24 那条：**一句话被读错时，先问它是不是本来就该是真的。**
+        self.playlist_widget.setSelectionMode(QListWidget.ExtendedSelection)
         self.playlist_widget.setMinimumHeight(180)
         self.playlist_widget.setMaximumHeight(320)
         self.playlist_widget.itemDoubleClicked.connect(self._on_item_double_clicked)
@@ -905,25 +944,6 @@ class MusicPage(QWidget):
     
     # ===== 事件处理器 =====
     
-    def _on_game_link_toggled(self, checked):
-        """游戏联动开关切换"""
-        config.music_game_link_enabled = checked
-        config.save_config()
-        self.link_content_frame.setEnabled(checked)
-        self._sync_overview_status()
-        self.logger.info(f"音乐自动联动: {'启用' if checked else '禁用'}")
-        # v2.2.1: 关闭联动时恢复被联动改掉的状态——旧版只写 config，
-        # 若音乐正被联动暂停/降音量，会永久卡在该状态直到用户手动恢复
-        if not checked:
-            try:
-                from gsi_handler_music import get_music_gsi_handler
-
-                handler = get_music_gsi_handler()
-                if handler is not None:
-                    handler.restore_game_link_state("关闭游戏联动")
-            except Exception:
-                self.logger.exception("关闭联动时恢复音乐状态失败")
-
     def _on_death_action_changed(self, action_id):
         """死亡时播放行为切换"""
         action_map = {0: "play", 1: "keep"}
@@ -1296,9 +1316,6 @@ class MusicPage(QWidget):
     
     def load_settings(self):
         """加载设置"""
-        # 游戏联动设置
-        self.game_link_checkbox.setChecked(config.music_game_link_enabled)
-        self.link_content_frame.setEnabled(config.music_game_link_enabled)
         
         # 死亡设置
         death_action_index = 0 if config.music_death_action == "play" else 1

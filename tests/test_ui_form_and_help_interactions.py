@@ -355,10 +355,20 @@ def test_music_page_help_and_playlist_controls_are_usable(qapp, monkeypatch):
     qapp.processEvents()
     assert dummy.play_mode == "shuffle"
 
-    page.game_link_checkbox.setChecked(False)
+    # ⚠⚠ RN-454（批 33）：这三行原来验的是「拨子开关 → 写 config → 整张卡禁用」。
+    #   子开关撤了，那道**真禁用**也一并撤了 ——
+    #   实测它一开一关会让整页禁用控件在 2 和 27 之间跳，而 27 那一档正是
+    #   批 17 实测后改判为不做的「大面积置灰」（RN-421）。
+    #   ⭐⭐ **那 27 个置灰今天就存在，只是由子开关触发**，
+    #     所以只拨总开关的那一轮普查结构上扫不到它。
+    #   ⇒ 现在这张卡由 `masterOff` 降权管，任何时候都不该被禁用。
+    assert not hasattr(page, "game_link_checkbox")
+    monkeypatch.setattr(config, "music_enabled", False, raising=False)
+    page._sync_overview_status()
     qapp.processEvents()
-    assert config.music_game_link_enabled is False
-    assert page.link_content_frame.isEnabled() is False
+    assert page.link_content_frame.isEnabled() is True, (
+        "总开关关着时联动卡被禁用了 —— 那正是 RN-421 改判为不做的那件事"
+    )
 
     page.deleteLater()
     qapp.processEvents()

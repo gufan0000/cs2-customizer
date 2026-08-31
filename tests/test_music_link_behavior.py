@@ -147,6 +147,13 @@ def test_gsi_music_handler_lowers_volume_when_master_toggle_on(monkeypatch):
 
 
 def test_gsi_music_handler_does_not_create_player_when_link_disabled(monkeypatch):
+    """⚠⚠ RN-454（批 33）：这条原来钉的是**子开关**关着时不建播放器。
+
+    那颗子开关已经撤了（它是总开关的纯 AND 项，全产品唯一消费点就在
+    `process_data` 里紧挨着的下一行）⇒ 现在只剩总开关这一条闸门。
+    ⭐ **判据的对象被撤掉时，要么改钉那个动作现在的唯一入口，
+      要么就删掉它 —— 留着改成恒真是最坏的一种。**
+    """
     calls = []
 
     def _factory():
@@ -154,14 +161,19 @@ def test_gsi_music_handler_does_not_create_player_when_link_disabled(monkeypatch
         return _DummyPlayer()
 
     monkeypatch.setattr(gsi_handler_music, "get_music_player", _factory)
-    monkeypatch.setattr(config, "music_enabled", True, raising=False)
-    monkeypatch.setattr(config, "music_game_link_enabled", False, raising=False)
+    monkeypatch.setattr(config, "music_enabled", False, raising=False)
 
     handler = gsi_handler_music.GSIHandlerMusic()
     handler.process_data(_kill_payload(health=100))
 
     assert calls == []
     assert handler.player is None
+
+    #: 阳性对照：总开关开着时它**必须**建 —— 否则上面那条可以靠
+    #: 「这个处理器从来不建播放器」全绿。
+    monkeypatch.setattr(config, "music_enabled", True, raising=False)
+    handler.process_data(_kill_payload(health=100))
+    assert calls == ["created"], "总开关开着却没建播放器 —— 闸门关死了"
 
 
 def test_music_control_bar_init_does_not_create_player(monkeypatch):

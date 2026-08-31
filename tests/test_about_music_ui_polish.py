@@ -139,7 +139,12 @@ def test_music_page_overview_badges_sync(qapp, monkeypatch):
     assert play_mode_chips == ["当前 · 列表循环", "范围 · 底部播放器"]
     assert "播放模式：列表循环" in page.status_card.toolTip()
 
-    page.game_link_checkbox.setChecked(False)
+    # ⚠⚠ RN-454（批 33）：这里原来拨的是**子开关** `game_link_checkbox`。
+    #   它已经撤了（总开关的纯 AND 项）⇒ 改拨总开关这唯一的一颗。
+    #   ⭐ 「联动 · 已关闭」这句话现在只有一个输入，说的也就只有一件事。
+    assert not hasattr(page, "game_link_checkbox")
+    monkeypatch.setattr(config, "music_enabled", False, raising=False)
+    page._sync_overview_status()
     chips = _visible_audio_status_chip_texts(page.status_badge_label)
     assert any(text == "联动 · 已关闭" for text in chips)
     assert "游戏联动：已关闭" in page.status_card.toolTip()

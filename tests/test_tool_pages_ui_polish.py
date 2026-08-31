@@ -2009,14 +2009,20 @@ def test_music_page_status_cards_track_link_mode_and_playlist(qapp, monkeypatch)
     qapp.processEvents()
     assert dummy.play_mode == "shuffle"
 
-    page.game_link_checkbox.setChecked(False)
+    # ⚠⚠ RN-454（批 33）：子开关撤了（总开关的纯 AND 项，全产品唯一消费点
+    #   就在 `gsi_handler_music.process_data` 里紧挨着的下一行）⇒ 改拨总开关。
+    #   ⭐ 「联动 · 已关闭」这句话现在只有一个输入，说的也就只有一件事；
+    #     批 18 造的第三态「已配置」（子开关开 + 总开关关）随组合一起消失。
+    assert not hasattr(page, "game_link_checkbox")
+    monkeypatch.setattr(config, "music_enabled", False, raising=False)
+    page._sync_overview_status()
     qapp.processEvents()
     chips = _visible_audio_status_chip_texts(page.status_badge_label)
     assert "联动 · 已关闭" in chips
-    # ⚠ 措辞在批 18 统一了：同一个状态原来有两个词 —— 胶囊写「联动 · 已关闭」、
-    # 摘要写「联动未启用」。⭐ **一个状态两个说法，读的人会去找那个不存在的区别。**
     assert "联动已关闭" in page.link_policy_label.text()
-    assert page.link_content_frame.isEnabled() is False
+    assert page.link_content_frame.isEnabled() is True, (
+        "总开关关着时联动卡被禁用了 —— 那正是 RN-421 改判为不做的那件事"
+    )
 
     page.deleteLater()
     qapp.processEvents()

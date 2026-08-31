@@ -710,3 +710,251 @@ def test_the_play_mode_card_does_not_say_the_same_thing_five_times():
         f"只剩 {len(said)} 处了，该把 MAX_BOTTOM_PLAYER_MENTIONS 收到这个数 ——"
         "棘轮不收紧等于没有棘轮。"
     )
+
+
+# ==================================================================== 批 33
+# RN-454：一件事一颗开关 · RN-460：按钮说多选，列表得真能多选
+# ==================================================================== 
+
+#: 总开关关着时，这一页**允许**处于禁用态的控件数上限。
+#:
+#: ⭐⭐⭐ 这条数是批 33 的要害。实测：
+#:   · 现状（子开关开着）        整页 disabled = **2**
+#:   · 若让联动卡跟总开关走      整页 disabled = **27**
+#: 而 27 那一档正是批 17 **实测后改判为不做**的东西（RN-421，
+#: 「大面积置灰 = 软件坏了」，40 余发一致指向它）。
+#:
+#: ⇒ 撤掉子开关时**必须同时撤掉那道 `setEnabled()` 真禁用**，
+#:   让联动卡由既有的 `masterOff` 降权管（实测它已经够着了：
+#:   `death_link_card` / `alive_link_card` 都带着 `masterOff=true`）。
+#: ⭐⭐ 顺带一条：那 27 个置灰**今天就存在** —— 只是由**子开关**触发，
+#:   所以 RN-421 那一轮（只拨总开关）结构上扫不到它。
+#:   **一处缺陷躲开一次普查，可以只是因为触发它的那个开关不在普查的分母里。**
+MAX_DISABLED_WHEN_MASTER_OFF = 4
+
+
+def _music_page_with_master_off(monkeypatch, tracks=3):
+    """建一页 music，总开关关着（产品默认）。返回 (app, page)。"""
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+    import pages.music_page as mod
+
+    class _P:
+        current_playlist_name = "默认"
+        current_index = -1
+        is_playing = False
+        is_paused = False
+        on_playlist_update = None
+        on_playlist_change = None
+
+        def __init__(self):
+            self.playlist = [{"title": f"曲目{i}", "path": f"D:/{i}.mp3",
+                              "duration": 60} for i in range(tracks)]
+
+        def get_playlist(self):
+            return list(self.playlist)
+
+        def get_all_playlists(self):
+            return ["默认"]
+
+        def switch_playlist(self, name):
+            pass
+
+        def get_current_track(self):
+            return None
+
+        def set_play_mode(self, mode):
+            pass
+
+    monkeypatch.setattr(mod, "get_music_player", _P)
+    monkeypatch.setattr(mod.config, "music_enabled", False, raising=False)
+    return app, mod.MusicPage()
+
+
+def test_the_game_link_has_exactly_one_switch():
+    """⭐⭐⭐ RN-454：**一件事一颗开关。**
+
+    实测（AST）：`music_game_link_enabled` 在整个产品里只有一个消费点，
+    而且是 `gsi_handler_music.process_data` 开头**紧挨着总开关的一行**：
+
+        if not config.music_enabled: return
+        if not config.music_game_link_enabled: return
+
+    ⇒ 它是总开关的一个**纯 AND 项**，没有任何独立作用；而总开关还多管一件
+    （`_music_session_active`）。两颗开关管同一件事，**默认值还相反**
+    （总开关 False、子开关 True）⇒ 每个新用户看到的都是
+    「总开关未开启 + 子开关已勾选」。外审改前 **19/24 发**判高。
+
+    这条钉的是「产品代码里不许再出现这个键」。
+    ⛔ `config.py` 的迁移函数是**唯一豁免** —— 它必须读得到旧值才能迁。
+    """
+    #: ⚠⚠ 第一版这里是**逐行字符串匹配**，当场逮到 `music_page.py` 里一行
+    #:   讲这条缺陷来历的 **docstring** —— 那是档案，不是使用。
+    #:   ⭐ **在源码上做字符串匹配，会把「讲这件事」和「做这件事」算成一件事**
+    #:     （批 32 刚在 `ast.dump` 上栽过同一跤：那是「用 AST 拿到树再 grep」）。
+    #:   ⇒ 走 AST，只认**真的读/写那个属性**：`config.X` / `getattr(config, "X")`。
+    KEY = "music_game_link_enabled"
+    offenders = []
+    for rel in ("pages/music_page.py", "gsi_handler_music.py",
+                "music_player.py", "gui_widget.py"):
+        path = REPO / rel
+        if not path.exists():
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for n in ast.walk(tree):
+            if isinstance(n, ast.Attribute) and n.attr == KEY:
+                offenders.append(f"{rel}:{n.lineno}  属性访问 config.{KEY}")
+            elif isinstance(n, ast.Call) and isinstance(n.func, ast.Name)                     and n.func.id == "getattr" and len(n.args) >= 2                     and isinstance(n.args[1], ast.Constant) and n.args[1].value == KEY:
+                offenders.append(f"{rel}:{n.lineno}  getattr(..., {KEY!r})")
+    assert not offenders, (
+        "产品代码里还在用那颗子开关：\n" + "\n".join("  " + o for o in offenders)
+        + "\n⇒ RN-454：它是总开关的纯 AND 项，一件事只留一颗开关。"
+    )
+    #: 反向：总开关那一行必须还在，否则「撤掉重复」就变成了「两颗都没了」
+    #: （批 31 那条反面守卫：**一条只判「坏东西没了」的判据，
+    #:   挡不住「好东西也一起没了」**）。
+    #: ⚠⚠ 第一版这里写的是 `'"music_enabled"' in src` —— **回退验证判它假绿**：
+    #:   把 `make_master_switch_row(self, "music_enabled", ...)` 改成
+    #:   `"music_enabled_XX"` 之后它照样绿，因为同一个文件里还有
+    #:   `getattr(config, "music_enabled", False)` 也含这个字面量。
+    #:   ⭐⭐ **一个反面守卫，用了一个在文件里别处也出现的字面量，就守不住任何东西**
+    #:     —— 这是我在这一页上第三次栽在「拿字符串当结构用」。
+    #: ⇒ 走 AST：那一行必须真的是 `make_master_switch_row(..., "music_enabled", ...)`。
+    tree = ast.parse(_page_src())
+    rows = [
+        n for n in ast.walk(tree)
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+        and n.func.id == "make_master_switch_row"
+        and any(isinstance(a, ast.Constant) and a.value == "music_enabled"
+                for a in n.args)
+    ]
+    assert len(rows) == 1, (
+        f"就地总开关（`make_master_switch_row(..., \"music_enabled\", ...)`）"
+        f"找到 {len(rows)} 处，应当恰好 1 处 —— "
+        "撤的是**副本**，不是这件事本身。"
+    )
+
+
+def test_turning_the_master_off_does_not_grey_out_the_page(monkeypatch):
+    """⭐⭐ 撤掉子开关，不许把「大面积置灰」搬到总开关上（批 17 / RN-421）。
+
+    ⚠ 这条判据存在的理由：RN-454 最顺手的修法就是
+    `link_content_frame.setEnabled(config.music_enabled)` —— 一行，看着对，
+    而它会把新用户的整页禁用控件从 2 顶到 27。
+    ⭐ **一个正确的合并，可以把一条已经被否掉的方案偷偷放回来。**
+    """
+    from PySide6.QtWidgets import QWidget
+
+    app, page = _music_page_with_master_off(monkeypatch)
+    try:
+        app.processEvents()
+        disabled = [w for w in page.findChildren(QWidget) if not w.isEnabled()]
+        assert len(disabled) <= MAX_DISABLED_WHEN_MASTER_OFF, (
+            f"总开关关着时有 {len(disabled)} 个控件被禁用，上限 "
+            f"{MAX_DISABLED_WHEN_MASTER_OFF}：\n"
+            + "\n".join("  " + (w.objectName() or type(w).__name__)
+                        for w in disabled[:12])
+            + "\n⭐ 批 17 实测：大面积置灰会被读成「软件坏了」，"
+            "那一轮 40 余发一致指向它，RN-421 因此改判为不做。\n"
+            "⇒ 联动卡用既有的 `masterOff` 降权，不要真禁用。"
+        )
+        #: 反向守卫：那张联动卡本身不许是禁用的。
+        #: ⚠⚠ 第一版这里断言「至少 4 个控件带 `masterOff` 属性」，**当场空转**：
+        #:   那个属性是主窗/主题层在注册页面时挂上去的，而这里建的是**独立页**，
+        #:   于是它恒为 0 —— 判据在量一件这个夹具结构上产生不出来的事。
+        #:   ⭐ **一条判据的分母，不能超出它自己那个夹具能造出来的世界。**
+        #: ⇒ 降权「真的够着了没有」由全站那条在真窗口里跑的判据管
+        #:   （`test_master_switch_effect_is_honest`，239 条）；这里只管
+        #:   「这一页有没有自己把卡片禁掉」。
+        assert page.link_content_frame.isEnabled(), (
+            "总开关关着时联动卡被禁用了 —— 那正是 RN-421 改判为不做的那件事。"
+        )
+    finally:
+        page.deleteLater()
+        app.processEvents()
+
+
+def test_the_playlist_really_allows_what_the_page_promises(monkeypatch):
+    """⭐ RN-460：按钮说「删除选中」、确认框说「选中的 N 首」、胶囊说「选中 · N 首」——
+    三处都在承诺多选，而列表实测是 `SingleSelection`，**N 永远是 1**。
+
+    ⭐ 同批 24 那条：**一句话被读错时，先问它是不是本来就该是真的。**
+    正确的修法是让列表真能多选，不是把三处文案改成单数。
+    """
+    from PySide6.QtWidgets import QAbstractItemView
+
+    app, page = _music_page_with_master_off(monkeypatch, tracks=4)
+    try:
+        app.processEvents()
+        #: 先证明那三处承诺确实还在（否则这条判据是在钉一件不存在的事）
+        src = _page_src()
+        assert "删除选中" in src and "选中的 {len(selected_items)} 首" in src, (
+            "页面不再承诺多选了？那这条判据该改，不是继续绿着。"
+        )
+        mode = page.playlist_widget.selectionMode()
+        assert mode == QAbstractItemView.ExtendedSelection, (
+            f"曲目列表的选择模式是 {mode}，而页面三处文案都在说「N 首」。\n"
+            "⇒ 让承诺成真：`ExtendedSelection`。"
+        )
+        #: 行为侧：真的能同时选中两行，且页面数得对
+        page.playlist_widget.item(0).setSelected(True)
+        page.playlist_widget.item(2).setSelected(True)
+        page._on_playlist_selection_changed()
+        app.processEvents()
+        assert len(page.playlist_widget.selectedItems()) == 2, (
+            "设了两行选中，实际只选上一行 —— 选择模式没真的生效。"
+        )
+        assert len(page.selected_indices) == 2, (
+            f"页面自己数出来是 {len(page.selected_indices)} 首，应当是 2 —— "
+            "胶囊和确认框都靠这个数。"
+        )
+    finally:
+        page.deleteLater()
+        app.processEvents()
+
+
+def test_the_master_switch_says_what_it_does_not_block(monkeypatch):
+    """⭐⭐⭐ RN-462：总开关旁边必须说清它**不**管什么。
+
+    批 33 撤掉子开关「允许**游戏状态**自动控制音乐」之后，
+    屏幕上说这件事的只剩共用组件那三个字「总开关」——
+    而这一页有**两件事**（手动放歌 / 游戏联动），三个字没说它管哪一件。
+    实测轨迹：改前 **3 条** → 撤掉子开关后 **5 条** → 补上这句范围说明后 **2 条**
+    （逐行读过的数，低于改前）。抱怨原文：「极易误以为当前功能未启用、
+    无法播放音乐」「不敢使用」。
+    ⚠⚠ 我第一版写的是「改前 0 发」——**错的**，来自一次没逐行读过的 grep。
+    ⭐ **裁定权在有原始证据的一方；那一次原始证据是我自己没去看的那批文件。**
+
+    ⭐⭐⭐ **我撤掉的那颗冗余开关，同时是唯一一处界定范围的说明。**
+    ⭐ 而那句说明其实还在（联动卡里），只是批 32 把播放列表提到前面之后
+      它掉到了折线以下 —— **解释性文字要放在困惑发生的位置**。
+
+    ⛔ 不许改共用组件那个 `ROW_LABEL_TEXT = "总开关"`：它是 15 页共用的常驻事实
+      （RN-144/147/155），改它等于替另外 14 页做决定。
+    """
+    from PySide6.QtWidgets import QLabel
+
+    app, page = _music_page_with_master_off(monkeypatch)
+    try:
+        app.processEvents()
+        card = page.music_overview_card
+        texts = [(w.text() or "").strip() for w in card.findChildren(QLabel)]
+        scope = [t for t in texts if "游戏" in t and ("也能" in t or "照常" in t)]
+        assert scope, (
+            "总开关那张卡里没有一句话说清「这颗开关不管本地播放」：\n"
+            + "\n".join("  " + t[:50] for t in texts if t)
+            + "\n⇒ 那三个字「总开关」在这一页上是有歧义的（两件事）。"
+        )
+        #: 而且它得**在总开关那一行附近**，不能又掉到折线以下 ——
+        #: ⭐ 「这一屏某处写过」不等于「解释放在困惑发生的地方」（批 27 那条）。
+        row_y = page.master_switch_row.mapTo(card, page.master_switch_row.rect().topLeft()).y()
+        label = next(w for w in card.findChildren(QLabel)
+                     if (w.text() or "").strip() in scope)
+        gap = label.mapTo(card, label.rect().topLeft()).y() - row_y
+        assert 0 <= gap <= 120, (
+            f"那句范围说明离总开关 {gap}px —— 太远了，写了等于没写。"
+        )
+    finally:
+        page.deleteLater()
+        app.processEvents()
