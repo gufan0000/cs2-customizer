@@ -3758,6 +3758,35 @@ REVERTS = [
         "的注释里，而我在普查脚本里用对了、换到判据里又自己抄了一遍 ——"
         "**一个教训只修在它被发现的那条通路上，等于只修了一份副本**",
     ),
+    # ============================ RN-468 / RN-469：制度体检留下的两条棘轮
+    Revert(
+        "RN", "空转风险的棘轮被放松了",
+        "tests/test_judges_are_not_idling.py",
+        "MAX_IDLE_RISK = 77",
+        "MAX_IDLE_RISK = 200",
+        "tests/test_judges_are_not_idling.py::test_idle_risk_only_shrinks",
+        "RN-469：全站 **77 条**判据在结构上「分母一空就全绿」"
+        "（① 函数体里有一次扫描 ② 只做否定断言 ③ 没有任何一句断言分母不空）。"
+        "⭐⭐ **一条为某个缺陷而写的判据，可以在那个缺陷还没进分母的时候，绿着上线** ——"
+        "批 34 那条空转守卫把错配写进 docstring 却没修，正是因为它一直绿着。"
+        "⚠ 棘轮两头都钉：调大它报「放松了」，而实际变少却不收紧也报 ——"
+        "⭐ 棘轮不收紧等于没有棘轮",
+    ),
+    Revert(
+        "RN", "关档不写批号也没人管",
+        "tests/test_the_health_check_is_not_optional.py",
+        "MAX_CLOSED_WITHOUT_BATCH = 10",
+        "MAX_CLOSED_WITHOUT_BATCH = 99",
+        "tests/test_the_health_check_is_not_optional.py::"
+        "test_every_newly_closed_page_records_its_batch",
+        "RN-468：⭐⭐⭐ **一条把「不知道」算成「最坏」的规则，"
+        "在「不知道」是历史常态时会让判据永远红 —— 那和永远绿一样没用。**"
+        "⇒ 到期检查只数**有批号**的页，而「还有几页没批号」单列成这条有棘轮的账。"
+        "⭐⭐ **把「不知道」单列成一条有棘轮的账，比让它污染另一条判据要诚实。**"
+        "⚠ 「体检到期了没有」那一条**没法在这里配断点**：它读的是"
+        "**另一个仓**的批次台账（纯文档仓），`revert_verify` 只改本仓文件 ⇒ "
+        "那一条靠开发期手工验（三版里它红过两次、绿过一次，过程记在档案里）",
+    ),
     # =============== RN-190 / RN-464 / RN-465：fun_afterlife 补齐全站家具
     Revert(
         "RN", "fun 页又手搓一颗总开关",
