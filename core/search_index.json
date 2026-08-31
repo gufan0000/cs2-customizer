@@ -2876,46 +2876,6 @@
   },
   {
    "page": "fun_afterlife",
-   "text": "启用死亡刷短视频",
-   "card": "总开关",
-   "tab": "",
-   "kind": "check",
-   "src": "runtime"
-  },
-  {
-   "page": "fun_afterlife",
-   "text": "总开关",
-   "card": "总开关",
-   "tab": "",
-   "kind": "card",
-   "src": "runtime"
-  },
-  {
-   "page": "fun_afterlife",
-   "text": "打开并登录抖音",
-   "card": "总开关",
-   "tab": "",
-   "kind": "button",
-   "src": "runtime"
-  },
-  {
-   "page": "fun_afterlife",
-   "text": "收回窗口",
-   "card": "总开关",
-   "tab": "",
-   "kind": "button",
-   "src": "runtime"
-  },
-  {
-   "page": "fun_afterlife",
-   "text": "预览效果",
-   "card": "总开关",
-   "tab": "",
-   "kind": "button",
-   "src": "runtime"
-  },
-  {
-   "page": "fun_afterlife",
    "text": "以手机模式打开（推荐）",
    "card": "看什么",
    "tab": "",
@@ -2968,6 +2928,38 @@
    "card": "窗口",
    "tab": "",
    "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "fun_afterlife",
+   "text": "打开并登录抖音",
+   "card": "第一次使用",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "fun_afterlife",
+   "text": "收回窗口",
+   "card": "第一次使用",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "fun_afterlife",
+   "text": "第一次使用",
+   "card": "第一次使用",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "fun_afterlife",
+   "text": "预览效果",
+   "card": "第一次使用",
+   "tab": "",
+   "kind": "button",
    "src": "runtime"
   },
   {

@@ -62,7 +62,9 @@ def page(qapp, monkeypatch):
 
 def test_page_builds(page):
     widget, _ = page
-    assert widget.enable_box is not None
+    # ⚠ RN-190（批 34）：手搓的 `enable_box` 换成了全站共用的就地总开关行
+    #   （16 个首页功能开关里另外 15 个早就走它）。
+    assert widget.master_switch_row is not None
     assert len(widget._mode_boxes) == len(MODE_OPTIONS)
 
 
@@ -80,14 +82,59 @@ def test_toggling_mode_writes_config(page):
     assert "competitive" not in config.fun_afterlife_modes
 
 
-def test_enable_triggers_preheat_and_disable_triggers_shutdown(page):
-    widget, controller = page
-    widget.enable_box.setChecked(True)
-    assert "preheat" in controller.calls
-    assert config.fun_afterlife_enabled is True
-    widget.enable_box.setChecked(False)
-    assert "shutdown" in controller.calls
-    assert config.fun_afterlife_enabled is False
+def test_the_page_does_not_run_the_side_effects_itself(page):
+    """⭐⭐ RN-190（批 34）：**这条判据的对象搬家了。**
+
+    原来它验的是「在这一页拨开关 → 页面自己调 preheat/shutdown」。
+    而那正是缺陷本身：同一件事两条链路，短的那条缺「同步首页那颗的显示」。
+    ⇒ 副作用现在只挂在 `gui_widget._on_switch_changed` 上（唯一那条）。
+
+    ⭐ 按批 33 那条：**判据的对象被撤掉时，要么改钉现在的唯一入口，
+      要么删掉它；留着改成恒真是最坏的一种。**
+    这里两件都做：① 页面自己不许再做（下面这条）；
+    ② 那条唯一链路上确实有它（`test_the_only_chain_still_runs_them`）。
+    """
+    import ast
+    import inspect
+    import pages.fun_page as mod
+
+    tree = ast.parse(inspect.getsource(mod))
+    offenders = []
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) \
+                and n.func.attr in ("preheat", "shutdown"):
+            offenders.append(f"{n.func.attr} @ line {n.lineno}")
+    assert not offenders, (
+        "页面又自己跑那串副作用了：" + ", ".join(offenders) + "\n"
+        "⭐ 同一件事只能有一条链路；第二条一定会缺东西，而缺的那部分不报错。"
+    )
+
+
+def test_the_only_chain_still_runs_them():
+    """② 那条唯一的链路上确实还有 preheat / shutdown。
+
+    ⚠ 走 AST 查「装上了没有」——`controller.preheat()` 本身好不好使
+    由 `test_afterlife_controller.py` 管（**只测「零件好使」证明不了
+    「零件装上了」**，批 10/批 12 各栽过一次）。
+    """
+    import ast
+    from pathlib import Path
+
+    src = (Path(__file__).resolve().parent.parent / "gui_widget.py").read_text(encoding="utf-8")
+    tree = ast.parse(src)
+    found = set()
+    for n in ast.walk(tree):
+        if not isinstance(n, ast.If):
+            continue
+        if "fun_afterlife_enabled" not in ast.dump(n.test):
+            continue
+        for c in ast.walk(n):
+            if isinstance(c, ast.Call) and isinstance(c.func, ast.Attribute):
+                found.add(c.func.attr)
+    assert {"preheat", "shutdown"} <= found, (
+        f"`_on_switch_changed` 的 fun_afterlife 分支里只找到 {sorted(found)} —— "
+        "那这一页的开关拨了之后浏览器不会预热/不会收掉。"
+    )
 
 
 def test_platform_switch_shows_url_only_for_custom(page):
@@ -142,7 +189,7 @@ def test_status_warns_when_no_mode_selected(page):
     for box in widget._mode_boxes.values():
         box.setChecked(False)
     widget._loading = False
-    widget.enable_box.setChecked(True)
+    config.fun_afterlife_enabled = True   # 总开关现在是共用行读 config，不是页内复选框
     widget._refresh_status()
     assert "没有勾选" in widget.status_label.text()
 
@@ -171,5 +218,6 @@ def test_page_works_without_controller(qapp, monkeypatch):
     widget._on_preview_clicked()
     widget._on_retract_clicked()
     widget._on_login_clicked()
-    widget.enable_box.setChecked(True)  # 不应抛异常
+    # ⚠ 没有主窗口时共用那行开关只记日志、不写 config（也不该抛）。
+    widget.master_switch_row.set_checked_by_user(True)
     widget.deleteLater()

@@ -127,9 +127,27 @@ def _string_literals(path: Path) -> set[str]:
     }
 
 
+#: 注册 id 与实现文件名对不上的那几页。**只收真的对不上的**，不是通用后门。
+#:
+#: ⭐⭐⭐ 这张表是批 34 补的，而**这条判据的空转守卫早就逐字写着这个错配**
+#:   （`test_every_page_id_reaches_its_own_source_files` 的 docstring：
+#:    「⚠ 触发过一次：`fun_afterlife` 这一页的注册 id 和文件名对不上」）。
+#:   ⇒ 有人发现了它、写了一条判据去发现它，**却没有修它** ——
+#:   因为当时这一页**没有帮助文案**，不在分母里，那条守卫一直是绿的。
+#:   ⭐⭐ **一条为某个缺陷而写的判据，可以在那个缺陷还没进分母的时候，绿着上线。**
+#: ⚠ 而这是同一个「文件名不是 id」在四天内的**第四次**现身
+#:   （批 31 记过一次、批 34 的普查自己又踩了两次）——
+#:   ⭐ **一条判据钉住的是一处调用，不是一个道理。**
+PAGE_ID_TO_IMPL = {
+    "fun_afterlife": "fun_page.py",
+}
+
+
 def _family_files(page_id: str) -> list[Path]:
     """一页的**控件来源**：它自己 + 全仓文件名里带它的 + 共用件。"""
     out = [REPO / "pages" / f"{page_id}_page.py"]
+    if page_id in PAGE_ID_TO_IMPL:
+        out.append(REPO / "pages" / PAGE_ID_TO_IMPL[page_id])
     for folder in FAMILY_DIRS:
         base = REPO / folder
         if base.exists():

@@ -3758,6 +3758,69 @@ REVERTS = [
         "的注释里，而我在普查脚本里用对了、换到判据里又自己抄了一遍 ——"
         "**一个教训只修在它被发现的那条通路上，等于只修了一份副本**",
     ),
+    # =============== RN-190 / RN-464 / RN-465：fun_afterlife 补齐全站家具
+    Revert(
+        "RN", "fun 页又手搓一颗总开关",
+        "pages/fun_page.py",
+        '        self.master_switch_row = make_master_switch_row(',
+        '        self.enable_box = QCheckBox("启用死亡刷短视频")\n'
+        '        self.master_switch_row = make_master_switch_row(',
+        "tests/test_fun_page_has_the_site_wide_furniture.py::"
+        "test_this_page_uses_the_in_place_master_switch_row",
+        "RN-190：16 个首页功能开关里另外 **15 个**都走共用那一行。"
+        "手搓那颗的后果不是「少个组件」，是**方向不对称的同步**："
+        "首页拨 → 页面会跟；**页面拨 → 首页那颗一动不动**（RN-107 族）。"
+        "⭐ 而共用件不只是开关：双向同步、那句「改了会保存但游戏里不生效」、"
+        "参数区降权三件套都在里面 —— **一件一件补，就是一件一件会漏**",
+    ),
+    Revert(
+        "RN", "fun 页的状态又不说它对谁生效",
+        "pages/fun_page.py",
+        '            "已启用 · 只在「" + " / ".join(picked) + "」里触发；"',
+        '            "已启用" + ("" if picked else "") + ";"',
+        "tests/test_fun_page_has_the_site_wide_furniture.py::"
+        "test_the_status_says_which_modes_it_actually_fires_in",
+        "旧账 RN-251：默认触发模式是 `[\"deathmatch\", \"casual\"]`，**不含竞技/搭档**，"
+        "而原来只有「一个都没勾」时才说不会触发 ⇒ 打排位的人看到干净的「已启用」。"
+        "外审 S4 **4/4** 报「会误以为功能失效」。"
+        "⚠⚠ 而**判断题那把尺子看不到这条**：整页图上 6/6 答对、依据逐字指向"
+        "「竞技未勾选」。⭐⭐⭐ 两个数不矛盾，**它们量的是不同的时刻** ——"
+        "判断题问「你现在看着这一屏看得出来吗」，而缺陷发作在他**离开这一屏、"
+        "进游戏死了之后**。**判断题默认「用户正看着这一屏」。**",
+    ),
+    Revert(
+        "RN", "fun 页又手写一份「要无边框窗口化」",
+        "pages/fun_page.py",
+        '        self.notice_label = make_overlay_requirement_label("短视频窗口")',
+        '        self.notice_label = QLabel("需要游戏使用「全屏窗口化」显示模式。")',
+        "tests/test_fun_page_has_the_site_wide_furniture.py::"
+        "test_the_overlay_requirement_uses_the_shared_sentence",
+        "RN-429：那句话的唯一一份在 `widgets/overlay_requirement.py`（批 22 收的）。"
+        "⭐⭐ 批 24「共用件省的是重复，不是判断」的背面：**手写一份，"
+        "就等于把自己从后续每一次改进里摘出去**",
+    ),
+    Revert(
+        "RN", "fun 页又没有帮助面板",
+        "pages/fun_page.py",
+        '        install_help_panel(header.title_row, header.body, PAGE_HELP_TEXTS["fun_afterlife"])',
+        '        pass  # 不装帮助面板',
+        "tests/test_fun_page_has_the_site_wide_furniture.py::"
+        "test_this_page_has_a_help_panel",
+        "RN-001b：这一页是全站 22/28 里**没有**帮助面板的那几页之一。"
+        "⭐ 全站家具普查（真源）：底部操作栏 26/28、状态徽章 26/28、帮助面板 22/28 ——"
+        "而 `fun_afterlife` 是**唯一一个真正的页面**（`basic` 内联在主窗里）三样全缺",
+    ),
+    Revert(
+        "RN", "fun 页三颗按钮又回到一个层级都没有",
+        "pages/fun_page.py",
+        "        style_as_primary_button(self.login_button)",
+        "        pass  # 不给层级",
+        "tests/test_fun_page_has_the_site_wide_furniture.py::"
+        "test_the_buttons_have_a_hierarchy",
+        "外审 ③ 有 5/6 把「预览效果」读成「只是打开东西看看」，"
+        "而它会在屏幕上真的弹出一块贴屏窗口。"
+        "⭐ 第一次使用必须先登录（没登录刷不出内容）⇒ 那一颗才是主按钮",
+    ),
     # ================== RN-454 / RN-460 / RN-462 / RN-463：一件事一颗开关
     Revert(
         "RN", "GSI 闸门又长回两道（子开关复活）",
