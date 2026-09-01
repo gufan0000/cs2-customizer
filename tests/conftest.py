@@ -37,6 +37,22 @@ os.environ["CS2C_LOG_DIR"] = _cs2customizer_test_log_dir
 # 会把这个路径原样显示出来。与 `scripts/_audit_sandbox.py` 用的是同一个目录。
 _cs2customizer_game_sandbox = os.path.join(tempfile.gettempdir(), "cs2customizer_audit_game_sandbox")
 os.makedirs(os.path.join(_cs2customizer_game_sandbox, "game", "csgo", "cfg"), exist_ok=True)
+
+# RN-473：这个沙箱是**固定路径、跨轮次累积**的（理由同下面 RN-141 那段），
+# 于是它会攒下**产品自己写进去的** cfg —— 实测一份 GSI cfg 在里面躺了 18 天，
+# 让 `utility` 的关档基线在本机走「已装好」那一支、在 CI 上走「还没装」那一支。
+# ⭐ RN-141 已经认出「固定路径会攒东西」这条规律，但只钉了 config 那一半；
+#   游戏目录这一半一个字都没钉 —— 补上，且**共用 `_audit_sandbox` 那一份名单**。
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
+try:
+    from _audit_sandbox import reset_sandbox_game_dir
+
+    reset_sandbox_game_dir(_cs2customizer_game_sandbox)
+except Exception:
+    # 隔离设施本身绝不能让测试跑不起来；真失效了由
+    # tests/test_the_sandbox_does_not_remember_yesterday.py 当场报出来
+    pass
+
 _cs2customizer_test_cfg_file = os.path.join(_cs2customizer_test_cfg_dir, "config.json")
 try:
     import json as _json

@@ -286,6 +286,17 @@ class UtilityPage(QWidget):
         ⭐ 两个方向都会错，但错的代价不一样：
           说「进对局」而其实没配置 ⇒ 玩家进十局也没反应，判定软件坏了；
           说「去设目录」而其实已配置 ⇒ 玩家白跑一趟设置页，看见目录已经填好了。
+
+        ⛔ **只看 `config.csgo_dir`，不许去全盘搜安装目录**（RN-473）。
+        这里原来有一条 `find_cfg_path()` 兜底，它走注册表/磁盘去探测真实的 CS2 安装 ——
+        于是这一页描述的是**这台机器**，而不是**这个软件的配置**：
+        本机（装了 CS2）答"已装好"、CI（没装）答"还没装"，`utility` 的关档基线
+        因此在两边永远对不上，而红的原因跟被判的那次改动毫无关系。
+        ⭐ 而这条兜底在产品语义上也是多余的：这句话只在**地图和阵营都没认出来**时
+          才显示；GSI 真在别处生效的话，地图早就认出来了，这句话根本不会出现。
+        ⭐⭐ 它藏了很久，是因为上面那个 `if not ready:` 是**短路**的 ——
+          审计沙箱里恰好攒着一份陈年 GSI cfg，第一支永远为真，
+          于是探针量到"全盘搜 0 次调用"，看起来像"这条路不存在"。
         """
         cached = getattr(self, "_gsi_cfg_ready_cache", None)
         if cached is not None:
@@ -297,11 +308,6 @@ class UtilityPage(QWidget):
                 ready = os.path.isfile(os.path.join(
                     csgo_dir, "game", "csgo", "cfg",
                     "gamestate_integration_cs2customizer.cfg"))
-            if not ready:
-                from cfg_utils import find_cfg_path
-
-                path = find_cfg_path()
-                ready = bool(path) and os.path.isfile(path)
         except Exception:
             ready = False
         self._gsi_cfg_ready_cache = ready

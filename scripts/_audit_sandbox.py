@@ -61,12 +61,68 @@ _ORIGINAL_SAVERS: dict = {}
 _SAVE_ENTRY_POINTS = ("save_config", "save_config_now", "_do_save_config")
 
 
+#: RN-473：**本软件自己会往游戏 cfg 目录里写的东西**，全仓唯一一份名单。
+#:
+#: 沙箱是固定路径（为了指纹可复现），于是它会**跨轮次攒下这些产物** ——
+#: 而攒进去的正是产品自己写的。实测：一份 `gamestate_integration_cs2customizer.cfg`
+#: 在沙箱里躺了 18 天，让 `utility` 的关档基线在本机锁到「GSI 已装好」那一支、
+#: 在 CI 上跑出「还没装」那一支。⇒ **一台被审计跑过 N 次的机器，越来越不像一台新机器。**
+#:
+#: ⚠ 只列本软件写的。目录里出现别的东西时**不碰** —— 沙箱在临时目录里，
+#: 但那不是"随便删"的许可证。
+PRODUCT_WRITTEN_CFGS = frozenset({
+    "gamestate_integration_cs2customizer.cfg",   # GSI 联动配置（设 CS2 目录时写）
+    "cs2customizer.cfg",                          # 编译产物（准心/枪声/开镜等）
+    "cs2customizer_magnifier_runtime.cfg",        # 开镜放大运行时
+    "autoexec.cfg",                        # 会被追加一行 `exec cs2customizer.cfg`
+})
+
+
 def sandbox_dir() -> Path:
     """沙箱目录的路径（不建目录、不改配置），供调用方在动手之前先检查它。"""
     override = os.environ.get(SANDBOX_DIR_ENV)
     if override:
         return Path(override)
     return Path(tempfile.gettempdir()) / "cs2customizer_audit_game_sandbox"
+
+
+def reset_sandbox_game_dir(sandbox: Path | None = None) -> list[str]:
+    """把沙箱的 `game/csgo/cfg/` 清成「一台没被本软件写过的机器」。返回删掉的文件名。
+
+    **清理点在开跑时，不是收尾时**：审计跑的过程中产品往里写是沙箱的正常工作，
+    收尾清既和「审计只读」的口径打架，也挡不住进程被中途砍断
+    （`revert_verify` 那条教训：到点是"在任意中间态被砍断"，不是"停下"）。
+
+    ⛔ 安全阀：只在**临时目录里**动手。`SANDBOX_DIR_ENV` 可以把沙箱指到别处
+    （为了出对外截图时路径不带用户名），而"别处"完全可能是用户真实的 CS2 安装。
+    ⭐ 一个会删文件的函数，它的边界必须由它自己守，不能指望每个调用方都记得。
+
+    返回值不是装饰：它是**发现通道**。哪一轮清掉了什么，调用方可以打印出来 ——
+    「沙箱里攒了东西」这件事本身就该被看见，而不是被静默抹平。
+    """
+    target = Path(sandbox) if sandbox is not None else sandbox_dir()
+    try:
+        resolved = target.resolve()
+        temp_root = Path(tempfile.gettempdir()).resolve()
+        if not str(resolved).lower().startswith(str(temp_root).lower()):
+            return []
+    except OSError:
+        return []
+
+    cfg_dir = resolved / "game" / "csgo" / "cfg"
+    removed: list[str] = []
+    if not cfg_dir.is_dir():
+        return removed
+    for entry in cfg_dir.iterdir():
+        if entry.is_file() and entry.name in PRODUCT_WRITTEN_CFGS:
+            try:
+                entry.unlink()
+                removed.append(entry.name)
+            except OSError:
+                # 删不掉不该让整支脚本挂掉；留着它的后果是这一轮不可复现，
+                # 而那正是 `test_..._starts_from_a_clean_game_dir` 会当场报出来的。
+                pass
+    return sorted(removed)
 
 
 def block_config_persistence(verbose: bool = True) -> None:
@@ -148,6 +204,11 @@ def sandbox_external_writes(verbose: bool = True) -> Path:
     sandbox = sandbox_dir()
     # 建出 CS2 的目录形状，写入方 os.makedirs 也能自己建，但先建好更接近真实布局
     (sandbox / "game" / "csgo" / "cfg").mkdir(parents=True, exist_ok=True)
+    # RN-473：固定路径会跨轮次攒下产物 ⇒ 开跑时先清成「新机器」。
+    # 不清的代价已经量到过：本机基线锁的是「跑过 N 轮之后的样子」，CI 锁的是新机器。
+    stale = reset_sandbox_game_dir(sandbox)
+    if verbose and stale:
+        print(f"   已清掉沙箱里上一轮留下的产物: {', '.join(stale)}")
 
     real = getattr(config, "csgo_dir", "") or ""
     config.csgo_dir = str(sandbox)

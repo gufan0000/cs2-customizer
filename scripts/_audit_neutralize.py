@@ -95,11 +95,38 @@ def enable_audit_mode() -> None:
     注册中心读的是 `os.environ`，而页面可能在构造时就注册。
     """
     os.environ["CS2C_NO_GLOBAL_HOTKEYS"] = "1"
+    # RN-472：**账号那道**。本机登录过时，`MainWindow.__init__` 会同步把缓存里的
+    # 用户名/邮箱推给 `account` 页，并起线程带着真 token 去官网验证 ——
+    # 于是截图里有没有真账号，由那次网络请求的返回时刻决定（实测同机两跑两结果）。
+    # 而这些图的下一站就是外审（发给 Google）。闸门的实现见
+    # `account_session_store.SessionStore.load()`。
+    os.environ["CS2C_NO_ACCOUNT_SESSION"] = "1"
     # ⚠ 游戏目录那条出口**不在这里**，走 `scripts/_audit_sandbox.py`（UP-090）。
     # 我一度想在这儿加一个 `CS2C_NO_GAME_DIR_WRITES` 禁写闸门，是错的：
     # 那会让 `csgo_dir` 留空 ⇒ 页面走「未配置 CS2 目录」分支 ⇒ 文案和布局都变，
     # 等于把被审计对象改掉了。`_audit_sandbox` 刻意选的是**重定向**而不是禁写，
     # 理由就写在它的注释里。⇒ 那条出口只有一份实现，别在这里造第二份。
+
+
+def account_session_leak(win) -> str | None:
+    """RN-472 第二道：出图前问一句「这个窗里带着本机账号吗」。带着就别落盘。
+
+    闸门（`CS2C_NO_ACCOUNT_SESSION`）是"不会发生"，这一道是"万一发生了也出不去"。
+    ⭐ 两道都要：本仓已经有过三次「闸门在某支脚本里没接上」（RN-005 / RN-059 / RN-073），
+      而这一次的代价不是审计结果不准，是**用户的账号被发给了外部服务**。
+    ⭐⭐ 门必须架在**落盘之前** —— 一张图从"没拍"到"已经在送审目录里"
+      中间没有任何一步会失败（同 `oss_sync --accept-new` 那条：加文件是断崖式的）。
+
+    ⛔ 返回的句子里**不许带会话内容**：它会被打印到控制台、落进日志。
+    """
+    if not getattr(win, "account_session", None):
+        return None
+    return (
+        "!! 这个窗里带着本机的账号会话 —— 拒绝出图。\n"
+        "   截图会渲染出真实用户名/邮箱，而它的下一站是外审（发给外部服务）。\n"
+        "   在 import 产品模块之前调 `_audit_neutralize.enable_audit_mode()`"
+        "（它会开 CS2C_NO_ACCOUNT_SESSION 这道闸门）。"
+    )
 
 
 #: RN-072：审计期间被挡下来的模态框。**这是个发现通道，不是消音器。**

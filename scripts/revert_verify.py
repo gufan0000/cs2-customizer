@@ -5271,6 +5271,57 @@ REVERTS = [
         "RN-077 的词表是攒了好几轮外审才长成现在这样的（「压成」「概况卡」是改完复跑那轮补的）；"
         "抄一份就意味着下一轮补的词只补在一边，而两边都是绿的",
     ),
+    # ── 批 37（2026-09-01）：RN-473 与 RN-401 的通用部分
+    Revert(
+        "RN", "审计沙箱不再清掉上一轮攒下的产物",
+        "scripts/_audit_sandbox.py",
+        "    stale = reset_sandbox_game_dir(sandbox)",
+        "    stale = []",
+        "tests/test_the_sandbox_does_not_remember_yesterday.py"
+        "::test_sandboxing_external_writes_starts_from_a_clean_game_dir",
+        "RN-473。⭐⭐⭐ **为「可复现」而选的固定沙箱路径，自己成了不可复现的来源**："
+        "`%TEMP%/cs2customizer_audit_game_sandbox` 是固定的（`_audit_sandbox` 的注释逐字写着"
+        "「路径必须固定，不能用 mkdtemp：page_fingerprint 要求同一份代码跑两次得出同一个指纹」），"
+        "于是它跨轮次攒下**产品自己写进去的** cfg —— 实测一份 GSI cfg 在里面躺了 18 天，"
+        "让 `utility` 的关档基线在本机走「已装好」那一支、CI 上走「还没装」那一支。"
+        "⭐ 同一条教训 RN-141 认出过一半（给 config 钉了两个键），游戏目录这一半一个字都没钉",
+    ),
+    Revert(
+        "RN", "utility 的 GSI 判定又去全盘搜安装目录",
+        "pages/utility_page.py",
+        '                ready = os.path.isfile(os.path.join(\n'
+        '                    csgo_dir, "game", "csgo", "cfg",\n'
+        '                    "gamestate_integration_cs2customizer.cfg"))\n'
+        "        except Exception:",
+        '                ready = os.path.isfile(os.path.join(\n'
+        '                    csgo_dir, "game", "csgo", "cfg",\n'
+        '                    "gamestate_integration_cs2customizer.cfg"))\n'
+        "            if not ready:\n"
+        "                from cfg_utils import find_cfg_path\n"
+        "                path = find_cfg_path()\n"
+        "                ready = bool(path) and os.path.isfile(path)\n"
+        "        except Exception:",
+        "tests/test_the_sandbox_does_not_remember_yesterday.py"
+        "::test_no_page_asks_the_machine_where_cs2_is_installed",
+        "RN-473 第二层。⭐⭐⭐ **一个短路会把它后面那一项从任何实测里藏起来** —— "
+        "我第一次架探针量到 `find_cs2_install_dir` **0 次调用**，据此判定「全盘搜不是根因」；"
+        "清掉沙箱里那份陈年 cfg 之后同一支探针量到 **1 次**，就在这一页。"
+        "**「没被调用」看起来和「不存在」一模一样**",
+    ),
+    Revert(
+        "RN", "方位自白的第三条模式没了（按位置指一堆没名字的东西）",
+        "tests/test_no_layout_self_talk_sitewide.py",
+        r'    r"(左侧|左边|左方|右侧|右边)(那些|这些|那几个|这几个|那一堆)",',
+        "",
+        "tests/test_no_layout_self_talk_sitewide.py"
+        "::test_the_direction_patterns_catch_the_sentences_i_actually_wrote",
+        "RN-401 的缺口，**是我自己犯出来的**：批 37 给 `account` 补出口，我写了"
+        "「**左边那些功能**……不想登录就直接去用」，紧凑档 3/3 判高（侧栏是收起的）。"
+        "既有两条模式抓不到它 —— 它指的是导航，却没说出「栏/导航/菜单」这几个字。"
+        "⭐⭐ 我一度想推广成 `(左|右|上|下|顶|底)(边|侧|方|面|栏)` 一把抓，"
+        "**而那个做法逐字写在同一段注释里、已被实测否决**（一刀切量出 24 处，其中 20 处是对的）"
+        "⇒ **在自己要改的文件里，先把已经写下的结论读完**",
+    ),
     # ⛔⛔ 新断点一律加在**这一行之上**。
     #
     # 下面这个标记是开源同步那个语义补丁的**锚点**：开源版在这个位置追加它自己的

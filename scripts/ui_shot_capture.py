@@ -54,6 +54,7 @@ except Exception:
 # RN-005：中和表全仓唯一一份（这段以前在 5 支脚本里各写一遍，内容 1~3 项不等，
 # 后果是 flash / viewmodel / voice_output 三页被全部 5 支跳过 —— 零覆盖）。
 from _audit_neutralize import (  # noqa: E402
+    account_session_leak,
     apply as neutralize_apply,
     describe as neutralize_describe,
     enable_audit_mode,
@@ -277,6 +278,14 @@ def main() -> int:
     app.processEvents()
     if win.width() < width:
         print(f"!! 未达目标宽度: 实际 {win.width()}")
+
+    # RN-472：落盘前的最后一道门。**必须在第一次 `_save()` 之前** ——
+    # 这些图的下一站是外审，而一张图从"没拍"到"已经在送审目录里"
+    # 中间没有任何一步会失败。
+    leak = account_session_leak(win)
+    if leak:
+        print(leak)
+        return 2
 
     # RN-195：钉住音乐控制条的档位（理由与两类工装的口径差别见该模块）。
     import _audit_music_bar as _mbar
