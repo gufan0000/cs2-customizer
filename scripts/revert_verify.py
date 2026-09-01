@@ -4551,6 +4551,60 @@ REVERTS = [
         "⭐⭐ **同一件事说五遍，任何一遍变假都不会有人发现 —— 因为没人知道有五遍。**"
         "这条断点防的是「找不到真源就当没事」——**必须是红，不许是 skip**",
     ),
+    # ================================ RN-482 / RN-483：里程碑看板与闭集守卫
+    #
+    # ⚠ 同 RN-408：被测对象在另一个仓，断点只能打在**判据自己的承重逻辑**上。
+    Revert(
+        "RN", "闭集守卫又回到「只认识熟人」——按首格白名单找表头",
+        "tests/test_renovation_progress_board_does_not_rot.py",
+        "        if i + 1 < len(lines) and _is_separator(lines[i + 1]):",
+        '        if line.startswith(("| 批 ", "| 批次 ")):',
+        "tests/test_renovation_progress_board_does_not_rot.py::"
+        "test_the_closed_set_guard_can_see_a_table_it_has_never_met",
+        "RN-483：⭐⭐⭐ **一条「表形是闭集」的守卫，用自己的白名单当分母** ——"
+        "`firsts` 就是从 `KNOWN_BOARD_SHAPES` 算出来的，于是它只答得了"
+        "「已知表头改没改列」，答不了「来了一张没见过的表」，而后者恰恰是"
+        "它 docstring 里自己写的那个危险。实测漏掉两张表（里程碑看板 / M0 完成情况），"
+        "后者从 2026-08-17 建起一条判据都没照过。"
+        "⇒ 改判「下一行是分隔行」：那是 markdown 的语法要求，"
+        "**跟表头写什么字无关 ⇒ 新表天生进分母**",
+    ),
+    Revert(
+        "RN", "里程碑看板的表形登记漂了一个字，整张表又解析不出来",
+        "tests/test_renovation_progress_board_does_not_rot.py",
+        'MILESTONE_TABLE_SHAPE = ("里程碑", "内容", "状态")',
+        'MILESTONE_TABLE_SHAPE = ("里程碑", "内容", "进度")',
+        "tests/test_renovation_progress_board_does_not_rot.py::"
+        "test_the_milestone_board_is_parsed_at_all",
+        "RN-482：批 39 之前这张表**一行都解析不出来**，而这份文件有 16 条判据看着 ——"
+        "⭐⭐⭐ **「这份文件有判据看着」这个印象，会覆盖掉判据实际照到的那一小块。**"
+        "⭐ 先证明看得见东西，再让它去断言「没问题」（RN-169）",
+    ),
+    Revert(
+        "RN", "「关档了没有」改按另一个词判，里程碑状态词的现算全塌",
+        "tests/test_renovation_progress_board_does_not_rot.py",
+        "        out.setdefault(phase, []).append((name, status.startswith(STATUS_CLOSED)))",
+        "        out.setdefault(phase, []).append((name, status.startswith(STATUS_NOT_STARTED)))",
+        "tests/test_renovation_progress_board_does_not_rot.py::"
+        "test_the_milestone_word_is_recomputed_from_the_pages_not_typed_by_hand",
+        "RN-482：看板上的状态词必须**从页面表现算**，看板自己不许当真源。"
+        "实测 M4 写着「未开工」而 P3 已关档 3/4 —— 同一份文件的批次台账"
+        "逐字写着「P3 收官」。⭐ 这条断点钉的是「怎么算已关档」那一句："
+        "它一歪，现算出来的词就会去迎合看板上手写的那个",
+    ),
+    Revert(
+        "RN", "「当前剩」把已关档的也算进去",
+        "tests/test_renovation_progress_board_does_not_rot.py",
+        "        want = {n for n, done in rows if not done}",
+        "        want = {n for n, done in rows}",
+        "tests/test_renovation_progress_board_does_not_rot.py::"
+        "test_an_in_progress_milestone_lists_exactly_what_is_left",
+        "RN-482：⭐⭐ 「未开工」「已完成」这两个词**自己就把清单说全了**，"
+        "只有「进行中」不携带这个信息 ⇒ 只有它要带 `⇒ 当前剩：<…>`，"
+        "且必须**等于**现算的那一份（批 38「要么说全部，要么等于当前」的看板版）。"
+        "⭐ 实测 M3 那句「六页只剩 crosshair 与 hud_color」在批 27 那天就变成了假话 ——"
+        "**而把 crosshair 做完的那个人，没有理由来读这一句**",
+    ),
     # ==================================== RN-407：总开关关着时整页停止假装已生效
     Revert(
         "RN", "底栏那句回执又变回**无条件**的「已保存」",

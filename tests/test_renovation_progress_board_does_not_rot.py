@@ -90,7 +90,14 @@ RN_ID = re.compile(r"RN-\d{3}")
 PAGE_TABLE_SHAPE = ("批次", "page_id", "显示名", "实现文件", "行数", "使用", "同名测试", "风险", "状态")
 LINK_TABLE_SHAPE = ("批次", "编号", "档案", "锚点", "状态")
 BATCH_LOG_SHAPE = ("批", "日期", "内容", "关档", "立案", "外审")
-KNOWN_BOARD_SHAPES = {PAGE_TABLE_SHAPE, LINK_TABLE_SHAPE, BATCH_LOG_SHAPE}
+#: ⭐⭐ **这两张表是 2026-09-01 批 39 才第一次被这份判据看见的**，而它们从 M0 就在。
+#: 见 `test_the_board_table_shapes_are_a_closed_set` 的模块内说明：
+#: 上面那三张的表头首格都在 `firsts` 里，而"闭集"守卫**只闭在它认得出表头的那些表上** ——
+#: 一张表头长得完全陌生的表，它连「有一张没见过的表」都报不出来。
+MILESTONE_TABLE_SHAPE = ("里程碑", "内容", "状态")
+M0_TABLE_SHAPE = ("项", "状态")
+KNOWN_BOARD_SHAPES = {PAGE_TABLE_SHAPE, LINK_TABLE_SHAPE, BATCH_LOG_SHAPE,
+                      MILESTONE_TABLE_SHAPE, M0_TABLE_SHAPE}
 
 #: 页面表里**不是页面**的行（家族基类等）。双向断言：清单里的每一条都必须还在表里。
 NON_PAGE_ROWS = {
@@ -118,28 +125,54 @@ def _require_board() -> str:
     return BOARD.read_text(encoding="utf-8")
 
 
-def _board_rows(text: str) -> list[tuple[tuple[str, ...], list[str]]]:
-    """把页面清单切成 (表头, 数据行)。
+def _is_separator(line: str) -> bool:
+    if not line.startswith("|"):
+        return False
+    cells = [c.strip() for c in line.strip().strip("|").split("|")]
+    return bool(cells) and set("".join(cells)) <= set("-: ")
 
-    ⚠ 表头只认「首格是已声明表形的首格」那一行 —— 同 RN-198，
-    别按空行分表（那份登记册的表中间就是有空行的，第一版因此把分母从 66% 缩到 13%，
-    而且**不报错**）。
+
+def _board_rows_with_lines(text: str) -> list[tuple[tuple[str, ...], list[str], int]]:
+    """把页面清单切成 (表头, 数据行, 行号 0 基)。
+
+    ⚠ **别按空行分表** —— 同 RN-198，那份登记册的表中间就是有空行的，
+    第一版因此把分母从 66% 缩到 13%，而且**不报错**。
+
+    ⭐⭐ **2026-09-01 批 39：表头识别从「首格在已知清单里」改成「下一行是分隔行」。**
+    旧写法有一个结构性盲区：它只认得出**已经登记过**的表 ——
+    `里程碑看板` 与 `M0 完成情况` 两张表的首格（`里程碑` / `项`）不在 `firsts` 里，
+    于是它们的表头永远不被当成表头，数据行按格数与**上一张**表比对、格数对不上就被丢掉。
+    ⇒ 那两张表从 M0 建起**一条判据都没照过**，而其中一张正是这份文件的门面。
+    ⭐ **一个「只认识熟人」的守卫，看不见陌生人来过。**
+
+    分隔行是 markdown 表格的语法要求，跟表头写什么字无关 ⇒ 新表**天生**进分母。
+    ⚠ 首格白名单那条保留着：批次台账历史上被空行劈成过无表头裸行（见
+    `test_the_batch_log_is_one_unbroken_table_in_order`），那些行只能靠格数续到上一张表头。
     """
     firsts = {shape[0] for shape in KNOWN_BOARD_SHAPES}
-    out: list[tuple[tuple[str, ...], list[str]]] = []
+    lines = text.splitlines()
+    out: list[tuple[tuple[str, ...], list[str], int]] = []
     header: tuple[str, ...] | None = None
-    for line in text.splitlines():
+    for i, line in enumerate(lines):
         if not line.startswith("|"):
             continue
-        cells = [c.strip() for c in line.strip().strip("|").split("|")]
-        if set("".join(cells)) <= set("-: "):
+        if _is_separator(line):
             continue
-        if cells[0] in firsts and len(cells) > 1:
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        looks_like_header = (
+            len(cells) > 1
+            and (cells[0] in firsts or (i + 1 < len(lines) and _is_separator(lines[i + 1])))
+        )
+        if looks_like_header:
             header = tuple(cells)
             continue
         if header is not None and len(cells) == len(header):
-            out.append((header, cells))
+            out.append((header, cells, i))
     return out
+
+
+def _board_rows(text: str) -> list[tuple[tuple[str, ...], list[str]]]:
+    return [(h, c) for h, c, _ in _board_rows_with_lines(text)]
 
 
 def _page_rows(text: str) -> list[list[str]]:
@@ -356,23 +389,55 @@ def test_the_parser_actually_sees_the_page_table():
     )
 
 
+def _declared_table_shapes(text: str) -> set[tuple[str, ...]]:
+    """文件里所有**自带分隔行**的表头。
+
+    ⭐⭐ 批 39 之前这里按「首格在 `firsts` 里」找表头，而 `firsts` 是从
+    `KNOWN_BOARD_SHAPES` 算出来的 —— ⇒ **这条「闭集」守卫的分母，正是它要守的那个集合本身。**
+    于是它只能报「已知表头改了列」，报不出「来了一张完全陌生的表」，
+    而后者恰恰是它 docstring 里写的那个危险。实测漏掉两张（里程碑看板 / M0 完成情况），
+    其中一张从 M0 建起就在，一张判据都没照过。
+    ⭐ **一个用自己的白名单当分母的守卫，结构上看不见白名单外的东西。**
+    """
+    lines = text.splitlines()
+    shapes = set()
+    for i, line in enumerate(lines):
+        if not line.startswith("|") or _is_separator(line):
+            continue
+        if i + 1 < len(lines) and _is_separator(lines[i + 1]):
+            shapes.add(tuple(c.strip() for c in line.strip().strip("|").split("|")))
+    return shapes
+
+
 def test_the_board_table_shapes_are_a_closed_set():
     """新加一张判据读不懂的表，里面的行会静默躲开所有断言。"""
-    text = _require_board()
-    shapes = set()
-    firsts = {shape[0] for shape in KNOWN_BOARD_SHAPES}
-    for line in text.splitlines():
-        if not line.startswith("|"):
-            continue
-        cells = tuple(c.strip() for c in line.strip().strip("|").split("|"))
-        if set("".join(cells)) <= set("-: "):
-            continue
-        if cells[0] in firsts and len(cells) > 1:
-            shapes.add(cells)
+    shapes = _declared_table_shapes(_require_board())
+    assert len(shapes) >= 5, (
+        f"只找到 {len(shapes)} 张带分隔行的表 —— 这条判据已经瞎了"
+    )
     unknown = sorted(shapes - KNOWN_BOARD_SHAPES)
     assert not unknown, (
         f"页面清单里出现了没见过的表形：{unknown}\n"
         "把它加进 KNOWN_BOARD_SHAPES，并**说清楚它会不会躲开下面的对账**。"
+    )
+
+
+def test_the_closed_set_guard_can_see_a_table_it_has_never_met():
+    """⭐ 先证明它咬得动**陌生表头**，再让它去断言「没问题」（RN-169）。
+
+    这条是批 39 的阳性对照：旧写法对下面这张表**完全无感**（首格不在白名单里），
+    新写法靠分隔行认出它。⚠ 两种破法都造：陌生表头、已知表头改列。
+    """
+    stranger = _SYNTHETIC_BOARD + "\n| 甲 | 乙 | 丙 |\n|---|---|---|\n| 1 | 2 | 3 |\n"
+    assert ("甲", "乙", "丙") in _declared_table_shapes(stranger), (
+        "一张表头从没见过的表，闭集守卫必须报得出来 —— 这正是批 39 修的那个洞"
+    )
+    renamed = _SYNTHETIC_BOARD.replace("| 批 | 日期 |", "| 批 | 年月日 |")
+    assert ("批", "年月日", "内容", "关档", "立案", "外审") in _declared_table_shapes(renamed), (
+        "已知表头改了列名也必须报得出来"
+    )
+    assert not (_declared_table_shapes(_SYNTHETIC_BOARD) - KNOWN_BOARD_SHAPES), (
+        "干净的合成清单不该被报"
     )
 
 
@@ -505,23 +570,12 @@ def test_a_batch_row_only_claims_closures_the_registry_agrees_with():
 def _batch_row_line_numbers(text: str) -> list[int]:
     """批次台账那些行在原文里的行号（0 基）。
 
-    ⚠ 故意**不复用** `_batch_rows`：那个函数只交出格子内容，
-    而这条判据要问的恰恰是「这些行在文件里是怎么摆的」。
+    ⚠ 这里问的是「这些行在文件里是怎么摆的」，所以要行号。
+    ⭐ **批 39 之前它把表头识别逻辑又抄了一份**，理由写的是「那个函数只交出格子内容」——
+    而真正该做的是让那个函数**也交出行号**。抄的那一份没有跟着批 39 改，
+    于是它会和 `_board_rows` 对同一份文件切出不同的表 ⇒ 现在共用同一个真源。
     """
-    firsts = {shape[0] for shape in KNOWN_BOARD_SHAPES}
-    out, header = [], None
-    for i, line in enumerate(text.splitlines()):
-        if not line.startswith("|"):
-            continue
-        cells = [c.strip() for c in line.strip().strip("|").split("|")]
-        if set("".join(cells)) <= set("-: "):
-            continue
-        if cells[0] in firsts and len(cells) > 1:
-            header = tuple(cells)
-            continue
-        if header == BATCH_LOG_SHAPE and len(cells) == len(header):
-            out.append(i)
-    return out
+    return [i for h, _c, i in _board_rows_with_lines(text) if h == BATCH_LOG_SHAPE]
 
 
 def test_the_batch_log_is_one_unbroken_table_in_order():
@@ -645,6 +699,215 @@ def test_the_closing_checklist_is_enumerated_in_exactly_one_place():
         "总纲里没有指向唯一真源的指针 —— 删了副本却没留指路牌，"
         "下一个人会以为总纲漏了这一节，然后再抄一份回来。"
     )
+
+
+# ------------------------------------------------------- 里程碑看板（RN-482）
+
+#: 里程碑 → 它统辖的那一**批**（页面表和交叉链路表的「批次」格）。
+#: ⭐ 这张映射是这几条判据的全部输入 —— 看板上的每一个字都由它现算，看板自己不许当真源。
+MILESTONE_PHASE = {"M1": "P0", "M2": "P1", "M3": "P2",
+                   "M4": "P3", "M5": "P4", "M6": "P5", "M7": "P6"}
+
+#: ⛔ 不由页面进度决定的里程碑，**逐个点名 + 写清理由**，不许拿一句「其余跳过」糊过去。
+MILESTONES_WITHOUT_A_PHASE = {
+    "M0": "工装接线与建档，名下一页都没有 —— 它的完成度由 §四 那张表说了算",
+}
+
+#: 看板状态格开头必须是这几个词之一。⭐ 同页面表那条规矩：
+#: **把机器要读的那个词放最前面，细节写在后面**。
+MILESTONE_WORDS = ("未开工", "进行中", "已完成", "基本完成")
+
+#: ⭐⭐ 「未开工」和「已完成」这两个词**自己就把清单说全了**（全部 / 一个不剩），
+#: 只有「进行中」不携带这个信息 ⇒ **只有它需要在格子里带上机读的剩余清单**。
+#: 这是批 38 那条「一句枚举类别的话，要么说全部，要么等于当前」的看板版。
+REMAINDER_MARKER = "⇒ 当前剩："
+
+
+def _milestone_rows(text: str) -> list[list[str]]:
+    return [c for h, c in _board_rows(text) if h == MILESTONE_TABLE_SHAPE]
+
+
+def _phase_items(text: str) -> dict[str, list[tuple[str, bool]]]:
+    """每一批名下的条目 → (名字, 关档了没有)。页面表和交叉链路表都算。"""
+    out: dict[str, list[tuple[str, bool]]] = {}
+    for header, cells in _board_rows(text):
+        if header == PAGE_TABLE_SHAPE:
+            phase, name, status = _strip(cells[0]), _strip(cells[1]), _strip(cells[8])
+        elif header == LINK_TABLE_SHAPE:
+            phase, name, status = _strip(cells[0]), _strip(cells[1]), _strip(cells[4])
+        else:
+            continue
+        out.setdefault(phase, []).append((name, status.startswith(STATUS_CLOSED)))
+    return out
+
+
+def _derive_word(items: list[tuple[str, bool]]) -> str:
+    closed = [name for name, done in items if done]
+    if len(closed) == len(items):
+        return "已完成"
+    if not closed:
+        return "未开工"
+    return "进行中"
+
+
+def _leading_word(cell: str) -> str | None:
+    head = _strip(cell).lstrip("✅ ：:")
+    for word in MILESTONE_WORDS:
+        if head.startswith(word):
+            return word
+    return None
+
+
+def test_the_milestone_board_is_parsed_at_all():
+    """⭐ 先证明看得见东西，再让它去断言「没问题」（RN-169）。
+
+    ⚠⚠ 这一条本身就是 RN-482 的证据：**批 39 之前，这张表一行都解析不出来。**
+    它的表头首格是「里程碑」，不在旧表头白名单里 ⇒ 三格的数据行按五格的
+    交叉链路表头去比，格数对不上，**静默丢弃**。
+    """
+    rows = _milestone_rows(_require_board())
+    assert len(rows) >= 8, (
+        f"里程碑看板只解析出 {len(rows)} 行 —— 看板上有 M0~M7 八行。"
+    )
+    names = [_strip(c[0]) for c in rows]
+    assert set(MILESTONE_PHASE) | set(MILESTONES_WITHOUT_A_PHASE) <= set(names), (
+        f"看板少了这几个里程碑："
+        f"{sorted((set(MILESTONE_PHASE) | set(MILESTONES_WITHOUT_A_PHASE)) - set(names))}"
+    )
+    unknown = sorted(set(names) - set(MILESTONE_PHASE) - set(MILESTONES_WITHOUT_A_PHASE))
+    assert not unknown, (
+        f"看板上多了没登记的里程碑：{unknown}\n"
+        "要么把它加进 MILESTONE_PHASE（说清它统辖哪一批），"
+        "要么加进 MILESTONES_WITHOUT_A_PHASE（说清为什么机器判不了）。"
+    )
+
+
+def test_every_phase_the_board_claims_actually_has_items():
+    """分母守卫：映射里写的批次，页面表/链路表里必须真的有行。
+
+    ⭐ 一个空批次会让下面那条判据**无条件**判成「已完成」（`all([])` 是真）。
+    """
+    items = _phase_items(_require_board())
+    empty = sorted(p for p in MILESTONE_PHASE.values() if not items.get(p))
+    assert not empty, (
+        f"这几批在页面表和交叉链路表里一条都没有：{empty}\n"
+        "要么表里的「批次」格写法变了，要么 MILESTONE_PHASE 过期了。"
+    )
+
+
+def test_the_milestone_word_is_recomputed_from_the_pages_not_typed_by_hand():
+    """⭐⭐ **RN-482 的主刀。** 看板上的状态词必须等于从页面表现算出来的那个。
+
+    实测（2026-09-01）看板烂在两处，而**十六条判据一条都没红** ——
+    因为这张表压根不在任何一条判据的分母里：
+
+    | 行 | 板上写的 | 页面表现算 |
+    |---|---|---|
+    | M4（P3） | **未开工** | magnifier/music/fun_afterlife 已关档 ⇒ **进行中** |
+    | M1 / M2 | 「两页均已关档」/「✅ 全部关档」 | 意思对，但机器读不出那个词 |
+
+    ⭐ 这是 RN-198（登记册只读不写）→ RN-408（页面清单只读不写）→ RN-468（体检
+    只在想起来时做）之后**同一族的第四次**：
+    **一份没有判据看着的记录，会腐烂在它最显眼的那一格上。**
+    """
+    board = _require_board()
+    items = _phase_items(board)
+    #: ⭐ 空转守卫：批次格解析不出来时 `items` 会是空的，
+    #: 下面那个循环会因为 `name not in MILESTONE_PHASE` 之外的原因**一条都不比**，
+    #: 而 `assert not bad` 照样全绿 —— 「分母为空」和「没问题」在结果上一模一样（RN-469）。
+    assert len(items) >= len(set(MILESTONE_PHASE.values())), (
+        f"只解析出 {sorted(items)} 这几批 —— 页面表/交叉链路表的「批次」格没读到，"
+        "这条判据已经在空转"
+    )
+    bad = []
+    for cells in _milestone_rows(board):
+        name, cell = _strip(cells[0]), cells[2]
+        word = _leading_word(cell)
+        if word is None:
+            bad.append((name, "开头不是状态词", _strip(cell)[:36]))
+            continue
+        if name not in MILESTONE_PHASE:
+            continue
+        want = _derive_word(items[MILESTONE_PHASE[name]])
+        if word != want:
+            done = [n for n, ok in items[MILESTONE_PHASE[name]] if ok]
+            bad.append((name, f"板上写「{word}」，页面表现算是「{want}」",
+                        f"{MILESTONE_PHASE[name]} 已关档 {len(done)}/"
+                        f"{len(items[MILESTONE_PHASE[name]])}"))
+    assert not bad, (
+        "里程碑看板与页面表对不上：\n" +
+        "\n".join(f"  {n}  {why}  （{ev}）" for n, why, ev in bad) +
+        f"\n⇒ 状态格开头只许写 {list(MILESTONE_WORDS)} 里的一个，细节写在后面。"
+    )
+
+
+def test_an_in_progress_milestone_lists_exactly_what_is_left():
+    """⭐⭐ 「进行中」这个词不携带信息 ⇒ 它必须带上机读的剩余清单，且**等于**现算的那份。
+
+    实测（2026-09-01）M3 的结论句逐字写着「M3 六页只剩 **crosshair** 与 hud_color
+    两页未关档」，而 crosshair **批 27（08-30）就关档了** ——
+    ⭐ **一句「还剩哪几个」的话，会在别人把其中一个做完的那一刻变成假话，
+    而做完的那个人没有理由来读这一句。**
+
+    ⛔ **声明盲区**：机器只读 `⇒ 当前剩：` 之后那一段。
+    同一格里的历史叙述（「2026-08-20 …」「批 25：kill_icon 关档」）**不在分母里** ——
+    它们是流水，删了会丢掉批次台账建立之前那几周唯一的记录。
+    """
+    board = _require_board()
+    items = _phase_items(board)
+    everything = {name for rows in items.values() for name, _ in rows}
+    #: ⭐ 空转守卫：`everything` 是「格子里能认出哪些名字」的**全部词汇**。
+    #: 它一空，下面每个 `named` 都会是空集，而 `want` 也多半是空 ⇒ 静默全绿。
+    assert len(everything) >= 20, (
+        f"只认出 {len(everything)} 个条目名 —— 页面表和交叉链路表加起来有 40 余条，"
+        "解析器瞎了，这条判据已经在空转"
+    )
+    problems = []
+    for cells in _milestone_rows(board):
+        name, cell = _strip(cells[0]), cells[2]
+        if name not in MILESTONE_PHASE:
+            continue
+        rows = items[MILESTONE_PHASE[name]]
+        if _derive_word(rows) != "进行中":
+            continue
+        if cell.count(REMAINDER_MARKER) != 1:
+            problems.append((name, f"`{REMAINDER_MARKER}` 出现了 {cell.count(REMAINDER_MARKER)} 次，"
+                                   "必须恰好一次"))
+            continue
+        tail = cell.split(REMAINDER_MARKER, 1)[1]
+        named = {
+            item for item in everything
+            if re.search(r"(?<![A-Za-z0-9_])" + re.escape(item) + r"(?![A-Za-z0-9_])", tail)
+        }
+        want = {n for n, done in rows if not done}
+        if named != want:
+            problems.append((
+                name,
+                f"多说了 {sorted(named - want)}、漏说了 {sorted(want - named)}"
+                f"（现算还剩 {sorted(want)}）"))
+    assert not problems, (
+        "「进行中」的里程碑，剩余清单与页面表对不上：\n" +
+        "\n".join(f"  {n}  {why}" for n, why in problems) +
+        f"\n⇒ 在状态格末尾写「{REMAINDER_MARKER}<还没关档的那几个>」，"
+        "别在别处再写第二份。"
+    )
+
+
+def test_the_milestone_checks_catch_both_ways_of_rotting():
+    """⭐ 阳性对照：两条判据各造一份破法，都不碰真文件。"""
+    rows = [("alpha", True), ("beta", False)]
+    assert _derive_word(rows) == "进行中"
+    assert _derive_word([("alpha", True)]) == "已完成"
+    assert _derive_word([("alpha", False)]) == "未开工"
+    #: ① 词错了：明明做了一半，板上写「未开工」（M4 当时就是这个形状）
+    assert _leading_word("未开工") != _derive_word(rows)
+    #: ② 词对了但清单过期：beta 才是没关档的那个，格子里却写着 alpha
+    tail = "**进行中**：…… " + REMAINDER_MARKER + " alpha"
+    named = {n for n, _ in rows if re.search(
+        r"(?<![A-Za-z0-9_])" + n + r"(?![A-Za-z0-9_])", tail.split(REMAINDER_MARKER, 1)[1])}
+    assert named == {"alpha"} and named != {"beta"}, "过期清单必须被逮住"
+    #: ③ 「已完成」不需要清单 —— 别让它被误伤
+    assert _derive_word([("alpha", True)]) != "进行中"
 
 
 def test_the_page_status_vocabulary_does_not_rot():
