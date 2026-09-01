@@ -92,7 +92,10 @@ BAR_CARD_DUPLICATE_ACTIONS = {
               "_preview_flash", "_refresh_audio_styles", "_refresh_styles",
               "_reset_settings"),
     "kill_icon": ("_on_primary_clicked", "_open_workshop"),
-    "preset_center": ("_save_changes",),
+    # ⭐ `preset_center` 2026-09-01 批 38 清零 ⇒ 移到下面 `RENOVATED_PAGES`。
+    #   撤的是**底栏**那颗（RN-281：它在默认状态下写回 57 个键、0 个会变），
+    #   留的是工作台卡内那颗 —— 批 31 规则②「留离它作用的对象最近的那一颗」，
+    #   而它作用的对象正是同一张卡里「导入预设包」读进来的那一份。
     # ⭐ `utility` 曾是这张表里**最长的一条（5 处，全站最多的一页）**，
     #   2026-08-31 批 36 清零 ⇒ 移到下面 `RENOVATED_PAGES` 由那几条钉死。
 }
@@ -100,7 +103,8 @@ BAR_CARD_DUPLICATE_ACTIONS = {
 #: 已动刀清零的页。清零之后**一处都不许再长回来**。
 #: ⭐ 2026-08-31 批 36 加入 `utility` —— 它是原债表里最长的一条（5 处），
 #:   而全站 36 处里这一页独占 5 处，是最多的一页。
-RENOVATED_PAGES = ("about", "account", "utility", "viewmodel", "voice_output")
+RENOVATED_PAGES = ("about", "account", "preset_center", "utility",
+                   "viewmodel", "voice_output")
 
 #: 本批撤掉的那七个入口，撤的是**副本**，不是动作本身。
 #: ⭐ 这张表是**反面守卫**：撤重复最容易犯的错是把两颗一起删掉，
@@ -127,6 +131,10 @@ SURVIVING_ENTRANCES = {
     ("utility", "_open_current_map_folder"): "card",
     ("utility", "_open_current_team_folder"): "card",
     ("utility", "_refresh_utilities"): "card",
+    # ⚠ `preset_center` 留的是**卡内**那颗，和 `utility` 同向、和 `about` 相反。
+    # ⭐ 理由不是版式偏好，是**对象**：这个动作作用于「刚读进来的那份预设包」，
+    #   而读它进来的那颗按钮就在同一张卡的同一格里（批 31 规则②）。
+    ("preset_center", "_save_changes"): "card",
 }
 
 

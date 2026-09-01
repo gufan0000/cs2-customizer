@@ -39,9 +39,17 @@ class MyPresetsMixin:
         """构建卡片并追加到给定布局。"""
         from widgets.settings_card import SettingsCard
 
+        # ⚠⚠ **2026-09-01 批 38 改这两句话，而改它的原因是我自己的重排。**
+        #   原文写「把**上面**勾选的几类配置存成一套具名预设」——那句话在批 38 之前
+        #   是真的（勾选框那张卡确实在这张卡上面），而这一批把「内置精选」和这张卡
+        #   一起提到了工作台之前，于是勾选框跑到了**下面**。
+        # ⭐⭐⭐ 批 32 那条第四次现身，而这次触发它的不是「入口不存在」，
+        #   是**我把入口搬走了，而指路的那句话留在原地** ——
+        #   一次重排，会把它挪过的每一句方位词都变成假话。
+        # ⇒ 照 RN-401 的规矩改：**点名控件，不指方向**。
         card, layout = SettingsCard.make(
             "我的预设",
-            "把上面勾选的几类配置存成一套具名预设，之后一键切回来。"
+            "把「这一套里有哪些」勾中的类别存成一套具名预设，之后一键切回来。"
             "应用前会自动建快照，可在配置快照页回滚。",
             spacing=10,
         )
@@ -162,8 +170,15 @@ class MyPresetsMixin:
 
         pid = self.my_preset_combo.currentData()
         if not pid:
+            # ⭐ 不指方向、也不让人先跑一趟去看勾了什么 —— **把答案直接说出来**。
+            #   （`_save_my_preset` 的输入框里本来就写着「将包含：…」，
+            #     那句话只有点下去才看得到；这里提前说，是同一份真源。）
+            labels = "、".join(self._selected_type_labels())
             self.my_preset_hint_label.setText(
-                "还没有保存过预设。先在上面勾选要包含的类别，再点「存为新预设」。")
+                f"还没有保存过预设。现在点「存为新预设」，会把这 "
+                f"{len(self._selected_types())} 类存成一套：{labels}。"
+                if labels else
+                "还没有保存过预设。「这一套里有哪些」一类都没勾，先勾上至少一类。")
             return
         for item in list_presets():
             if item.preset_id == pid:

@@ -454,27 +454,37 @@ def test_preset_center_page_status_strip_tracks_dirty_state(qapp, monkeypatch):
     page.show()
     qapp.processEvents()
 
-    assert page.summary_label.isHidden() is True
+    # ⚠⚠ **2026-09-01 批 38 重写这一段，因为它逐字钉住的正是这一批要修的缺陷。**
+    #
+    # 原文里有两处：
+    #   ① `assert page.summary_label.isHidden() is True`
+    #      —— `summary_label` 是**建出来就 hide、全仓无人 show** 的死控件（RN-009），
+    #      而这条断言要求它**必须存在且必须隐藏**。它已随本批删掉。
+    #   ② 勾掉一个范围框之后 `assert "状态 · 待应用" in chips`
+    #      —— 那正是本批的主刀：勾一下打包范围实测 config **0 个键**变化，
+    #      而页面说「待应用」、底栏说「有未应用的预设变更」、想走还弹模态框拦人。
+    # ⭐⭐ **一个缺陷活下来的机制，是有人给它写了判据**（RN-084 那条第三次现身）。
+    # ⇒ 换成问真正该问的：胶囊在说**真话**吗。
     chips = _visible_audio_status_chip_texts(page.status_badge_label)
-    assert len(chips) == 4
-    assert "范围 · 5 类" in chips  # v2 默认勾选 +准心/自定闪光(R2-1)
+    assert "范围 · 5/7 类" in chips  # v2 默认勾选 5/7（+准心/自定闪光，R2-1）
     assert "模式 · 合并" in chips
     assert "内容 · 5 项" in chips
-    assert "状态 · 已同步" in chips
+    assert "来源 · 你现在的设置" in chips
     assert "当前预览范围" in page.preview_meta_label.text()
     assert "合并会尽量保留现有配置" in page.mode_hint_label.text()
     assert page.workbench_content_layout.direction() == QBoxLayout.LeftToRight
 
     page.cb_special.setChecked(False)
     chips = _visible_audio_status_chip_texts(page.status_badge_label)
-    assert "范围 · 4 类" in chips
-    assert "状态 · 待应用" in chips
+    assert "范围 · 4/7 类" in chips
+    # ⭐ 勾选范围**不是**一次未保存的修改：改完之后来源仍然是「你现在的设置」。
+    assert "来源 · 你现在的设置" in chips
+    assert page.is_dirty() is False
 
     page.mode_combo.setCurrentIndex(1)
     chips = _visible_audio_status_chip_texts(page.status_badge_label)
     assert "模式 · 覆盖" in chips
     assert "覆盖" in page.status_card.toolTip()
-    assert "覆盖" in page.summary_label.toolTip()
     assert "覆盖会直接替换对应模块" in page.mode_hint_label.text()
 
     page.resize(960, 900)

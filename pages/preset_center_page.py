@@ -52,6 +52,20 @@ class PresetCenterPage(MyPresetsMixin, QWidget, DirtyPageMixin):
         self._render_preview()
 
     @staticmethod
+    def _chain_tab_order(cards):
+        """按**卡片的摆放顺序**重新串一遍焦点链。
+
+        卡**内部**的构造顺序本来就等于阅读顺序，需要重排的只有卡与卡之间；
+        所以这里把各卡的可聚焦后代按卡序拼起来，再逐对 `setTabOrder`。
+        """
+        chain = []
+        for card in cards:
+            chain += [w for w in card.findChildren(QWidget)
+                      if w.focusPolicy() != Qt.NoFocus and w.isVisibleTo(card)]
+        for previous, following in zip(chain, chain[1:]):
+            QWidget.setTabOrder(previous, following)
+
+    @staticmethod
     def _set_compact_heights(*controls, height=34):
         for control in controls:
             if control is not None:
@@ -90,16 +104,17 @@ class PresetCenterPage(MyPresetsMixin, QWidget, DirtyPageMixin):
         self.status_badge_label = create_badge_label()
         card_layout.addWidget(self.status_badge_label)
 
-        self.summary_label = QLabel("")
-        self.summary_label.setObjectName("hintLabel")
-        self.summary_label.setWordWrap(True)
-        self.summary_label.hide()
-        card_layout.addWidget(self.summary_label)
+        # RN-009（批 38 清掉本页那一处）：这里原来还有一个 `summary_label` ——
+        # 建出来就 `hide()`、全仓无人 `show()`，而**四条路径持续维护它的文本与 tooltip**。
+        # ⭐ 它活下来的机制和 music/account 那两处一样：有人给它写了判据
+        #   （`test_tool_pages_ui_polish` 里两条，其中一条还逐字规定了它的 tooltip 该写什么）。
+        # 它想说的那句话现在只留在 `status_card.setToolTip()` 上 —— 那一份是**看得见的**。
         layout.addWidget(status_card)
 
         workbench_card, workbench_layout = SettingsCard.make(
             "预设工作台",
-            "勾选要打包的范围，然后导出成文件发给别人；导入别人的预设也在这儿。", spacing=10
+            "跟朋友交换整套配置用这里：把自己的存成文件发出去，或者读入别人发来的文件。",
+            spacing=10
         )
         workbench_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
 
@@ -108,10 +123,17 @@ class PresetCenterPage(MyPresetsMixin, QWidget, DirtyPageMixin):
 
         scope_column = QVBoxLayout()
         scope_column.setSpacing(8)
-        scope_title = QLabel("打包范围")
+        # RN-282：原来这里叫「打包范围」，紧挨着「导入策略」和两颗导入按钮，
+        # 于是看着像它也管导入。实测**导入完全不看这些勾选框**
+        # （`_import_bundle_from_file` / `_import_share_path` 都直接吃文件里的 items）。
+        # ⭐ 而它也不只管「打包」：存为新预设、按地图保存、导出，走的都是这一份勾选。
+        #   ⇒ 它的真名是「这一套里有哪些」，并且必须自己说清「导入不看这里」。
+        scope_title = QLabel("这一套里有哪些")
         scope_title.setObjectName("statusLabel")
         scope_column.addWidget(scope_title)
-        scope_hint = QLabel("先勾选要打包的模块，范围越清晰，导入导出时越不容易误操作。")
+        scope_hint = QLabel(
+            "导出文件、存为预设、按地图保存，都按这里勾的来。"
+            "读入别人的文件时按文件里写的来，不看这里。")
         scope_hint.setObjectName("hintLabel")
         scope_hint.setWordWrap(True)
         scope_column.addWidget(scope_hint)
@@ -182,7 +204,8 @@ class PresetCenterPage(MyPresetsMixin, QWidget, DirtyPageMixin):
         # ⚠ RN-077（批 36）：原文「导出、导入和应用**放在一起**，连续处理预设包时更顺手」
         # 讲的是版面。同 `utility` 那两条，一起被 RN-077 的 AST 通路漏掉了
         # （全站 213 条可见 hintLabel 里就这 3 条命中，3 条都是手搓卡片）。
-        actions_hint = QLabel("把当前设置存成预设包、读入别人的预设包，或把选中的预设应用到软件上。")
+        actions_hint = QLabel("「预设包」是一份 .json；「分享文件」是一份 .cs2customizer，"
+                              "带说明和安检，发给朋友用这个。")
         actions_hint.setObjectName("hintLabel")
         actions_hint.setWordWrap(True)
         actions_column.addWidget(actions_hint)
@@ -214,7 +237,12 @@ class PresetCenterPage(MyPresetsMixin, QWidget, DirtyPageMixin):
         self.share_import_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         actions.addWidget(self.share_import_btn, 1, 1)
 
-        self.apply_btn = QPushButton("应用当前预设")
+        # RN-281：这颗按钮原来叫「应用当前预设」，而在**每个人打开这一页时看到的
+        # 那个状态下**，它写回去的正是 `export_bundle(当前 config)` —— 实测 57 个键
+        # **0 个**发生变化，然后弹一句「已应用类型: hud_rules, screen_effects, …」。
+        # ⭐ 它只有一个真对象：**刚用「导入预设包」读进来、还没落地的那一份**。
+        #   ⇒ 名字说出那个对象，并且没有对象时不许可点（`_refresh_apply_button`）。
+        self.apply_btn = QPushButton("应用读入的预设包")
         self.apply_btn.setObjectName("secondaryButton")
         self.apply_btn.clicked.connect(self._save_changes)
         self.apply_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -233,12 +261,13 @@ class PresetCenterPage(MyPresetsMixin, QWidget, DirtyPageMixin):
         # UP-040: 「我的预设」——命名保存/一键应用/改名/删除。
         # 在此之前换一整套配置只能「导出文件再导入文件」，等于软件把
         # 它自己该做的事（记住几套具名配置）推给了文件系统。
-        self.build_my_presets_card(layout)
+        my_presets_card = self.build_my_presets_card(layout)
 
         # R2-2: 内置精选包(纯内置资源,零外部素材)
         starter_card, starter_layout = SettingsCard.make(
             "内置精选",
-            "三套开箱即用的体验包,应用前自动备份当前配置,可在配置快照页回滚。",
+            "三套开箱即用的体验包，不用先有文件也不用先存预设，选一套点「一键应用」就换过去。"
+            "应用前自动备份当前配置，可在配置快照页回滚。",
             spacing=10,
         )
         starter_row = QHBoxLayout()
@@ -272,7 +301,7 @@ class PresetCenterPage(MyPresetsMixin, QWidget, DirtyPageMixin):
         # R2-4: 按地图自动切预设
         map_card, map_layout = SettingsCard.make(
             "按地图自动切换",
-            "把当前勾选范围保存成某张图的预设;进图时 GSI 自动套用(merge 模式,应用前自动快照)。",
+            "把当前勾选范围保存成某张图的预设；进图时 GSI 自动套用（merge 模式，应用前自动快照）。",
             spacing=10,
         )
         self.map_auto_check = QCheckBox("启用按地图自动切换")
@@ -313,6 +342,9 @@ class PresetCenterPage(MyPresetsMixin, QWidget, DirtyPageMixin):
         self.map_rules_label.setWordWrap(True)
         map_layout.addWidget(self.map_rules_label)
         layout.addWidget(map_card)
+        # 换一张图 ⇒「删除该图预设」能不能点得跟着变（`_refresh_map_rules_label`）。
+        self.map_combo.currentTextChanged.connect(
+            lambda *_a: self._refresh_map_rules_label())
         self._refresh_map_rules_label()
 
         preview_card, preview_layout = SettingsCard.make(
@@ -329,15 +361,70 @@ class PresetCenterPage(MyPresetsMixin, QWidget, DirtyPageMixin):
         preview_layout.addWidget(self.preview_text)
         layout.addWidget(preview_card)
 
+        # ⭐⭐ 卡片的**摆放顺序**在这里一处说清（批 38）。
+        #
+        # 改前实测（真窗 1280×800）：内容高 1851 / 视口 673 ⇒ **64% 的页面在折线以下**，
+        # 而落在折线以下的正好是新手唯一想要的那两张 ——「内置精选」（y=1058）
+        # 和「我的预设」；第一屏摆的是「这一套里有哪些 / 导入策略 / 导出分享文件」
+        # 这些**要先有一个文件才用得上**的专家动作。
+        # 外审改前窗口档 6/6 报「名为预设中心却没有预设列表或推荐模板，
+        # 玩家找不到现成可直接一键套用的配置」，而同一页的整页无折线图上
+        # 3/6 直接指向「三套开箱即用的体验包」⇒ ⭐ **答案在页面上，只是不在屏幕上。**
+        #
+        # ⇒ 按「要先有什么」从少到多排：什么都不用 → 自己存过的 → 得有个文件 → 高级 → 诊断。
+        # ⚠ 构造顺序不能直接当摆放顺序：`build_my_presets_card()` 自己
+        #   `parent_layout.addWidget(card)`（共用件，不为这一页改签名）。
+        #   所以这里先让它们各自入队，再统一重排一次。
+        # ⚠⚠ **从页头之后开始插，不是从 0 开始。**
+        #   第一版写的是 `insertWidget(index, card)`，于是六张卡依次占住 0~5，
+        #   把 `header` 一路推到了**整页最下面**（实测页头 top=1818，折线以下）。
+        #   ⭐ 我重排的是「卡片」，而这条布局里的第一项不是卡片。
+        #   ⭐⭐ 而那条只钉「一键应用露不露脸」的判据**照样是绿的** ——
+        #     批 32 说「只许钉对象、不许钉数量」，它的背面是：
+        #     **只钉一个对象的判据，看不见我把别的东西挤到哪儿去了。**
+        #     ⇒ 下面那条 `test_the_page_header_is_still_the_first_thing` 补这一格。
+        card_order = (status_card, starter_card, my_presets_card,
+                      workbench_card, map_card, preview_card)
+        first = layout.indexOf(header) + 1
+        for offset, card in enumerate(card_order):
+            layout.removeWidget(card)
+            layout.insertWidget(first + offset, card)
+
+        # ⚠⚠ **摆放顺序改了，Tab 键的顺序不会跟着改。**
+        #   Qt 的焦点链默认走**构造顺序**，而这一批只动了**显示顺序** ——
+        #   于是屏幕上第一张卡（内置精选）里的控件，按 Tab 要按到第 12 下才轮到。
+        #   `scripts/tab_order_audit.py` 当场报 **[preset_center] 需挪动 8 个**。
+        # ⭐⭐ 这一条是判据抓的，我自己出图、外审看图**都不可能看见它** ——
+        #   焦点顺序不在任何一张截图里（同本批主刀那条：截图没有时间轴，也没有键盘）。
+        self._chain_tab_order(card_order)
+
         layout.addStretch()
         scroll.setWidget(content)
         root.addWidget(scroll)
 
         self.action_bar = PageActionBar(self)
-        self.action_bar.set_message("支持 HUD / 屏幕特效 / 特殊音效 三域预设。")
-        self.action_bar.configure_primary("应用当前预设", self._save_changes, visible=True)
-        self.action_bar.configure_secondary("重新预览", self._render_preview, visible=True)
+        # RN-283：底栏原来构造时写死「支持 HUD / 屏幕特效 / 特殊音效 三域预设。」——
+        # 而同屏往上 250px 就摆着 **7 个**勾选框（引擎 `SUPPORTED_TYPES` 也是 7 类）。
+        # 外审 12 发 **12/12 答「7 类」、12/12 答「矛盾: 有」**，11/12 逐字抄出了那句话。
+        # ⭐ 更糟的是它是**一次性**的：`_refresh_dirty_ui` 一跑就换掉，再也回不来
+        #   ⇒ **只有每个人的第一眼看得到它，而它是假的。**
+        # ⇒ 首屏这句话不再单独写一份，交给和后面每一次刷新同一个出口。
+        # RN-281 / RN-452：底栏那颗主按钮撤掉（同批 10 crosshair、批 28 magnifier）——
+        # 它和工作台里那颗是同一个 `_save_changes`，而这个动作只在「读入过一份包」
+        # 时才有对象，放在页级主按钮位上等于让每个人第一眼就想去点一颗空转的按钮
+        # （行为题 ①**12/12** 都选了它）。
+        self.action_bar.configure_primary("", None, visible=False)
+        # ⛔ 次位那颗「重新预览」也撤掉，而理由不是版式 —— **它做的事是有害的**：
+        #   `_render_preview()` 里第一句就是 `export_bundle(当前勾选)` 并覆盖
+        #   `self._current_bundle`。于是「导入预设包」读进来一份、还没应用的时候，
+        #   点一下「重新预览」会**一声不响地把那份包扔掉**，而页面仍然是 dirty、
+        #   「应用读入的预设包」仍然亮着 —— 按下去应用的是**你自己的当前配置**。
+        # ⚠⚠ 而它本来不显眼；是**我撤掉主按钮之后，它接管了底栏最响的位置** ——
+        #   批 31 那条逐字再现：**一个控件怎么被读、有多大杀伤力，由它的邻居决定。**
+        # ⭐ 另一半：预览本来就一直是最新的（勾选/模式一变就 `_render_preview`），
+        #   所以这颗按钮**唯一的独有效果就是那个静默丢弃**。
         root.addWidget(self.action_bar, 0)
+        self._refresh_dirty_ui()
 
         for checkbox in (
             self.cb_hud, self.cb_screen, self.cb_special,
@@ -356,7 +443,10 @@ class PresetCenterPage(MyPresetsMixin, QWidget, DirtyPageMixin):
             self.logger.exception("分享文件拖拽初始化失败")
 
     _TYPE_CHECKBOX_SPEC = (
-        ("cb_hud", "hud_rules", "HUD"),
+        # ⚠ 这一格的显示名原来是「HUD」，而勾选框上写的是「HUD 规则」——
+        #   **同一类东西在同一屏上有两个名字**（勾选框一个、预览/摘要/我的预设另一个）。
+        #   改完复跑有一发逐字把这两处并排抄出来当矛盾报 ⇒ 统一成勾选框上的那个。
+        ("cb_hud", "hud_rules", "HUD 规则"),
         ("cb_screen", "screen_effects", "屏幕特效"),
         ("cb_special", "special_sound", "特殊音效"),
         ("cb_crosshair", "crosshair", "准心"),
@@ -400,11 +490,26 @@ class PresetCenterPage(MyPresetsMixin, QWidget, DirtyPageMixin):
         item_count = len((bundle or {}).get("items", []) or [])
         dirty = self.is_dirty()
 
+        # RN-281：第四颗胶囊原来写「状态 · 待应用 / 已同步」——
+        # 而「同步」这个词在这一页没有对应物（它不往任何地方同步），
+        # 「待应用」在勾一下打包范围之后就会亮起，那时**什么都没变**。
+        # ⭐ 立案说的是「未展示当前加载的预设名称，不清楚点应用会生效什么」，
+        #   而根因就在这一格：屏幕上从来没说过**预览里那份东西是哪来的**。
+        #   ⇒ 这颗胶囊改成回答那个问题。
+        # ⚠⚠ 第一颗胶囊原来只写「范围 · 5 类」，而**改完复跑当场量出它的代价**：
+        #   窗口档 6/6 把「这个软件的预设能装几类」答成了 **5**（改前 12/12 答 7）——
+        #   因为本批的重排把那七个勾选框挪到了折线以下，第一屏上只剩这颗胶囊，
+        #   而「5」是「你现在勾了几个」，不是「一共有几类」。
+        #   ⭐⭐ 批 31 那条的另一个形态：**一个只在邻居在场时才说得清的标签，
+        #     被搬家搬成了一句含糊话** —— 我搬走的是它的邻居，不是它。
+        #   ⇒ 让它自己说全：`5/7`。
         badges = [
-            ("positive" if selected_labels else "warning", f"范围 · {len(selected_labels)} 类"),
+            ("positive" if selected_labels else "warning",
+             f"范围 · {len(selected_labels)}/{len(self._TYPE_CHECKBOX_SPEC)} 类"),
             ("info", f"模式 · {self._mode_label_text()}"),
             ("positive" if item_count else "warning", f"内容 · {item_count} 项"),
-            ("warning" if dirty else "positive", f"状态 · {'待应用' if dirty else '已同步'}"),
+            ("warning", "来源 · 读入的文件，还没应用") if dirty
+            else ("positive", "来源 · 你现在的设置"),
         ]
 
         if selected_labels:
@@ -415,11 +520,10 @@ class PresetCenterPage(MyPresetsMixin, QWidget, DirtyPageMixin):
             f"当前选择范围：{scope_text}。"
             f"导入模式为“{self._mode_label_text()}”，"
             f"预览包内共 {item_count} 项。"
-            f"{'还有未应用的改动。' if dirty else '当前预览已同步。'}"
+            + ("预览里是刚读进来的那份文件，还没有应用到软件上。"
+               if dirty else "预览里是你现在的设置。")
         )
         render_badges(self.status_badge_label, badges, detail_tooltip=detail_text)
-        self.summary_label.setText(detail_text)
-        self.summary_label.setToolTip(detail_text)
         self.status_card.setToolTip(detail_text)
         if hasattr(self, "preview_meta_label"):
             self.preview_meta_label.setText(
@@ -433,8 +537,34 @@ class PresetCenterPage(MyPresetsMixin, QWidget, DirtyPageMixin):
             )
 
     def _on_selection_changed(self):
-        self.mark_dirty()
+        # ⛔ 这里原来有一句 `self.mark_dirty()`，而它是本批的主刀。
+        #
+        # 勾一下「这一套里有哪些」是一次纯粹的**选择**：实测 config 里
+        # **0 个键**发生变化（57 个会被写回的键逐个深拷贝比对过）。
+        # 而 `mark_dirty()` 在 `DirtyPageMixin` 里带着一项权力 ——
+        # `can_leave_page()` 会弹「当前页面有未保存修改，是否保存后离开？」拦住人。
+        #
+        # ⭐⭐⭐ 于是四步，每一步都长得完全正常，每一步都是假的：
+        #   ① 胶囊「状态 · 待应用」        假状态
+        #   ② 底栏「有未应用的预设变更。」  假句子
+        #   ③ 模态框拦住离开               假拦截
+        #   ④ 点「保存并离开」→ 改 0 个键，弹「已应用类型: …」  假成功
+        # **一个假前提，会一路把四个各自正确的机制变成四句假话。**
+        # 那四个机制单看都没写错，错的是它们共用的那个前提：
+        # 「这一页有一种叫『未保存的修改』的东西」。
+        #
+        # ⚠ 另一半：`_render_preview()` 会拿当前勾选重新打包并覆盖 `_current_bundle`，
+        #   所以**改勾选这个动作本身就把「刚读进来的那份包」扔掉了**。
+        #   那么 dirty 就不该继续挂着 —— 挂着的话，「应用读入的预设包」还亮着，
+        #   而按下去应用的是你自己的当前配置。
+        #   ⭐ 这不是「顺手清一下标志位」：**是让标志位重新指向一个真实存在的东西。**
         self._render_preview()
+        if self.is_dirty():
+            self.clear_dirty()
+        # 「我的预设」空态那句话现在**逐字念出当前勾选**，所以勾选一变它就得跟着变。
+        # ⚠ 不跟着变的后果不是"没刷新"：那句话会**具体而肯定地说错**
+        #   （批 30：一次「把文案写具体」的改动，把真话改成了假话）。
+        self._sync_my_preset_hint()
 
     def _render_preview(self):
         bundle = export_bundle(self._selected_types())
@@ -446,11 +576,52 @@ class PresetCenterPage(MyPresetsMixin, QWidget, DirtyPageMixin):
         self._render_preview()
 
     def _refresh_dirty_ui(self):
+        # ⭐ 底栏这句话现在是**唯一**出口：首屏那一句也由它出（`_init_ui` 结尾调一次）。
+        #   原来首屏另写死一句「支持 … 三域预设。」，被这里一冲就再也回不来 ——
+        #   **一句没有第二个人负责的话，不会跟着状态走，也没人会去核对它**（RN-283）。
+        # ⚠ 这句话要回答**第一屏**上的疑问，不能去指第一屏上没有的东西。
+        #   第一版写的是「改这一页的勾选不会动到你的设置」—— 而重排之后
+        #   那些勾选框已经落到折线以下了 ⇒ 批 32 那条（「一句正确的指路，
+        #   会把路的那一头看不见变成一个新缺陷」）会当场再现一次。
+        #   第一屏上是「内置精选」和「我的预设」，玩家在那儿的疑问只有一个：
+        #   **点下去我现在的设置会怎么样。**
         if self.is_dirty():
-            self.action_bar.set_message("有未应用的预设变更。")
+            self.action_bar.set_message("已经读入一份预设包，还没有应用到软件上。")
         else:
-            self.action_bar.set_message("预设已同步。")
+            # ⚠ 「会自动备份」不是全站事实，是一个**可以被关掉的开关**
+            #   （配置快照页里的「危险操作前自动快照」）。关掉之后照抄这句话就是假话
+            #   —— 批 24 那条：一句被当成事实的话，只要有一处不成立，在那儿就是假的。
+            from config import config as _cfg
+
+            # ⚠⚠ **这句话第一版写的是「都会立刻换掉你现在的设置」，改完复跑当场被逮**
+            #   （紧凑窗口 3/3 报「和『模式 · 合并』互相矛盾」）—— 而它说得对：
+            #   三条应用通路（内置精选 / 我的预设 / 按地图）**全都是 `mode="merge"`**，
+            #   只动这份预设覆盖到的那些键，别的一个不碰。
+            # ⭐ 批 36 那条第二次现身：**这一批最贵的一句话，是我自己补上去的那半句**。
+            auto_snapshot = bool(getattr(_cfg, "config_snapshot_auto_before_risky_ops", True))
+            self.action_bar.set_message(
+                "应用一套预设，会立刻改掉这套预设覆盖到的那几类设置，别的不动" +
+                ("；动手前会自动存一份快照，可以在配置快照页回滚。"
+                 if auto_snapshot else
+                 "。你把「危险操作前自动快照」关掉了，这一次改过去就回不来了。"))
         self._sync_status_strip()
+        self._refresh_apply_button()
+
+    def _refresh_apply_button(self):
+        """「应用读入的预设包」只在**真有一份读进来的包**时可点（RN-281）。
+
+        ⚠ 禁用之后必须看得出来、还得说清为什么 —— 那是批 23（RN-150，能不能看出
+        它禁用了）和批 36（tooltip 是不是空串，知不知道为什么）两条各自的一半。
+        """
+        btn = getattr(self, "apply_btn", None)
+        if btn is None:
+            return
+        ready = self.is_dirty()
+        btn.setEnabled(ready)
+        btn.setToolTip(
+            "把刚读进来的那份预设包写进软件。"
+            if ready else
+            "现在没有读进来的预设包。先点「导入预设包」或「导入分享文件」选一个文件。")
 
     def _save_changes(self):
         bundle = self._current_bundle or export_bundle(self._selected_types())
@@ -599,6 +770,24 @@ class PresetCenterPage(MyPresetsMixin, QWidget, DirtyPageMixin):
         self.map_rules_label.setText(
             "已绑定: " + ", ".join(rules) if rules else "尚无地图绑定。勾选范围 → 选图 → 保存即可。"
         )
+
+        # ⭐ **同一页上同一件事，两张卡原来给了相反的处理。**
+        #   「我的预设」一条都没有时会把「删除」禁掉（`refresh_my_presets`，UP-022），
+        #   而这颗红色的「删除该图预设」在**一条绑定都没有**时照样是亮的 ——
+        #   它还是全页唯一一颗红按钮，坐在一张写着「尚无地图绑定」的卡上。
+        #   ⇒ 批 29 RN-447 那条（红「删除」全长在空槽位上）在这一页的实例。
+        # ⚠ 判别到**这一张图**，不是「有没有任何绑定」：`_on_map_rule_delete`
+        #   删的是当前下拉里那张图的绑定，别的图有绑定并不让这颗按钮有事可做。
+        btn = getattr(self, "map_delete_btn", None)
+        if btn is None:
+            return
+        current = str(self.map_combo.currentText()).strip().lower()
+        bound = current in {str(r).strip().lower() for r in rules}
+        btn.setEnabled(bound)
+        btn.setToolTip(
+            f"删掉「{current}」的绑定，进这张图时不再自动套用。"
+            if bound else
+            f"「{current or '这张图'}」还没有绑定过预设，没有可删的东西。")
 
     # ---------------- R2-1: .cs2customizer 分享文件 ----------------
 

@@ -3836,19 +3836,11 @@
   },
   {
    "page": "preset_center",
-   "text": "打包范围",
+   "text": "这一套里有哪些",
    "card": "",
    "tab": "",
    "kind": "label",
    "src": "static"
-  },
-  {
-   "page": "preset_center",
-   "text": "重新预览",
-   "card": "",
-   "tab": "",
-   "kind": "button",
-   "src": "runtime"
   },
   {
    "page": "preset_center",
@@ -4004,7 +3996,7 @@
   },
   {
    "page": "preset_center",
-   "text": "应用当前预设",
+   "text": "应用读入的预设包",
    "card": "预设工作台",
    "tab": "",
    "kind": "button",

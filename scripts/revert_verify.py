@@ -1550,14 +1550,22 @@ REVERTS = [
     Revert(
         "RN", "又加了一个建出来就 hide 的 summary_label",
         "tests/test_no_invisible_summary_label.py",
-        # ⚠ 锚点跟着棘轮走：M3-b 之后是 18，批 32 放宽分母（全等 → 后缀）
-        # 并清掉 music 之后，完整产品是 19、**本仓库（子集，没有 account 页）是 18**。
+        # ⚠ 锚点跟着棘轮走：M3-b 清掉 viewmodel + flash 之后是 18，
+        # 批 32 放宽分母（全等 → 后缀）并清掉 music 之后是 19。
         # ⚠⚠ 这个字面量上**钉了两条断点**（另一条在下面 viewmodel 那一组），
-        # 而失效体检一次只报**还在失效**的那一条 —— 批 32 修了一条就以为修完了，
-        # 下一轮全组跑才把另一条顶出来。
+        # 而失效体检一次只报**还在失效**的那一条 —— 批 32 我修了一条就以为修完了，
+        # 下一轮全组跑才把这一条顶出来。
         # ⭐ **锚在同一个会变的数上的断点，要么一次全找出来，要么就会分两轮暴露。**
-        "MAX_REMAINING = 18",
+        # ⭐⭐ 批 37（account 关档，19 → 18）：这一次**两条在同一轮里一起被报出来**，
+        #   因为失效体检报的是「当下所有失效的」。批 32 分两轮暴露的原因不是体检漏了，
+        #   是**我修完一条就没再跑一遍**。⇒ 体检要跑到它不再报为止，不是跑一次。
+        # ⭐⭐ 批 38（preset_center 清掉本页那一份，18 → **17**）：
+        #   这已经是这个字面量第三次被推着走（M3-b 18 → 批 32 19 → 批 37 18 → 批 38 17），
+        #   而上面那段话逐字写着「体检要跑到它不再报为止」——这一轮两条又是**一起**报出来的。
+        #   ⭐ **一条锚在「当前真实值」上的断点，每修好一页就必然失效一次；
+        #     它不是坏了，是它的锚点本来就是一个会动的数。**
         "MAX_REMAINING = 17",
+        "MAX_REMAINING = 16",
         "tests/test_no_invisible_summary_label.py::"
         "test_invisible_summary_label_count_only_shrinks",
         "21 个页面各有一个建出来就 hide()、全仓没人再显示的 summary_label，"
@@ -2561,14 +2569,15 @@ REVERTS = [
     Revert(
         "RN", "viewmodel 又建一个建出来就 hide 的 summary_label",
         "tests/test_no_invisible_summary_label.py",
-        "MAX_REMAINING = 18",
-        "MAX_REMAINING = 20",
+        "MAX_REMAINING = 17",
+        "MAX_REMAINING = 19",
         "tests/test_no_invisible_summary_label.py::"
         "test_ratchet_is_tightened_when_pages_are_cleaned",
-        "RN-009：棘轮清一页就得跟着收紧一格（本仓库现在 18）。"
+        "RN-009：棘轮清一页就得跟着收紧一格（现在 18）。"
         "⚠ 这条锚点在批 32 更新过：那一批放宽了分母"
-        "（`summary_label` 全等 → `*_summary_label` 后缀）并清掉 music。"
-        "⭐ **锚在一个会变的数上的断点，那个数一动它就空转。**"
+        "（`summary_label` 全等 → `*_summary_label` 后缀）并清掉 music，"
+        "于是这个数从 18 变成 19 —— ⭐ **锚在一个会变的数上的断点，"
+        "那个数一动它就空转**，而失效体检逮到它时它已经空转了一整轮。"
         "**棘轮不收紧等于没有棘轮** —— 松着的两格会把下一次回归静默吃掉",
     ),
     # ==================================== 2026-08-18 关档自查补的两条旧账
@@ -3724,13 +3733,24 @@ REVERTS = [
     Revert(
         "RN", "债表变成博物馆（修好了不回来删）",
         "tests/test_one_action_one_entrance.py",
-        '    "preset_center": ("_save_changes",),',
-        '    "preset_center": ("_save_changes", "_this_one_was_fixed_long_ago"),',
+        '    "audio_task_panel": ("_reload_history",),',
+        '    "audio_task_panel": ("_reload_history", "_this_one_was_fixed_long_ago"),',
         "tests/test_one_action_one_entrance.py::"
         "test_the_rest_of_the_debt_only_shrinks",
         "RN-188 / RN-452：只判「变没变坏」的棘轮，在缺陷修好之后会**永远停在旧数上** ——"
         "从「守着一条线」退化成「记录一个历史」，而且**没有任何东西会说它退化了**。"
-        "⇒ 三向都要红：新增 / 变多 / **已经不该在册**。同 RN-196 的 `KNOWN_COMPACT_DEBT`",
+        "⇒ 三向都要红：新增 / 变多 / **已经不该在册**。同 RN-196 的 `KNOWN_COMPACT_DEBT`。"
+        "⚠ 这个断点在批 31 搬过一次家：它原来钉的是 "
+        "`test_one_primary_button_per_screen.py` 里那张按颜色数的债表，"
+        "而那张表在批 31 **清空了** ⇒ 锚点连同它一起消失。"
+        "⭐ **一条判据把缺陷修完，它的回退断点就失去了落脚点** —— "
+        "断点得跟着「还没修完的那一半」走。"
+        "⚠⚠ **批 38 它第二次搬家**：那一批把 `preset_center` 也清零了，"
+        "而这条断点当时正锚在 `\"preset_center\": (\"_save_changes\",),` 上 ⇒ 又空转一轮。"
+        "⭐⭐ **这不是巧合，是这条断点的固有属性**：它守着一张**只会变短的表**，"
+        "所以它每一次落脚，都落在一个迟早会被清掉的格子上。"
+        "⇒ 现在锚在 `audio_task_panel`（还剩 1 条，最不容易在近几批被清空的一格）；"
+        "下一次清到它时，**记得连这条断点一起搬**，别等失效体检来报",
     ),
     Revert(
         "RN", "债表里的页被摘出导航，而实现文件还在",
@@ -5321,6 +5341,116 @@ REVERTS = [
         "⭐⭐ 我一度想推广成 `(左|右|上|下|顶|底)(边|侧|方|面|栏)` 一把抓，"
         "**而那个做法逐字写在同一段注释里、已被实测否决**（一刀切量出 24 处，其中 20 处是对的）"
         "⇒ **在自己要改的文件里，先把已经写下的结论读完**",
+    ),
+    Revert(
+        "RN", "勾一下打包范围，又被当成「未保存的修改」拦住不许走",
+        "pages/preset_center_page.py",
+        "        self._render_preview()\n"
+        "        if self.is_dirty():\n"
+        "            self.clear_dirty()",
+        "        self.mark_dirty()\n"
+        "        self._render_preview()\n"
+        "        if self.is_dirty():\n"
+        "            pass",
+        "tests/test_preset_center_tells_the_truth.py::"
+        "test_you_can_leave_the_page_after_only_picking_a_scope",
+        "RN-479：勾一下「这一套里有哪些」实测 config **0/57 个键**变化，"
+        "而 `mark_dirty()` 在 `DirtyPageMixin` 里带着**拦人的权力** —— "
+        "`can_leave_page()` 会弹「当前页面有未保存修改，是否保存后离开？」。"
+        "⇒ 四步全假：胶囊「待应用」／底栏「有未应用的预设变更」／模态框拦人／"
+        "点「保存并离开」改 0 个键却弹「已应用类型: …」。"
+        "⭐⭐⭐ **一个假前提，会一路把四个各自正确的机制变成四句假话** —— "
+        "那四个机制单看都没写错，错的是它们共用的前提「这一页有未保存的修改这种东西」。"
+        "⭐⭐ 而**外审替它作了不在场证明**：改前 12 发问「按下去会怎样」，"
+        "0/12 答「会有变化」、7/12 答「不会」，依据逐字是「状态 · 已同步」胶囊——它答对了。"
+        "因为四步里只有前两步在屏幕上、且要等人动一下才出现 ⇒ "
+        "**看图量的是「这一屏此刻说了什么」，量不到「你动一下之后它会说什么」**",
+    ),
+    Revert(
+        "RN", "底栏又长回一句和勾选框对不上的半份清单",
+        "pages/preset_center_page.py",
+        # ⚠⚠ **这条断点的第一版被全组回退验证判成假绿，而它教了一件事。**
+        #   第一版复现的是**改前的代码形状**：在 `configure_primary` 前面
+        #   插一句 `set_message("支持 … 三域预设。")`。
+        #   ⭐⭐⭐ 但本批的第二刀（把底栏文案收成 `_refresh_dirty_ui` 这个唯一出口，
+        #     并在 `_init_ui` 结尾调一次）**让那个形状不再产生那个缺陷** ——
+        #     插进去的那句话当场被冲掉，判据看的时候屏幕上根本没有它。
+        #   ⇒ **回退断点复现的是「改前的代码」，而修法可能让「改前的代码」
+        #     不再产生「改前的缺陷」。断点要攻击的是现在真实存在的那条通路。**
+        #   现在改成往**那个唯一出口自己**里塞半份清单。
+        '                "应用一套预设，会立刻改掉这套预设覆盖到的那几类设置，别的不动" +',
+        '                "支持 HUD 规则 / 屏幕特效 / 特殊音效 三域预设。" +',
+        "tests/test_preset_center_tells_the_truth.py::"
+        "test_no_visible_sentence_names_a_half_list_of_the_supported_kinds",
+        "RN-283：底栏原来构造时写死「支持 HUD / 屏幕特效 / 特殊音效 **三域**预设」，"
+        "而同屏往上 250px 就摆着 **7** 个勾选框（schema v2 在 2026-06-12 加了四类，"
+        "这句话停在 v1）。外审 12 发 **12/12 答「7 类」、12/12 答「矛盾: 有」**。"
+        "⭐ 判据**不钉「三域」两个字**（钉字面量只拦得住这一次的写法），"
+        "改问一般形式：**一句枚举类别的话，要么说全 7 类，要么等于当前勾选；"
+        "第三种都是假话**（批 27：不问这句话怎么造出来的，只问屏幕上有没有它）",
+    ),
+    Revert(
+        "RN", "「重新预览」又回到底栏，能一声不响扔掉刚读进来的预设包",
+        "pages/preset_center_page.py",
+        "        root.addWidget(self.action_bar, 0)\n"
+        "        self._refresh_dirty_ui()",
+        '        self.action_bar.configure_secondary("重新预览", self._render_preview, visible=True)\n'
+        "        root.addWidget(self.action_bar, 0)\n"
+        "        self._refresh_dirty_ui()",
+        "tests/test_preset_center_tells_the_truth.py::"
+        "test_nothing_can_silently_throw_away_an_imported_bundle",
+        "RN-480：`_render_preview()` 第一句就是 `export_bundle(当前勾选)` 并覆盖 "
+        "`self._current_bundle` ⇒ 读进来一份包、还没应用时点这颗按钮，"
+        "**那份包一声不响地没了**，而页面仍然 dirty、「应用」仍然亮着 —— "
+        "按下去应用的是**你自己的当前配置**。"
+        "⚠⚠ 它**改前就在**，只是蹲在次位没人看；是我撤掉主按钮之后**它接管了"
+        "底栏最响的位置**，改完复跑才有一发点它的名 ⇒ "
+        "⭐⭐ **一个控件怎么被读、有多大杀伤力，由它的邻居决定**（批 31 逐字再现）",
+    ),
+    Revert(
+        "RN", "重排卡片顺序，Tab 键的顺序没跟上",
+        "pages/preset_center_page.py",
+        "        self._chain_tab_order(card_order)",
+        "        pass  # self._chain_tab_order(card_order)",
+        "tests/test_preset_center_tells_the_truth.py::"
+        "test_tab_walks_the_cards_in_the_order_they_are_shown",
+        "RN-481：Qt 的焦点链默认走**构造顺序**，而批 38 只动了**显示顺序** ⇒ "
+        "`scripts/tab_order_audit.py` 当场报「[preset_center] 需挪动 **8** 个」："
+        "屏幕上第一张卡（内置精选）里的控件，按 Tab 要按到第 12 下才轮到。"
+        "⭐⭐ 这一条**我自己出图、外审看图结构上都不可能看见** —— "
+        "焦点顺序不在任何一张截图里（与本批主刀同形：**截图没有时间轴，也没有键盘**）。"
+        "⇒ 台账那条「外审的盲区」现在有三项：**代码里是什么、时间轴、键盘**",
+    ),
+    Revert(
+        "RN", "「一键应用」又掉回折线以下",
+        "pages/preset_center_page.py",
+        "        card_order = (status_card, starter_card, my_presets_card,\n"
+        "                      workbench_card, map_card, preview_card)",
+        "        card_order = (status_card, workbench_card, my_presets_card,\n"
+        "                      starter_card, map_card, preview_card)",
+        "tests/test_preset_center_tells_the_truth.py::"
+        "test_the_one_click_path_is_above_the_fold",
+        "真窗实测：视口 1074×673 / 内容高 1851 ⇒ **64% 在折线以下**，"
+        "而藏起来的正是新手唯一想要的「内置精选 · 一键应用」（y=1058，露出 **0%**）。"
+        "外审给了一个干净对照：窗口图 **6/6** 报「找不到现成可一键套用的配置」、"
+        "整页无折线图 **0/6**；行为题 ④ 紧凑窗口 **0/3「能」** vs 整页 **3/3** ⇒ "
+        "⭐ **答案在页面上，只是不在屏幕上**（批 27 第三次现身）。"
+        "⚠ 判据只钉**对象**，不钉「露出 0% 的控件有几个」（批 32）",
+    ),
+    Revert(
+        "RN", "重排把页头一起挪走了",
+        "pages/preset_center_page.py",
+        "        first = layout.indexOf(header) + 1",
+        "        first = 0",
+        "tests/test_preset_center_tells_the_truth.py::"
+        "test_the_page_header_is_still_the_first_thing_on_the_page",
+        "⚠⚠ **这条断点复现的是我自己第一版重排的原样**："
+        "`insertWidget(index, card)` 从 0 开始插，六张卡占住 0~5，"
+        "把页头一路挤到 y=1818（折线以下）。"
+        "**而那时本批的主判据（一键应用露不露脸）照样是绿的。**"
+        "⭐⭐ 批 32 说「重排类判据只许钉对象、不许钉数量」，它的背面是："
+        "**只钉一个对象的判据，看不见我把别的东西挤到哪儿去了** ⇒ "
+        "重排至少要两条：一条钉「该上来的上来了」，一条钉「原来在上面的没被挤下去」",
     ),
     # ⛔⛔ 新断点一律加在**这一行之上**。
     #
