@@ -131,7 +131,17 @@ def _merged(text: str) -> dict[str, str]:
 
 
 def _old_ledger_rows(text: str) -> list[tuple[str, str, str]]:
-    """旧账逐页表：(page_id, RN, 归宿格)。page_id 取自小节标题的第一个词。"""
+    """旧账逐页表：(page_id, RN, 归宿格)。page_id 取自小节标题的第一个词。
+
+    ⚠ 「归宿格」历史上取的是**主题**格 —— 那是当时唯一能表态的地方，
+      因为这张表**没有状态列**。2026-09-02 批 41 补上状态列之后，
+      归宿改由 `_old_ledger_status()` 从**状态**格读。
+    ⭐⭐⭐ 而旧写法留下了一个很难看见的后果：`test_a_closed_page_has_no_homeless_old_ledger_rows`
+      对 RN-250 / RN-267 一直是**绿**的 —— 不是因为它们有归宿，
+      是因为有人把「已结」「不成立」这两个**结论**直接打进了主题格，
+      而那条判据只问「主题格是不是 `—`」。
+      ⇒ **一条判据被「写错格子」这件事满足了：错误的数据让它变绿。**
+    """
     out: list[tuple[str, str, str]] = []
     page: str | None = None
     in_section = False
@@ -275,10 +285,57 @@ def test_an_old_ledger_row_does_not_point_at_a_merged_entry():
     assert not bad, "\n  ".join(["旧账归宿指向了已被并入的条目："] + bad)
 
 
+#: ⭐ 已关档的页名下**还没有人判过**的旧账行数。**只许变少。**
+#:
+#: 2026-09-02 批 41 首测：**0 行**。90 行旧账里 74 行的归宿早就写在「主题」格
+#: （= 并入某条跨页主题）、4 行的结论写在别的格子里，真正没人判过的只有 **12 行**，
+#: 而那 12 行**全部落在还没开工的页上**（about / audio_health / audio_import_wizard /
+#: audio_replay / audio_task_panel / basic / hud_color）—— 那是合法的待办，不是欠账。
+#:
+#: ⚠⚠ **这个 0 推翻的是我自己的一个中间结论。** 补完状态列的第一版里，
+#:   我把 90 行**一律**填成「未判定」，于是算出「已关档页上有 56 行 / 17 页」，
+#:   并且差一点拿这个数去推翻判据模块头里那条「实测有 3 页，属合法噪声」的豁免。
+#: ⭐⭐⭐ **那 56 是我自己造出来的** —— 把「归宿写在另一个格子里」误读成了
+#:   「没有人判过」。⇒ **拿一个新分母去推翻旧结论之前，先确认新分母不是自己造的。**
+#:   （本工程反复栽在分母上：批 34 三个错的分母、批 39 白名单当分母，
+#:    这一次错的分母是我的，而它差点被写进档案当成一条"发现"。）
+#:
+#: ⛔ 调小它的唯一正当方式是**真的去判那几行**（已结 / 不成立 / 并入 / 立案），
+#:   不是把 `未判定` 换成一个更好听的词。
+#: ⭐ 它现在是 0，意味着这条判据从今往后是**硬约束**：
+#:   一页要关档，它名下的旧账行必须先有人表态。
+MAX_UNJUDGED_ON_CLOSED_PAGES = 0
+
+
+def _old_ledger_status(text: str) -> dict[str, str]:
+    """旧账逐页表：RN → 状态格（批 41 起这张表才有这一列）。"""
+    out: dict[str, str] = {}
+    in_section = False
+    header: tuple[str, ...] | None = None
+    for line in text.splitlines():
+        if line.startswith("## "):
+            in_section = line.startswith("## 三、")
+            continue
+        if not in_section or not line.startswith("|"):
+            continue
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if set("".join(cells)) <= set("-: "):
+            continue
+        if cells[0] == "RN":
+            header = tuple(cells)
+            continue
+        if header is None or "状态" not in header:
+            continue
+        if not RN_ID.match(cells[0].strip("* ")):
+            continue
+        out[cells[0].strip("* ")] = _cell(header, cells, "状态") or ""
+    return out
+
+
 def test_a_closed_page_has_no_homeless_old_ledger_rows():
     """⑥ 一页标了「已关档」，它名下的旧账行不许还是「—」。
 
-    ⭐ 关档的含义是「这一页自己那本账清了」。而旧账那张表没有状态列，
+    ⭐ 关档的含义是「这一页自己那本账清了」。而旧账那张表原来没有状态列，
     于是它名下的行**从来没有被要求表态过** —— 关的是别的账。
     """
     board = _require_board()
@@ -288,6 +345,8 @@ def test_a_closed_page_has_no_homeless_old_ledger_rows():
         f"{page} {rn}"
         for page, rn, home in _old_ledger_rows(text)
         if page in closed and re.sub(r"\*+", "", home).strip() in UNDECIDED
+        and not _old_ledger_status(text).get(rn, "").startswith(
+            ("已结", "并入", "实测后不成立", "作废", "不修", "已修", "记录不做"))
     ]
     assert not homeless, (
         "这些页已关档，名下的旧账行却还没有归宿（既没随主题走，也没说已结/不成立）：\n  "
@@ -401,6 +460,43 @@ def test_the_synthetic_defects_are_actually_caught():
     homeless = [rn for _, rn, home in _old_ledger_rows(_SYNTHETIC_OLD)
                 if home.strip() in UNDECIDED]
     assert homeless == ["RN-912"], "⑥ 咬不动：无归宿的行没被认出来"
+
+
+def test_unjudged_old_ledger_rows_on_closed_pages_only_shrink():
+    """⭐⭐⭐ 已关档的页名下，还挂着多少行**从来没有人判过**的旧账。**棘轮，只许变少。**
+
+    这个数在 2026-09-02 批 41 之前是**量不出来的**：那张表没有状态列，
+    机器读不到「判没判过」。补上之后首测 **0 行** —— 90 行里 74 行的归宿
+    早就写在「主题」格（并入某条跨页主题），真正没人判过的 12 行
+    **全部落在还没开工的页上**。
+
+    ⚠⚠ **这条判据的首测值推翻的是我自己**：补列的第一版我把 90 行一律填成
+      「未判定」，算出「56 行 / 17 页」，并且差一点拿它去推翻判据模块头里
+      那条「`已关档` 而名下仍有未结条目，实测有 **3 页**，属合法噪声」的豁免。
+    ⭐⭐⭐ 那 56 是我自己造出来的 —— 把「归宿写在另一个格子里」
+      误读成了「没有人判过」。**拿一个新分母去推翻旧结论之前，
+      先确认新分母不是自己造的。**
+
+    ⭐ 现在它是 0，于是这条从「待判清单的棘轮」变成一条**硬约束**：
+      一页要关档，它名下的旧账行必须先有人表态。
+    """
+    board = _require_board()
+    text = _require_registry()
+    closed = _closed_pages(board)
+    status = _old_ledger_status(text)
+    unjudged = sorted(
+        f"{page} {rn}"
+        for page, rn, _home in _old_ledger_rows(text)
+        if page in closed and status.get(rn, "").startswith("未判定")
+    )
+    # 空转守卫：分母塌了（表没解析到 / 页面表没解析到）时，上面那个列表天然为空。
+    assert len(status) >= 90, f"旧账表只解析到 {len(status)} 行状态 —— 分母塌了"
+    assert len(closed) >= 10, f"只认出 {len(closed)} 个已关档页 —— 分母塌了"
+    assert len(unjudged) <= MAX_UNJUDGED_ON_CLOSED_PAGES, (
+        f"已关档页名下「未判定」的旧账行从 {MAX_UNJUDGED_ON_CLOSED_PAGES} "
+        f"涨到了 {len(unjudged)} 行：\n  " + "\n  ".join(unjudged[-12:]) +
+        "\n⇒ 要么把新关档那一页的旧账行判掉，要么它还不该关档。"
+    )
 
 
 def test_the_real_registry_is_not_read_as_empty():

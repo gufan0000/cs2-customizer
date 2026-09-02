@@ -4796,6 +4796,60 @@ REVERTS = [
         "⭐⭐ 这是本仓「状态从屏幕文案反推」那一族的第三个实例，"
         "前两次是读状态，这一次**会写坏用户的数据**",
     ),
+    # ================================ 批 41：RN-497 ~ RN-499（旧账表的状态列）
+    #
+    # ⚠ 同 RN-408/482：被测对象在另一个仓，断点只能打在**判据自己的承重逻辑**上。
+    Revert(
+        "RN", "旧账表的归宿又改回从「主题」格读",
+        "tests/test_renovation_registry_merges_are_traceable.py",
+        'and not _old_ledger_status(text).get(rn, "").startswith(\n'
+        '            ("已结", "并入", "实测后不成立", "作废", "不修", "已修", "记录不做"))',
+        "",
+        "tests/test_renovation_registry_merges_are_traceable.py::"
+        "test_a_closed_page_has_no_homeless_old_ledger_rows",
+        "RN-498：这条判据读的是**主题**格，而它对 RN-250 / RN-267 一直是绿的 —— "
+        "原因不是那两行有归宿，是**有人把「已结」「不成立」这两个结论直接打进了主题格**，"
+        "而判据只问「这一格是不是 `—`」。"
+        "⭐⭐⭐ **一条判据被「写错格子」这件事满足了：错误的数据让它变绿。**"
+        "⇒ 归宿改由状态列读。同族第三形态（批 39 分母漏了 / 批 40 参数我挑的 / "
+        "本条 信号来自不该携带它的字段）",
+    ),
+    Revert(
+        "RN", "已关档页名下的「未判定」旧账行不再有人数",
+        "tests/test_renovation_registry_merges_are_traceable.py",
+        # ⚠⚠ 这条断点第一版把上限从 0 放宽到 99 —— **回退验证当场判它假绿**：
+        #   实际计数就是 0，`0 <= 99` 照样通过。
+        # ⭐⭐⭐ **一条棘轮的当前值是 0 时，放宽上限是测不出来的** ——
+        #   0 这个数把「上限」这个旋钮变成了死的。
+        #   能坏的是它的**分母**（读不到那张表 ⇒ 违规清单天然为空 ⇒ 恒绿），
+        #   所以断点要打在分母守卫上。
+        # ⭐ 顺带一条通则：**破坏实验要打在"会腐烂的那一半"上，
+        #   而一条判据里会腐烂的往往是分母，不是阈值。**
+        '        if header is None or "状态" not in header:',
+        '        if header is None or "状态-已改名" not in header:',
+        "tests/test_renovation_registry_merges_are_traceable.py::"
+        "test_unjudged_old_ledger_rows_on_closed_pages_only_shrink",
+        "RN-497：首测 **0** ⇒ 这条是一条**硬约束**：一页要关档，"
+        "它名下的旧账行必须先有人表态。"
+        "⚠⚠ 而这个 0 推翻的是我自己：补列第一版把 90 行一律填成 `未判定`，"
+        "算出「56 行 / 17 页」，差一点拿它去推翻另一处「实测有 3 页」的豁免 —— "
+        "那 56 是**我把「归宿写在另一个格子里」误读成「没人判过」造出来的**。"
+        "⭐⭐⭐ **拿一个新分母去推翻旧结论之前，先确认新分母不是自己造的**",
+    ),
+    Revert(
+        "RN", "空转守卫又拿「盲区还在」当自己的存在性证据",
+        "tests/test_renovation_progress_board_does_not_rot.py",
+        '    assert len(status) >= 300, f"只读出 {len(status)} 个状态格 —— 解析器多半没读到表"\n'
+        "    assert len(on_file) >= len(status), (",
+        "    assert len(on_file) > len(status), (",
+        "tests/test_renovation_progress_board_does_not_rot.py::"
+        "test_a_batch_row_only_claims_closures_the_registry_agrees_with",
+        "RN-499：那个不等号成立的**唯一原因**就是旧账表没有状态列（在册 399 / "
+        "有状态格 309，差的 90 条正是它）。补上列之后两个数相等，"
+        "这道守卫**红在一件好事上**。"
+        "⭐⭐ **一道空转守卫，如果拿「某个盲区还在」当自己的存在性证据，"
+        "它就会在盲区被补上的那天报警 —— 而那天恰恰是最不该报警的一天**",
+    ),
     # ================================ RN-482 / RN-483：里程碑看板与闭集守卫
     #
     # ⚠ 同 RN-408：被测对象在另一个仓，断点只能打在**判据自己的承重逻辑**上。
