@@ -131,10 +131,20 @@ SURVIVING_ENTRANCES = {
     ("utility", "_open_current_map_folder"): "card",
     ("utility", "_open_current_team_folder"): "card",
     ("utility", "_refresh_utilities"): "card",
-    # ⚠ `preset_center` 留的是**卡内**那颗，和 `utility` 同向、和 `about` 相反。
-    # ⭐ 理由不是版式偏好，是**对象**：这个动作作用于「刚读进来的那份预设包」，
-    #   而读它进来的那颗按钮就在同一张卡的同一格里（批 31 规则②）。
-    ("preset_center", "_save_changes"): "card",
+    # ⛔ `("preset_center", "_save_changes"): "card"` —— 批 40 起**撤掉这一条**。
+    # ⚠⚠ 它已经成了一句假话：`_save_changes` 本批被整个删除（RN-478 把
+    #   「读进来了、还没应用」那个中间态取消了），而这张表的反面守卫
+    #   撞到「方法不存在」时走的是 `continue`（那条 continue 是为**开源子集改名**
+    #   写的）⇒ 它**静默跳过**，一条都不红。
+    # ⭐⭐⭐ 于是这条登记项处在最坏的状态：**它在册、它是假的、而且没人会发现** ——
+    #   一个为「子集里改了名」准备的宽容分支，把「主仓里删没了」一起放过去了。
+    #   ⇒ 撤条目要连着说清「它防的那件事现在由谁防」：
+    #     那个动作不再存在，所以它不需要入口；
+    #     而「导入这条路上必须有一次确认」由
+    #     `test_preset_center_tells_the_truth::test_opening_a_config_file_asks_before_it_changes_anything`
+    #     从行为面钉住（含按「取消」不许应用的阳性对照）。
+    #   ⚠ 那条 `continue` 本身仍是个洞（主仓删了方法也会被它放过），
+    #     已另立 RN-495 —— 这一批不动它，避免连带影响 4 页。
 }
 
 

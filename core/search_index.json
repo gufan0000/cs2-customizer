@@ -3820,27 +3820,67 @@
   },
   {
    "page": "preset_center",
-   "text": "导入策略",
-   "card": "",
+   "text": "HUD 规则",
+   "card": "保存/导出的范围",
    "tab": "",
-   "kind": "label",
-   "src": "static"
+   "kind": "check",
+   "src": "runtime"
   },
   {
    "page": "preset_center",
-   "text": "快速操作",
-   "card": "",
+   "text": "保存/导出的范围",
+   "card": "保存/导出的范围",
    "tab": "",
-   "kind": "label",
-   "src": "static"
+   "kind": "card",
+   "src": "runtime"
   },
   {
    "page": "preset_center",
-   "text": "这一套里有哪些",
-   "card": "",
+   "text": "准心",
+   "card": "保存/导出的范围",
    "tab": "",
-   "kind": "label",
-   "src": "static"
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "preset_center",
+   "text": "局内视角",
+   "card": "保存/导出的范围",
+   "tab": "",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "preset_center",
+   "text": "屏幕特效",
+   "card": "保存/导出的范围",
+   "tab": "",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "preset_center",
+   "text": "开镜放大",
+   "card": "保存/导出的范围",
+   "tab": "",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "preset_center",
+   "text": "特殊音效",
+   "card": "保存/导出的范围",
+   "tab": "",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "preset_center",
+   "text": "自定闪光",
+   "card": "保存/导出的范围",
+   "tab": "",
+   "kind": "check",
+   "src": "runtime"
   },
   {
    "page": "preset_center",
@@ -3856,6 +3896,30 @@
    "card": "内置精选",
    "tab": "",
    "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "preset_center",
+   "text": "和朋友交换配置",
+   "card": "和朋友交换配置",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "preset_center",
+   "text": "导出成文件发给朋友",
+   "card": "和朋友交换配置",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "preset_center",
+   "text": "打开一份配置文件",
+   "card": "和朋友交换配置",
+   "tab": "",
+   "kind": "button",
    "src": "runtime"
   },
   {
@@ -3924,120 +3988,16 @@
   },
   {
    "page": "preset_center",
-   "text": "HUD 规则",
-   "card": "预设工作台",
-   "tab": "",
-   "kind": "check",
-   "src": "runtime"
-  },
-  {
-   "page": "preset_center",
-   "text": "准心",
-   "card": "预设工作台",
-   "tab": "",
-   "kind": "check",
-   "src": "runtime"
-  },
-  {
-   "page": "preset_center",
-   "text": "导入分享文件",
-   "card": "预设工作台",
+   "text": "查看原始内容",
+   "card": "范围里现在的内容",
    "tab": "",
    "kind": "button",
    "src": "runtime"
   },
   {
    "page": "preset_center",
-   "text": "导入模式",
-   "card": "预设工作台",
-   "tab": "",
-   "kind": "label",
-   "src": "runtime"
-  },
-  {
-   "page": "preset_center",
-   "text": "导入预设包",
-   "card": "预设工作台",
-   "tab": "",
-   "kind": "button",
-   "src": "runtime"
-  },
-  {
-   "page": "preset_center",
-   "text": "导出分享文件",
-   "card": "预设工作台",
-   "tab": "",
-   "kind": "button",
-   "src": "runtime"
-  },
-  {
-   "page": "preset_center",
-   "text": "导出预设包",
-   "card": "预设工作台",
-   "tab": "",
-   "kind": "button",
-   "src": "runtime"
-  },
-  {
-   "page": "preset_center",
-   "text": "局内视角",
-   "card": "预设工作台",
-   "tab": "",
-   "kind": "check",
-   "src": "runtime"
-  },
-  {
-   "page": "preset_center",
-   "text": "屏幕特效",
-   "card": "预设工作台",
-   "tab": "",
-   "kind": "check",
-   "src": "runtime"
-  },
-  {
-   "page": "preset_center",
-   "text": "应用读入的预设包",
-   "card": "预设工作台",
-   "tab": "",
-   "kind": "button",
-   "src": "runtime"
-  },
-  {
-   "page": "preset_center",
-   "text": "开镜放大",
-   "card": "预设工作台",
-   "tab": "",
-   "kind": "check",
-   "src": "runtime"
-  },
-  {
-   "page": "preset_center",
-   "text": "特殊音效",
-   "card": "预设工作台",
-   "tab": "",
-   "kind": "check",
-   "src": "runtime"
-  },
-  {
-   "page": "preset_center",
-   "text": "自定闪光",
-   "card": "预设工作台",
-   "tab": "",
-   "kind": "check",
-   "src": "runtime"
-  },
-  {
-   "page": "preset_center",
-   "text": "预设工作台",
-   "card": "预设工作台",
-   "tab": "",
-   "kind": "card",
-   "src": "runtime"
-  },
-  {
-   "page": "preset_center",
-   "text": "预设预览",
-   "card": "预设预览",
+   "text": "范围里现在的内容",
+   "card": "范围里现在的内容",
    "tab": "",
    "kind": "card",
    "src": "runtime"

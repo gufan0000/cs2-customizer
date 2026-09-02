@@ -4551,6 +4551,251 @@ REVERTS = [
         "⭐⭐ **同一件事说五遍，任何一遍变假都不会有人发现 —— 因为没人知道有五遍。**"
         "这条断点防的是「找不到真源就当没事」——**必须是红，不许是 skip**",
     ),
+    # ============ RN-476 / RN-477 / RN-478：预设中心的三条裁定（批 40）
+    Revert(
+        "RN", "「范围里现在的内容」又摊成一屏原始 JSON",
+        "pages/preset_center_page.py",
+        "        self.preview_summary_label.setText(self._summary_text(bundle))",
+        "        self.preview_summary_label.setText("
+        "json.dumps(bundle, ensure_ascii=False, indent=2))",
+        "tests/test_preset_center_tells_the_truth.py::"
+        "test_the_preview_says_what_is_in_the_set_in_words",
+        "RN-476：改前那一块是 **8767 个字符 / 329 行**原始 JSON，而卡副标题逐字承诺"
+        "自己是给人「快速确认内容范围」用的。外审 12 发问「你说得出这一套里有哪几类、"
+        "每一类大概是什么吗」——**12/12「说不出」**，其中 8 发是在这个框**完整可见**的"
+        "整页图上答的。⭐⭐ **一个把全部信息都摊开的控件，可以同时是一个什么都没说的控件**",
+    ),
+    Revert(
+        "RN", "原始内容那颗开关变成死的，框再也回不来",
+        "pages/preset_center_page.py",
+        "        self.preview_text.setVisible(bool(checked))",
+        "        self.preview_text.setVisible(False)",
+        "tests/test_preset_center_tells_the_truth.py::"
+        "test_the_raw_json_is_still_reachable_but_not_the_default",
+        "RN-476 的另一半：那个框**不许直接删掉** —— 打开了别人给的文件想看清里面时"
+        "它是有用的，只是不该是默认那一屏。⭐ 这条阳性对照钉的正是"
+        "「它回得来」：没有它，`setVisible(False)` 之后这一处就变成 RN-009 那种"
+        "**建出来就藏起来、全仓无人再显示**的死控件，而主判据照样全绿",
+    ),
+    Revert(
+        "RN", "类别中文名又分叉成两个说法",
+        "core/presets/preset_center.py",
+        '    "hud_rules": "HUD 规则",',
+        '    "hud_rules": "HUD 颜色规则",',
+        "tests/test_preset_center_tells_the_truth.py::"
+        "test_the_kind_names_have_exactly_one_home_in_the_whole_repo",
+        "RN-476：改前**两份**且不一致 —— `share_file.describe()` 写「HUD **颜色规则**」，"
+        "页面勾选框写「HUD 规则」。⚠ 批 38 刚在这一页上统一过一次同物两名，"
+        "而这一份躲过了那一轮：它只出现在**按下按钮之后**才弹的确认框里，"
+        "⭐⭐ **任何一张截图都拍不到它** —— 外审盲区再添一项",
+    ),
+    Revert(
+        "RN", "范围勾选框又掉回折线以下",
+        "pages/preset_center_page.py",
+        # ⚠ 批 40 补刀把工作台提到「我的预设」之前（RN-486），锚点跟着搬。
+        "        card_order = (status_card, starter_card, scope_card,\n"
+        "                      workbench_card, my_presets_card, map_card, preview_card)",
+        "        card_order = (status_card, starter_card, workbench_card,\n"
+        "                      my_presets_card, map_card, preview_card, scope_card)",
+        "tests/test_preset_center_tells_the_truth.py::"
+        "test_every_scope_checkbox_is_above_the_fold",
+        "RN-477：改前 `cb_hud` 露出 **27%**、第二排 **0%**。外审问「这一屏上哪些操作"
+        "会受这组勾选影响」——窗口图 **6/6「找不到」**，整页无折线图 **6/6「4 个」**"
+        "且 **6/6 说「依据：图上写着」** ⇒ ⭐⭐⭐ **立案写的「跨区域逆向联动」"
+        "（一个理解问题）被实测推翻：只要看得见，理解一点问题都没有。**"
+        "⚠ 紧凑档视口只有 554px，卡序是**量出来的**：让位的是新用户那张空的「我的预设」",
+    ),
+    Revert(
+        "RN", "范围选择器又被别的卡收养",
+        "pages/preset_center_page.py",
+        '        scope_card, scope_layout = SettingsCard.make(\n            "保存/导出的范围",',
+        '        scope_card, scope_layout = SettingsCard.make(\n            "打包范围",',
+        "tests/test_preset_center_tells_the_truth.py::"
+        "test_the_scope_selector_is_a_card_of_its_own",
+        "RN-477：它是**页级**的（导出 / 存为新预设 / 按地图保存 / 状态卡第一颗胶囊"
+        "四处都归它管），住在别人卡里就会被那张卡替它决定摆在第几屏。"
+        "⛔ 也不许并进「我的预设」——那只是换一个收养人",
+    ),
+    Revert(
+        "RN", "「打开一份配置文件」又按容器格式拆回两颗按钮",
+        "pages/preset_center_page.py",
+        # ⚠⚠ 这条断点的第一版是**把这颗按钮改名**成「导入预设包」——
+        #   而回退验证当场判它**假绿**：那条判据断言的是「打开类按钮**恰好一颗**」，
+        #   改名之后仍然只有一颗，它没有理由变红。
+        # ⭐⭐⭐ **断点模拟的缺陷，必须和判据盯的那个行为是同一件事** ——
+        #   RN-478 的缺陷是「按容器格式拆成两颗」，那就得**真的拆出第二颗**。
+        '        self.import_btn = QPushButton("打开一份配置文件")',
+        '        self.import_btn = QPushButton("导入预设包")\n'
+        '        self._import_cs2customizer_btn = QPushButton("导入分享文件")\n'
+        '        actions.addWidget(self._import_cs2customizer_btn, 1, 1)',
+        "tests/test_preset_center_tells_the_truth.py::"
+        "test_both_file_kinds_go_through_the_same_one_button",
+        "RN-478：改前 2×2 四颗按钮（`.json` 一对、`.cs2customizer` 一对）+ 第五颗「应用」。"
+        "外审 12 发问「朋友发你一个文件你点哪个」——**12/12「有把握: 没有」**。"
+        "⭐ 而 `.cs2customizer` = zip(manifest + bundle)，里面那份 bundle 与 `.json` **同源**"
+        "⇒ 摆在屏幕上的是两种容器格式，那是实现细节；玩家的动作只有两个",
+    ),
+    Revert(
+        "RN", "打开文件不再问一句，直接就应用了",
+        "pages/preset_center_page.py",
+        # ⚠ 只写 `if reply != QMessageBox.Yes:` 会在源码里命中 **2 次**
+        #   （`_apply_starter_pack` 里也有一句一模一样的）—— 失效体检当场报出来。
+        #   ⭐ **一个锚点要唯一，靠的是它上下文里那句只有它有的话。**
+        # ⚠ 批 40 补刀把确认框换成实例 + 自定义按钮（RN-484），锚点跟着搬到新的那一行。
+        "        if clicked is None or clicked is cancel_btn:\n            return",
+        "        if False:\n            return",
+        "tests/test_preset_center_tells_the_truth.py::"
+        "test_opening_a_config_file_asks_before_it_changes_anything",
+        "RN-478：两条导入路统一成「确认 → 应用」之后，那个确认框是"
+        "「先看清里面是什么再决定」的**唯一**载体 —— 旧办法把它放在预览卡里，"
+        "而那张卡实测露出 **0%**。⭐ **把「你确认一下」放进一个看不见的地方，"
+        "等于没有确认这一步**",
+    ),
+    Revert(
+        "RN", "dirty 机制又回到这一页",
+        "pages/preset_center_page.py",
+        "class PresetCenterPage(MyPresetsMixin, QWidget):",
+        "class PresetCenterPage(MyPresetsMixin, QWidget, __import__("
+        '"widgets.dirty_page_mixin", fromlist=["DirtyPageMixin"]).DirtyPageMixin):',
+        "tests/test_preset_center_tells_the_truth.py::"
+        "test_this_page_has_no_such_thing_as_an_unsaved_change",
+        "RN-478：批 38 把 `mark_dirty()` 收窄到只剩一个真源；批 40 把两条导入路"
+        "统一成「确认 → 应用」之后，**那一个真源也不再产生状态** ⇒ 整个 mixin 退场。"
+        "⭐⭐⭐ **一个机制收窄到只剩一个用例之后，下一个该问的问题是："
+        "那一个用例，是不是也可以不由它来做。**"
+        "⚠ 这条**取代**了批 38 那三条 —— 掏空一条判据比删掉它更危险，"
+        "因为掏空之后它还是绿的",
+    ),
+    Revert(
+        "RN", "状态卡上同一个数又写了两遍",
+        "pages/preset_center_page.py",
+        # ⚠ 批 40 补刀撤掉了「模式 · 合并」那颗胶囊（RN-484），原锚点连同它一起没了。
+        #   ⭐ 这条断点防的事没变（同一个数不许写两遍），换个还在的锚点接着防。
+        '             f"范围 · {len(selected_labels)}/{len(self._TYPE_CHECKBOX_SPEC)} 类"),',
+        '             f"范围 · {len(selected_labels)}/{len(self._TYPE_CHECKBOX_SPEC)} 类"),\n'
+        '            ("info", f"内容 · {item_count} 项"),',
+        "tests/test_preset_center_tells_the_truth.py::"
+        "test_no_two_chips_say_the_same_number",
+        "批 40：改前第一颗写「范围 · 5/7 类」、第三颗写「内容 · 5 项」，"
+        "而 `export_bundle` 每一类**恰好产出一项** ⇒ 那两个 5 永远相等。"
+        "⭐ 同一个数写两遍会被读成两笔（官网那一轮实测过同一条）",
+    ),
+    # ================================ 批 40 补刀：RN-484 ~ RN-494
+    Revert(
+        "RN", "导入模式又变回一个页面上的下拉框",
+        "pages/preset_center_page.py",
+        "        conflicts = mode_affects_result(bundle)",
+        "        conflicts = [(\"hud_rules\", \"hud_rules\")]",
+        "tests/test_preset_center_tells_the_truth.py::"
+        "test_the_import_mode_is_asked_at_the_moment_it_matters",
+        "RN-484：那个下拉框只有**一个**消费者、只在**一个**瞬间被读到。"
+        "端到端实测（造包→复位→两种模式各跑一遍→逐键深比对）：**64 个键里只有 5 个**"
+        "结果不同，**7 类里有 3 类（准心 17 键 / 屏幕特效 / 局内视角）逐字节相同** —— "
+        "而准心正是最可能被分享的那一类。⭐ RN-415 同族："
+        "**一个在多数场景里什么都不改的选择，不该摆在所有人的必经之路上**",
+    ),
+    Revert(
+        "RN", "确认框里选了「清掉」却还是走合并",
+        "pages/preset_center_page.py",
+        '        mode = "replace" if (replace_btn is not None and clicked is replace_btn) else "merge"',
+        '        mode = "merge"',
+        "tests/test_preset_center_tells_the_truth.py::"
+        "test_choosing_replace_in_the_dialog_really_replaces",
+        "RN-484 的**阳性对照**：撤掉页面下拉之后，`mode` 的唯一来源变成"
+        "「用户按了哪颗按钮」⇒ 那条线要是断了，产品会**永远走 merge**，"
+        "而只问「问没问」的那条判据一条都不红。"
+        "⭐ 撤掉一个输入源，就要给新的输入源配一条「它真的接上了」的判据",
+    ),
+    Revert(
+        "RN", "导出按钮的文案又带上标点，整条掉出搜索索引",
+        "pages/preset_center_page.py",
+        '        self.export_btn = QPushButton("导出成文件发给朋友")',
+        '        self.export_btn = QPushButton("导出成文件，发给朋友")',
+        "tests/test_preset_center_tells_the_truth.py::"
+        "test_every_visible_action_can_be_found_by_the_settings_search",
+        "RN-485：全角逗号让 `normalize()` 撞上 `_SENTENCE` 判成句子，整条返回空串 ⇒ "
+        "这一页唯一的导出入口在全站搜索里一条不剩。"
+        "⭐⭐⭐ 而 `build_search_index.py --check` **退出码仍是 0** —— "
+        "它只校验「重新生成一遍是否逐字节相同」，**看不见「有一条根本没进去」**。"
+        "⇒ 一道跑着的、绿着的、以它命名的门禁，结构上照不到它该防的那件事。"
+        "全站同病 6 条（advanced ×2 / audio_import_wizard / crosshair / kill_icon_level_grid）",
+    ),
+    Revert(
+        "RN", "「打开一份配置文件」又掉回第一屏之外",
+        "pages/preset_center_page.py",
+        "        actions_column = QVBoxLayout()\n        actions_column.setSpacing(8)",
+        "        actions_column = QVBoxLayout()\n        actions_column.setSpacing(8)\n"
+        "        actions_column.addSpacing(400)",
+        "tests/test_preset_center_tells_the_truth.py::"
+        "test_the_way_to_open_a_friends_file_is_on_the_first_screen",
+        "RN-486：天然对照实验 —— 同一份状态、同一个问题，只差看不看得见折线以下："
+        "窗口图 **6/6「有把握: 没有」**（答案乱猜），整页无折线图 "
+        "**6/6「打开一份配置文件」· 候选数 1 ·「有把握: 有」**。"
+        "⭐⭐⭐ 判别法：**「这块画坏了」只在窗口图上报 ⇒ 折线假象（RN-170）；"
+        "「我找不到入口」只在窗口图上报 ⇒ 真缺陷（RN-414 同形）** —— "
+        "窗口图就是用户真正的第一屏",
+    ),
+    Revert(
+        "RN", "空的「我的预设」又排到了交换配置前面",
+        "pages/preset_center_page.py",
+        # ⚠⚠ 这条断点的第一版往这一行**加了个注释**当"破坏" —— 它一个字节的行为都没改，
+        #   回退验证当场判它假绿。⭐ **一个不改变行为的破坏，测的是"判据会不会无故变红"，
+        #   不是"判据看不看得见这条缺陷"。**
+        # ⇒ 换成真的把两张卡的次序换回去（`_chain_tab_order` 也吃这一行，所以
+        #   焦点链会跟着一起歪 —— 这正是这条缺陷的完整形态）。
+        "        card_order = (status_card, starter_card, scope_card,\n"
+        "                      workbench_card, my_presets_card, map_card, preview_card)",
+        "        card_order = (status_card, starter_card, scope_card,\n"
+        "                      my_presets_card, workbench_card, map_card, preview_card)",
+        "tests/test_preset_center_tells_the_truth.py::"
+        "test_the_exchange_card_comes_before_the_one_that_is_empty_for_newcomers",
+        "RN-486：⭐ **第一屏放不下的时候，让位的应该是那张对第一次来的人还没有内容的卡。**"
+        "全新安装 `list_presets()` 为空（AST 扫全仓 `save_preset` 调用点，"
+        "除用户点击外没有任何预置路径）⇒「我的预设」是一个空下拉框加四颗灰按钮",
+    ),
+    Revert(
+        "RN", "摘要里那句「N 条按键颜色规则」又变回一个恒定值",
+        "core/presets/preset_center.py",
+        '            parts.append(f"{enabled} 条按键颜色规则开着" if enabled else "没有开着的按键颜色规则")',
+        '            parts.append(f"{_count(rules.get(\'key_rules\'))} 条按键颜色规则")',
+        "tests/test_preset_center_tells_the_truth.py::"
+        "test_a_summary_line_is_never_the_same_for_everyone",
+        "RN-487：改前数的是 `key_rules` 的**槽位数**，而 `_build_key_rules()` 恒建九项 ⇒ "
+        "这一行对**所有人、所有预设永远是「9 条按键颜色规则」**；"
+        "实测全新配置里 `enabled=True` 的是 **0** 个，而 HUD 页对同一份数据显示「数字键 · 0 项」。"
+        "⭐ 这张卡是批 40 为了「让人读得懂里面有什么」才加的 —— "
+        "它的第一行不能是一句对谁都一样的话",
+    ),
+    Revert(
+        "RN", "四颗禁用按钮又变回一个字都不解释",
+        "widgets/my_presets_section.py",
+        '            btn.setToolTip("" if has else "还没有存过预设，先点「存为新预设」存一套。")',
+        '            btn.setToolTip("")',
+        "tests/test_preset_center_tells_the_truth.py::"
+        "test_the_disabled_buttons_all_say_why",
+        "RN-492：实测默认态（每个新用户的第一屏）有 5 颗可见且禁用的按钮，"
+        "其中 4 颗 tooltip 是空串；而那条名叫「禁用按钮都要说明为什么」的判据"
+        "分母缩到只剩唯一合规的那一颗，全绿。"
+        "⭐⭐⭐ **一份点名清单，会在被点名的东西消失时安静地变成一份短清单，"
+        "而不是变成一条红线**（批 39「守卫拿自己的白名单当分母」的按钮版）",
+    ),
+    Revert(
+        "RN", "预设名又从下拉框的显示文案上切出来",
+        "widgets/my_presets_section.py",
+        '    name = self.my_preset_combo.currentData(Qt.UserRole + 1)',
+        '    name = None',
+        # ⚠⚠ 这条断点第一版指的是 `test_the_fixture_really_built_the_page` ——
+        #   那条判据**根本不看预设名**，回退验证当场判它假绿。
+        #   而更要紧的是它暴露了另一件事：**我修了代码，却一条判据都没写。**
+        #   ⭐ 改了代码没配判据，和没改一样 —— 只是"没改"这件事会被下一轮忘掉。
+        "tests/test_preset_center_tells_the_truth.py::"
+        "test_a_preset_name_survives_a_round_trip_through_the_dropdown",
+        "RN-491：改前 `currentText().split(\"（\")[0]`，而显示文案是 `f\"{name}（{n} 类）\"` ⇒ "
+        "名字里自带一个全角「（」就在**用户名字的中间**断开，"
+        "叫「准心（低灵敏）」的预设一走「覆盖」就被**静默改名落盘**。"
+        "⭐⭐ 这是本仓「状态从屏幕文案反推」那一族的第三个实例，"
+        "前两次是读状态，这一次**会写坏用户的数据**",
+    ),
     # ================================ RN-482 / RN-483：里程碑看板与闭集守卫
     #
     # ⚠ 同 RN-408：被测对象在另一个仓，断点只能打在**判据自己的承重逻辑**上。
@@ -5396,30 +5641,19 @@ REVERTS = [
         "**而那个做法逐字写在同一段注释里、已被实测否决**（一刀切量出 24 处，其中 20 处是对的）"
         "⇒ **在自己要改的文件里，先把已经写下的结论读完**",
     ),
-    Revert(
-        "RN", "勾一下打包范围，又被当成「未保存的修改」拦住不许走",
-        "pages/preset_center_page.py",
-        "        self._render_preview()\n"
-        "        if self.is_dirty():\n"
-        "            self.clear_dirty()",
-        "        self.mark_dirty()\n"
-        "        self._render_preview()\n"
-        "        if self.is_dirty():\n"
-        "            pass",
-        "tests/test_preset_center_tells_the_truth.py::"
-        "test_you_can_leave_the_page_after_only_picking_a_scope",
-        "RN-479：勾一下「这一套里有哪些」实测 config **0/57 个键**变化，"
-        "而 `mark_dirty()` 在 `DirtyPageMixin` 里带着**拦人的权力** —— "
-        "`can_leave_page()` 会弹「当前页面有未保存修改，是否保存后离开？」。"
-        "⇒ 四步全假：胶囊「待应用」／底栏「有未应用的预设变更」／模态框拦人／"
-        "点「保存并离开」改 0 个键却弹「已应用类型: …」。"
-        "⭐⭐⭐ **一个假前提，会一路把四个各自正确的机制变成四句假话** —— "
-        "那四个机制单看都没写错，错的是它们共用的前提「这一页有未保存的修改这种东西」。"
-        "⭐⭐ 而**外审替它作了不在场证明**：改前 12 发问「按下去会怎样」，"
-        "0/12 答「会有变化」、7/12 答「不会」，依据逐字是「状态 · 已同步」胶囊——它答对了。"
-        "因为四步里只有前两步在屏幕上、且要等人动一下才出现 ⇒ "
-        "**看图量的是「这一屏此刻说了什么」，量不到「你动一下之后它会说什么」**",
-    ),
+    # ⛔ **批 40 撤掉了这里原来那条断点**（「勾一下打包范围又被当成未保存的修改」）。
+    #   它复现的是「在 `_on_selection_changed` 里插一句 `mark_dirty()`」——
+    #   而本批把整个 `DirtyPageMixin` 从这一页摘掉之后，那个破坏**连语法上都不成立**
+    #   （`self.mark_dirty` 不存在）。⇒ 由上面那条「dirty 机制又回到这一页」接手，
+    #   它攻击的是**类声明**，比原来那条更靠前一层。
+    # ⭐ 撤一条断点必须说清「它防的那件事现在由谁防」——否则下一次体检只会看到
+    #   一个消失了的编号，看不到它是被接管了还是被忘了。
+    #   RN-479 的原始记录（批 38）：勾一下打包范围实测 config **0/57 个键**变化，
+    #   而 `mark_dirty()` 带着拦人的权力 ⇒ 四步全假（胶囊「待应用」／底栏「有未应用的
+    #   预设变更」／模态框拦人／点「保存并离开」改 0 个键却弹「已应用类型: …」）。
+    #   ⭐⭐⭐ **一个假前提，会一路把四个各自正确的机制变成四句假话。**
+    #   ⭐⭐ 而外审替它作了不在场证明（改前 12 发 0/12 答「会有变化」）——
+    #     **看图量的是「这一屏此刻说了什么」，量不到「你动一下之后它会说什么」。**
     Revert(
         "RN", "底栏又长回一句和勾选框对不上的半份清单",
         "pages/preset_center_page.py",
@@ -5432,8 +5666,10 @@ REVERTS = [
         #   ⇒ **回退断点复现的是「改前的代码」，而修法可能让「改前的代码」
         #     不再产生「改前的缺陷」。断点要攻击的是现在真实存在的那条通路。**
         #   现在改成往**那个唯一出口自己**里塞半份清单。
-        '                "应用一套预设，会立刻改掉这套预设覆盖到的那几类设置，别的不动" +',
-        '                "支持 HUD 规则 / 屏幕特效 / 特殊音效 三域预设。" +',
+        # ⚠ 批 40 把 `_refresh_dirty_ui` 里的 if/else 拆平（dirty 退场），
+        #   这一行少了 4 格缩进 —— 失效体检报「锚点出现 0 次」。
+        '            "应用一套预设，会立刻改掉这套预设覆盖到的那几类设置，别的不动" +',
+        '            "支持 HUD 规则 / 屏幕特效 / 特殊音效 三域预设。" +',
         "tests/test_preset_center_tells_the_truth.py::"
         "test_no_visible_sentence_names_a_half_list_of_the_supported_kinds",
         "RN-283：底栏原来构造时写死「支持 HUD / 屏幕特效 / 特殊音效 **三域**预设」，"
@@ -5447,10 +5683,10 @@ REVERTS = [
         "RN", "「重新预览」又回到底栏，能一声不响扔掉刚读进来的预设包",
         "pages/preset_center_page.py",
         "        root.addWidget(self.action_bar, 0)\n"
-        "        self._refresh_dirty_ui()",
+        "        self._refresh_bottom_message()",
         '        self.action_bar.configure_secondary("重新预览", self._render_preview, visible=True)\n'
         "        root.addWidget(self.action_bar, 0)\n"
-        "        self._refresh_dirty_ui()",
+        "        self._refresh_bottom_message()",
         "tests/test_preset_center_tells_the_truth.py::"
         "test_nothing_can_silently_throw_away_an_imported_bundle",
         "RN-480：`_render_preview()` 第一句就是 `export_bundle(当前勾选)` 并覆盖 "
@@ -5478,10 +5714,15 @@ REVERTS = [
     Revert(
         "RN", "「一键应用」又掉回折线以下",
         "pages/preset_center_page.py",
-        "        card_order = (status_card, starter_card, my_presets_card,\n"
-        "                      workbench_card, map_card, preview_card)",
-        "        card_order = (status_card, workbench_card, my_presets_card,\n"
-        "                      starter_card, map_card, preview_card)",
+        # ⚠ 批 40 这条卡序里多了一张 `scope_card`，锚点跟着改
+        #   —— 失效体检当场报「锚点在源码里出现 0 次」。
+        # ⚠⚠ 补刀又把 `workbench_card` 提到 `my_presets_card` 之前（RN-486），**第二次搬**。
+        #   ⭐ 同一个锚点在一批之内被两次改动推着走了两回 ——
+        #     卡序这一行是这一页的**热点**，锚在它上面的断点每次重排都要跟着核一遍。
+        "        card_order = (status_card, starter_card, scope_card,\n"
+        "                      workbench_card, my_presets_card, map_card, preview_card)",
+        "        card_order = (status_card, workbench_card, scope_card,\n"
+        "                      my_presets_card, starter_card, map_card, preview_card)",
         "tests/test_preset_center_tells_the_truth.py::"
         "test_the_one_click_path_is_above_the_fold",
         "真窗实测：视口 1074×673 / 内容高 1851 ⇒ **64% 在折线以下**，"
@@ -5565,13 +5806,13 @@ REVERTS = [
     Revert(
         'BRAND', '白名单腐烂：豁免条目里已经没有旧名了却还挂着',
         'core/presets/share_file.py',
-        # 注意要连注释一起换掉：只删常量的话文件里还留着注释中的旧扩展名，
-        # 判据照绿——那样这个断点自己就是假的。
-        '#: 前身（闭源版）导出的分享文件用 `.fanpai`。**只在打开对话框的过滤器里认它**——\n'
-        '#: 容器格式与安检逻辑完全一致，没有理由让用户手工改扩展名才能导入；\n'
-        '#: 但导出一律写新扩展名，不再产生旧后缀的文件。\n'
-        'LEGACY_SHARE_EXTS = (".fanpai",)',
-        'LEGACY_SHARE_EXTS = ()',
+        # ⚠ 上游批 40 把这段注释重写过一遍，而**新注释里一个旧扩展名都没有**
+        #   （那是有意的：注释里写死后缀，一改名就会和常量说两种话）。
+        #   ⇒ 现在只换常量这一行就够了，锚点也因此变短、变稳。
+        #   ⭐ 旧版锚点连注释一起吃了三行，于是上游改一次措辞，
+        #     这条断点就哑一次 —— 锚点越长，越容易被一次无关的改写打断。
+        'LEGACY_SHARE_EXTS: tuple = (".fanpai",)',
+        'LEGACY_SHARE_EXTS: tuple = ()',
         'tests/test_no_legacy_brand.py::test_allowlist_entries_still_exist',
         '白名单变成只增不减的免检清单——文件早就不含旧名，条目还在，'
         '下次有人往这个文件里加东西就免检了',

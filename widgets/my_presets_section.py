@@ -49,7 +49,7 @@ class MyPresetsMixin:
         # ⇒ 照 RN-401 的规矩改：**点名控件，不指方向**。
         card, layout = SettingsCard.make(
             "我的预设",
-            "把「这一套里有哪些」勾中的类别存成一套具名预设，之后一键切回来。"
+            "把「保存/导出的范围」勾中的类别存成一套具名预设，之后一键切回来。"
             "应用前会自动建快照，可在配置快照页回滚。",
             spacing=10,
         )
@@ -151,6 +151,26 @@ class MyPresetsMixin:
             self.my_preset_combo.setItemData(
                 self.my_preset_combo.count() - 1,
                 f"更新于 {item.updated_at}", Qt.ToolTipRole)
+            # ⚠⚠ RN-491（批 40 补刀）：预设名原来是从**显示文案**反推的
+            #   （`currentText().split("（")[0]`），而显示文案是
+            #   `f"{name}（{n} 类）"` —— 名字里只要自己带一个全角「（」，
+            #   `split` 就在**用户名字的中间**断开。`save_preset` 只做 strip+截断，
+            #   全角括号是合法字符 ⇒ 名字叫「准心（低灵敏）」的预设，
+            #   一走「覆盖」就被静默改名成「准心」并落盘。
+            # ⭐⭐ 这是本仓「状态从屏幕文案反推」那一族的第三个实例，
+            #   前两次是读状态，这一次**会写坏用户的数据**。
+            #   ⇒ 名字跟着 id 一起放进 itemData，显示文案只负责显示。
+            self.my_preset_combo.setItemData(
+                self.my_preset_combo.count() - 1, item.name, Qt.UserRole + 1)
+        # ⭐ 一条预设都没有时，下拉框原来是一个**完全空白的框**。
+        #   批 40 出图那两轮外审共 5 发点名（「初次进入下拉框空白且按钮大面积置灰，
+        #   缺少空状态引导」/「空白框与输入框形态混淆，分不清是要在框里打字
+        #   还是点『存为新预设』」）—— ⭐⭐ **一个空控件不说明自己为什么空，
+        #   就会被读成「我该往里面填点什么」**。
+        # ⚠ 这一项**不带 data**，所以 `currentData()` 仍然是 None，
+        #   下面那句「一条都没有 ⇒ 除存为新预设外全禁用」一个字都不用改。
+        if not items:
+            self.my_preset_combo.addItem("（还没有存过预设）")
         if keep:
             idx = self.my_preset_combo.findData(keep)
             if idx >= 0:
@@ -160,9 +180,17 @@ class MyPresetsMixin:
         # 一条都没有时，除了"存为新预设"其余全禁用——
         # 让按钮点不动比点了弹"请先选择"友好（UP-022 已让禁用态看得出来）
         has = bool(items)
+        # ⚠⚠ RN-492（批 40 补刀）：这四颗禁用了却**一个字都不解释** ——
+        #   实测默认态（全新安装 `list_presets()` 为空，即每个新用户的第一屏）
+        #   有 5 颗可见且禁用的按钮，其中这 4 颗 tooltip 是空串。
+        # ⭐⭐ 而这一页恰好有一条名叫「禁用按钮都要说明为什么」的判据 ——
+        #   它本批从 2 颗缩到 1 颗，剩下的那颗正好是唯一写了 tooltip 的那颗
+        #   ⇒ **判据名承诺的是全页性质，分母里却只剩合规的那一个**，全绿。
+        #   （批 39 那条「用自己的白名单当分母」在按钮上的翻版。）
         for btn in (self.my_preset_apply_btn, self.my_preset_overwrite_btn,
                     self.my_preset_rename_btn, self.my_preset_delete_btn):
             btn.setEnabled(has)
+            btn.setToolTip("" if has else "还没有存过预设，先点「存为新预设」存一套。")
         self._sync_my_preset_hint()
 
     def _sync_my_preset_hint(self, *_args):
@@ -178,7 +206,7 @@ class MyPresetsMixin:
                 f"还没有保存过预设。现在点「存为新预设」，会把这 "
                 f"{len(self._selected_types())} 类存成一套：{labels}。"
                 if labels else
-                "还没有保存过预设。「这一套里有哪些」一类都没勾，先勾上至少一类。")
+                "还没有保存过预设。「保存/导出的范围」一类都没勾，先勾上至少一类。")
             return
         for item in list_presets():
             if item.preset_id == pid:
@@ -198,7 +226,11 @@ class MyPresetsMixin:
         pid = self.my_preset_combo.currentData()
         if not pid:
             return None, ""
-        return pid, self.my_preset_combo.currentText().split("（")[0]
+        # RN-491：名字取自 itemData，**不再从显示文案上切**（见 refresh_my_presets 的注释）。
+        name = self.my_preset_combo.currentData(Qt.UserRole + 1)
+        if not name:
+            name = self.my_preset_combo.currentText().split("（")[0]
+        return pid, str(name)
 
     # ------------------------------------------------------------------ 动作
 
@@ -270,6 +302,16 @@ class MyPresetsMixin:
             return
         # 走的是 apply_bundle：应用前已自动建快照，且已广播配置重载(UP-035)，
         # 所以此刻已打开的页面已经刷成新值，用户再动控件不会把预设写回旧值。
+        # ⚠⚠ RN-493（批 40 补刀）：**这一页自己不在那个广播的收件人里** ——
+        #   UP-035 总线找的是 `load_settings`，而这一页只有 `_load_settings`
+        #   （而且本批把它也撤了）。于是「范围里现在的内容」那张卡展示的
+        #   仍是**改动之前**的配置：config 已经换了一套，卡上还写着上一套。
+        # ⭐ 那张卡是本批新加的，它的全部价值就是「这里写的就是现在这一套」——
+        #   ⇒ 只要有一条通路改了 config 而没叫它，它就从"说人话"变成"说假话"。
+        #   本批已经在导入那条路上叫过一次，这里是**漏掉的第二条**。
+        refresh = getattr(self, "_render_preview", None)
+        if callable(refresh):
+            refresh()
         # QA-013: 但"已自动建快照"不是必然成立的 —— 建失败时 apply_bundle 会往
         # warnings 里放话。这时候还说"可在配置快照页回滚"就是骗人。
         if result.warnings:

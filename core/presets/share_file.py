@@ -26,11 +26,17 @@ from config import VERSION
 
 from .preset_center import SCHEMA_VERSION, validate_bundle
 
+#: 还要额外认的**旧**扩展名。本仓是自己那个后缀的第一手主人，所以这里是空元组；
+#: 开源子集把它填成前身那个后缀 —— **只在「打开」这一侧认，导出一律写新的**。
+#: ⚠ 这一行存在的理由是**让两个仓的差异收进一个常量**：
+#:   在此之前那条差异是一个打在页面文件上的语义补丁，而批 40 把它锚着的那个方法
+#:   整个改掉了 ⇒ 补丁当场失效、同步流水线会停住。
+#:   ⭐ **能收进常量的差异，就不要留成补丁** —— 补丁锚在代码的形状上，
+#:     而代码的形状每一批都在变；常量锚在意图上。
+#: ⚠⚠ 这两行**必须紧挨着**：语义补丁在机械改名**之后**才应用，
+#:   两行之间夹一段会被改名规则改写的注释，补丁的上下文就对不上了（实测踩过）。
 SHARE_EXT = ".cs2c"
-#: 前身（闭源版）导出的分享文件用 `.fanpai`。**只在打开对话框的过滤器里认它**——
-#: 容器格式与安检逻辑完全一致，没有理由让用户手工改扩展名才能导入；
-#: 但导出一律写新扩展名，不再产生旧后缀的文件。
-LEGACY_SHARE_EXTS = (".fanpai",)
+LEGACY_SHARE_EXTS: tuple = (".fanpai",)
 MANIFEST_NAME = "manifest.json"
 BUNDLE_NAME = "bundle.json"
 
@@ -134,13 +140,26 @@ def describe(result: ShareReadResult) -> str:
     """给导入确认框的人话描述。"""
     if not result.ok or result.bundle is None:
         return "(无效文件)"
-    type_names = {
-        "hud_rules": "HUD 颜色规则", "screen_effects": "屏幕特效", "special_sound": "特殊音效",
-        "crosshair": "准心", "flash": "自定闪光", "viewmodel": "局内视角", "magnifier": "开镜放大",
-    }
+    # ⭐⭐ 批 40：这里原来自带一份 `type_names`，写「HUD **颜色规则**」，
+    #   而页面上的勾选框写「HUD 规则」——**同一类东西两个名字，隔着一个仓库**。
+    #   批 38 刚在这一页上统一过一次同物两名，**这一份躲过了那一轮**：
+    #   它只出现在**按下按钮之后**才弹出来的确认框里，任何一张截图都拍不到它。
+    # ⇒ 名字与摘要都走 `preset_center` 那一份唯一真源。
+    from .preset_center import describe_bundle
+
+    described = describe_bundle(result.bundle)
     items = result.bundle.get("items", [])
-    lines = [f"· {type_names.get(i.get('type'), i.get('type'))}" for i in items]
-    meta = result.manifest or {}
+    lines = [f"· {label}：{detail}" for label, detail in described]
+    # ⚠⚠ RN-490（批 40 补刀）：这里原来直接 `result.manifest.get(...)`，
+    #   而 `manifest.json` 只要是「合法 JSON 但**不是对象**」（数组 / 字符串 / 数字），
+    #   `.get` 就抛 AttributeError —— 而这条异常从 `describe()` →
+    #   `_read_config_file()` → `_import_config_path()` **一路裸奔**
+    #   （AST 实证：两个调用点都没有 try）。
+    # ⭐ 用户点了「打开一份配置文件」，然后**什么都不会发生** ——
+    #   连一个错误框都没有。⭐⭐ 比崩溃更糟的是静默：崩溃至少说了话。
+    # ⇒ manifest 只是"附言"，它坏了不该让整份文件读不成；
+    #   坏了就当没有附言，正文照常显示。
+    meta = result.manifest if isinstance(result.manifest, dict) else {}
     head = []
     if meta.get("title"):
         head.append(f"标题: {meta['title']}")

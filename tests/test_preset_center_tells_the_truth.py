@@ -103,7 +103,17 @@ def _visible_texts(page) -> list[str]:
 
 def test_the_fixture_really_built_the_page(page):
     """⭐ 没有这一条，下面每一条「不许出现 X」的断言都能靠「页面是空的」拿到绿。"""
-    assert len(_chips(page)) >= 3, f"状态胶囊只有 {_chips(page)} —— 页面没建全"
+    # ⚠⚠ 这道守卫原来数的是**状态胶囊**：4 颗 → 批 40 减到 2 颗、
+    #   补刀又减到 1 颗（撤掉「内容 · N 项」「来源 · …」「模式 · 合并」）。
+    #   于是它被**连降三次门槛**，每一次都写着"降门槛必须说明为什么"。
+    # ⭐⭐⭐ 三次都说明了理由，三次都是对的 —— 而这恰恰说明**它拿错了信号**：
+    #   一个会被本页正常演进反复推着走的数，当不了「这一页建出来了没有」的证据。
+    #   ⭐ 空转守卫要挑一个**和本次改动无关**的量，否则它会年年跟着改，
+    #     而每一次改都长得像放水。
+    # ⇒ 改成数**可见按钮**（这一页的动作面，重排/换名都不改变它有一堆按钮这件事）。
+    buttons = [b for b in page.findChildren(QPushButton)
+               if b.isVisibleTo(page) and (b.text() or "").strip()]
+    assert len(buttons) >= 8, f"只数到 {len(buttons)} 颗可见按钮 —— 页面没建全"
     assert len(_visible_texts(page)) >= 15, "可见文本太少，这一页多半没建出来"
     labels = [lb for _a, _t, lb in page._TYPE_CHECKBOX_SPEC]
     assert len(labels) >= 5, f"打包类别只有 {labels} —— 分母塌了"
@@ -113,125 +123,219 @@ def test_the_fixture_really_built_the_page(page):
 # 主刀
 # --------------------------------------------------------------------------
 
-def test_picking_what_to_package_is_not_an_unsaved_change(page, qapp):
-    """勾一下「这一套包含哪些」之后，这一页不许说自己有未保存的修改。
+def test_this_page_has_no_such_thing_as_an_unsaved_change(page):
+    """⭐⭐⭐ 批 40：这一页**结构上**不再有「未保存的修改」这种东西。
 
-    ⭐ 这条判据同时钉住了那四步里的 ①②③：胶囊、底栏、拦人的模态框
-      —— 它们全都只看 `is_dirty()` 一个值。
+    批 38 把 `mark_dirty()` 收窄到只剩一个真源（「读进来一份还没应用的预设包」）；
+    批 40 把两条导入路统一成「确认 → 应用」之后，**那一个真源也不再产生状态**
+    ⇒ 整个 `DirtyPageMixin` 退场。
+    ⭐ **一个机制收窄到只剩一个用例之后，下一个该问的问题是：
+      那一个用例，是不是也可以不由它来做。**
+
+    ⚠ 这条**取代**了批 38 那三条（勾选不算改动 / 走得掉 / dirty 只有一个来源）——
+      它们钉的是「那个机制别乱用」，而现在没有那个机制了。
+    ⭐ 不是删掉了事：**掏空一条判据比删掉它更危险，因为掏空之后它还是绿的**
+      （批 31 那条）。所以这里换成一条**更强**的：不是「别调」，是「调不到」。
     """
-    page.clear_dirty()
-    qapp.processEvents()
-    box = page.cb_viewmodel if not page.cb_viewmodel.isChecked() else page.cb_magnifier
-    box.setChecked(not box.isChecked())
-    qapp.processEvents()
+    from widgets.dirty_page_mixin import DirtyPageMixin
 
-    assert not page.is_dirty(), (
-        "勾一下打包范围就把整页标成「未保存」了。\n"
-        "⭐ 这一步 config 里一个键都没动（见本模块头的实测），"
-        "而 dirty 会让 `can_leave_page()` 弹模态框拦住用户离开。")
-    assert "未应用" not in page.action_bar.message_label.text(), (
-        f"底栏说「{page.action_bar.message_label.text()}」，而并没有任何改动。")
-    assert not any("待应用" in c for c in _chips(page)), (
-        f"状态胶囊说 {_chips(page)} —— 「待应用」的那个东西不存在。")
+    assert not isinstance(page, DirtyPageMixin), (
+        "这一页又继承回 `DirtyPageMixin` 了 —— 那意味着 `can_leave_page()` "
+        "又有资格弹模态框拦人，而这一页没有任何一种「未保存的修改」。")
+    for name in ("is_dirty", "mark_dirty", "clear_dirty", "can_leave_page"):
+        assert getattr(page, name, None) is None, (
+            f"这一页又长出了 `{name}` —— 见上。")
+    src = SRC.read_text(encoding="utf-8")
+    tree = ast.parse(src)
+    functions = [fn.name for fn in ast.walk(tree) if isinstance(fn, ast.FunctionDef)]
+    # ⚠ 空转守卫（批 40 补刀补上）：下面那条是**否定断言 + 一次 AST 扫描** ——
+    #   源码读空了、或者 `ast.parse` 换了形状，它一样是绿的。
+    #   ⭐ 先证明这次真的扫到了一整页的函数，那条「没人再调 dirty」才算数。
+    assert len(functions) >= 25, (
+        f"只从 {SRC.name} 里扫出 {len(functions)} 个函数 —— 分母塌了，"
+        "下面那条「没人再调 dirty」是靠扫了个空拿到的绿。")
+    callers = [fn.name for fn in ast.walk(tree)
+               if isinstance(fn, ast.FunctionDef)
+               and any(isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                       and n.func.attr in ("mark_dirty", "clear_dirty")
+                       for n in ast.walk(fn))]
+    assert not callers, f"这几个函数还在调 dirty：{callers}"
 
 
-def test_you_can_leave_the_page_after_only_picking_a_scope(page, qapp, monkeypatch):
+def test_leaving_the_page_never_puts_a_modal_in_the_way(page, qapp, monkeypatch):
     """⭐⭐ 这条是上一条的**行为面**，故意分开写。
 
-    上一条问的是「`is_dirty()` 等于什么」，这一条问的是
-    「用户想走的时候，屏幕上会不会冒出一个框」。
-    ⚠ 只钉前者是不够的 —— 拦人的权力挂在 `can_leave_page()` 上，
-      哪天有人换个别的条件去弹那个框，上一条照样是绿的。
+    上一条问的是「类上还有没有那个方法」，这一条问的是
+    「主窗真去问它能不能走的时候，屏幕上会不会冒出一个框」。
+    ⚠ `gui_widget` 两处都写的是 `getattr(page, "can_leave_page", None)` ——
+      **没有这个属性就直接放行**，所以撤掉 mixin 之后这条路是通的；
+      但那是主窗的写法，不是这一页能保证的事，所以要单独钉。
     """
     shown = []
     monkeypatch.setattr(QMessageBox, "exec", lambda self: shown.append(self.text()) or 0)
 
-    page.clear_dirty()
-    qapp.processEvents()
     box = page.cb_viewmodel if not page.cb_viewmodel.isChecked() else page.cb_magnifier
     box.setChecked(not box.isChecked())
     qapp.processEvents()
 
-    assert page.can_leave_page() is True, (
-        "只是勾了一下打包范围，就走不掉了。")
+    gate = getattr(page, "can_leave_page", None)
+    assert gate is None or gate() is True, "只是勾了一下打包范围，就走不掉了。"
     assert not shown, (
         f"离开这一页时弹了框：{shown}\n"
         "⭐ 「你想导出哪些」不是「你改了哪些」——前者没有资格拦人。")
 
 
-def test_the_only_thing_that_makes_this_page_dirty_is_an_unapplied_import(page):
-    """dirty 在这一页只许有一个来源：**读进来一份还没应用的预设包**。
+def _intercept_confirm(monkeypatch, seen=None, choose=None):
+    """拦住导入确认框，并替测试「按下」其中一颗按钮。
 
-    ⭐ 走 AST 而不是行为，是因为「还有没有第二个来源」这种问题，
-      跑一遍摸不出来 —— 没被触发和不存在长得一模一样（批 37）。
+    ⚠⚠ 批 40 之前这里拦的是 `QMessageBox.question`（**类方法**）。
+      RN-484 把确认框换成了**实例 + 自定义按钮**（`box.exec()`），
+      于是那个钩子一个字都没报错地失效了 —— 实测整轮 pytest **当场挂死**
+      在一个离屏但真实的模态框上（120 秒无任何输出）。
+    ⭐⭐ **钩子必须挂在被测代码真正会调的那个方法上**：
+      钩子挂错地方不会报"没挂上"，只会挂死或静默放行。
+
+    `choose=None` ⇒ 按「取消」（RejectRole）；否则按文案里含 `choose` 的那颗。
     """
-    tree = ast.parse(SRC.read_text(encoding="utf-8"))
-    callers = []
-    for fn in ast.walk(tree):
-        if not isinstance(fn, ast.FunctionDef):
-            continue
-        if any(isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
-               and n.func.attr == "mark_dirty" for n in ast.walk(fn)):
-            callers.append(fn.name)
+    picked = {}
 
-    assert callers, (
-        "这一页一处 `mark_dirty()` 都没有了 —— "
-        "那么「读进来一份还没应用的预设包」这件事就没人记得住了。\n"
-        "⭐ 空转守卫：这条判据要是没有它，把 dirty 整个删掉也能拿到绿。")
-    assert sorted(callers) == ["_import_bundle_from_file"], (
-        f"`mark_dirty()` 的调用方是 {sorted(callers)}。\n"
-        "这一页只有一件事配叫「未保存的修改」：读进来一份预设包、还没应用。\n"
-        "⭐ 勾选打包范围**不是** —— 它一个 config 键都不动。")
+    def fake_exec(self):
+        if seen is not None:
+            # ⚠⚠ 这里原来只记 `self.text()`。而 RN-484 之后，
+            #   「问没问该怎么处理你自己加的条目」这件事**是写在按钮上的**，
+            #   不在正文里 ⇒ 破坏实验（强行让 conflicts 恒非空）**没能让判据变红**。
+            #   ⭐⭐ 一条断言只能看见它真正读到的那几个字节：
+            #     我改的是按钮，断的却是正文，那条判据结构上照不到它自己声称的事。
+            seen.append("\n".join(
+                [self.text(), self.informativeText() or ""]
+                + [b.text() for b in self.buttons()]))
+        target = None
+        for btn in self.buttons():
+            if choose is None:
+                if self.buttonRole(btn) == QMessageBox.RejectRole:
+                    target = btn
+                    break
+            elif choose in btn.text():
+                target = btn
+                break
+        picked["btn"] = target
+        return 0
+
+    monkeypatch.setattr(QMessageBox, "exec", fake_exec)
+    monkeypatch.setattr(QMessageBox, "clickedButton", lambda self: picked.get("btn"))
+    return picked
 
 
-def test_an_imported_bundle_really_does_make_the_page_dirty(page, qapp):
-    """⭐ **阳性对照**：上一条只说「别的都不许」，这一条说「该有的那个真的有」。
+def test_opening_a_config_file_asks_before_it_changes_anything(page, qapp, monkeypatch, tmp_path):
+    """⭐ **阳性对照 + 主刀**：打开一份文件必须先弹确认框，按「否」就一个键都不许动。
 
-    没有它，把 `_import_bundle_from_file` 里那句也删掉，上面两条会更绿。
+    ⚠ 批 38 那条阳性对照（「导入真的会让页面变 dirty」）随 dirty 一起退场，
+      而**撤掉一条阳性对照不补一条新的，等于把主刀那条判据变成只会说「不」的判据**
+      —— 它会在「整个导入功能被删光」时依然全绿。
     """
-    page.clear_dirty()
-    qapp.processEvents()
+    import json as _json
+
     from core.presets.preset_center import export_bundle
 
-    bundle = export_bundle(["hud_rules"])
-    page._current_bundle = bundle
-    page.mark_dirty()
+    bundle = export_bundle(["hud_rules", "crosshair"])
+    path = tmp_path / "friend.json"
+    path.write_text(_json.dumps(bundle, ensure_ascii=False), encoding="utf-8")
+
+    asked = []
+    _intercept_confirm(monkeypatch, seen=asked, choose=None)   # choose=None ⇒ 按「取消」
+    applied = []
+    import pages.preset_center_page as mod
+    monkeypatch.setattr(mod, "apply_bundle",
+                        lambda *a, **k: applied.append(a) or (_ for _ in ()).throw(
+                            AssertionError("按了「否」还是把它应用了")))
+
+    page._import_config_path(str(path))
     qapp.processEvents()
-    assert page.is_dirty()
-    assert page.can_leave_page.__self__ is page  # 契约还在
-    assert any("导入" in c or "读入" in c or "待应用" in c for c in _chips(page)), (
-        f"读进来一份还没应用的包时，状态胶囊是 {_chips(page)} —— 没有一颗在说这件事。")
+
+    assert len(asked) == 1, f"打开一份配置文件时没有先问一句：{asked}"
+    text = asked[0]
+    for label in ("HUD 规则", "准心"):
+        assert label in text, (
+            f"确认框里没有逐字写出「{label}」：\n{text}\n"
+            "⭐ 「先看清里面是什么再决定」是这一步存在的**全部**理由；"
+            "它要是只报个数字，那就跟没问一样。")
+    assert not applied, "按了「否」，却还是调了 apply_bundle"
 
 
-def test_pressing_apply_with_nothing_imported_cannot_report_success(page, qapp, monkeypatch):
-    """默认状态下不许出现一颗「按下去 0 个键会变、却报『已应用 N 类』」的按钮。
+def test_both_file_kinds_go_through_the_same_one_button(page):
+    """⭐⭐⭐ RN-478：一个动作一颗按钮，两种扩展名在**幕后**分派。
 
-    ⭐ 这是那四步里的第 ④ 步，而它**结构上不在任何截图里** ——
-      改动发生在 config 的字节上，回执发生在一个模态框里。
+    改前这里是 2×2 四颗按钮（`.json` 一对、`.cs2customizer` 一对）外加第五颗「应用」，
+    外审 12 发问「朋友发你一个文件你点哪个」——**12/12「有把握: 没有」**。
+    ⭐ 摆在屏幕上的不该是两种容器格式（那是实现细节），玩家的动作只有两个。
     """
-    said = []
-    monkeypatch.setattr(QMessageBox, "information",
-                        lambda *a, **_k: said.append(a[2] if len(a) > 2 else ""))
-    page.clear_dirty()
-    qapp.processEvents()
-
-    # ⭐ 分母守卫：先证明这一屏上真的有一堆按钮，再让它去断言「没有那一颗」。
-    #   （`test_judges_are_not_idling` 的 A 组说的正是这件事：
-    #     一条只做 `assert not offenders` 的判据，在分母为空时必然全绿。）
     visible = [b for b in page.findChildren(QPushButton)
                if b.isVisibleTo(page) and b.text()]
-    assert len(visible) >= 8, f"这一页只扫到 {len(visible)} 颗可见按钮 —— 分母塌了"
+    assert len(visible) >= 5, f"这一页只扫到 {len(visible)} 颗可见按钮 —— 分母塌了"
 
-    applies = [b for b in visible if b.isEnabled() and "应用当前预设" in b.text()]
-    assert not applies, (
-        f"默认状态下还有 {[b.text() for b in applies]} 可点。\n"
-        "⭐ 实测按下去 config 的 57 个键**一个都不会变**（它把当前设置打包再原样写回），"
-        "而它会弹「已应用类型: …」——一句为空转出具的成功回执。")
-    # ⚠ 反面：那颗按钮**必须还在**，只是点不动。
-    #   ⭐ 没有这一句，「把整个动作删干净」也能拿到绿 —— 而那样就没人能落地
-    #     一份读进来的预设包了（撤重复最容易犯的错是把两颗一起删掉）。
-    assert not page.apply_btn.isEnabled()
-    assert page.apply_btn.isVisibleTo(page), "「应用读入的预设包」整颗不见了"
+    # ⚠⚠ RN-494：这个筛选原来带着 `and "预设" not in b.text()`，
+    #   而改动前那两颗导入按钮里恰好有一颗叫「**导入预设包**」——
+    #   ⭐⭐ **它被自己的判据滤出了分母**，于是 `len(openers) == 1`
+    #   在改前那个「2×2 四颗按钮」的缺陷状态下**照样通过**。
+    #   一条本该逮住旧缺陷的判据，被一个为了绕开旧缺陷而写的过滤条件绕开了。
+    #   ⇒ 过滤条件只许排除**当前确实存在且确实是另一回事**的东西，
+    #     不许排除"我不想让它进来的那个词"。
+    openers = [b.text() for b in visible
+               if "打开" in b.text() or "导入" in b.text()]
+    exporters = [b.text() for b in visible if "导出" in b.text()]
+    assert len(openers) == 1, (
+        f"「打开别人给的文件」这一个动作有 {len(openers)} 颗按钮：{openers}\n"
+        "⭐ 一个动作一个入口（批 31）——文件格式版：格式是实现细节，动作才是入口。")
+    assert len(exporters) == 1, (
+        f"「把我这一套发出去」这一个动作有 {len(exporters)} 颗按钮：{exporters}")
+
+    # ⚠⚠ 这一段原来在**源码文本**里找 `*{SHARE_EXT} *.json` 这个字面拼法。
+    #   而批 40 补刀为了让开源子集不再需要语义补丁，把过滤器改成
+    #   `f"配置文件 ({patterns} *.json)"` —— 行为一个字节没变，判据当场变红。
+    # ⭐⭐ **一条钉在源码形状上的判据，会红在一次纯粹的重写上，
+    #   也会绿在一次真正的功能删除上**（换个拼法照样能删掉 .json）。
+    #   ⇒ 改成截住对话框、看**它真的收到了什么过滤器**。
+    #   这样它在开源子集（`SHARE_EXT = ".cs2c"`）里同样成立。
+    from core.presets.share_file import LEGACY_SHARE_EXTS, SHARE_EXT
+    from PySide6.QtWidgets import QFileDialog
+
+    seen_filter = {}
+    real = QFileDialog.getOpenFileName
+
+    def _spy(*args, **kwargs):
+        seen_filter["value"] = args[3] if len(args) > 3 else kwargs.get("filter", "")
+        return "", ""
+
+    QFileDialog.getOpenFileName = staticmethod(_spy)
+    try:
+        page._open_config_file()
+    finally:
+        QFileDialog.getOpenFileName = real
+
+    flt = seen_filter.get("value", "")
+    assert flt, "「打开一份配置文件」没有弹出文件对话框 —— 分母塌了"
+    for ext in (SHARE_EXT, *LEGACY_SHARE_EXTS, ".json"):
+        assert ext in flt, (
+            f"打开文件的对话框不认 `{ext}`（实际过滤器：{flt!r}）—— "
+            "撤掉一颗按钮却不让剩下那颗吃两种文件，等于把功能删了一半。")
+
+
+def test_the_two_file_kinds_do_not_behave_differently(page):
+    """⚠⚠ **一颗按钮两种行为，比两颗按钮更糟** —— 至少两颗按钮把选择摆在明面上。
+
+    改前 `.cs2customizer` 走「安检→确认→应用」，`.json` 走「塞进预览→再点一次按钮」，
+    而决定走哪条的是**用户看不见的扩展名**。
+    ⇒ 判据钉的是汇流点：两条读法必须都从 `_read_config_file` 出来，
+      而 `apply_bundle` 在这一页只许有一个调用方。
+    """
+    tree = ast.parse(SRC.read_text(encoding="utf-8"))
+    appliers = [fn.name for fn in ast.walk(tree)
+                if isinstance(fn, ast.FunctionDef)
+                and any(isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+                        and n.func.id == "apply_bundle" for n in ast.walk(fn))]
+    assert sorted(appliers) == ["_apply_starter_pack", "_import_config_path"], (
+        f"`apply_bundle` 的调用方是 {sorted(appliers)}。\n"
+        "打开文件这条路只许有一个落地点（内置精选那条是另一个动作，它有自己的确认框）。")
 
 
 def test_applying_the_current_config_back_onto_itself_is_a_no_op(page):
@@ -399,9 +503,13 @@ def test_nothing_can_silently_throw_away_an_imported_bundle(page, qapp):
       刚进来的玩家无法理解其作用与触发时机」）——
       ⭐ 批 31 逐字再现：**一个控件怎么被读、有多大杀伤力，由它的邻居决定。**
 
-    这条钉两件事：① 底栏不再有任何东西绑着 `_render_preview`；
-    ② 改勾选**确实**会把那份包扔掉，所以 dirty 必须跟着落下来
-      —— **让标志位重新指向一个真实存在的东西**。
+    ⭐⭐⭐ **批 40 把这条缺陷的整个前提拆掉了**：既然「打开一份文件」现在是
+      「确认 → 立刻应用」，页面就**从来不持有一份还没落地的包** ——
+      没有那份包，就没有「一声不响扔掉它」这件事。
+    ⇒ 这条判据只留前半（底栏不许再长按钮）；后半换成更根本的一条：
+      **`_render_preview` 永远只从当前勾选出图**，也就是预览只表达一件事。
+      ⚠ 没有后半这一句，「让预览重新记住某份外来的包」会悄悄回来，
+        而那正是那个中间态复活的第一步。
     """
     from PySide6.QtWidgets import QAbstractButton
 
@@ -419,20 +527,25 @@ def test_nothing_can_silently_throw_away_an_imported_bundle(page, qapp):
 
     from core.presets.preset_center import export_bundle
 
+    # ⭐ 阳性对照：先塞一份**外来**的包进去，再改一下勾选 ——
+    #   预览必须当场变回「你现在勾的那几类」，而不是继续展示那份外来的。
     page._current_bundle = export_bundle(["hud_rules"])
-    page.mark_dirty()
-    qapp.processEvents()
-    assert page.is_dirty() and page.apply_btn.isEnabled()
+    before = page.preview_summary_label.text()
+    assert "HUD 规则" in before or before, "摘要是空的，这条判据没在量东西"
 
     box = page.cb_viewmodel if not page.cb_viewmodel.isChecked() else page.cb_magnifier
     box.setChecked(not box.isChecked())
     qapp.processEvents()
-    assert not page.is_dirty(), (
-        "改了勾选，那份读进来的包已经被 `_render_preview` 覆盖掉了，"
-        "而页面还说自己有一份待应用的包。")
-    assert not page.apply_btn.isEnabled(), (
-        "「应用读入的预设包」还亮着，而读进来的那份已经没了 —— "
-        "按下去应用的是你自己的当前配置。")
+
+    shown = {label for label, _detail in
+             __import__("core.presets.preset_center", fromlist=["x"]).describe_bundle(
+                 page._current_bundle)}
+    ticked = {lb for attr, _t, lb in page._TYPE_CHECKBOX_SPEC
+              if getattr(page, attr).isChecked()}
+    assert shown == ticked, (
+        f"预览里是 {sorted(shown)}，而现在勾着的是 {sorted(ticked)}。\n"
+        "⭐ 预览只许表达一件事：**你现在的设置**。它一旦有第二种含义，"
+        "屏幕上就得再加一句话去区分，而那句话迟早会和事实岔开（批 38 那颗「来源」胶囊）。")
 
 
 def test_each_kind_has_exactly_one_name_on_screen(page):
@@ -470,7 +583,7 @@ def test_the_first_paint_message_is_the_same_kind_of_sentence_as_later_ones(page
     ⇒ 现在要求：首屏那句话必须由同一个出口产生（刷新一次，内容不变）。
     """
     first = page.action_bar.message_label.text()
-    page._refresh_dirty_ui()
+    page._refresh_bottom_message()
     qapp.processEvents()
     assert page.action_bar.message_label.text() == first, (
         f"首屏写的是「{first}」，刷新一次就变成"
@@ -535,18 +648,33 @@ def test_the_only_red_button_is_not_sitting_on_an_empty_shelf(page, qapp):
 
 
 def test_the_disabled_buttons_all_say_why(page, qapp):
-    """⭐ 本批新禁用的两颗，tooltip 都得说清「为什么现在不能点」。
+    """⭐ 这一页上**每一颗**默认就禁用的可见按钮，都得说清「为什么现在不能点」。
 
     批 23（RN-150）问的是「看不看得出它禁用了」，批 36 问的是「知不知道为什么」
-    —— **是两个问题**，而这一批一次造出了两颗新的禁用按钮。
+    —— **是两个问题**。
+
+    ⚠⚠ RN-492：这条判据本批一度写成 `for name in ("map_delete_btn",)` ——
+      一个**硬编码的一元组**。它是这么来的：改前是 `("apply_btn", "map_delete_btn")`，
+      而 RN-478 把 `apply_btn` 整颗撤掉了，于是元组"自然地"缩成了一个。
+    ⭐⭐⭐ 而实测这一页当时有 **5 颗**可见且禁用的按钮，
+      其中 4 颗（应用 / 覆盖 / 改名 / 删除）tooltip 是**空串** ——
+      判据名承诺的是全页性质，分母里却只剩下唯一合规的那一颗，**全绿**。
+      这是批 39 那条「守卫拿自己的白名单当分母」在按钮上的翻版：
+      ⭐ **一份点名清单，会在被点名的东西消失时安静地变成一份短清单，
+        而不是变成一条红线。**
+    ⇒ 改判：分母**当场从屏幕上数**，不再由我预先写死。
     """
-    page.clear_dirty()
     qapp.processEvents()
-    for name in ("apply_btn", "map_delete_btn"):
-        btn = getattr(page, name)
-        assert not btn.isEnabled(), f"{name} 在默认状态下居然是可点的"
-        assert len(btn.toolTip()) >= 10, (
-            f"{name} 禁用着，tooltip 是 {btn.toolTip()!r} —— 没说为什么。")
+    disabled = [b for b in page.findChildren(QPushButton)
+                if b.isVisibleTo(page) and b.text() and not b.isEnabled()]
+    # 空转守卫：这一页默认态本来就该有禁用按钮（没存过预设 + 当前图没绑定）。
+    assert len(disabled) >= 4, (
+        f"默认态只数到 {len(disabled)} 颗禁用按钮 —— 分母塌了，"
+        "这条判据就成了恒真。期望至少 4 颗（我的预设那一排）。")
+    silent = [(b.text(), b.toolTip()) for b in disabled if len(b.toolTip()) < 10]
+    assert not silent, (
+        f"这些按钮禁用着，却没说为什么：{silent}\n"
+        "⭐ 一颗灰按钮不解释自己，用户只会以为软件坏了。")
 
 
 def test_the_empty_my_presets_hint_names_what_it_would_save(page, qapp):
@@ -688,3 +816,562 @@ def test_the_one_click_path_is_above_the_fold(qapp, real_window, size, tag):
         f"（top={top}，视口 {vp.width()}x{vp.height()}，内容高 {scroll.widget().height()}）。\n"
         "⭐ 这是这一页上唯一一条不用碰文件、不用先有预设就能换整套配置的路，"
         "而它是新手唯一想要的那条。")
+
+
+# --------------------------------------------------------------------------
+# 批 40：三条裁定
+# --------------------------------------------------------------------------
+
+def test_the_preview_says_what_is_in_the_set_in_words(page):
+    """⭐⭐⭐ RN-476：这一块必须用人话说清「这一套里装了什么」，不许是原始 JSON。
+
+    改前它是一个 340px 高的只读框，里面 **8767 个字符 / 329 行**
+    （`{"schema": "cs2customizer_preset_bundle", "schema_version": 2, "items": […`），
+    而那张卡的副标题逐字承诺自己是给人「快速确认内容范围」用的。
+    外审 12 发问「你说得出这一套里有哪几类、每一类大概是什么吗」——
+    **12/12「说不出」**，其中 8 发是在这个框**完整可见**的整页图上答的。
+    ⇒ ⭐⭐ **一个把全部信息都摊开的控件，可以同时是一个什么都没说的控件。**
+    """
+    text = page.preview_summary_label.text()
+    ticked = [lb for attr, _t, lb in page._TYPE_CHECKBOX_SPEC
+              if getattr(page, attr).isChecked()]
+    assert len(ticked) >= 3, f"默认只勾了 {ticked} —— 这条判据的样本不对"
+    for label in ticked:
+        assert label in text, (
+            f"摘要里没有逐字写出「{label}」：\n{text}")
+    for token in ('"schema"', '"payload"', '"items"', "schema_version"):
+        assert token not in text, (
+            f"摘要里又混进了 JSON 的记号 `{token}`：\n{text[:200]}")
+    assert 20 <= len(text) <= 1200, (
+        f"摘要长 {len(text)} 字 —— 改前那个框是 8767 字，"
+        "把它换成一段同样读不完的东西没有意义")
+
+
+def test_the_raw_json_is_still_reachable_but_not_the_default(page, qapp):
+    """⭐ **阳性对照**：原始内容不许直接删掉 —— 打开了别人给的文件想看清里面时它有用。
+
+    ⚠ 它是 `setVisible(False)` 而不是 RN-009 那种「建出来就 `hide()`、
+      全仓再没人 `show()`」的死控件 —— 这条判据证明**它回得来**。
+    """
+    assert not page.preview_text.isVisibleTo(page), (
+        "原始 JSON 默认就摊在那儿 —— 那正是 RN-476。")
+    page.raw_toggle_btn.setChecked(True)
+    qapp.processEvents()
+    assert page.preview_text.isVisibleTo(page), (
+        "点了「查看原始内容」它也不出来 —— 那这颗开关和那个框都是死的。")
+    assert '"schema"' in page.preview_text.toPlainText()
+    page.raw_toggle_btn.setChecked(False)
+    qapp.processEvents()
+    assert not page.preview_text.isVisibleTo(page)
+
+
+def test_the_kind_names_have_exactly_one_home_in_the_whole_repo(page):
+    """⭐⭐ RN-476 的另一半：`type_id → 中文名` 这张表全仓只许有一份。
+
+    改前有**两份**且不一致：`share_file.describe()` 写「HUD **颜色规则**」，
+    页面的 `_TYPE_CHECKBOX_SPEC` 写「HUD 规则」。
+    ⚠ 批 38 刚在这一页上统一过一次同物两名，而**这一份躲过了那一轮** ——
+      它只出现在**按下按钮之后**才弹出来的确认框里，任何截图都拍不到它。
+    ⭐⭐⭐ 台账那条「外审的盲区」再添一个实例：**代码 / 时间轴 / 键盘 / 记账**
+      之外，还有「要交互之后才存在的那些画面」。
+    """
+    import ast as _ast
+
+    from core.presets.preset_center import TYPE_LABELS
+
+    assert set(TYPE_LABELS) >= {"hud_rules", "crosshair"}, "真源表塌了"
+    for _attr, type_id, label in page._TYPE_CHECKBOX_SPEC:
+        assert TYPE_LABELS.get(type_id) == label, (
+            f"勾选框把 `{type_id}` 叫「{label}」，而真源表叫「{TYPE_LABELS.get(type_id)}」。")
+
+    offenders = []
+    for path in sorted((REPO / "core").rglob("*.py")) + sorted((REPO / "pages").rglob("*.py")):
+        try:
+            tree = _ast.parse(path.read_text(encoding="utf-8"))
+        except (SyntaxError, UnicodeDecodeError):
+            continue
+        for node in _ast.walk(tree):
+            if not isinstance(node, _ast.Dict):
+                continue
+            keys = {k.value for k in node.keys
+                    if isinstance(k, _ast.Constant) and isinstance(k.value, str)}
+            if not {"hud_rules", "screen_effects"} <= keys:
+                continue
+            values = [v.value for v in node.values
+                      if isinstance(v, _ast.Constant) and isinstance(v.value, str)]
+            if any(any("\u4e00" <= ch <= "\u9fff" for ch in v) for v in values):
+                offenders.append(f"{path.relative_to(REPO).as_posix()}:{node.lineno}")
+    assert offenders == ["core/presets/preset_center.py:%d" % _labels_lineno()], (
+        f"「类别 id → 中文名」这张表在这几处各有一份：{offenders}\n"
+        "⭐ 全仓只许有一份（`core.presets.preset_center.TYPE_LABELS`）——"
+        "第二份不会报错，它只会在某一天和第一份说不一样的话。")
+
+
+def _labels_lineno() -> int:
+    import ast as _ast
+
+    src = (REPO / "core" / "presets" / "preset_center.py").read_text(encoding="utf-8")
+    for node in _ast.walk(_ast.parse(src)):
+        if isinstance(node, _ast.AnnAssign) and isinstance(node.target, _ast.Name) \
+                and node.target.id == "TYPE_LABELS":
+            return node.value.lineno
+    raise AssertionError("`TYPE_LABELS` 找不到了 —— 这条判据已经瞎了")
+
+
+def test_no_two_chips_say_the_same_number(page):
+    """⭐ 同一个数不许在状态卡上出现两次 —— 读的人会把它读成两笔。
+
+    改前第一颗写「范围 · 5/7 类」、第三颗写「内容 · 5 项」，
+    而 `export_bundle` 每一类**恰好产出一项** ⇒ 那两个 5 永远相等。
+
+    ⚠⚠ 补刀之后这张卡只剩**一颗**胶囊，于是「两颗说同一个数」结构上不可能发生，
+      这条判据在当下是**恒真**的（九维度审查逮到的六条空转之一）。
+    ⭐ 而「因为现在不可能所以删掉它」是错的 —— 会再长回来的正是胶囊。
+      ⇒ 改判成**闭集**：把当下这一颗钉住。
+        再加第（二）颗胶囊的人会当场变红，被迫回来重新回答「这两个数是不是同一笔」。
+      ⚠ 这里的白名单不是分母（批 39 那条教训），分母仍是屏幕上真实的胶囊；
+        白名单只是「我们商定过的那一份」，任何偏离都要有人重新裁定。
+    """
+    import re as _re
+
+    chips = _chips(page)
+    known = ["范围 · 5/7 类"]
+    if len(chips) < 2:
+        assert chips == known, (
+            f"状态胶囊变成了 {chips}（商定过的是 {known}）。\n"
+            "⭐ 少于两颗时这条判据本身是恒真的，所以它改成钉住这个闭集：\n"
+            "  · 加了一颗 ⇒ 回来确认它和「范围」说的不是同一笔数；\n"
+            "  · 改了文案 ⇒ 回来更新这份闭集，并想一遍它还携不携带信息。")
+        return
+    numbers = []
+    for chip in chips:
+        found = _re.findall(r"\d+", chip)
+        numbers.append((chip, found[0] if found else None))
+    seen = {}
+    for chip, first in numbers:
+        if first is None:
+            continue
+        if first in seen:
+            raise AssertionError(
+                f"「{seen[first]}」和「{chip}」打头的是同一个数 {first} —— "
+                "同一个数写两遍，会被读成两笔。")
+        seen[first] = chip
+
+
+@pytest.mark.parametrize("size,tag", [((1280, 800), "完整档"), ((860, 640), "紧凑档")])
+def test_every_scope_checkbox_is_above_the_fold(qapp, real_window, size, tag):
+    """⭐⭐⭐ RN-477：那七个勾选框，每一个都必须在第一屏上。
+
+    改前实测（真窗 1280×800，视口 1074×710）：第一排 `cb_hud` 露出 **27%**、
+    第二排 `cb_magnifier` / `cb_viewmodel` 露出 **0%**。
+    外审问「这一屏上哪些操作会受这组勾选影响」——
+      · 窗口图（看不见折线以下）  **6/6「找不到」**
+      · 整页无折线图              **6/6「4 个」**，且 **6/6 说「依据：图上写着」**
+    ⇒ ⭐⭐⭐ **立案说它是「跨区域逆向联动」（一个理解问题），而实测推翻了：
+      只要看得见，理解一点问题都没有。唯一的缺陷是它在折线以下。**
+
+    ⚠ 钉的是**每一个勾选框**，不是那张卡 —— 卡的下边框被折线切掉是长页面的常态
+      （RN-170），而「用户能不能看见并勾到它」问的是控件。
+    """
+    from PySide6.QtWidgets import QScrollArea
+
+    win = real_window
+    win.setMinimumSize(*size)
+    win.resize(*size)
+    for _ in range(3):
+        qapp.processEvents()
+    page = win.pages["preset_center"]
+    assert page.window() is win, "这一页没长在真窗里 —— 折线量出来的数不算数"
+    scroll = page.findChild(QScrollArea)
+    vp = scroll.viewport()
+    content = scroll.widget()
+
+    boxes = [(lb, getattr(page, attr)) for attr, _t, lb in page._TYPE_CHECKBOX_SPEC]
+    assert len(boxes) >= 7, f"只找到 {len(boxes)} 个勾选框 —— 分母塌了"
+    hidden = []
+    for label, box in boxes:
+        top = box.mapTo(content, box.rect().topLeft()).y()
+        bottom = top + box.height()
+        shown = max(0, min(bottom, vp.height()) - max(top, 0))
+        if shown < box.height():
+            hidden.append(f"{label} top={top} 露出 {round(100 * shown / max(1, box.height()))}%")
+    assert not hidden, (
+        f"[{tag} {size[0]}×{size[1]}，视口高 {vp.height()}，内容高 {content.height()}] "
+        f"这几个勾选框没有完整露在第一屏上：\n  " + "\n  ".join(hidden) + "\n"
+        "⭐ 它决定四处的内容（导出 / 存为新预设 / 按地图保存 / 状态卡第一颗胶囊），"
+        "而那四处都在第一屏上说话。")
+
+
+def test_the_scope_selector_is_a_card_of_its_own(page):
+    """⭐ 它不许再住在别的卡里 —— 那正是它被读成「归那张卡所有」的原因。
+
+    ⛔ 也不许并进「我的预设」：那只是换一个收养人。
+    """
+    from widgets.settings_card import SettingsCard  # noqa: F401
+
+    node = page.cb_hud.parent()
+    owners = []
+    while node is not None and node is not page:
+        title = getattr(node, "objectName", lambda: "")()
+        if title == "card":
+            for child in node.findChildren(QLabel):
+                if child.text().strip() in ("保存/导出的范围",):
+                    owners.append("own")
+            break
+        node = node.parent()
+    assert owners == ["own"], (
+        "「保存/导出的范围」那组勾选框所在的卡，标题不是它自己 —— "
+        "它又被别的卡收养了，而收养它的那张卡会替它决定摆在页面的第几屏。")
+
+
+def test_the_empty_preset_dropdown_says_it_is_empty(page, qapp):
+    """⭐ 一条预设都没有时，下拉框不许是一个**完全空白**的框。
+
+    批 40 两轮外审共 5 发点名：「初次进入下拉框空白且按钮大面积置灰」
+    「空白框与输入框形态混淆，分不清是要在框里打字还是点『存为新预设』」。
+    ⭐⭐ **一个空控件不说明自己为什么空，就会被读成「我该往里面填点什么」。**
+
+    ⚠ 那一项**不许带 data** —— 「一条都没有 ⇒ 除『存为新预设』外全禁用」
+      这条既有规则读的是 `currentData()`，带了 data 就会把四颗按钮全放开。
+    """
+    from core.presets.my_presets import list_presets
+
+    if list_presets():
+        pytest.skip("这台机器上已经存过预设了，这条只在空态下问得出来")
+    combo = page.my_preset_combo
+    assert combo.count() >= 1, "空态下拉框一项都没有 —— 那就是一个白框"
+    assert combo.currentText().strip(), f"空态那一项是空字符串：{combo.currentText()!r}"
+    assert combo.currentData() is None, (
+        "空态占位项带了 data —— 「一条都没有就禁用那四颗按钮」那条规则会被它骗过去。")
+    assert not page.my_preset_apply_btn.isEnabled(), "一条预设都没有，「应用」却是亮的"
+
+
+# --------------------------------------------------------------------------
+# 批 40 补刀：改完复跑 + 九维度审查逮出来的七条
+# --------------------------------------------------------------------------
+
+@pytest.mark.parametrize("music_bar", ["auto", "on"])
+def test_the_way_to_open_a_friends_file_is_on_the_first_screen(qapp, real_window, music_bar):
+    """⭐⭐⭐ RN-486：「打开一份配置文件」必须整颗露在**完整档**的第一屏上。
+
+    这条有一组**天然对照实验**撑着。同一份状态、同一个问题
+    （「朋友发来一份配置文件，你会点哪个」），只差看不看得见折线以下：
+
+        · 窗口图（=真实第一屏）  6/6「有把握: **没有**」，答案乱猜
+        · 整页无折线图            6/6「**打开一份配置文件**」· 候选数 1 ·「有把握: **有**」
+
+    ⇒ 命名（RN-478）修好之后，剩下的唯一障碍就是它不在第一屏上。
+
+    ⚠⚠ 这与 RN-170（折线假象）**必须分开**，判别法是看抱怨的内容：
+      · 「这块画坏了 / 被切了」只在窗口图上报 ⇒ **假象**，那是截图的边，不是产品的病；
+      · 「我找不到做 X 的入口」只在窗口图上报 ⇒ **真缺陷**，
+        因为窗口图就是用户真正的第一屏（RN-414 同形）。
+
+    ⚠ 只钉完整档。紧凑档（视口 554px，整页 1339px）放不下所有卡，
+      实测那一档露出的是这张卡的**标题和说明**（卡 y=515，折线 554）——
+      比改前（整张卡在 y=685，一个像素都没有）好，但按钮仍在折线下，另案（RN-496）。
+
+    ⚠⚠⚠ **窗口尺寸必须和别处一致，不许自己挑一个。**
+      这条判据第一版写的是 `1280×900`，当场绿 —— 而同一时刻的外审窗口图
+      仍然 6/6 答「一键应用 · 没把握」。原因不是产品，是**我挑的尺子**：
+      出图工装 `ui_shot_capture.py` 和同族的既有折线判据
+      `test_the_one_click_path_is_above_the_fold` 用的都是 **1280×800**，
+      而我给自己多要了 100px，那 100px 正好够把两颗按钮抬过折线。
+    ⭐⭐⭐ **一条判据绿着，可能是因为我选的参数，而不是因为缺陷修好了** ——
+      而它和"真的修好了"在测试报告上长得一模一样。
+      ⇒ 折线类判据的窗口尺寸只有一个来源：**产品出图用的那一档**。
+
+    ⚠⚠⚠ **而尺寸对上之后还有第二个容器变量：音乐控制条（127px）。**
+      实测同一个 1280×800：
+        · 音乐条 auto（全新配置，没放过音乐 ⇒ 不建）  视口 714 → 两颗按钮 **露出 100%**
+        · 音乐条 on （放过一次音乐就永远是这一档）     视口 **587** → **露出 0%**
+      ⇒ ⭐⭐ **这条修法对没放过音乐的人成立，对放过音乐的人不成立** ——
+        而后者是一条**单向**的路（RN-195：那根条建出来就不再消失）。
+      要腾的那 ~110px 只能来自「当前状态」那张卡，而实测 **27/27 页都有状态徽章**
+      ⇒ 那是一次跨页裁定，归 **RN-496**，不在本批。
+    ⭐ 所以这条判据**两档都跑**，各自钉住当下为真的那件事：
+      auto 档钉「两颗按钮整颗露出」，on 档钉「至少卡的标题还在第一屏上」——
+      **不许只跑容易的那一档然后说这条修好了。**
+    """
+    import _audit_music_bar as mbar
+    from PySide6.QtWidgets import QScrollArea
+
+    win = real_window
+    win.setMinimumSize(1280, 800)
+    win.resize(1280, 800)
+    mbar.pin(win, qapp, music_bar)
+    for _ in range(3):
+        qapp.processEvents()
+    page = win.pages["preset_center"]
+    scroll = page.findChild(QScrollArea)
+    vp = scroll.viewport()
+    assert page.window() is win, "量的这一页不在 MainWindow 里 —— 那不是用户看到的那一屏"
+
+    def _exposure(widget):
+        top = widget.mapTo(vp, widget.rect().topLeft()).y()
+        shown = max(0, min(top + widget.height(), vp.height()) - max(top, 0))
+        return top, 100.0 * shown / max(1, widget.height())
+
+    if music_bar == "auto":
+        for name in ("import_btn", "export_btn"):
+            btn = getattr(page, name)
+            assert btn.isVisibleTo(page), f"{name} 不见了"
+            top, pct = _exposure(btn)
+            assert pct >= 100.0, (
+                f"{name}（{btn.text()!r}）只露出 {pct:.0f}%"
+                f"（top={top}，视口 {vp.width()}x{vp.height()}，"
+                f"内容高 {scroll.widget().height()}）。\n"
+                "⭐ 跟朋友交换配置是这一页存在的理由之一，"
+                "而实测「看不见」= 6/6 找不到、「看得见」= 6/6 一次选对。")
+        return
+
+    # 音乐条 on：按钮进不了第一屏（RN-496 在册）。这一档钉的是**别再更糟**：
+    # 那张卡的标题必须还在第一屏上，否则连"这里能跟朋友换配置"都读不到了。
+    title = None
+    for label in page.findChildren(QLabel):
+        if label.objectName() == "cardTitle" and "交换" in label.text():
+            title = label
+            break
+    assert title is not None, "找不到交换配置那张卡的标题 —— 分母塌了"
+    top, pct = _exposure(title)
+    assert pct >= 100.0, (
+        f"音乐条建出来（127px）之后，连「{title.text()}」这个标题都掉出第一屏了"
+        f"（top={top}，视口 {vp.width()}x{vp.height()}）。\n"
+        "⭐ 按钮进不了第一屏是 RN-496 的已知欠账；标题再掉下去就是**变得更糟**。")
+
+
+def test_the_exchange_card_comes_before_the_one_that_is_empty_for_newcomers():
+    """⭐ 第一屏放不下的时候，让位的应该是那张对第一次来的人还没有内容的卡。
+
+    「我的预设」在全新安装上是一个空下拉框加四颗灰按钮（`list_presets()` 为空，
+    全仓无任何预置路径）；而「和朋友交换配置」第一天就能用。
+    ⇒ 交换卡必须排在「我的预设」**之前**。
+
+    ⚠ 钉的是**相对次序**，不是绝对下标 —— 批 32：重排的判据只许钉对象。
+    """
+    import inspect
+
+    import pages.preset_center_page as mod
+
+    src = inspect.getsource(mod.PresetCenterPage._init_ui)
+    order_src = src.split("card_order = (", 1)[1].split(")", 1)[0]
+    names = [n.strip() for n in order_src.replace("\n", " ").split(",") if n.strip()]
+    assert "workbench_card" in names and "my_presets_card" in names, (
+        f"card_order 里少了要比的那两张卡：{names}")
+    assert names.index("workbench_card") < names.index("my_presets_card"), (
+        f"「我的预设」排到了交换卡前面：{names}\n"
+        "⭐ 那张卡对每一个新用户都是空的，而它会把交换配置整张推下折线。")
+
+
+def test_the_import_mode_is_asked_at_the_moment_it_matters(page, qapp, monkeypatch, tmp_path):
+    """⭐⭐⭐ RN-484：导入模式不再是页面上的下拉框，而是确认框里的两颗后果按钮，
+    **且只在这份文件真的会让两种模式得出不同结果时才问**。
+
+    端到端实测：64 个键里只有 5 个在两种模式下结果不同，
+    7 类里有 3 类（准心 / 屏幕特效 / 局内视角）逐字节相同 ——
+    ⭐ 一个在多数场景里什么都不改的选择，不该摆在所有人的必经之路上。
+    """
+    import json as _json
+
+    from core.presets.preset_center import export_bundle
+
+    assert not hasattr(page, "mode_combo"), (
+        "页面上又长回了一个导入模式下拉框 —— 那个选择要等有了文件才做得了。")
+
+    quiet = tmp_path / "crosshair_only.json"
+    quiet.write_text(_json.dumps(export_bundle(["crosshair"]), ensure_ascii=False),
+                     encoding="utf-8")
+    seen = []
+    _intercept_confirm(monkeypatch, seen=seen, choose=None)
+    page._import_config_path(str(quiet))
+    qapp.processEvents()
+    assert len(seen) == 1, f"没弹确认框：{seen}"
+    assert "留着" not in seen[0] and "清掉" not in seen[0], (
+        f"这份文件里两种模式结果完全一样，却还是问了一句：\n{seen[0]}\n"
+        "⭐ 准心 17 个键里 dict 型的是 0 个 —— 合并和覆盖逐字节同解。")
+    assert "导入" in seen[0], f"不该问模式的时候，按钮不是一颗干脆的「导入」：\n{seen[0]}"
+
+    noisy = tmp_path / "hud.json"
+    noisy.write_text(_json.dumps(export_bundle(["hud_rules"]), ensure_ascii=False),
+                     encoding="utf-8")
+    seen2 = []
+    _intercept_confirm(monkeypatch, seen=seen2, choose=None)
+    page._import_config_path(str(noisy))
+    qapp.processEvents()
+    assert len(seen2) == 1, f"没弹确认框：{seen2}"
+    assert "自定义条目" in seen2[0], (
+        f"这份文件会碰到 dict 型的键，却没问该怎么处理你自己加的条目：\n{seen2[0]}")
+
+
+def test_choosing_replace_in_the_dialog_really_replaces(page, qapp, monkeypatch, tmp_path):
+    """⭐ **阳性对照**：上一条只问「问没问」，这一条问「按下去算不算数」。
+
+    ⚠ 撤掉页面下拉之后，`mode` 的唯一来源变成了「用户按了哪颗按钮」——
+      那条线要是断了，产品会**永远走 merge** 而判据一条都不红。
+    """
+    import json as _json
+
+    from core.presets.preset_center import export_bundle
+
+    path = tmp_path / "hud.json"
+    path.write_text(_json.dumps(export_bundle(["hud_rules"]), ensure_ascii=False),
+                    encoding="utf-8")
+
+    got = []
+    import pages.preset_center_page as mod
+    monkeypatch.setattr(mod, "apply_bundle",
+                        lambda b, mode="merge": got.append(mode) or _FakeApply())
+
+    _intercept_confirm(monkeypatch, choose="清掉")
+    page._import_config_path(str(path))
+    qapp.processEvents()
+    assert got == ["replace"], f"按了「清掉，只要文件里的」，传下去的却是 {got}"
+
+    got.clear()
+    _intercept_confirm(monkeypatch, choose="留着")
+    page._import_config_path(str(path))
+    qapp.processEvents()
+    assert got == ["merge"], f"按了「留着，只补上文件里的」，传下去的却是 {got}"
+
+
+class _FakeApply:
+    ok = True
+    errors = ()
+    warnings = ()
+    applied_types = ("hud_rules",)
+    changed_keys = ()
+
+
+def test_a_summary_line_is_never_the_same_for_everyone():
+    """⭐⭐ RN-487：摘要里那句「N 条按键颜色规则」不许是一个恒定值。
+
+    改前它数的是 `key_rules` 的**槽位数**，而 `_build_key_rules()` 恒建 "1"~"9"
+    九项、`_normalize_key_rules` 只覆盖不新增 ⇒ 这一行对**所有人、所有预设**
+    永远是「9 条按键颜色规则」；实测全新配置里 `enabled=True` 的是 **0** 个，
+    而 HUD 页对同一份数据显示的是「数字键 · 0 项」。
+    ⭐ 这张卡是本批为了「让人读得懂里面有什么」才加的 ——
+      它的第一行不能是一句对谁都一样的话。
+    """
+    from core.presets.preset_center import _summarize_payload
+
+    on = _summarize_payload("hud_rules", {
+        "hud_rules_enabled": True,
+        "hud_rules": {"key_rules": {"1": {"enabled": True}, "2": {"enabled": False},
+                                    "3": {"enabled": True}}},
+    })
+    off = _summarize_payload("hud_rules", {
+        "hud_rules_enabled": True,
+        "hud_rules": {"key_rules": {"1": {"enabled": False}, "2": {"enabled": False},
+                                    "3": {"enabled": False}}},
+    })
+    assert on != off, (
+        f"开了两条和一条都没开，摘要写的是同一句话：{on!r}\n"
+        "⭐ 一句对谁都一样的话，等于没说。")
+    assert "2" in on, f"开着两条，摘要却没说 2：{on!r}"
+
+
+def test_the_confirm_text_for_an_empty_file_talks_about_the_file(page, tmp_path):
+    """⭐ 打开一份空文件时，确认框要说**这份文件**，不许说本页的勾选框。
+
+    改前这条路直接复用了预览卡的 `_summary_text`，而那个函数的空态分支写的是
+    「一类都没勾…到上面「保存/导出的范围」勾上至少一类」——
+    ⭐⭐ 而导入这条路**根本不读那组勾选**（那张卡上自己写着「不看这里」）。
+      一句话搬了个家，就从"对的"变成"答非所问且指错控件"。
+    """
+    import json as _json
+
+    path = tmp_path / "empty.json"
+    path.write_text(_json.dumps({"schema": "cs2customizer_preset_bundle",
+                                 "schema_version": 2, "items": []},
+                                ensure_ascii=False), encoding="utf-8")
+    bundle, text, _warnings = page._read_config_file(str(path))
+    assert bundle is not None, f"这是一份合法的空包，却读不开：{text}"
+    assert "勾" not in text, (
+        f"打开别人的空文件，却叫用户去勾自己的导出范围：\n{text}")
+    assert "文件" in text, f"这句话没提到「文件」，那它说的就不是这件事：\n{text}"
+
+
+def test_a_preset_name_survives_a_round_trip_through_the_dropdown(page, qapp):
+    """⭐⭐ RN-491：预设名不许从下拉框的**显示文案**上切出来。
+
+    改前是 `currentText().split("（")[0]`，而显示文案是 `f"{name}（{n} 类）"`；
+    预设名本身允许含全角「（」（`save_preset` 只做 strip + 截断）⇒
+    名字叫「准心（低灵敏）」的预设，一走「覆盖」就被**静默改名**成「准心」并落盘。
+
+    ⭐⭐ 这是本仓「状态从屏幕文案反推」那一族的第三个实例 ——
+      前两次是**读**状态，这一次**会写坏用户的数据**。
+
+    ⚠⚠ 这条判据是**回退验证逼出来的**：我修了代码却一条判据都没写，
+      而那条断点当时指着一条根本不看预设名的判据 ⇒ 回退验证判它**假绿**。
+      ⭐ **改了代码没配判据，和没改一样 —— 只是没改这件事会被下一轮忘掉。**
+    """
+    from core.presets.my_presets import delete_preset, save_preset
+
+    tricky = "准心（低灵敏）"
+    item = save_preset(tricky, ["crosshair"])
+    try:
+        page.refresh_my_presets()
+        qapp.processEvents()
+        idx = page.my_preset_combo.findData(item.preset_id)
+        assert idx >= 0, "刚存的预设没出现在下拉框里 —— 分母塌了"
+        page.my_preset_combo.setCurrentIndex(idx)
+        qapp.processEvents()
+        assert "（" in page.my_preset_combo.currentText(), (
+            "显示文案里连一个全角括号都没有 —— 这条判据的样本不对")
+        _pid, got = page._current_my_preset()
+        assert got == tricky, (
+            f"名字被下拉框的显示文案切坏了：存的是 {tricky!r}，取回来的是 {got!r}\n"
+            "⭐ 名字要跟着 id 一起放进 itemData，显示文案只负责显示。")
+    finally:
+        delete_preset(item.preset_id)
+        page.refresh_my_presets()
+
+
+def test_every_visible_action_can_be_found_by_the_settings_search(page):
+    """⭐⭐⭐ RN-485：这一页上每一颗有独立动作的可见按钮，都要能被设置搜索找到。
+
+    「导出成文件，发给朋友」里那个**全角逗号**让 `normalize()` 撞上 `_SENTENCE`
+    （`[，。！？；、,;]`）判定「这是句子不是设置项」，整条返回空串 ⇒
+    这一页唯一的导出入口在全站搜索里一条都不剩。
+    ⭐⭐⭐ 而 `build_search_index.py --check` **退出码仍然是 0** ——
+      它只校验「重新生成一遍是不是逐字节相同」，**看不见「有一条根本没进去」**。
+      ⇒ 一道跑着的、绿着的、以它命名的门禁，结构上照不到它该防的那件事。
+
+    ⚠ 通名（应用 / 删除 / 改名 / 覆盖）本来就不进索引，那是有意的，走白名单。
+    """
+    import importlib.util
+    import sys
+
+    spec = importlib.util.spec_from_file_location(
+        "_bsi_probe", str(REPO / "scripts" / "build_search_index.py"))
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["_bsi_probe"] = mod
+    try:
+        spec.loader.exec_module(mod)
+    except SystemExit:
+        pass
+
+    # ⚠ 空转守卫 + **阳性对照**，两样缺一不可：
+    #   · 分母：这一页真的扫到了一批该进索引的按钮；
+    #   · 阳性对照：`normalize` 真的会把带标点的整条丢掉 ——
+    #     否则「一条都没漏」可能只是因为这支 normalize 对什么都点头。
+    assert not mod.normalize("导出成文件，发给朋友"), (
+        "阳性对照失败：normalize 现在不再丢弃带全角逗号的文案了 —— "
+        "这条判据量的那件事已经不存在，它变成了一条恒真。")
+    assert mod.normalize("打开一份配置文件"), "阳性对照失败：normalize 把正常文案也丢了"
+
+    generic = {"应用", "删除", "改名", "覆盖", "?"}
+    checked, unfindable = [], []
+    for btn in page.findChildren(QPushButton):
+        text = (btn.text() or "").strip()
+        if not text or not btn.isVisibleTo(page) or text in generic:
+            continue
+        checked.append(text)
+        if not mod.normalize(text):
+            unfindable.append(text)
+    assert len(checked) >= 5, f"只扫到 {checked} —— 分母塌了"
+    assert not unfindable, (
+        f"这些按钮在设置搜索里一条都找不到：{unfindable}\n"
+        "⭐ 多半是文案里带了标点（逗号/句号/顿号/省略号）——"
+        "`normalize()` 会把带标点的判成句子整条丢掉，"
+        "而 `--check` 只比对「重新生成是否一致」，看不见这件事。")

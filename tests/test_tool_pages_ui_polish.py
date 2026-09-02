@@ -467,30 +467,43 @@ def test_preset_center_page_status_strip_tracks_dirty_state(qapp, monkeypatch):
     # ⇒ 换成问真正该问的：胶囊在说**真话**吗。
     chips = _visible_audio_status_chip_texts(page.status_badge_label)
     assert "范围 · 5/7 类" in chips  # v2 默认勾选 5/7（+准心/自定闪光，R2-1）
-    assert "模式 · 合并" in chips
-    assert "内容 · 5 项" in chips
-    assert "来源 · 你现在的设置" in chips
-    assert "当前预览范围" in page.preview_meta_label.text()
-    assert "合并会尽量保留现有配置" in page.mode_hint_label.text()
-    assert page.workbench_content_layout.direction() == QBoxLayout.LeftToRight
+    # ⚠⚠ **2026-09-02 批 40 又拆掉两条**，理由和批 38 那次同源：
+    #   ① `"内容 · 5 项"` —— `export_bundle` 每一类恰好产出一项，所以这个 5
+    #      **永远等于**上一行那个 5。⭐ 同一个数说了两遍，还起了两个名字。
+    #   ② `"来源 · 你现在的设置"` —— 它的另一个取值靠 dirty 区分，
+    #      而本批把 dirty 整个撤了（RN-478）⇒ 它成了一颗**恒定**的胶囊，
+    #      ⭐ 恒定的状态显示不携带任何信息。
+    #   ③ `preview_meta_label` —— 那一行逐字重复上面两颗胶囊的内容，随卡改版一起撤。
+    # ⭐⭐ **判据钉住的每一句话，都在替它续命**（RN-084 那一族，本页第二次）。
+    #   ④ **批 40 补刀又拆掉一条**：`"模式 · 合并"` —— RN-484 把那个页级下拉框
+    #      整个撤了（它只有一个消费者、只在导入那一刻被读到，而且实测 64 个键里
+    #      只影响 5 个、7 类里 3 类完全无区别）⇒ 这颗胶囊报的是一个**不再存在的设定**。
+    #      导入模式现在只活在确认框的两颗按钮上，由
+    #      `test_preset_center_tells_the_truth::test_the_import_mode_is_asked_at_the_moment_it_matters`
+    #      和它的阳性对照 `..._really_replaces` 一起钉住。
+    assert "内容" not in " ".join(chips), (
+        f"「内容 · N 项」又回来了：{chips} —— 它和「范围 · N/7 类」是同一个数。")
+    assert "模式" not in " ".join(chips), (
+        f"「模式 · X」又回来了：{chips} —— 这一页已经没有页级导入模式了。")
+    assert not hasattr(page, "mode_combo"), "页面上又长回了一个导入模式下拉框"
 
     page.cb_special.setChecked(False)
     chips = _visible_audio_status_chip_texts(page.status_badge_label)
     assert "范围 · 4/7 类" in chips
-    # ⭐ 勾选范围**不是**一次未保存的修改：改完之后来源仍然是「你现在的设置」。
-    assert "来源 · 你现在的设置" in chips
-    assert page.is_dirty() is False
+    # ⭐ 勾选范围**不是**一次未保存的修改 —— 批 40 起这件事由
+    #   `test_preset_center_tells_the_truth::test_this_page_has_no_such_thing_as_an_unsaved_change`
+    #   从结构上钉住（这一页已经没有 `is_dirty` 这个方法了），这里不再重复问一遍。
+    assert not hasattr(page, "is_dirty"), "dirty 机制又回到这一页了"
 
-    page.mode_combo.setCurrentIndex(1)
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
-    assert "模式 · 覆盖" in chips
-    assert "覆盖" in page.status_card.toolTip()
-    assert "覆盖会直接替换对应模块" in page.mode_hint_label.text()
+    # ⚠ 详情 tooltip 仍要跟着勾选走（它是这颗胶囊唯一的展开处）。
+    assert "特殊音效" not in page.status_card.toolTip(), (
+        f"取消勾选之后 tooltip 里还留着它：{page.status_card.toolTip()}")
 
-    page.resize(960, 900)
-    qapp.processEvents()
-    assert page.workbench_content_layout.direction() == QBoxLayout.TopToBottom
-
+    # ⛔ 这里原来还有一段量「工作台两列在窄页上换向」的断言（UP-100）。
+    #   RN-484 撤掉「导入策略」那一列之后，这张卡**只剩一列** ——
+    #   ⭐ 没有可换的向了，那段断言量的是一个结构上不再存在的东西。
+    #   「我的预设」那一行的换向仍在，由 `_update_my_presets_layout` 负责，
+    #   `test_compact_mode_layout_r11` 里有它自己的判据。
     page.deleteLater()
     qapp.processEvents()
 

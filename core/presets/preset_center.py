@@ -165,6 +165,167 @@ _TYPE_BUILDERS = {
 }
 
 
+#: 类别 id → 玩家看得懂的名字。**全仓唯一一份。**
+#:
+#: ⭐⭐ 批 40 之前有**两份**，而且不一致：这一份原来住在
+#: `share_file.describe()` 里（写「HUD **颜色规则**」），页面的
+#: `_TYPE_CHECKBOX_SPEC` 里那一份写「HUD 规则」。
+#: ⚠ 批 38 刚在这一页上统一过一次同物两名（勾选框「HUD 规则」vs 摘要「HUD」），
+#:   **而第三份躲过了那一轮** —— 因为它只出现在**导入确认对话框**里，
+#:   那是一个要按下按钮之后才存在的画面，任何一张截图都拍不到它。
+#: ⭐⭐⭐ **同一个词的第三份副本，藏在一个截图拍不到的地方**
+#:   —— 台账那条「外审的盲区」再添一个实例（代码 / 时间轴 / 键盘 / 记账）。
+TYPE_LABELS: Dict[str, str] = {
+    "hud_rules": "HUD 规则",
+    "screen_effects": "屏幕特效",
+    "special_sound": "特殊音效",
+    "crosshair": "准心",
+    "flash": "自定闪光",
+    "viewmodel": "局内视角",
+    "magnifier": "开镜放大",
+}
+
+
+def _count(value: object) -> int:
+    return len(value) if isinstance(value, (list, dict, tuple)) else 0
+
+
+def _switch(payload: Dict[str, object], key: str) -> str:
+    value = payload.get(key)
+    if value is None:
+        return ""
+    return "开着" if value else "关着"
+
+
+def _summarize_payload(preset_type: str, payload: Dict[str, object]) -> str:
+    """一句人话，说清这一类里大概装了什么。
+
+    ⛔ **只说三种东西**：开着还是关着、数得出来的个数、带单位的数字。
+    ⚠ **一律不印引擎 id**（`impact_sparks` / `flicker` / `"0"`）——
+      要把它们变成人话就得再抄一份「id → 中文名」的表，而这个模块的头两行
+      刚刚记下了抄那种表的代价。⭐ **宁可少说一句，也不要为了说得好看
+      而在第二个地方复述一份会漂的知识。**
+    """
+    parts: List[str] = []
+    if preset_type == "hud_rules":
+        parts.append(_switch(payload, "hud_rules_enabled"))
+        rules = payload.get("hud_rules")
+        if isinstance(rules, dict):
+            # ⚠⚠ RN-487（批 40 补刀）：这里原来数的是 `key_rules` 的**槽位数**，
+            #   而 `_build_key_rules()` 恒建 "1"~"9" 九项、`_normalize_key_rules`
+            #   只覆盖不新增 ⇒ 这一行对**所有人、所有预设**永远是「9 条按键颜色规则」。
+            #   实测全新配置：槽位 9 个，`enabled=True` 的 **0 个**。
+            # ⭐⭐ 而 HUD 页对同一份数据显示的是「数字键 · 0 项」——
+            #   **同一份数据，两处各说各的，其中一处恒定。**
+            #   这张卡是本批为了「让人读得懂里面有什么」才加的，
+            #   ⇒ 它的第一行不能是一句对谁都一样的话。
+            enabled = sum(
+                1 for v in (rules.get("key_rules") or {}).values()
+                if isinstance(v, dict) and v.get("enabled")
+            ) if isinstance(rules.get("key_rules"), dict) else 0
+            parts.append(f"{enabled} 条按键颜色规则开着" if enabled else "没有开着的按键颜色规则")
+    elif preset_type == "screen_effects":
+        parts.append(_switch(payload, "screen_effects_enabled"))
+        if payload.get("screen_edge_flash_enabled"):
+            parts.append("含边缘闪光")
+    elif preset_type == "special_sound":
+        threshold = payload.get("health_warning_threshold")
+        for key, name in (("grenade_sound_enabled", "投掷物"),
+                          ("c4_sound_enabled", "C4"),
+                          ("health_warning_enabled", "血量警告"),
+                          ("round_sound_enabled", "回合")):
+            if key not in payload:
+                continue
+            tail = ""
+            # ⚠ 那个阈值第一版是**单独一段**（「血量警告 开 · 回合 关 · 血量低于 20% 时提醒」）
+            #   —— 它被「回合 关」隔开，读起来像是在说回合。⭐ 一个修饰语离开它修饰的东西，
+            #   就会去修饰它旁边那个（批 38「标签失去邻居就变含糊」的同一件事，换到一行字里）。
+            if (key == "health_warning_enabled" and payload[key]
+                    and isinstance(threshold, (int, float))):
+                tail = f"（低于 {threshold}%）"
+            parts.append(f"{name} {'开' if payload[key] else '关'}{tail}")
+    elif preset_type == "crosshair":
+        parts.append(_switch(payload, "crosshair_enabled"))
+        for key, name in (("crosshair_size", "大小"), ("crosshair_thickness", "粗细")):
+            if isinstance(payload.get(key), (int, float)):
+                parts.append(f"{name} {payload[key]}")
+    elif preset_type == "flash":
+        parts.append(_switch(payload, "flash_enabled"))
+        if payload.get("flash_audio_enabled"):
+            parts.append("带音效")
+    elif preset_type == "viewmodel":
+        parts.append(f"{_count(payload.get('viewmodel_presets'))} 套视角预设")
+        key = payload.get("viewmodel_cycle_key")
+        if isinstance(key, str) and key:
+            parts.append(f"轮换键 {key}")
+    elif preset_type == "magnifier":
+        parts.append(_switch(payload, "magnifier_enabled"))
+        detail = payload.get("magnifier")
+        if isinstance(detail, dict) and isinstance(detail.get("zoom_factor"), (int, float)):
+            parts.append(f"放大 {detail['zoom_factor']} 倍")
+
+    # ⛔ 这里原来是 `… if isinstance(payload, dict) else "内容无法识别"` ——
+    #   而唯一的调用方 `describe_bundle` 已经把非 dict 的 payload 换成了 `{}`，
+    #   ⇒ 那个 else 分支**结构上走不到**。一个走不到的兜底分支只会让人以为兜住了。
+    parts.append(f"共 {len(payload)} 个设置项")
+    return " · ".join(p for p in parts if p)
+
+
+def mode_affects_result(bundle: Dict[str, object]) -> List[tuple]:
+    """这份包里，「合并」和「覆盖」会得出不同结果的 (类别, 键) —— 空表示两者等价。
+
+    ⭐⭐⭐ 这条知识只有一个来源：`_apply_payload` **只对现有值是 dict 的键**
+      区分两种模式（replace 整个换掉，merge 逐键并上去）；其余键两种模式
+      都是同一句 `setattr(config, key, value)`。
+    ⚠ 端到端实测（造包 → 复位 → 两种模式各跑一遍 → 逐键深比对）：
+      **64 个键里只有 5 个**结果不同，而 7 类里有 3 类一个都没有。
+    ⇒ 所以「要合并还是覆盖」不是一个该无条件问的问题；
+      ⭐ **一个在多数场景里什么都不改的选择，不该摆在所有人的必经之路上**
+      （RN-415「改不动任何像素的就必须禁用」的同族）。
+    """
+    hits: List[tuple] = []
+    for item in (bundle or {}).get("items", []) or []:
+        preset_type = str(item.get("type", ""))
+        payload = item.get("payload", {})
+        if preset_type not in SUPPORTED_TYPES or not isinstance(payload, dict):
+            continue
+        allowed = _TYPE_ALLOWED_KEYS.get(preset_type, frozenset())
+        for key in payload:
+            if key in allowed and isinstance(getattr(config, key, None), dict):
+                hits.append((preset_type, key))
+    return hits
+
+
+def describe_bundle(bundle: Dict[str, object]) -> List[tuple]:
+    """把一份预设包翻成 [(类别名, 这一类里有什么)]，**给人看的**。
+
+    ⭐⭐⭐ 这是批 40 的主刀之一（RN-476）。改前那一屏摆的是
+    **8767 个字符 / 329 行**的原始 JSON（`{"schema": "cs2customizer_preset_bundle", …`），
+    而那张卡的副标题逐字承诺它是给人「快速确认内容范围」用的。
+    ⚠ 外审 12 发问「你说得出这一套里有哪几类、每一类大概是什么吗」——
+      **12/12 答「说不出」**，其中 8 发是在那个 JSON 框**完整可见**的整页图上答的，
+      10/12 的「读自」栏填的是「无」。
+    ⇒ ⭐⭐ **它不是「看着累」，是它承诺的那件事它一件都没做到** ——
+      一个把全部信息都摆出来的控件，可以同时是一个什么都没说的控件。
+
+    ⚠ 返回**结构**而不是拼好的字符串：调用方有两个（预览卡、导入确认框），
+      它们的排版不一样。⭐ 让每个调用方自己排版，但**别让它们各自决定说什么**。
+    """
+    items = bundle.get("items") if isinstance(bundle, dict) else None
+    if not isinstance(items, list):
+        return []
+    out: List[tuple] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        preset_type = item.get("type")
+        payload = item.get("payload")
+        label = TYPE_LABELS.get(preset_type, str(preset_type))
+        out.append((label, _summarize_payload(
+            preset_type, payload if isinstance(payload, dict) else {})))
+    return out
+
+
 def export_bundle(selected_types: List[str]) -> Dict[str, object]:
     items = []
     for preset_type in selected_types:
