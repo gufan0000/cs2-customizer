@@ -159,3 +159,21 @@ jobs:
           $ErrorActionPreference = 'Continue'
           python scripts/tab_order_audit.py --verbose 2>&1 | Tee-Object -FilePath focus.log
           ./.github/verdict.ps1 -Name focus -LogPath focus.log
+
+      # 搜索索引的同步原来只靠人记着：改了页面控件文案就必须重跑
+      # `scripts/build_search_index.py`，而这条规则不在任何门禁里。
+      # ⚠ `tests/test_search_index_check_exit_code.py`（16 条）只证明**退出码可信**
+      #   —— 它测的是合约，不是真索引。有了那 16 条，这个码才敢直接当门禁用。
+      # ⛔ 别把它换成测试里的某条判据：那条只能比「重新生成是否一致」，
+      #   看不见「有一条根本没进去」（实测：文案里一个标点就让控件掉出索引）。
+      - name: 搜索索引同步(阻断级)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $ErrorActionPreference = 'Continue'
+          python scripts/build_search_index.py --check 2>&1 | Tee-Object -FilePath search_index.log
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::error::搜索索引与代码不同步 —— 跑一次 python scripts/build_search_index.py 重新生成"
+            exit 1
+          }
+          Write-Host "索引与代码同步。"
