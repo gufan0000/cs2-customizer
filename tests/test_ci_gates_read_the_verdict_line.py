@@ -37,7 +37,18 @@ GATE = REPO / ".github" / "verdict.ps1"
 KNOWN_UNPARSEABLE = ()
 
 #: 跑这些脚本的步骤就是「阻断级的门」，必须走裁定行。
-AUDIT_SCRIPT_RE = re.compile(r"python\s+(scripts/[A-Za-z0-9_]*audit[A-Za-z0-9_]*\.py)")
+#: ⚠⚠ **RN-511（2026-09-04 批 46）：这条正则原来写的是 `scripts/*audit*.py`** ——
+#:   分母是「**脚本名里带 audit 的步骤**」，而不是「**会决定 CI 红绿的步骤**」。
+#:   于是批 45 加进 CI 的「搜索索引同步(阻断级)」跑的是 `build_search_index.py`，
+#:   **结构上进不了这条判据的分母**，它拿 `$LASTEXITCODE` 当裁定用了一整批，
+#:   而这份文件的 docstring 从头到尾讲的就是不许这么干。
+#: ⭐⭐⭐ **一条守着某个纪律的判据，如果分母按命名约定划，
+#:   那么第一个不守命名约定的违规者天生在它看不见的地方。**
+#:   （同 RN-483：闭集守卫拿自己的白名单当分母。）
+#: ⇒ 分母改成「**每一个跑 `python scripts/*.py` 的步骤**」：CI 里跑仓内脚本的步骤
+#:   全都是门（`pip` / `ruff` / `run_tests` 都不在 `scripts/` 下），
+#:   新加一道门天生进分母，不用谁记得来改这条正则。
+AUDIT_SCRIPT_RE = re.compile(r"python\s+(scripts/[A-Za-z0-9_]+\.py)")
 VERDICT_CALL_RE = re.compile(r"verdict\.ps1\s+-Name\s+(\w+)\s+-LogPath\s+(\S+)")
 
 
@@ -63,7 +74,11 @@ def _delivered_name(script_rel: str) -> str | None:
     """
     tree = ast.parse((REPO / script_rel).read_text(encoding="utf-8-sig"))
     for node in ast.walk(tree):
-        if (isinstance(node, ast.Call) and getattr(node.func, "id", None) == "deliver"
+        # ⭐ `deliver()` = 打完就 `os._exit`；`announce()` = 只打、还要跑收尾。
+        #   两者都是**同一条裁定通道**，判据认名字必须两个都认 ——
+        #   只认一个的话，用另一个的脚本就成了「CI 读得到、判据看不见」。
+        if (isinstance(node, ast.Call)
+                and getattr(node.func, "id", None) in ("deliver", "announce")
                 and node.args and isinstance(node.args[0], ast.Constant)):
             return node.args[0].value
     return None
@@ -72,8 +87,8 @@ def _delivered_name(script_rel: str) -> str | None:
 def test_the_extractor_actually_sees_the_audit_steps():
     """空转守卫：认不出审计步骤，下面两条就全成了摆设。"""
     steps = _audit_steps()
-    assert len(steps) >= 4, (
-        f"只认出 {len(steps)} 个审计步骤（对比度 / 排版完整 / 排版紧凑 / 焦点，至少 4 个）。"
+    assert len(steps) >= 5, (
+        f"只认出 {len(steps)} 个门禁步骤（对比度 / 排版完整 / 排版紧凑 / 焦点 / 搜索索引，至少 5 个）。"
         f"\n识别规则或 ci.yml 的写法变了，下面的判据在空转。")
 
 
@@ -241,3 +256,37 @@ def test_each_audit_step_writes_its_own_log_file():
     assert not clashes, (
         "多个审计步骤写同一个日志文件，后一道会读到前一道的裁定：\n"
         + "\n".join(f"  {log} ← {', '.join(names)}" for log, names in clashes.items()))
+
+
+def test_the_local_gate_runs_the_index_script_in_check_mode():
+    """门禁脚本如果还有别的模式，本机入口必须把它钉在「门」那一档。
+
+    RN-511。`build_search_index.py` 不带 `--check` 时**不是一道门**：
+    它会直接重写 `core/search_index.json`，而且一行裁定都不打。
+    ⭐⭐ 所以「忘了给开关」的后果不是「少测一点」，
+      是**本机那一跑去改了产品文件**，然后门报「没有结论」。
+    """
+    tree = ast.parse((REPO / "scripts" / "gate.py").read_text(encoding="utf-8-sig"))
+    table = None
+    for node in ast.walk(tree):
+        targets = node.targets if isinstance(node, ast.Assign) else (
+            [node.target] if isinstance(node, ast.AnnAssign) else [])
+        if any(getattr(t, "id", None) == "DEFAULT_ARGS" for t in targets):
+            table = {k.value: [e.value for e in v.elts]
+                     for k, v in zip(node.value.keys, node.value.values)}
+    assert table is not None, (
+        "`scripts/gate.py` 里找不到 `DEFAULT_ARGS` —— "
+        "带模式开关的门禁脚本会被本机入口"
+        "用**默认模式**跑起来。")
+    assert table.get("search_index") == ["--check"], (
+        f"本机入口跑 search_index 时给的参数是 "
+        f"{table.get('search_index')!r}，不是 `['--check']`。\n"
+        "⭐ 不带 `--check` 它就不是一道门，"
+        "而是一个**会写盘的生成器**。")
+
+    # ⭐ 光有表不够：这张表得**真的被拼进命令行**。
+    src = (REPO / "scripts" / "gate.py").read_text(encoding="utf-8-sig")
+    assert "DEFAULT_ARGS.get(name" in src, (
+        "`DEFAULT_ARGS` 定义了却没拼进 `cmd` —— "
+        "那和没有它一模一样（同批 45："
+        "补齐清单不等于补齐那件事）。")

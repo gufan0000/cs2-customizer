@@ -125,6 +125,9 @@ from _audit_neutralize import (  # noqa: E402
     enable_audit_mode,
     unsafe_pages,
 )
+# RN-511：本脚本的退出码在 Qt/pygame 退出期**被实测洗掉过**（0xC0000409），
+# 所以裁定要走和几支审计同一条通道：自己打一行机器可读的裁定，CI 读那一行。
+from _audit_verdict import announce  # noqa: E402
 
 enable_audit_mode()   # 必须在 import 产品模块之前
 
@@ -675,6 +678,14 @@ def main():
         print(f"!! 环境不满足，本次不给结论（这不是「索引不同步」）：{exc}")
         return EXIT_ENV
     code = _emit(args, payload, rt_items, st_items, generic)
+    if args.check:
+        # ⭐⭐⭐ **裁定行必须落在退出链路之前。** RN-511 实测：本进程的退出码
+        #   在收尾阶段被洗成过 **-1073740791（0xC0000409）** —— 而那一刻
+        #   「索引与代码同步。」早就打完了，`退出清理完成，共 18 步` 也打完了。
+        #   ⇒ 只要裁定行在**判定那一刻**就落进日志，收尾阶段再怎么崩都改不了它；
+        #     反过来，脚本要是**没走到判定**（环境不满足 / 中途死），日志里
+        #     一行裁定都没有 ⇒ `verdict.ps1` 按失败处理。**洗不成假绿。**
+        announce("search_index", code)
     _flush_streams()
     _teardown_guarded(handles, code)
     return code

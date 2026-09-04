@@ -57,13 +57,26 @@ AUDITS: dict[str, str] = {
     "layout": "layout_overflow_audit.py",
     "focus": "tab_order_audit.py",
     "contrast": "ui_contrast_audit.py",
+    # RN-511（2026-09-04 批 46）：搜索索引同步也是一道**阻断级**的门，
+    # 从批 45 起就在 CI 里，却一直不在本机入口里 —— 于是本机只能靠 `echo $?`，
+    # 而这个进程的退出码实测被洗成过 -1073740791（0xC0000409）。
+    "search_index": "build_search_index.py",
+}
+
+#: 有的门禁脚本**不是「跑起来就是审计」**：它还有别的模式（生成 / 统计 / 交叉核对），
+#: 只有某个开关下才是门。⭐ 少给这个开关不是「少测一点」，是**本机那一跑会去改产品文件**
+#: （`build_search_index.py` 不带 `--check` 就直接重写 `core/search_index.json`），
+#: 而且不打裁定行 ⇒ 门当场判「没有结论」。判据钉在
+#: `tests/test_ci_gates_read_the_verdict_line.py`。
+DEFAULT_ARGS: dict[str, list[str]] = {
+    "search_index": ["--check"],
 }
 
 
 def run_one(name: str, extra: list[str], echo: bool = True) -> int:
     """跑一道门，返回 0/1。**裁定取自输出，退出码只当辅助信号。**"""
     script = HERE / AUDITS[name]
-    cmd = [sys.executable, str(script), *extra]
+    cmd = [sys.executable, str(script), *DEFAULT_ARGS.get(name, []), *extra]
     proc = subprocess.run(  # noqa: S603  自己仓里的脚本，argv 形式不过 shell
         cmd, cwd=str(HERE.parent), capture_output=True, text=True,
         encoding="utf-8", errors="replace",

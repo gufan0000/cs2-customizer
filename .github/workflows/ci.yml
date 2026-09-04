@@ -172,8 +172,4 @@ jobs:
         run: |
           $ErrorActionPreference = 'Continue'
           python scripts/build_search_index.py --check 2>&1 | Tee-Object -FilePath search_index.log
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "::error::搜索索引与代码不同步 —— 跑一次 python scripts/build_search_index.py 重新生成"
-            exit 1
-          }
-          Write-Host "索引与代码同步。"
+          ./.github/verdict.ps1 -Name search_index -LogPath search_index.log
