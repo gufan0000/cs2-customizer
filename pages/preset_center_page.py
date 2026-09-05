@@ -34,7 +34,6 @@ from core.presets.preset_center import (
     validate_bundle,
 )
 from core.utils.logger import get_logger
-from pages.audio_status_badge import create_badge_label, render_badges
 from resource_manager import ResourceManager
 from page_theme_helper import style_as_danger_button
 from widgets.page_action_bar import PageActionBar
@@ -44,6 +43,10 @@ from widgets.page_header import PageHeader
 
 #: RN-429：本页两跳能够到 `ui_osd`，但那是**切预设时顺带弹的提示**，不是玩家在这一页配置的产出物。⭐ 判据问的是「这一页配的东西会不会画到游戏上」，不是「能不能够到覆盖层」。
 DRAWS_OVER_THE_GAME = False
+
+
+#: RN-519：卡片说明要点名这颗按钮，而说明比按钮先建 —— 名字只留一份。
+STARTER_APPLY_BUTTON_TEXT = "一键应用"
 
 
 class PresetCenterPage(MyPresetsMixin, QWidget):
@@ -101,18 +104,24 @@ class PresetCenterPage(MyPresetsMixin, QWidget):
         layout.addWidget(header)
         install_help_panel(header.title_row, header.body, PAGE_HELP_TEXTS["preset_center"])
 
-        status_card, card_layout = SettingsCard.make("当前状态", spacing=10)
-        self.status_card = status_card
-
-        self.status_badge_label = create_badge_label()
-        card_layout.addWidget(self.status_badge_label)
-
-        # RN-009（批 38 清掉本页那一处）：这里原来还有一个 `summary_label` ——
-        # 建出来就 `hide()`、全仓无人 `show()`，而**四条路径持续维护它的文本与 tooltip**。
-        # ⭐ 它活下来的机制和 music/account 那两处一样：有人给它写了判据
-        #   （`test_tool_pages_ui_polish` 里两条，其中一条还逐字规定了它的 tooltip 该写什么）。
-        # 它想说的那句话现在只留在 `status_card.setToolTip()` 上 —— 那一份是**看得见的**。
-        layout.addWidget(status_card)
+        # ⛔⛔ RN-496（批 52）：**这一页不再有「当前状态」卡。**
+        #
+        # 跨页普查（两档各一遍）：28/28 页都有状态卡、卡高 68~251px，而这一页是
+        # **唯一一页只剩一颗胶囊**的 —— 别的页报的是 GSI 连没连、总开关关没关、
+        # 驱动装没装、素材缺不缺，那些确实无处可看。
+        # 而这一页那唯一一颗「范围 · 5/7 类」，数的正是它**正下方 12px**
+        # 那张卡上逐个画着的七个勾选框；外审 12/12 报它
+        # 「顶部黄金位置被不可交互的抽象参数占据」，是全轮最高频项。
+        #
+        # ⭐⭐ 更要紧的是**它当初为什么留下来**：批 40 的注释逐字写着
+        #   「本批的重排把那七个勾选框挪到了折线以下，第一屏上只剩这颗胶囊」——
+        #   它是那七个勾选框**看不见时的替身**。而同一批后来又把范围卡提到第 3 位
+        #   （实测完整档 top=399、底 542，远在折线 710 之上）。
+        #   ⇒ **替身的理由过期了，替身没走。**
+        #   这不是一次新的取舍，是收一笔重排那天就该收的账。
+        #
+        # 撤掉换来（实测，两档 × 音乐条两态）：完整档 + 音乐条那两颗交换按钮
+        # **29% → 100%** —— 那正是 RN-486 当初只结了一半的那一笔。
 
         # ⭐⭐⭐ RN-477（批 40）：这七个勾选框原来住在「预设工作台」卡的第一列里，
         #   而它其实是**页级**的 —— 导出文件、存为新预设、按地图保存、状态卡第一颗胶囊，
@@ -275,7 +284,8 @@ class PresetCenterPage(MyPresetsMixin, QWidget):
             #   ⭐ 批 32 RN-459 的同一个形状：**同一件事说五遍，多说的那几遍是纯成本。**
             #   ⇒ 屏幕上只留底栏那一份（它一直在）；确认框和 toast 那两份留着 ——
             #     它们不在这一屏上，一个在按下去的那一刻、一个在事后找回退路的时候。
-            "三套开箱即用的体验包，不用先有文件也不用先存预设，选一套点「一键应用」就换过去。",
+            "三套开箱即用的体验包，不用先有文件也不用先存预设，选一套点"
+            f"「{STARTER_APPLY_BUTTON_TEXT}」就换过去。",
             spacing=10,
         )
         starter_row = QHBoxLayout()
@@ -290,7 +300,7 @@ class PresetCenterPage(MyPresetsMixin, QWidget):
             self.starter_combo.setItemData(self.starter_combo.count() - 1, desc, Qt.ToolTipRole)
         starter_row.addWidget(self.starter_combo)
 
-        self.starter_apply_btn = QPushButton("一键应用")
+        self.starter_apply_btn = QPushButton(STARTER_APPLY_BUTTON_TEXT)
         self.starter_apply_btn.setObjectName("secondaryButton")
         self.starter_apply_btn.clicked.connect(self._apply_starter_pack)
         starter_row.addWidget(self.starter_apply_btn)
@@ -448,7 +458,7 @@ class PresetCenterPage(MyPresetsMixin, QWidget):
         #   对第一次来的人还没有内容的卡** —— 全新安装 `list_presets()` 为空，
         #   那张卡是一个空下拉框加四颗灰按钮；而交换配置这件事第一天就能用。
         #   （同一条原则本批已经用过一次：范围卡也是这么插到它前面去的。）
-        card_order = (status_card, starter_card, scope_card,
+        card_order = (starter_card, scope_card,
                       workbench_card, my_presets_card, map_card, preview_card)
         first = layout.indexOf(header) + 1
         for offset, card in enumerate(card_order):
@@ -553,53 +563,12 @@ class PresetCenterPage(MyPresetsMixin, QWidget):
         #     是**结构上不再有对象** —— 留着它等于留一个永远走同一支的分叉。
         self._update_my_presets_layout(self.width())
 
-    def _sync_status_strip(self, bundle: dict | None = None):
-        bundle = bundle or self._current_bundle or {}
-        selected_labels = self._selected_type_labels()
-        item_count = len((bundle or {}).get("items", []) or [])
-
-        # RN-281：第四颗胶囊原来写「状态 · 待应用 / 已同步」——
-        # 而「同步」这个词在这一页没有对应物（它不往任何地方同步），
-        # 「待应用」在勾一下打包范围之后就会亮起，那时**什么都没变**。
-        # ⭐ 立案说的是「未展示当前加载的预设名称，不清楚点应用会生效什么」，
-        #   而根因就在这一格：屏幕上从来没说过**预览里那份东西是哪来的**。
-        #   ⇒ 这颗胶囊改成回答那个问题。
-        # ⚠⚠ 第一颗胶囊原来只写「范围 · 5 类」，而**改完复跑当场量出它的代价**：
-        #   窗口档 6/6 把「这个软件的预设能装几类」答成了 **5**（改前 12/12 答 7）——
-        #   因为本批的重排把那七个勾选框挪到了折线以下，第一屏上只剩这颗胶囊，
-        #   而「5」是「你现在勾了几个」，不是「一共有几类」。
-        #   ⭐⭐ 批 31 那条的另一个形态：**一个只在邻居在场时才说得清的标签，
-        #     被搬家搬成了一句含糊话** —— 我搬走的是它的邻居，不是它。
-        #   ⇒ 让它自己说全：`5/7`。
-        # ⚠⚠ 批 40 撤掉了第三、第四颗：
-        #   · 「内容 · N 项」 —— `export_bundle` 每一类产出**恰好一项**，
-        #     所以这个 N **永远等于**第一颗里的那个 N ⇒ ⭐ **同一个数说了两遍，
-        #     还起了两个名字**（外审在网页那条判据里早就记过：同一个数字出现两次
-        #     会被读成两笔）。
-        #   · 「来源 · …」 —— 它的两个取值靠 dirty 区分，而 dirty 这一批整个退场了
-        #     （RN-478）：预览永远是「你现在的设置」⇒ 一颗**恒定**的胶囊，
-        #     ⭐ 而恒定的状态显示不携带任何信息（RN-053 那一族）。
-        #   · 「模式 · 合并」—— 批 40 补刀（RN-484）连它一起撤：那个页级下拉框
-        #     整个退场之后，这颗胶囊报的是一个**不再存在的设定**。
-        #     ⭐ 它和「来源」那颗同病：一颗恒定的、没有对应物的状态显示。
-        # ⚠ 于是这张卡只剩一颗胶囊了，而它恰好是这一页唯一真正随操作变的那个数
-        #   （勾几类）⇒ 让它把话说全，别再靠邻居。
-        badges = [
-            ("positive" if selected_labels else "warning",
-             f"范围 · {len(selected_labels)}/{len(self._TYPE_CHECKBOX_SPEC)} 类"),
-        ]
-
-        if selected_labels:
-            scope_text = " / ".join(selected_labels)
-        else:
-            scope_text = "当前未选择任何预设范围"
-        detail_text = (
-            f"当前选择范围：{scope_text}。"
-            f"预览包内共 {item_count} 项。"
-        )
-        render_badges(self.status_badge_label, badges, detail_tooltip=detail_text)
-        self.status_card.setToolTip(detail_text)
-
+    # ⛔ RN-496（批 52）：`_sync_status_strip` 整个退场 —— 它唯一的产出是
+    #   那颗替身胶囊和一句只在 hover 时才看得见的 tooltip。
+    #   ⭐ 「只在 tooltip 里出现过的说明，等于没有说明」（RN-131 那一族）；
+    #     而它里面的两个数，现在各自有看得见的出处：
+    #     · 勾了几类 → 范围卡上那七个勾选框自己（就在原地）
+    #     · 预览包里几项 → 预览卡的人话摘要（RN-476）
     def _on_selection_changed(self):
         # ⛔ 这里原来有一句 `self.mark_dirty()`，而它是本批的主刀。
         #
@@ -649,7 +618,6 @@ class PresetCenterPage(MyPresetsMixin, QWidget):
         self._current_bundle = bundle
         self.preview_summary_label.setText(self._summary_text(bundle))
         self.preview_text.setPlainText(json.dumps(bundle, ensure_ascii=False, indent=2))
-        self._sync_status_strip(bundle)
 
     @staticmethod
     def _summary_text(bundle: dict) -> str:
@@ -702,10 +670,9 @@ class PresetCenterPage(MyPresetsMixin, QWidget):
         auto_snapshot = bool(getattr(_cfg, "config_snapshot_auto_before_risky_ops", True))
         self.action_bar.set_message(
             "应用一套预设，会立刻改掉这套预设覆盖到的那几类设置，别的不动" +
-            ("；动手前会自动存一份快照，可以在配置快照页回滚。"
+            ("；动手前会自动存一份快照，可以在「软件设置快照」页回滚。"
              if auto_snapshot else
              "。你把「危险操作前自动快照」关掉了，这一次改过去就回不来了。"))
-        self._sync_status_strip()
 
     # ---------------- RN-478：一个动作一颗按钮，两种文件都吃 ----------------
 
@@ -950,7 +917,7 @@ class PresetCenterPage(MyPresetsMixin, QWidget):
 
         if warnings:
             text += "\n\n注意: " + "; ".join(warnings)
-        text += "\n\n应用前会自动备份当前配置,可在配置快照页回滚。"
+        text += "\n\n应用前会自动备份当前设置，可在「软件设置快照」页回滚。"
 
         # ⭐⭐⭐ RN-484：导入模式从页面搬到这里 —— 这是它唯一被读到的那一刻，
         #   而且**只有到了这一刻才知道该不该问**：
@@ -1000,7 +967,7 @@ class PresetCenterPage(MyPresetsMixin, QWidget):
                     f"但{'；'.join(apply_result.warnings)}")
             else:
                 toast_success(
-                    f"已导入 {len(apply_result.applied_types)} 类配置,删错可去配置快照页回滚")
+                    f"已导入 {len(apply_result.applied_types)} 类配置，删错可去「软件设置快照」页回滚")
         except Exception:
             QMessageBox.information(self, "导入成功", f"已应用: {', '.join(apply_result.applied_types)}")
 

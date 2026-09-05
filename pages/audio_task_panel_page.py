@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from core.audio_event_text import label_task_source, label_task_type
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QFrame,
@@ -59,14 +60,20 @@ class AudioTaskPanelPage(QWidget):
 
         # UP-047: 页头改用 PageHeader。字号与间距按本页原值传入——
         # 这次重构不动一个像素，四种并存的字号是另一回事（UP-092）。
+        from ui_help_panel import PAGE_HELP_TEXTS, install_help_panel
         header = PageHeader(
             "音频任务面板",
-            description="这里集中展示后台音频任务的运行状态和历史结果，适合确认导入、刷新、重载有没有顺利完成。",
+            # RN-508：「后台音频任务」是实现词。用户不知道什么叫「任务」，
+            #   但知道「我刚导入了一包音效」。⇒ 用它做的那几件事来说明它。
+            description="导入音效包、刷新资源、重新载入音频这些要跑一会儿的事，都在这里看进度和结果。",
             title_font_size=None,
             spacing=12,
         )
         self.page_lead_label = header.description_label
         layout.addWidget(header)
+        # ⚠ 批 45（RN-001b）：只往 `PAGE_HELP_TEXTS` 加一段是不够的 ——
+        #   那颗「?」要每页自己装，否则表里有、屏幕上没有。
+        install_help_panel(header.title_row, header.body, PAGE_HELP_TEXTS["audio_task_panel"])
 
         card, card_layout = SettingsCard.make("当前状态")
         self.status_card = card
@@ -88,7 +95,14 @@ class AudioTaskPanelPage(QWidget):
 
         action_row = QHBoxLayout()
         action_row.setSpacing(8)
+        # ⭐ 批 46：底栏那颗变身式主按钮撤掉之后，这一屏一颗主按钮都不剩，
+        #   外审当场报「按钮平级、无视觉重心」。⇒ 把**第一步**升为主按钮，
+        #   且**恒定不变**（不像底栏那颗随状态换词）。这一页的第一步是「刷新」：它是这张卡上唯一能推进的动作。
         self.refresh_btn = QPushButton("刷新")
+        # ⚠ 主/次由 `_sync_first_step()` 按「有没有历史」定 ——
+        #   批 46 第一版把「刷新」恒定为主，外审 6 发报
+        #   「最抢眼的紫色主按钮是**无实质产出的**『刷新』，点后毫无反馈」：
+        #   空状态下刷新确实刷不出任何东西，第一步是去产生一个任务。
         self.refresh_btn.setObjectName("secondaryButton")
         self.refresh_btn.setMinimumHeight(34)
         self.refresh_btn.clicked.connect(self._reload_history)
@@ -97,7 +111,10 @@ class AudioTaskPanelPage(QWidget):
         history_layout.addLayout(action_row)
 
         self.table = QTableWidget(0, 6)
-        self.table.setHorizontalHeaderLabels(["任务ID", "类型", "原因", "开始", "耗时(s)", "结果"])
+        # RN-508：「原因」这一栏摆的是 `audio_import_wizard_manual` 这种内部名，
+        #   而它答的其实是「这个任务是谁发起的」。表头跟着改成它真正回答的问题。
+        self.table.setHorizontalHeaderLabels(
+            ["任务编号", "做了什么", "谁发起的", "开始", "耗时(秒)", "结果"])
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
@@ -145,8 +162,16 @@ class AudioTaskPanelPage(QWidget):
 
         history_count = len(history)
         running = bool(self._active_task_id)
-        self.action_bar.configure_secondary("刷新历史", self._reload_history, visible=True)
+        # ⛔ RN-102（2026-09-04 批 46）：这里原来是 `configure_secondary("刷新历史",
+        #   self._reload_history)`，而「任务历史」卡里那颗「刷新」绑的是同一个方法。
+        # ⭐ 留卡内那颗（批 31 规则②：它作用的对象是那张卡里的历史列表）。
+        self.action_bar.configure_secondary("", None, visible=False)
+        self._sync_first_step(bool(history_count))
 
+        # ⚠ 主按钮**保留** —— 它和这一族其它三页不同：
+        #   「定位最新任务」是**底栏独有**的动作（卡内没有第二个入口），
+        #   而且它只有一种文案（没历史时收起来，不换词）⇒ 不构成 RN-506 那个变身。
+        # ⭐ **撤副本不等于清空底栏** —— 底栏独有的动作留着才是对的。
         if history_count:
             self.action_bar.configure_primary("定位最新任务", self._select_latest_task, visible=True)
         else:
@@ -168,6 +193,24 @@ class AudioTaskPanelPage(QWidget):
             action_message = "当前没有后台音频任务历史，可先刷新等待新任务写入。"
         self.action_bar.set_message(action_message)
 
+    def _sync_first_step(self, has_history: bool):
+        """⭐ 那一颗紫的必须是**当下的第一步**（批 44 RN-450 的裁定）。
+
+        没有历史 ⇒ 刷新刷不出东西，第一步是**去产生一个任务**（跳导入向导）；
+        有历史 ⇒ 第一步是刷新（看看有没有新的）。
+        ⚠ 两个都是安全动作 ⇒ 不触碰 RN-506 那条线（安全 ↔ 破坏性）。
+        """
+        from page_theme_helper import style_as_primary_button, style_as_secondary_button
+
+        first, other = ((self.refresh_btn, self.empty_action_btn) if has_history
+                        else (self.empty_action_btn, self.refresh_btn))
+        style_as_primary_button(first)
+        style_as_secondary_button(other)
+        for btn in (first, other):
+            btn.style().unpolish(btn)
+            btn.style().polish(btn)
+            btn.update()
+
     def _sync_status_strip(self, history: list[dict] | None = None):
         history = history if history is not None else self.runner.get_history(limit=150)
         history_count = len(history)
@@ -184,7 +227,10 @@ class AudioTaskPanelPage(QWidget):
                 ("positive" if self._active_progress >= 100 else "info", f"进度 · {self._active_progress}%")
             )
         else:
-            badges.append(("info", "进度 · 待执行"))
+            # ⚠ 原来这里是「进度 · 待执行」——**没有任务在跑的时候，"进度"这一栏**
+            #   **本身就没有意义**，而「待执行」听起来像「有个任务排着队」。
+            #   ⭐ 一颗芯片要么携带信息，要么说清楚"现在没有这回事"。
+            badges.append(("info", "进度 · 没有任务在跑"))
 
         if latest:
             latest_success = bool(latest.get("success", False))
@@ -194,7 +240,7 @@ class AudioTaskPanelPage(QWidget):
             result_text = "成功" if self._last_result_success else "失败"
             result_tone = "positive" if self._last_result_success else "warning"
         else:
-            result_text = "待执行"
+            result_text = "还没跑过"
             result_tone = "info"
         badges.append((result_tone, f"结果 · {result_text}"))
 
@@ -207,8 +253,8 @@ class AudioTaskPanelPage(QWidget):
             detail_text = (
                 f"最近一次任务 {latest.get('task_id', '')} "
                 f"{'成功' if bool(latest.get('success', False)) else '失败'}，"
-                f"类型 {latest.get('task_type', '')}，"
-                f"原因 {latest.get('reason', '')}。"
+                f"做了什么：{label_task_type(str(latest.get('task_type', '')))}，"
+                f"谁发起的：{label_task_source(str(latest.get('reason', '')))}。"
             )
         else:
             detail_text = "当前没有正在执行的后台音频任务，可以在这里查看历史执行结果。"
@@ -280,8 +326,8 @@ class AudioTaskPanelPage(QWidget):
                 result_text = f"{result_text}: {item.get('message')}"
             values = [
                 str(item.get("task_id", "")),
-                str(item.get("task_type", "")),
-                str(item.get("reason", "")),
+                label_task_type(str(item.get("task_type", ""))),
+                label_task_source(str(item.get("reason", ""))),
                 started_text,
                 f"{duration:.2f}",
                 result_text,

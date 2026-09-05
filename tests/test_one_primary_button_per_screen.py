@@ -104,8 +104,14 @@ KNOWN_DUPLICATE_PRIMARIES: dict[str, tuple[str, int]] = {}
 #:     外审 ③ 有 5/6 把「预览效果」读成「只是打开东西看看」——
 #:     而它会在屏幕上真的弹出一块贴屏窗口。
 #:     ⭐ **「主按钮」问的是「第一次来该点哪颗」，不是「底栏上有没有一颗紫的」。**
-#:   · `audio_task_panel`：没有任务时 `configure_primary("", None, visible=False)`
-#:     ——**状态相关**，而全新配置恰好是空任务态。
+#:   · ~~`audio_task_panel`~~（**2026-09-04 批 46 摘掉**）：它现在有主按钮了。
+#:     原来是「没有任务时底栏主按钮位空着」，而全新配置恰好是空任务态 ⇒
+#:     新用户看到的是一屏没有主动作的页。
+#:     ⭐ 批 46 让主按钮**跟着状态走**：没有历史 ⇒ 第一步是「前往资源导入向导」
+#:       （去产生一个任务）；有历史 ⇒ 第一步是「刷新」。
+#:     ⚠ 而这是外审逼出来的：我第一版把「刷新」恒定为主，6 发逐字报
+#:       「最抢眼的紫色主按钮是**无实质产出的**『刷新』，点后毫无反馈」——
+#:       空状态下刷新确实刷不出任何东西。
 #:   · `magnifier`（2026-08-30 批 28 加入，RN-277）：底栏主按钮位原来放的是
 #:     「全选武器 / 全不选武器」——54 把武器默认全勾，于是**每个新用户看到的都是
 #:     那颗写着「全不选武器」的紫按钮**，点一下 54 个复选框全清空、当场落盘、
@@ -133,7 +139,7 @@ KNOWN_DUPLICATE_PRIMARIES: dict[str, tuple[str, int]] = {}
 #:     ⭐ 同 `magnifier` / `utility`：**不给它随便提一颗当主按钮**。
 #:       这一页第一屏上真正的「第一步」是「内置精选 · 一键应用」，
 #:       而它是卡内按钮、就在它作用的下拉框旁边（批 31 规则②）。
-KNOWN_NO_PRIMARY = {"audio_task_panel", "magnifier", "preset_center", "utility"}
+KNOWN_NO_PRIMARY = {"magnifier", "preset_center", "utility"}
 
 #: 产品注册的 28 个页面 id → 它的实现文件名（2026-08-30 批 31 加）。
 #:
@@ -406,22 +412,34 @@ def test_every_duplicate_pair_really_is_the_same_action(sitewide_primaries):
 def test_the_timing_dependent_page_always_ends_up_with_exactly_one():
     """⭐ `audio_health` 的数不可复现，所以**换一条不看时序的问法**：
 
-    源码里 `_sync_action_bar` 的**每一条分支**都必须 `configure_primary(...)`。
+    源码里那个**分主按钮的规则**必须两条分支都派得出一颗主按钮。
     这样「它最终有几颗」就与后台线程什么时候回来无关了。
     ⭐ **量不稳的东西，就别去量它的值，去量决定那个值的规则。**
+
+    ⚠⚠ **2026-09-04 批 46：这条判据的对象搬家了。**
+    原来钉的是 `_sync_action_bar` 里那个分 `configure_primary` 的 if/else ——
+    而 RN-102/RN-506 那一刀把**底栏主按钮整个撤了**（它在四种状态间变身），
+    主按钮改由卡内的 `_sync_first_step()` 按体检结果在
+    「立即体检」与「一键修复（保守）」之间分。
+    ⭐ 按批 33 的规矩：**判据的对象被撤掉时，要么改钉现在的唯一入口，
+      要么删掉它；留着改成恒真是最坏的一种。** 这条改钉现在那一处。
+    ⭐ 而它是被自己的报错信息接住的 —— 那句话逐字写着「要么改写法了、
+      要么主按钮不再分状态。两种都要重新裁一次，别让这条判据空转」。
     """
     import ast
     from pathlib import Path
     src = Path(__file__).resolve().parent.parent / "pages" / "audio_health_page.py"
     tree = ast.parse(src.read_text(encoding="utf-8"))
     fn = next((n for n in ast.walk(tree)
-               if isinstance(n, ast.FunctionDef) and n.name == "_sync_action_bar"), None)
-    assert fn is not None, "audio_health_page 里找不到 _sync_action_bar —— 这条判据瞎了"
+               if isinstance(n, ast.FunctionDef) and n.name == "_sync_first_step"), None)
+    assert fn is not None, (
+        "audio_health_page 里找不到 `_sync_first_step` —— 这条判据瞎了。\n"
+        "⭐ 它钉的是「主按钮由谁按状态分」；那件事换了地方就得跟着换。")
 
     def _has_primary(arm) -> bool:
         return any(
-            isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
-            and n.func.attr == "configure_primary"
+            isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+            and n.func.id in ("style_as_primary_button", "style_as_secondary_button")
             for n in ast.walk(ast.Module(body=list(arm), type_ignores=[]))
         )
 
@@ -430,19 +448,22 @@ def test_the_timing_dependent_page_always_ends_up_with_exactly_one():
     # `if not hasattr(self, "action_bar"): return` —— **guard clause 也是一个 If**，
     # 而它当然没有 configure_primary。⭐ 判据的分母要按**它在找什么**来选，
     # 不是按"语法上长得像什么"来选。
-    branches = [
-        n for n in ast.walk(fn)
-        if isinstance(n, ast.If) and n.orelse
-        and (_has_primary(n.body) or _has_primary(n.orelse))
-    ]
-    assert branches, (
-        "`_sync_action_bar` 里已经找不到「分主按钮」的那个 if/else 了 —— "
+    # ⭐ 现在那条规则写成一个**条件表达式**（`(a, b) if ok else (b, a)`）+
+    #   两句无条件的 `style_as_*`，所以「两支都派得出主按钮」是结构上恒成立的。
+    #   ⇒ 判据改问两件它真正要确认的事：① 那个二选一还在；② 两种样式都用到了。
+    conds = [n for n in ast.walk(fn) if isinstance(n, ast.IfExp)]
+    assert conds, (
+        "`_sync_first_step` 里已经找不到「按状态二选一」的那个表达式了 —— "
         "要么改写法了、要么主按钮不再分状态。两种都要重新裁一次，别让这条判据空转。")
-    for br in branches:
-        for arm, name in ((br.body, "if"), (br.orelse, "else")):
-            assert _has_primary(arm), (
-                f"`_sync_action_bar` 的 {name} 分支没有 configure_primary —— "
-                "那一支走完这一页就没有主按钮了，而这件事**只在某个时序下才看得见**。")
+    called = {
+        n.func.id for n in ast.walk(fn)
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+    }
+    for want in ("style_as_primary_button", "style_as_secondary_button"):
+        assert want in called, (
+            f"`_sync_first_step` 里没有调 `{want}` —— "
+            "那就不是在分主次，这一页会永远只有一种样子，"
+            "而这件事**只在某个状态下才看得见**。")
 
 
 def test_pages_without_any_primary_button_are_declared(sitewide_primaries):

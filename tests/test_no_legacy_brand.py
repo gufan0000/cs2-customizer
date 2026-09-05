@@ -219,8 +219,13 @@ def test_official_site_url_only_in_readme():
     （出现在文档/注释里也一律拦下：想在别处提官网，先在这里放行，
     顺手就会被迫想一遍"我到底是要展示还是要连接"。）
     """
+    # ⭐ RN-469（上游批 42）：扫描型判据要守住自己的分母 ——
+    #   分母一空它必然全绿，而「分母为空」和「真的没问题」在报告上一模一样。
+    #   ⚠ 这一支是开源仓自己拥有的，上游那一轮收口没扫到它。
+    from _denominator import must_scan
+
     offenders = []
-    for rel in _tracked_files():
+    for rel in must_scan(list(_tracked_files()), "开源仓被跟踪的文件", least=100):
         if rel in OFFICIAL_SITE_ALLOWED or Path(rel).suffix.lower() in BINARY_EXT:
             continue
         try:

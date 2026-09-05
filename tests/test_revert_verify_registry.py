@@ -56,7 +56,14 @@ def test_every_breakpoint_anchor_still_exists(revert):
     锚点对不上时脚本只会打一行"跳过"，那条断点就静默失效了——
     而它存在的意义正是"确认某条判据不是假绿"。
     """
-    assert revert.path.is_file(), f"目标文件不存在：{revert.path}"
+    # ⭐ 「这个检出里根本没有这个产品文件」是**不适用**，不是腐烂 ——
+    #   开源版是功能子集，`build_tools/oss_sync/`、`pages/account_page.py`
+    #   这些在这边不存在，落在它们上面的断点没有对象。
+    #   上游的 `scripts/revert_verify.py` 这一批已经把「不适用」和「失效」分开了
+    #   （不适用不计入退出码），这支体检跟上，否则同一件事两处结论相反。
+    # ⛔ 只对**文件不存在**放行；文件在而锚点对不上，仍然是腐烂，照红。
+    if not revert.path.is_file():
+        pytest.skip(f"功能子集里没有这个产品文件，本条不适用：{revert.path.name}")
     text = revert.path.read_text(encoding="utf-8")
     assert revert.old in text, (
         f"锚点文本已不在 {revert.path.name} 里（产品代码变了）。"
@@ -85,7 +92,10 @@ def test_every_selector_resolves_to_a_real_test():
       它一行 `not found` 都不会打，于是"没发现问题"和"没跑成"长得一样），
       所以下面对**每一块**都验了它确实产出了 pytest 的收集输出。
     """
-    selectors = sorted({r.selector for r in REVERTS})
+    # ⭐ 同上一条：产品文件在这个检出里根本没有时，它的判据也不该期待存在
+    #   （开源版是功能子集：`build_tools/oss_sync/` 那一整套都不在）。
+    #   ⛔ 只放行「产品文件不在」这一种；文件在而判据名没了，仍然是腐烂，照红。
+    selectors = sorted({r.selector for r in REVERTS if r.path.is_file()})
     #: 命令行字符预算。真实上限 32767，留一半余量给解释器绝对路径与固定参数——
     #: 这个数只影响跑几趟，给小了不会错，只会慢一点。
     budget = 16000

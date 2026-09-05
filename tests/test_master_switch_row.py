@@ -49,6 +49,7 @@ from pathlib import Path
 
 import pytest
 from PySide6.QtCore import Qt
+from _denominator import must_scan
 
 REPO = Path(__file__).resolve().parents[1]
 # `_audit_neutralize`（设备中和表）住在 scripts/ 里，且只准有一份。
@@ -352,8 +353,8 @@ def test_the_kill_icon_master_switch_is_not_buried_among_sub_options(
     from PySide6.QtWidgets import QCheckBox
 
     page, row = _page_with_row(main_window, qapp, "kill_icon")
-    strays = [cb for cb in page.findChildren(QCheckBox)
-              if "开启击杀图标" in cb.text()]
+    boxes = must_scan(page.findChildren(QCheckBox), "kill_icon 页上的复选框")
+    strays = [cb for cb in boxes if "开启击杀图标" in cb.text()]
     assert not strays, (
         "「开启击杀图标」还是一个混在子选项里的复选框："
         f"{[cb.text() for cb in strays]}\n它已经有了状态卡上的总开关行，"
@@ -560,7 +561,7 @@ def test_no_copy_about_the_master_switch_describes_where_it_sits():
     position_words = ("右上角", "左上角", "右下角", "左下角",
                       "顶部", "底部", "上面那", "下面那", "旁边那颗")
     offenders = []
-    for path in sorted((REPO / "pages").glob("*.py")):
+    for path in must_scan(sorted((REPO / "pages").glob("*.py")), "pages/*.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         # ⚠ **文档字符串要摘掉。** 第一版没摘，当场逮到 `flash_page.py` 里
         # 一句讲历史的 docstring —— 那是写给人看的记录，**本来就该描述位置**。
@@ -601,8 +602,9 @@ def test_the_status_chip_does_not_repeat_the_word_next_to_it():
     ⚠ 这条只管**状态条上的徽章**，不管别处正常提到总开关的句子。
     """
     offenders = []
-    for name in ("kill_icon_page.py", "screen_effects_page.py",
-                 "crosshair_page.py", "sound_page_base.py"):
+    for name in must_scan(("kill_icon_page.py", "screen_effects_page.py",
+                           "crosshair_page.py", "sound_page_base.py"),
+                          "被点名检查状态条徽章的页面文件", least=4):
         path = REPO / "pages" / name
         for lineno, line in enumerate(
                 path.read_text(encoding="utf-8").splitlines(), start=1):
@@ -623,8 +625,10 @@ def test_the_page_name_in_the_copy_is_not_a_hand_written_literal():
     那一页改名的当天就有好几处对不上，而且**一处都不会报错**。
     """
     offenders = []
-    for name in ("crosshair_page.py", "screen_effects_page.py",
-                 "reload_sound_page.py", "kill_icon_page.py", "sound_page_base.py"):
+    for name in must_scan(("crosshair_page.py", "screen_effects_page.py",
+                           "reload_sound_page.py", "kill_icon_page.py",
+                           "sound_page_base.py"),
+                          "被点名检查卡片名字面量的页面文件", least=5):
         path = REPO / "pages" / name
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):

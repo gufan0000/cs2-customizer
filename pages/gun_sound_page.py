@@ -230,6 +230,11 @@ class GunSoundPage(QWidget):
         self.status_hint_label.setWordWrap(True)
         self.status_hint_label.hide()
         status_card_layout.addWidget(self.status_hint_label)
+
+        # ⭐⭐⭐ RN-181（批 50）：这一页正是立案原文点名的那个「34 把枪逐个下拉」。
+        # ⚠ 而它**不继承 `SoundPageBase`** —— 改基类那一刀天生落不到它头上，
+        #   实测四页里只有它没拿到。⇒ 这里单独实现一份，行为与基类那份对齐。
+        status_card_layout.addLayout(self._build_apply_all_row())
         layout.addWidget(self.status_card)
 
         # RN-180：空库时的第一步放在状态卡正下方 —— 那一片置灰控件的上方，
@@ -496,6 +501,199 @@ class GunSoundPage(QWidget):
         self._refresh_status_badge()
         self.logger.info("枪声设置加载完成")
 
+    def _build_apply_all_row(self):
+        """「整套套用」那一行（RN-181）。与 `SoundPageBase` 那份保持同一形态。"""
+        from PySide6.QtWidgets import QHBoxLayout
+
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        row.setContentsMargins(0, 0, 0, 0)
+        self.apply_all_row = row
+
+        self.apply_all_label = QLabel("整套套用")
+        row.addWidget(self.apply_all_label)
+        self.apply_all_combo = QComboBox()
+        self.apply_all_combo.setMinimumWidth(170)
+        self.apply_all_combo.setMinimumHeight(32)
+        row.addWidget(self.apply_all_combo)
+
+        self.apply_all_btn = QPushButton("应用到全部武器")
+        self.apply_all_btn.setObjectName("secondaryButton")
+        self.apply_all_btn.setMinimumHeight(32)
+        self.apply_all_btn.clicked.connect(self._apply_style_to_all_weapons)
+        self.apply_all_combo.currentTextChanged.connect(
+            lambda _t: self._sync_apply_all_hint())
+        row.addWidget(self.apply_all_btn)
+
+        self.apply_all_hint = QLabel("")
+        self.apply_all_hint.setObjectName("hintLabel")
+        self.apply_all_hint.setWordWrap(True)
+        row.addWidget(self.apply_all_hint, 1)
+        return row
+
+    def _pick_style_and_apply_to_all(self) -> None:
+        """紧凑档没有那条下拉行 ⇒ 先问选哪个风格，再走同一个动作。"""
+        from PySide6.QtWidgets import QInputDialog
+
+        options = [o for o in self._apply_all_options()
+                   if o and o != getattr(self, "DISABLED_STYLE_TEXT", "不启用")]
+        if not options:
+            from PySide6.QtWidgets import QMessageBox
+            # ⭐ 按钮名从按钮读，别抄一份（RN-519 的棘轮盯着 —— 它当场逮到了这里）
+            QMessageBox.information(
+                self, "还没有可用的风格",
+                f"先导入或新建一个风格，再用「{self.apply_all_btn.text()}」。")
+            return
+        current = self.apply_all_combo.currentText()
+        index = options.index(current) if current in options else 0
+        style, ok = QInputDialog.getItem(
+            self, "应用到全部武器", "选一个风格：", options, index, False)
+        if not ok or not style:
+            return
+        self.apply_all_combo.setCurrentText(style)
+        self._apply_style_to_all_weapons()   # ⭐ 同一个动作，不另造一条路
+
+    def _ensure_compact_apply_all_entry(self) -> None:
+        """紧凑档的入口。
+
+        ⚠ 这一页底栏的 `extra` 位在默认状态下是**隐藏**的（空库态借走了它，
+        见 `_extra_default` 那段），挂菜单不可靠 ⇒ 自己加一颗，只在紧凑档显示。
+        走的是同一个 `_pick_style_and_apply_to_all`，不另造一条路。
+        """
+        if getattr(self, "_apply_all_compact_btn", None) is not None:
+            return
+        bar = getattr(self, "action_bar", None)
+        if bar is None:
+            return
+        btn = QPushButton("应用到全部武器…", bar)
+        btn.setObjectName("secondaryButton")
+        btn.setMinimumHeight(30)
+        btn.clicked.connect(self._pick_style_and_apply_to_all)
+        layout = bar.layout()
+        if layout is not None:
+            layout.insertWidget(max(0, layout.count() - 1), btn)
+        self._apply_all_compact_btn = btn
+
+    def _apply_all_is_inline(self) -> bool:
+        """这一行摆不摆得出来。
+
+        ⚠ 紧凑档（860×640，内容可视区 548）里，这一行会把整页顶出可视区
+        60px 上下 —— 而这一族本来就欠着 64px 的在册债（RN-196）。
+        ⭐ 但**动作不能因此消失**：紧凑档改由底栏「风格工具」菜单提供同一个动作。
+        """
+        return self.width() >= 960
+
+    def _sync_apply_all_visibility(self) -> None:
+        inline = self._apply_all_is_inline()
+        for w in (getattr(self, "apply_all_label", None), self.apply_all_combo,
+                  self.apply_all_btn, self.apply_all_hint):
+            if w is not None:
+                w.setVisible(inline)
+        # ⚠ 光把控件 hide 掉，布局仍会为这一行留下 spacing（实测紧凑档还剩 3px，
+        #   而棘轮只认「变没变坏」）⇒ 间距也一并收掉。
+        row = getattr(self, "apply_all_row", None)
+        if row is not None:
+            row.setSpacing(8 if inline else 0)
+            row.setContentsMargins(0, 0, 0, 0)
+        if not inline:
+            self._ensure_compact_apply_all_entry()
+        btn = getattr(self, "_apply_all_compact_btn", None)
+        if btn is not None:
+            btn.setVisible(not inline)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        try:
+            self._sync_apply_all_visibility()
+        except Exception:
+            pass
+
+    def _apply_all_options(self) -> list[str]:
+        """并集（理由同基类那份：这一页的风格也是 per-gun 的）。"""
+        seen = set()
+        for gun_type in self.weapon_configs:
+            seen |= set(self.weapon_styles.get(gun_type, []) or [])
+        return sorted(seen)
+
+    def _weapons_supporting(self, style: str) -> list[str]:
+        return [g for g in self.weapon_configs
+                if style in (self.weapon_styles.get(g, []) or [])]
+
+    def _sync_apply_all_row(self) -> None:
+        if not hasattr(self, "apply_all_combo"):
+            return
+        options = [o for o in self._apply_all_options() if o and o != "不启用"]
+        keep = self.apply_all_combo.currentText()
+        self.apply_all_combo.blockSignals(True)
+        self.apply_all_combo.clear()
+        self.apply_all_combo.addItems(options)
+        if keep in options:
+            self.apply_all_combo.setCurrentText(keep)
+        self.apply_all_combo.blockSignals(False)
+
+        usable = bool(options)
+        self.apply_all_combo.setEnabled(usable)
+        self.apply_all_btn.setEnabled(usable)
+        self._sync_apply_all_visibility()
+        if usable:
+            n = len(self._weapons_supporting(self.apply_all_combo.currentText()))
+            self.apply_all_hint.setText(f"把选中的风格一次配给能用它的 {n} 把武器")
+        else:
+            self.apply_all_hint.setText("还没有可用的风格 —— 先导入或新建一个")
+
+    def _sync_apply_all_hint(self) -> None:
+        if not hasattr(self, "apply_all_hint") or not self.apply_all_btn.isEnabled():
+            return
+        n = len(self._weapons_supporting(self.apply_all_combo.currentText()))
+        self.apply_all_hint.setText(f"把选中的风格一次配给能用它的 {n} 把武器")
+
+    def _apply_style_to_all_weapons(self) -> None:
+        """⚠ 会覆盖能用它的每一把枪已有的设置（RN-506 的破坏性那一侧）⇒ 先问，且带确切的数。"""
+        from PySide6.QtWidgets import QMessageBox
+
+        style = self.apply_all_combo.currentText().strip()
+        gun_types = list(self.weapon_configs)
+        if not style or not gun_types:
+            return
+
+        targets = self._weapons_supporting(style)
+        skipped = len(gun_types) - len(targets)
+        if not targets:
+            QMessageBox.information(
+                self, "没有武器能用这个风格",
+                f"这 {len(gun_types)} 把武器都没有「{style}」这个风格。")
+            return
+
+        already = sum(1 for g in targets
+                      if self._effective_style(self.weapon_configs[g]) == style)
+        changing = len(targets) - already
+        if changing == 0:
+            QMessageBox.information(
+                self, "无需改动",
+                f"能用「{style}」的那 {len(targets)} 把武器已经全都配好了。")
+            return
+
+        skipped_line = (f"\n另有 {skipped} 把武器没有这个风格，会保持原样。"
+                        if skipped else "")
+        reply = QMessageBox.question(
+            self, "应用到全部武器？",
+            f"会把「{style}」配给 {len(targets)} 把武器，"
+            f"其中 {changing} 把的当前设置会被覆盖。{skipped_line}\n\n继续吗？",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+
+        for gun_type in targets:
+            row = self.weapon_rows.get(gun_type) or {}
+            combo = row.get("style_combo")
+            if combo is not None:
+                combo.setCurrentText(style)   # 经既有信号走落盘
+            else:
+                self._on_weapon_style_changed(gun_type, style)
+        self._refresh_status_badge()
+        self._sync_apply_all_row()
+
     def _on_weapon_style_changed(self, weapon_type: str, style: str):
         profile = self.weapon_configs.get(weapon_type)
         if not profile:
@@ -642,6 +840,11 @@ class GunSoundPage(QWidget):
         self._refresh_status_badge()
 
     def _refresh_status_badge(self, *_args):
+        # 风格清单可能刚变过 ⇒「整套套用」的选项跟着走。
+        try:
+            self._sync_apply_all_row()
+        except Exception:
+            self.logger.exception("同步「整套套用」那一行失败")
         enabled = bool(is_gun_sound_master_enabled(config))
         effective = self._effective_styles()
         selected_count = sum(1 for value in effective.values() if value != "0")

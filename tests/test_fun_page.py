@@ -98,7 +98,13 @@ def test_the_page_does_not_run_the_side_effects_itself(page):
     import inspect
     import pages.fun_page as mod
 
+    from _denominator import must_scan
+
     tree = ast.parse(inspect.getsource(mod))
+    # ⭐ 分母是这一页的调用点。整页被搬空 / 改名之后，
+    #   「页面自己不跑副作用」会因为**页面里什么都不剩**而变成真的。
+    must_scan([n for n in ast.walk(tree) if isinstance(n, ast.Call)],
+              "pages/fun_page.py 里的函数调用", least=20)
     offenders = []
     for n in ast.walk(tree):
         if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) \

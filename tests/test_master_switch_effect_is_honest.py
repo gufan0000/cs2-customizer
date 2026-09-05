@@ -46,6 +46,7 @@ from pathlib import Path
 import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFrame, QLabel, QVBoxLayout, QWidget
+from _denominator import must_scan
 
 REPO = Path(__file__).resolve().parents[1]
 if str(REPO / "scripts") not in sys.path:
@@ -439,8 +440,14 @@ def test_the_pixel_grab_keeps_the_image_alive():
     即**在一个 `toImage()` 的返回值上直接取缓冲区**，中间没落到变量上。
     """
     src = Path(__file__).read_text(encoding="utf-8")
+    tree = ast.parse(src)
+    # ⭐ 分母是本文件里的 `toImage()` 调用。哪天抓像素这件事整个搬走，
+    #   「没有悬空的缓冲区取用」会因为**一次 toImage 都不剩**而变成真的。
+    must_scan([n for n in ast.walk(tree)
+               if isinstance(n, ast.Call) and getattr(n.func, "attr", "") == "toImage"],
+              "本文件里的 toImage() 调用")
     dangling = []
-    for node in ast.walk(ast.parse(src)):
+    for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
         fn = node.func
@@ -549,7 +556,11 @@ def test_the_de_emphasis_itself_never_disables_anything(main_window, qapp, page_
     """
     page = _open(main_window, qapp, page_id)
     _set_switch(page, qapp, True)
-    enabled_before = {id(w) for w in page.findChildren(QWidget) if w.isEnabled()}
+    # ⭐ 分母是「拨开关之前本来就可用的控件」。页面建不出来 / 整页都是禁用态时，
+    #   下面那句「降权没禁用任何东西」是一句自动为真的话。
+    enabled_before = {id(w) for w in must_scan(
+        page.findChildren(QWidget), f"{page_id} 页上的控件", least=5) if w.isEnabled()}
+    must_scan(enabled_before, f"{page_id} 页上降权前本就可用的控件", least=3)
     eff.apply_effect_state(page, False)
     qapp.processEvents()
     turned_off = [w for w in page.findChildren(QWidget)
@@ -983,10 +994,12 @@ def test_nothing_on_screen_claims_to_be_enabled_while_the_switch_is_off(
     page = _open(main_window, qapp, page_id)
     _set_switch(page, qapp, False)
     offenders = []
-    for label in page.findChildren(QLabel):
-        if label.isHidden():
-            continue
-        text = (label.text() or "").strip()
+    must_scan(ENABLED_CLAIMS, "ENABLED_CLAIMS（「已启用」这类说法的词表）", least=2)
+    visible = must_scan(
+        [(lb, (lb.text() or "").strip()) for lb in page.findChildren(QLabel)
+         if not lb.isHidden() and (lb.text() or "").strip()],
+        f"{page_id} 页上可见的标签文案", least=5)
+    for label, text in visible:
         hit = [c for c in ENABLED_CLAIMS if c in text]
         if hit:
             offenders.append(f"[{label.objectName() or 'QLabel'}] {text[:60]}")

@@ -66,6 +66,11 @@ class HudColorPage(QWidget):
         self.logger = get_logger("HudColorPage")
         self._is_loading = False
         self._dirty = False
+        #: 编辑区里**现在真正装着**的那一套预设。批 43 起它与下拉恒等
+        #: —— 而在那之前，两者之间可以差一整套（RN-501）。
+        self._last_loaded_profile = None
+        #: 换预设之前的编辑区快照，给「还原」用；换回去后清空。
+        self._profile_before_swap = None
 
         self.key_widgets = {}
         self.event_checkboxes = {}
@@ -220,25 +225,59 @@ class HudColorPage(QWidget):
         self.profile_combo.setFixedHeight(34)
         profile_row.addWidget(self.profile_combo)
 
-        # ⚠⚠ RN-175（外审 4/6 票）：这颗按钮原来叫「**应用**预设」，
-        # 而它的**行为**一直是对的 —— 只 `_apply_rules_to_ui` + `_set_dirty(True)`，
-        # 一个字节都没写进游戏。错的是那个词：「应用」读起来像一次提交，
-        # 于是它和底栏那颗「保存」构成**双重确认**，玩家分不清哪一步才算数。
-        # ⭐ **一个动作只有一个生效点** —— 这一颗只负责把预设填进编辑区。
-        self.apply_profile_btn = QPushButton("载入这套")
-        self.apply_profile_btn.setObjectName("secondaryButton")
-        self.apply_profile_btn.setMinimumHeight(34)
-        self.apply_profile_btn.clicked.connect(self._apply_preset)
-        profile_row.addWidget(self.apply_profile_btn)
+        # ⚠⚠ RN-175（外审 4/6 票）：这里原来有一颗「载入这套」按钮
+        # （更早叫「应用预设」）。批 43（RN-501）把它**删了**，改成**选中即载入**。
+        #
+        # ⭐⭐⭐ 删它的理由不是"少一颗按钮好看"，是实测出来的：
+        #   `balanced_default` 与 `tactical` 两套一共差 **13 个字段**，而
+        #     · **12 个**在你动下拉的那一刻就已经跟着新预设走了
+        #       （持续时间/间隔/阈值/回合态…—— 界面上根本没有这些控件，
+        #        `_build_rules_from_ui()` 从**下拉当前选中的 profile** 起手）；
+        #     · 只有 **1 个**（`kill.effect`）要等你点那颗按钮。
+        #   ⇒ 那颗按钮实际管 13 分之 1，而它旁边那句
+        #     「载入只是把这套规则填进下面的编辑区，还没写进游戏」**是反的**：
+        #     一大半规则根本不经过编辑区，从下拉直达保存。
+        #
+        # ⚠ 更要命的是中间那个状态：只动下拉不点按钮时，状态胶囊与摘要**立刻**
+        #   报新预设名、`_dirty` 也置位，而编辑区还是旧的 ⇒ 屏幕在报一个
+        #   **两套各一半**的东西，且保存会把它固化成「已存下」。
+        # ⭐ 批 40：**一个机制收窄到只剩一个用例之后，问那一个用例是不是也可以不由它来做。**
+        self.profile_combo.currentIndexChanged.connect(self._on_profile_chosen)
         profile_row.addStretch()
         profile_column.addLayout(profile_row)
 
+        # ⚠ 这句只说**换预设会动到什么**，不再解释"载入 / 保存"两步的关系 ——
+        #   那种解释正是 RN-144 判过的「打补丁式的无效引导」。
+        # ⭐ 「数字键那 9 项不动」是一个**实测事实**（`_apply_preset` 明写着
+        #   `preset_rules["key_rules"] = current_rules["key_rules"]`），
+        #   由 `test_switching_presets_keeps_the_hand_tuned_number_keys` 看着。
+        # ⚠⚠ RN-502（批 43 外审 **8/12 判高**，而这条是**我自己这一批引入的**）：
+        #   第一版写的是「…；**还没写进游戏**，点右下角保存。」——
+        #   那是一句**无条件的状态陈述**，而页面干净时它是假的
+        #   （顶部状态胶囊同时写着「保存 · 已存下」）。
+        #   外审逐字报「顶部说已存下、这里说还没写进游戏、底栏说已写进 cfg，三处矛盾」。
+        # ⭐⭐⭐ 旧句子「**载入**只是把这套规则填进编辑区，还没写进游戏」是**条件句**
+        #   （主语是那个动作），它任何时候都为真；我把它改成陈述句，就把一句真话
+        #   变成了一句**多数时候为假**的话。
+        # ⇒ 说**动作的后果**，不说**当前的状态**：状态由状态条负责，这里只讲因果。
         profile_tip = QLabel(
-            "载入只是把这套规则填进下面的编辑区，还没写进游戏；"
-            "确认好了再点右下角保存。")
+            "换一套会把默认色和事件设置整套换掉（数字键那 9 个不动）；"
+            "换完要点右下角保存才写进游戏。")
         profile_tip.setObjectName("hintLabel")
         profile_tip.setWordWrap(True)
         profile_column.addWidget(profile_tip)
+
+        # ⚠ 退路：选中即载入是一个**当场覆盖编辑区**的动作，登记册立案时
+        #   写明「得先想清楚覆盖编辑区这件事怎么给玩家一条退路」。
+        #   这一颗只在真的换过之后才出现，换回去就消失。
+        # ⛔ 它**不是**第二个生效点（不写盘、不写 cfg），只把编辑区退回上一套。
+        self.undo_profile_btn = QPushButton("")
+        self.undo_profile_btn.setObjectName("linkButton")
+        self.undo_profile_btn.setFlat(True)
+        self.undo_profile_btn.setCursor(Qt.PointingHandCursor)
+        self.undo_profile_btn.clicked.connect(self._undo_profile_swap)
+        self.undo_profile_btn.hide()
+        profile_column.addWidget(self.undo_profile_btn)
         profile_column.addStretch(1)
         self.preset_content_layout.addLayout(profile_column, 5)
 
@@ -293,26 +332,33 @@ class HudColorPage(QWidget):
         eg = QVBoxLayout()
         eg.setContentsMargins(8, 6, 8, 6)
         eg.setSpacing(8)
-        for key, label in EVENT_LABELS:
-            row_frame = QFrame()
-            row_layout = QHBoxLayout(row_frame)
-            row_layout.setContentsMargins(0, 0, 0, 0)
-            row_layout.setSpacing(12)
+        # ⚠⚠ RN-503（批 43 外审 4 发 + 实测复量）：这里原来是**每行一个 QFrame +
+        #   QHBoxLayout**，于是各行的列宽各算各的 —— 复选框文案「击杀变色」(4 字)
+        #   与「被击杀变色」(5 字) 差一个字，后面所有控件就整体右移。
+        #   实测：「颜色」下拉左边缘 x=303 vs 327、「效果」下拉 683 vs 707，**都差 24px**。
+        # ⭐ 而**紧挨着的上一张卡（数字键映射）用的就是 QGridLayout，所以它是齐的** ——
+        #   同一页上两张卡，一张对齐一张不对齐，这正是外审看见的东西。
+        # ⇒ 改成同一种做法。⭐ **对齐不是靠每行小心翼翼，是靠让它们共用一套列。**
+        event_grid = QGridLayout()
+        event_grid.setContentsMargins(0, 0, 0, 0)
+        event_grid.setHorizontalSpacing(12)
+        event_grid.setVerticalSpacing(8)
+        for row, (key, label) in enumerate(EVENT_LABELS):
             cb = QCheckBox(label)
-            row_layout.addWidget(cb)
-            row_layout.addWidget(QLabel("颜色:"))
             color_combo = self._create_color_combo()      # RN-128：同上，开关只由复选框管
             color_combo.setEnabled(cb.isChecked())
             cb.toggled.connect(color_combo.setEnabled)
-            row_layout.addWidget(color_combo)
-            row_layout.addWidget(QLabel("效果:"))
             effect_combo = self._create_effect_combo()
-            row_layout.addWidget(effect_combo)
-            row_layout.addStretch()
-            eg.addWidget(row_frame)
+            event_grid.addWidget(cb, row, 0)
+            event_grid.addWidget(QLabel("颜色:"), row, 1)
+            event_grid.addWidget(color_combo, row, 2)
+            event_grid.addWidget(QLabel("效果:"), row, 3)
+            event_grid.addWidget(effect_combo, row, 4)
             self.event_checkboxes[key] = cb
             self.event_color_combos[key] = color_combo
             self.event_effect_combos[key] = effect_combo
+        event_grid.setColumnStretch(5, 1)
+        eg.addLayout(event_grid)
 
         event_tip = QLabel("其他参数（持续时间、间隔等）由预设方案决定。")
         event_tip.setObjectName("hintLabel")
@@ -456,7 +502,10 @@ class HudColorPage(QWidget):
         self.context_hint_label.hide()
 
     def _bind_dirty_signals(self):
-        self.profile_combo.currentIndexChanged.connect(self._mark_dirty)
+        # ⚠ `profile_combo` **故意不接 `_mark_dirty`**：批 43 起它走
+        #   `_on_profile_chosen`，那里会真的把整套预设载进编辑区并自己置脏。
+        #   接两遍不会出错，但会让「谁负责置脏」变成两处 —— 而这一页的病
+        #   （RN-501）恰恰就是同一件事被两个东西各做一半。
         self.default_color_combo.currentIndexChanged.connect(self._mark_dirty)
 
         for widgets in self.key_widgets.values():
@@ -536,6 +585,11 @@ class HudColorPage(QWidget):
         profile = normalize_profile(config.hud_rules_profile)
         rules = normalize_hud_rules(config.hud_rules, profile=profile)
         self._apply_rules_to_ui(profile, rules)
+        # ⚠ 从磁盘读回来也算一次「编辑区现在装的是这一套」——
+        #   不记这一笔，第一次换预设时「还原」就没有目的地。
+        self._last_loaded_profile = profile
+        self._profile_before_swap = None
+        self._refresh_undo_affordance()
         self._set_dirty(False)
         # ⚠ 回读 config 的**实际值**再定开关的样子。总开关可能是在别处
         # （首页那颗、或 config 热重载）改的，本页那一颗不会自己知道。
@@ -565,6 +619,48 @@ class HudColorPage(QWidget):
             return True
         return False
 
+    def _on_profile_chosen(self, *_args):
+        """选中一套预设 = **当场整套载入编辑区**（RN-501 / RN-438）。
+
+        ⭐ 这一步之前是「选 + 点载入」两步，而那两步之间存在一个
+        **屏幕报新名、规则是两套各一半**的窗口（实测 13 个差异字段里 12 个
+        在选中那一刻就换了，只有 1 个等按钮）。合成一步，那个窗口在结构上消失。
+        ⛔ 它仍然**不写盘、不写 cfg** —— 唯一的生效点还是底栏那颗保存（RN-175）。
+        """
+        if self._is_loading:
+            return
+        # 换之前先留一份编辑区快照，给「还原」用。
+        self._profile_before_swap = (
+            self._last_loaded_profile,
+            self._build_rules_from_ui(),
+        )
+        self._apply_preset()
+        self._refresh_undo_affordance()
+
+    def _refresh_undo_affordance(self):
+        """只在真的换过预设之后才露出那条退路，换回去就收起来。"""
+        if not hasattr(self, "undo_profile_btn"):
+            return
+        snap = getattr(self, "_profile_before_swap", None)
+        if not snap or snap[0] is None or snap[0] == self._last_loaded_profile:
+            self.undo_profile_btn.hide()
+            return
+        label = dict((v, lbl) for lbl, v in PROFILE_OPTIONS).get(snap[0], snap[0])
+        self.undo_profile_btn.setText(f"← 还原成「{label}」")
+        self.undo_profile_btn.show()
+
+    def _undo_profile_swap(self):
+        """把编辑区退回换预设之前那一套。⛔ 不写盘 —— 它不是第二个生效点。"""
+        snap = getattr(self, "_profile_before_swap", None)
+        if not snap or snap[0] is None:
+            return
+        profile, rules = snap
+        self._apply_rules_to_ui(profile, rules)
+        self._last_loaded_profile = profile
+        self._profile_before_swap = None
+        self._set_dirty(True)
+        self._refresh_undo_affordance()
+
     def _apply_preset(self):
         profile = normalize_profile(self.profile_combo.currentData())
         preset_rules = get_default_hud_rules(profile)
@@ -574,6 +670,7 @@ class HudColorPage(QWidget):
         preset_rules = normalize_hud_rules(preset_rules, profile=profile)
 
         self._apply_rules_to_ui(profile, preset_rules)
+        self._last_loaded_profile = profile
         self._set_dirty(True)
         # RN-129（用户裁定 2026-08-20）：**别弹确认框。**
         # 一个模态框在玩家眼里就是"这一步完成了"，而真正写进游戏的是底栏那个保存 ——

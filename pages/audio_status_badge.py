@@ -305,7 +305,7 @@ def resource_hint(health: dict) -> str:
     health = health or {}
     if health.get("invalid"):
         return (f"有 {len(health['invalid'])} 项配置指向的素材已经不在了，"
-                "重新选一个风格即可；也可以到「工具与系统 - 音频体检」看明细。")
+                "重新选一个风格即可；也可以到「工具与系统 - 资源体检」看明细。")
     if health.get("missing"):
         # ⚠ 这句话第一版写的是「还没有这一类的素材目录 —— **这是全新状态，
         # 不是出错**。点右下角「打开音频资源」把音频放进去，再点「刷新风格列表」。」

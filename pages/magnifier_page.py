@@ -270,7 +270,8 @@ class MagnifierPage(QWidget):
             # ⚠ 本页 `SAVES_AUTOMATICALLY = False`（批 24），所以共用回执**不会**
             # 替它说存不存。撤掉底栏按钮之后，这句话是唯一还在回答
             # 「我到底要不要点什么」的东西 —— 它必须说准。
-            "改完就存下了；只有「偏移校准」里的 X / Y 要点那张卡上的「应用」才算数。"
+            "改完就存下了；只有「偏移校准」里的 X / Y 要点那张卡上的"
+            f"「{self.offset_apply_btn.text()}」才算数。"
             f"当前：倍率 {self.zoom_factor:.1f}x · 偏移 {self._current_offset_text()}"
             # ⚠ RN-407 家族（批 18）：这里数的是**勾选了几把武器**，不是
             # 「几件事正在跑」。写「已启用 12/18 项」时，如果总开关关着，
@@ -804,7 +805,9 @@ class MagnifierPage(QWidget):
         self.y_offset_input.returnPressed.connect(self._apply_offset)
         offset_input_layout.addWidget(self.y_offset_input)
         
-        apply_btn = QPushButton("应用")
+        # RN-519：底栏那句话要点名它，所以名字只能有一份 —— 挂到 self 上给那句话读。
+        self.offset_apply_btn = QPushButton("应用")
+        apply_btn = self.offset_apply_btn
         apply_btn.setObjectName("secondaryButton")
         apply_btn.setFixedWidth(86)
         apply_btn.setFixedHeight(34)

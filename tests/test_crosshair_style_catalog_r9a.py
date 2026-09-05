@@ -22,6 +22,7 @@ import pytest
 from PySide6.QtGui import QImage, QPainter
 
 from crosshair_overlay import USER_STYLES, CrosshairFrame, paint_crosshair
+from _denominator import must_scan
 
 REPO = Path(__file__).resolve().parent.parent
 CANVAS = 100
@@ -130,7 +131,10 @@ def test_t_shape_rotation_moves_the_stem():
     assert base != turned
 
     # 转 180° 后竖杆应当朝上：中心线**以下**变空
+    # ⭐ 分母是「这一帧上有像素的行」。渲染整个坏掉时它是空的，
+    #   而空的 `rows` 会让下面那条「下方没有像素」变成一句废话。
     rows = _opaque_rows(turned)
+    must_scan(rows, "旋转 180° 后仍有不透明像素的行", least=3)
     below = {y: n for y, n in rows.items() if y > CENTER + 3}
     assert not below, f"转 180° 后竖杆应朝上，下方却仍有像素 {below}"
 

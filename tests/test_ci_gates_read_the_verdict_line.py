@@ -22,6 +22,7 @@ import re
 from pathlib import Path
 
 import pytest
+from _denominator import must_scan
 
 yaml = pytest.importorskip("yaml")
 
@@ -145,7 +146,7 @@ def test_the_local_gate_covers_every_audit_that_delivers_a_verdict():
     """
     delivering = {}
     unparseable = []
-    for path in sorted((REPO / "scripts").glob("*.py")):
+    for path in must_scan(sorted((REPO / "scripts").glob("*.py")), "scripts/*.py"):
         if path.name == "_audit_verdict.py":
             continue
         try:

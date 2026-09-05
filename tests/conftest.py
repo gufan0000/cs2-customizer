@@ -9,17 +9,29 @@ import tempfile
 # UI tests run headless in CI/local terminal environments.
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+# 批 47：并行跑全量时，几个 pytest 进程会同时读写下面这两个目录（它们是固定名，
+# 理由见 RN-141）。⇒ `run_tests.py --jobs N` 给每一路传一个 `CS2C_TEST_WORKER=_wI`，
+# 配置目录和日志目录各自加这个后缀；串行档拿到空串，路径与批 47 之前逐字节一样。
+#
+# ⛔⛔ **只有这两个能加后缀，游戏沙箱（下面那个）不许加** —— 那条路径
+# **被高级设置页原样显示在屏幕上**，指纹钉着它。第一版我图省事直接把整个 TEMP
+# 换掉（三个目录一起搬），等价验收当场红：`advanced` 页指纹里那两行
+# 「当前使用的 CS2 目录：…」对不上。⭐ **换隔离手段之前，先问这个路径会不会被人看见。**
+_cs2customizer_worker = os.environ.get("CS2C_TEST_WORKER", "")
+
 # 测试隔离：把配置目录重定向到临时目录，避免测试中对 config 的夹具改动
 # （如 weapon_switch_sounds=styleSwitch）经防抖/atexit/显式 save 写进用户真实配置。
 # 必须在任何测试 import config 之前设置（conftest 在收集阶段最先执行）。
-_cs2customizer_test_cfg_dir = os.path.join(tempfile.gettempdir(), "cs2customizer_test_config")
+_cs2customizer_test_cfg_dir = os.path.join(tempfile.gettempdir(),
+                                    "cs2customizer_test_config" + _cs2customizer_worker)
 os.makedirs(_cs2customizer_test_cfg_dir, exist_ok=True)
 os.environ["CS2C_CONFIG_DIR"] = _cs2customizer_test_cfg_dir
 
 # 同理隔离日志目录（UP-004）：否则测试会往用户真实的
 # %LOCALAPPDATA%\CS2Customizer\logs 写入，而且过期清理会真的删掉用户的历史日志
 # —— 这在开发 UP-004 时已经真实发生过一次（误删 45 个历史日志）。
-_cs2customizer_test_log_dir = os.path.join(tempfile.gettempdir(), "cs2customizer_test_logs")
+_cs2customizer_test_log_dir = os.path.join(tempfile.gettempdir(),
+                                    "cs2customizer_test_logs" + _cs2customizer_worker)
 os.makedirs(_cs2customizer_test_log_dir, exist_ok=True)
 os.environ["CS2C_LOG_DIR"] = _cs2customizer_test_log_dir
 
@@ -35,6 +47,8 @@ os.environ["CS2C_LOG_DIR"] = _cs2customizer_test_log_dir
 # 这里在**任何测试 import config 之前**把持久化的 csgo_dir 按到沙箱目录上。
 # 用固定路径而不是 mkdtemp：`page_fingerprint.py` 要求指纹可复现，而高级设置页
 # 会把这个路径原样显示出来。与 `scripts/_audit_sandbox.py` 用的是同一个目录。
+# ⛔ **不加 `_cs2customizer_worker` 后缀**（批 47 实测过代价，见上面那段）：它出现在屏幕上，
+#    一加后缀 `advanced` 页的指纹立刻对不上。并行的几路共用它是**有意为之**。
 _cs2customizer_game_sandbox = os.path.join(tempfile.gettempdir(), "cs2customizer_audit_game_sandbox")
 os.makedirs(os.path.join(_cs2customizer_game_sandbox, "game", "csgo", "cfg"), exist_ok=True)
 
@@ -82,6 +96,16 @@ except Exception:
 
 # 将项目根目录加入 sys.path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
+# ⭐ 批 42（RN-469）：把 `tests/` 自己也加进来，判据才 import 得到同目录的
+# 共用件 `_denominator.py`（分母守卫 `must_scan`）。
+# ⚠ 这一行是被**逐文件跑**逼出来的：整目录跑 `pytest tests/` 时 pytest 会把
+# 测试文件所在目录塞进 sys.path，于是 `from _denominator import must_scan` 能过；
+# 而 `build_tools/run_tests.py` 是 `pytest tests/test_x.py` 一个文件一个进程，
+# 这条路径就不一定在了 —— 40 个文件同时 collect error。
+# ⭐ **「在我这儿跑得起来」和「在门禁那条路上跑得起来」是两件事**，
+#   而本仓的门禁一直是逐文件跑（进程级退出码，不信汇总输出）。
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # ==================== 全局 QApplication（UP-001）====================
 # 背景:pytest 在"收集阶段"就会 import 全部测试模块。其中 test_single_instance.py

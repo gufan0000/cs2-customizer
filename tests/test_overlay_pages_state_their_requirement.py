@@ -38,6 +38,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from _denominator import must_scan
 
 REPO = Path(__file__).resolve().parent.parent
 if str(REPO) not in sys.path:
@@ -154,7 +155,8 @@ def test_every_always_on_top_module_says_who_it_is_drawn_for():
     `crosshair_overlay` 和 `ui_toast` 在代码上长得一模一样。
     """
     silent = []
-    for name, path in sorted(_module_files().items()):
+    for name, path in must_scan(sorted(_module_files().items()),
+                                "候选的产品模块文件", least=20):
         try:
             text = path.read_text(encoding="utf-8")
         except OSError:
@@ -245,7 +247,7 @@ def test_a_page_that_can_reach_an_in_game_overlay_is_not_silent():
         return out & set(mods)
 
     silent = []
-    for page in _page_files():
+    for page in must_scan(_page_files(), "pages/ 下的页面文件", least=20):
         reach, frontier = set(), {page.stem}
         for _ in range(2):                      # 两跳
             nxt: set[str] = set()

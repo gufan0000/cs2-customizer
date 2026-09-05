@@ -94,10 +94,19 @@ def test_audio_health_page_uses_status_badges(qapp, monkeypatch):
     assert "项目 · 3 项" in chips
     assert "3" in page.summary_label.toolTip()
     assert "health-report" in page.report_text.toPlainText()
-    assert page.action_bar.secondary_btn.isHidden() is False
-    assert page.action_bar.primary_btn.isHidden() is False
-    assert page.action_bar.secondary_btn.text() == "立即体检"
-    assert page.action_bar.primary_btn.text() == "一键修复（保守）"
+    # ⚠⚠ 这几行原来钉的是**底栏**那两颗。2026-09-04 批 46（RN-102/RN-506）
+    #   把专家音频四页的底栏副本全撤了 —— 那几个动作卡内本来就有，
+    #   而底栏那颗主按钮还在四种状态之间变身。
+    # ⭐ 按批 33 的规矩改钉**留下来的那一份**（卡内），不是删掉这几行：
+    #   撤的是副本，动作一个都没少。
+    assert page.action_bar.secondary_btn.isHidden() is True
+    assert page.action_bar.primary_btn.isHidden() is True
+    assert page.check_btn.text() == "立即体检"
+    assert page.fix_btn.text() == "一键修复（只补不删）"
+    # ⭐ 发现问题时，那一颗紫的必须是「修复」而不是「再体检一次」——
+    #   外审 3 发逐字报「已检出 17 项问题但主视觉仍高亮『立即体检』」。
+    assert page.fix_btn.objectName() == "primaryButton"
+    assert page.check_btn.objectName() == "secondaryButton"
     assert "当前状态：发现 3 项问题" in page.action_bar.message_label.text()
 
     page.deleteLater()
@@ -159,8 +168,8 @@ def test_audio_replay_page_status_strip_tracks_filters(qapp, monkeypatch):
             timestamp=1.0,
             action="play",
             key="kill-1",
-            channel_type="kill_sound",
-            event_type="kill",
+            channel_type="kill_voice",
+            event_type="kill_voice",
         )
     )
     timeline.record(
@@ -168,8 +177,8 @@ def test_audio_replay_page_status_strip_tracks_filters(qapp, monkeypatch):
             timestamp=2.0,
             action="drop",
             key="reload-ak",
-            channel_type="reload",
-            event_type="reload",
+            channel_type="reload_sounds",
+            event_type="reload_sounds",
         )
     )
 
@@ -178,8 +187,14 @@ def test_audio_replay_page_status_strip_tracks_filters(qapp, monkeypatch):
 
     page = replay_module.AudioReplayPage()
     assert page.empty_results_label.isHidden() is True
-    page.action_edit.setText("play")
-    page.event_edit.setText("kill")
+    # ⚠⚠ 批 48（RN-508）：这三个筛选原来是自由输入框，提示语写着
+    #   `play/drop/preempt/load` / `kill/headshot/c4/...` / 「按 key 子串过滤」。
+    #   ⭐ 而中间那条**给的例子一行都匹配不上**（`event_type` 的真实取值是
+    #     `kill_voice`/`reload` 这一类，且筛选是精确比较）。
+    #   ⇒ 动作改闭集下拉、事件从真有的记录里生成。判据照批 33 的规矩
+    #     改钉**现在的形态**，不是删掉这几行。
+    page.action_combo.setCurrentIndex(page.action_combo.findData("play"))
+    page.event_combo.setCurrentIndex(page.event_combo.findData("kill_voice"))
     page.key_edit.setText("kill-1")
     page._refresh_events()
 
@@ -187,23 +202,37 @@ def test_audio_replay_page_status_strip_tracks_filters(qapp, monkeypatch):
     chips = _visible_audio_status_chip_texts(page.status_badge_label)
     assert len(chips) == 4
     assert "记录 · 1 条" in chips
-    assert "动作 · play" in chips
-    assert "事件 · kill" in chips
+    # 屏幕上一律是人话：内部值 play / reload 不许再露脸
+    assert "动作 · 播放" in chips
+    assert "事件 · 击杀语音" in chips
     assert "关键字 · kill-1" in chips
+    assert not [c for c in chips if "play" in c or "kill_voice" in c], chips
     assert "kill-1" in page.summary_label.toolTip()
-    assert page.action_bar.secondary_btn.isHidden() is False
-    assert page.action_bar.primary_btn.isHidden() is False
-    assert page.action_bar.secondary_btn.text() == "刷新事件"
-    assert page.action_bar.primary_btn.text() == "导出 JSON"
-    assert "当前筛选：动作 play / 事件 kill / 关键字 kill-1" in page.action_bar.message_label.text()
+    # ⚠⚠ 这几行原来钉的是**底栏**那两颗。2026-09-04 批 46（RN-102/RN-506）
+    #   把专家音频四页的底栏副本全撤了 —— 那几个动作卡内本来就有，
+    #   而底栏那颗主按钮还在四种状态之间变身。
+    # ⭐ 按批 33 的规矩改钉**留下来的那一份**（卡内），不是删掉这几行：
+    #   撤的是副本，动作一个都没少。
+    assert page.action_bar.secondary_btn.isHidden() is True
+    assert page.action_bar.primary_btn.isHidden() is True
+    assert page.refresh_btn.text() == "刷新"
+    assert page.export_btn.text() == "导出 JSON"
+    assert ("当前筛选：动作 播放 / 事件 击杀语音 / 关键字 kill-1"
+            in page.action_bar.message_label.text())
 
     page.table.selectRow(0)
     qapp.processEvents()
-    assert page.action_bar.primary_btn.text() == "重放选中"
+    # ⚠ 批 46：底栏那颗**随选中状态在「重放选中」与「导出 JSON」之间变身**的
+    #   主按钮已撤；「重放选中」留在卡内（它一直都在）。
+    assert page.action_bar.primary_btn.isHidden() is True
+    assert page.replay_btn.text() == "重放选中"
     assert "已选中 kill-1" in page.action_bar.message_label.text()
 
-    page.action_edit.setText("missing")
-    page.event_edit.setText("")
+    # 造一个「筛出零条」的场景：动作选「转发到语音」，而两条记录都不是。
+    # ⭐ 下拉里选不出不存在的值 —— 这正是 RN-508 改成下拉的目的；
+    #   空结果只可能来自「真没有这种事件」，不再可能来自「拼错了」。
+    page.action_combo.setCurrentIndex(page.action_combo.findData("forward"))
+    page.event_combo.setCurrentIndex(0)
     page.key_edit.setText("")
     page._refresh_events()
     assert page.table.isVisible() is False
@@ -254,11 +283,20 @@ def test_config_snapshot_page_status_strip_tracks_selection(qapp, monkeypatch):
     assert any(text.startswith("选中 · 20260314_11111") for text in chips)
     assert "20260314_111111_111111" in page.summary_label.text()
     assert "2026-03-14T11:11:11" in page.status_card.toolTip()
-    assert page.action_bar.secondary_btn.isHidden() is False
-    assert page.action_bar.primary_btn.isHidden() is False
-    assert page.action_bar.secondary_btn.text() == "刷新快照"
-    assert page.action_bar.primary_btn.text() == "恢复选中"
+    # ⚠⚠ 这几行原来钉的是**底栏两颗按钮**（`secondary="刷新快照"` /
+    #   `primary` 随选中状态在「创建快照」与「恢复选中」之间变身）。
+    #   2026-09-04 批 45（RN-506）把三个动作全收进「快照操作」卡、底栏只留回执：
+    #   那颗会变身的主按钮，把「多存一份」和「**覆盖当前全部设置**」放在了同一个像素上。
+    # ⭐ 按批 33 的规矩处置：**判据的对象被撤掉时，要么改钉现在的唯一入口，
+    #   要么删掉它；留着改成恒真是最坏的一种。** 这条改钉现在的形态 ——
+    #   前半段（状态芯片）本来就还有效，不该跟着一起删。
+    assert page.action_bar.secondary_btn.isHidden() is True
+    assert page.action_bar.primary_btn.isHidden() is True
+    assert page.create_btn.text() == "创建快照"
+    assert page.restore_btn.text() == "恢复选中"
     assert "当前选中：20260314_11111…" in page.action_bar.message_label.text()
+    # ⭐ 回执现在得把人指回卡内那颗 —— 底栏没有按钮了，不指就没有下一步。
+    assert "恢复选中" in page.action_bar.message_label.text()
 
     page.deleteLater()
     qapp.processEvents()
@@ -331,12 +369,21 @@ def test_audio_import_wizard_page_uses_compact_status_strip(qapp, monkeypatch, t
     assert len(chips) == 4
     assert any(text.startswith("源目录 · source") for text in chips)
     assert any(text.startswith("模式 · 音频") for text in chips)
-    assert "策略 · 预演" in chips
+    # 批 49（RN-508 收尾）：「保守」是内部说法，芯片改说它的实际性质。
+    #   照批 33 规矩改钉现在的形态，不是删掉这一行。
+    assert "策略 · 只预演" in chips
     assert "扫描 · 1/0" in chips
-    assert page.action_bar.secondary_btn.isHidden() is False
-    assert page.action_bar.primary_btn.isHidden() is False
-    assert page.action_bar.secondary_btn.text() == "扫描目录"
-    assert page.action_bar.primary_btn.text() == "生成建议"
+    # ⚠⚠ 这几行原来钉的是**底栏**那两颗。2026-09-04 批 46（RN-102/RN-506）
+    #   把专家音频四页的底栏副本全撤了 —— 那几个动作卡内本来就有，
+    #   而底栏那颗主按钮还在四种状态之间变身。
+    # ⭐ 按批 33 的规矩改钉**留下来的那一份**（卡内），不是删掉这几行：
+    #   撤的是副本，动作一个都没少。
+    assert page.action_bar.secondary_btn.isHidden() is True
+    assert page.action_bar.primary_btn.isHidden() is True
+    assert page.scan_btn.text() == "扫描目录"
+    # ⭐ 选好源目录之后，第一步才是「扫描」；没选之前紫的是「选择目录」——
+    #   外审 3 发报「未选目录时扫描却是唯一高亮，极易诱导玩家开局盲点导致报错」。
+    assert page.scan_btn.objectName() == "primaryButton"
     assert "当前模式：音频 · 已扫描 1 个可识别条目、0 个冲突" in page.action_bar.message_label.text()
 
     page._run_import()
@@ -344,7 +391,10 @@ def test_audio_import_wizard_page_uses_compact_status_strip(qapp, monkeypatch, t
     assert "结果 · 1/0/0" in chips
     assert "成功 1" in page.summary_label.toolTip()
     assert "kill_sounds/default/1.wav" in page.preview_text.toPlainText()
-    assert page.action_bar.primary_btn.text() == "打开资源目录"
+    # ⚠ 批 46：底栏那颗**在四种状态间变身**的主按钮已撤；
+    #   「打开资源目录」留在卡内（它一直都在）。
+    assert page.action_bar.primary_btn.isHidden() is True
+    assert page.open_resource_btn.text() == "打开资源目录"
     assert "最近一次预演结果 1/0/0" in page.action_bar.message_label.text()
 
     page.deleteLater()
@@ -377,9 +427,18 @@ def test_audio_task_panel_page_status_strip_tracks_runtime_state(qapp, monkeypat
     chips = _visible_audio_status_chip_texts(page.status_badge_label)
     assert "任务 · 空闲" in chips
     assert "历史 · 0 条" in chips
-    assert page.action_bar.secondary_btn.isHidden() is False
+    # ⚠⚠ 这几行原来钉的是**底栏**那两颗。2026-09-04 批 46（RN-102/RN-506）
+    #   把专家音频四页的底栏副本全撤了 —— 那几个动作卡内本来就有，
+    #   而底栏那颗主按钮还在四种状态之间变身。
+    # ⭐ 按批 33 的规矩改钉**留下来的那一份**（卡内），不是删掉这几行：
+    #   撤的是副本，动作一个都没少。
+    assert page.action_bar.secondary_btn.isHidden() is True
     assert page.action_bar.primary_btn.isHidden() is True
-    assert page.action_bar.secondary_btn.text() == "刷新历史"
+    assert page.refresh_btn.text() == "刷新"
+    # ⭐ 没有历史时刷新刷不出东西 ⇒ 第一步是去产生一个任务。
+    #   外审 6 发报「最抢眼的紫色主按钮是**无实质产出的**『刷新』」。
+    assert page.empty_action_btn.objectName() == "primaryButton"
+    assert page.refresh_btn.objectName() == "secondaryButton"
     assert "当前没有后台音频任务历史" in page.action_bar.message_label.text()
 
     page._on_task_started("abc123", "ui-check")
@@ -420,7 +479,7 @@ def test_audio_task_panel_page_status_strip_tracks_runtime_state(qapp, monkeypat
     qapp.processEvents()
 
 
-def test_preset_center_page_status_strip_tracks_dirty_state(qapp, monkeypatch):
+def test_preset_center_page_has_no_mode_combo_and_no_dirty_state(qapp, monkeypatch):
     import pages.preset_center_page as preset_page_module
 
     monkeypatch.setattr(QMessageBox, "information", lambda *_args, **_kwargs: 0)
@@ -454,56 +513,37 @@ def test_preset_center_page_status_strip_tracks_dirty_state(qapp, monkeypatch):
     page.show()
     qapp.processEvents()
 
-    # ⚠⚠ **2026-09-01 批 38 重写这一段，因为它逐字钉住的正是这一批要修的缺陷。**
+    # ⛔⛔ RN-496（批 52）：这条判据原来的主体是「那颗『范围 · N/7 类』胶囊在不在、
+    #   说得对不对」，而**整张「当前状态」卡这一批撤掉了**。
     #
-    # 原文里有两处：
-    #   ① `assert page.summary_label.isHidden() is True`
-    #      —— `summary_label` 是**建出来就 hide、全仓无人 show** 的死控件（RN-009），
-    #      而这条断言要求它**必须存在且必须隐藏**。它已随本批删掉。
-    #   ② 勾掉一个范围框之后 `assert "状态 · 待应用" in chips`
-    #      —— 那正是本批的主刀：勾一下打包范围实测 config **0 个键**变化，
-    #      而页面说「待应用」、底栏说「有未应用的预设变更」、想走还弹模态框拦人。
-    # ⭐⭐ **一个缺陷活下来的机制，是有人给它写了判据**（RN-084 那条第三次现身）。
-    # ⇒ 换成问真正该问的：胶囊在说**真话**吗。
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
-    assert "范围 · 5/7 类" in chips  # v2 默认勾选 5/7（+准心/自定闪光，R2-1）
-    # ⚠⚠ **2026-09-02 批 40 又拆掉两条**，理由和批 38 那次同源：
-    #   ① `"内容 · 5 项"` —— `export_bundle` 每一类恰好产出一项，所以这个 5
-    #      **永远等于**上一行那个 5。⭐ 同一个数说了两遍，还起了两个名字。
-    #   ② `"来源 · 你现在的设置"` —— 它的另一个取值靠 dirty 区分，
-    #      而本批把 dirty 整个撤了（RN-478）⇒ 它成了一颗**恒定**的胶囊，
-    #      ⭐ 恒定的状态显示不携带任何信息。
-    #   ③ `preview_meta_label` —— 那一行逐字重复上面两颗胶囊的内容，随卡改版一起撤。
-    # ⭐⭐ **判据钉住的每一句话，都在替它续命**（RN-084 那一族，本页第二次）。
-    #   ④ **批 40 补刀又拆掉一条**：`"模式 · 合并"` —— RN-484 把那个页级下拉框
-    #      整个撤了（它只有一个消费者、只在导入那一刻被读到，而且实测 64 个键里
-    #      只影响 5 个、7 类里 3 类完全无区别）⇒ 这颗胶囊报的是一个**不再存在的设定**。
-    #      导入模式现在只活在确认框的两颗按钮上，由
-    #      `test_preset_center_tells_the_truth::test_the_import_mode_is_asked_at_the_moment_it_matters`
-    #      和它的阳性对照 `..._really_replaces` 一起钉住。
-    assert "内容" not in " ".join(chips), (
-        f"「内容 · N 项」又回来了：{chips} —— 它和「范围 · N/7 类」是同一个数。")
-    assert "模式" not in " ".join(chips), (
-        f"「模式 · X」又回来了：{chips} —— 这一页已经没有页级导入模式了。")
-    assert not hasattr(page, "mode_combo"), "页面上又长回了一个导入模式下拉框"
+    # ⭐⭐ 它自己的 docstring 已经把道理写了四遍：
+    #   「一个缺陷活下来的机制，是有人给它写了判据」/「判据钉住的每一句话，都在替它续命」。
+    #   批 38 拆掉两条、批 40 拆掉三条、补刀又拆掉一条 —— 每一次都写明了理由，
+    #   而每一次拆的都是**同一颗胶囊的一部分**。这一次拆的是最后一部分。
+    # ⇒ 接班的：
+    #   · 「这一页确实没有状态卡，而别的 27 页确实还有」
+    #     → `test_the_status_card_is_a_site_wide_pattern.py`（正反两条守卫）
+    #   · 「一共有几类，这个答案必须在第一屏上」（那颗胶囊的替身职责）
+    #     → `test_preset_center_tells_the_truth::test_every_scope_checkbox_is_above_the_fold`
+    #       （完整档 + 紧凑档各钉一遍，比胶囊硬）
+    #
+    # 下面留下的两条**和胶囊无关**：它们钉的是这一页的两个结构事实。
+    assert not hasattr(page, "mode_combo"), (
+        "页面上又长回了一个导入模式下拉框 —— RN-484 撤掉它的理由是："
+        "只有一个消费者、只在导入那一刻被读到，而实测 64 个键里只影响 5 个、"
+        "7 类里 3 类两种模式逐字节相同。")
+    assert not hasattr(page, "is_dirty"), (
+        "dirty 机制又回到这一页了 —— 勾一下打包范围实测 config **0 个键**变化，"
+        "而 dirty 会让页面说「待应用」、底栏说「有未应用的预设变更」、想走还弹框拦人。")
 
+    # ⭐ 勾选仍然要真的改变「会存哪几类」这件事（胶囊没了，但这件事还在）。
+    before = page._selected_type_labels()
     page.cb_special.setChecked(False)
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
-    assert "范围 · 4/7 类" in chips
-    # ⭐ 勾选范围**不是**一次未保存的修改 —— 批 40 起这件事由
-    #   `test_preset_center_tells_the_truth::test_this_page_has_no_such_thing_as_an_unsaved_change`
-    #   从结构上钉住（这一页已经没有 `is_dirty` 这个方法了），这里不再重复问一遍。
-    assert not hasattr(page, "is_dirty"), "dirty 机制又回到这一页了"
+    qapp.processEvents()
+    after = page._selected_type_labels()
+    assert len(after) == len(before) - 1, (
+        f"取消勾选「特殊音效」之后，选中的范围没跟着变：{before} → {after}")
 
-    # ⚠ 详情 tooltip 仍要跟着勾选走（它是这颗胶囊唯一的展开处）。
-    assert "特殊音效" not in page.status_card.toolTip(), (
-        f"取消勾选之后 tooltip 里还留着它：{page.status_card.toolTip()}")
-
-    # ⛔ 这里原来还有一段量「工作台两列在窄页上换向」的断言（UP-100）。
-    #   RN-484 撤掉「导入策略」那一列之后，这张卡**只剩一列** ——
-    #   ⭐ 没有可换的向了，那段断言量的是一个结构上不再存在的东西。
-    #   「我的预设」那一行的换向仍在，由 `_update_my_presets_layout` 负责，
-    #   `test_compact_mode_layout_r11` 里有它自己的判据。
     page.deleteLater()
     qapp.processEvents()
 

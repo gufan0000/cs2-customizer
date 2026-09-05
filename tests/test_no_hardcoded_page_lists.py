@@ -36,6 +36,7 @@ from pathlib import Path
 import pytest
 
 from core.page_traits import DEVICE_OWNING_PAGES
+from _denominator import must_scan
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -100,7 +101,8 @@ def _string_groups(tree: ast.AST):
 
 def test_device_owning_page_list_has_exactly_one_copy():
     offenders = []
-    for path in _tracked_python_files():
+    must_scan(DEVICE_OWNING_PAGES, "DEVICE_OWNING_PAGES（设备页名单）", least=2)
+    for path in must_scan(_tracked_python_files(), "git 在管的 *.py", least=100):
         rel = path.relative_to(REPO).as_posix()
         if rel in ALLOWED:
             continue

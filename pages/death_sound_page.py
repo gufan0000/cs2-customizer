@@ -46,6 +46,11 @@ from widgets.page_header import PageHeader
 from widgets.page_action_bar import PageActionBar
 
 
+#: RN-519：这个名字在屏幕上出现三次（按钮 + 页头副标题 + 卡片说明），
+#: 所以它只能有一份定义 —— 改名时三处一起动。
+TEST_BUTTON_TEXT = "测试"
+
+
 class DeathSoundPage(QWidget):
     """被击杀音效设置页面。"""
 
@@ -167,7 +172,7 @@ class DeathSoundPage(QWidget):
             # 写着「开关 · 已启用」—— 自相矛盾。改成陈述总开关在哪，
             # "现在到底开没开"交给徽章和底部操作条按状态说。
             # RN-189：总开关已经搬到这一页的状态卡里，"它在哪儿"这句话作废。
-            description="自己被击杀时播放一段音效。选一套风格，点「测试」试听。",
+            description=f"自己被击杀时播放一段音效。选一套风格，点「{TEST_BUTTON_TEXT}」试听。",
             title_font_size=None,
             spacing=12,
         )
@@ -222,7 +227,7 @@ class DeathSoundPage(QWidget):
         # 产生信息噪音且缺乏有效操作指引」。与 kill_sound 的 PAGE_LEAD 同病。
         selection_card, selection_layout = SettingsCard.make(
             "风格选择",
-            "选一个风格，点「测试」就能听到实际效果。",
+            f"选一个风格，点「{TEST_BUTTON_TEXT}」就能听到实际效果。",
         )
         selection_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
 
@@ -240,7 +245,7 @@ class DeathSoundPage(QWidget):
         self.style_combo.currentTextChanged.connect(self._on_style_changed)
         style_row.addWidget(self.style_combo, 1)
 
-        self.test_btn = QPushButton("测试")
+        self.test_btn = QPushButton(TEST_BUTTON_TEXT)
         self.test_btn.setObjectName("secondaryButton")
         self.test_btn.setFixedWidth(88)
         self.test_btn.setMinimumHeight(34)

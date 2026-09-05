@@ -21,6 +21,7 @@ import pytest
 import dialogs.kill_icon_workshop as workshop_module
 from config import config
 from core.kill_icon_library import LEVELS
+from _denominator import must_scan
 
 
 class _StubPlayer:
@@ -407,7 +408,8 @@ def test_no_button_text_gets_elided(workshop, qapp):
     qapp.processEvents()
     try:
         elided = []
-        for btn in workshop.findChildren(QPushButton):
+        for btn in must_scan(workshop.findChildren(QPushButton),
+                             "素材工坊上的按钮", least=3):
             text = btn.text().strip()
             if not btn.isVisible() or not text or btn.width() <= 0:
                 continue

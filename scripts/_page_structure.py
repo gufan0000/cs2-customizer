@@ -65,17 +65,45 @@ def _scrub_machine_paths(text: str) -> str:
 #: ⇒ 采基线之前先问一句：**这一页有没有哪个控件是在描述「这台机器」而不是「这个软件」？**
 #:
 #: 只归一这几条、不归一别的：文案变了本来就该红，那正是这条判据的用途。
+#: ⚠ 2026-09-05 批 48（RN-146）由同一条规律逼出来的第三次：`audio_health` 的
+#: 状态芯片与摘要写的是**这台机器上有多少资源缺失**（「体检 · 发现问题」
+#: 「项目 · 17 项」「状态 · 发现问题 · 音频待检查 · 视觉待检查 · 17项」）。
+#: 我这台装着素材、CI runner 是干净的 ⇒ 这一页的结构判据在两边永远对不上。
+#: ⭐ 按本文件自己那句话验过：**这几个控件描述的是「这台机器」，不是「这个软件」。**
+#: ⛔ 归一的只是**数与结论**，「体检 / 音频 / 视觉 / 项目」这些**字段名照旧参与比对** ——
+#:   把整条抹掉就等于这一页的芯片从此没人看着了。
 _ENV_DEPENDENT_TEXT = (
     (re.compile(r"^当前权限："), "当前权限：<环境相关>"),
+    (re.compile(r"^体检 · "), "体检 · <环境相关>"),
+    (re.compile(r"^音频 · (正常|检查)$"), "音频 · <环境相关>"),
+    (re.compile(r"^视觉 · (正常|检查)$"), "视觉 · <环境相关>"),
+    (re.compile(r"^项目 · \d+ 项$"), "项目 · <环境相关>"),
+    (re.compile(r"^状态 · (健康|发现问题) · "), "状态 · <环境相关>"),
 )
 #: 上面那些控件**同一张卡片里**、启用态也随环境变的按钮。
 _ENV_DEPENDENT_ENABLED_TEXT = ("以管理员身份重启",)
 
 
+#: Qt **自己**造出来的内部子控件的类型。产品代码不会直接实例化它们
+#: （`QAbstractButton` 是抽象基类），所以凡是这个类型的条目必然是 Qt 内部件。
+#: ⚠⚠ 它们的 `objectName` **跨环境不稳定**：2026-09-04 批 45 实测 ——
+#:   `QTableWidget` 的角落按钮在本机拿到的是**空名**，在 CI 上是
+#:   `qt_tableview_cornerbutton`，于是刚取的结构基线**本机绿、CI 红**。
+#: ⭐⭐ 结构指纹一直被当成「跨机器稳定」的那一半（几何才是不稳定的那一半，
+#:   所以只有指纹判据配了环境签名守卫）—— **这次证明它也有一小块不是。**
+#: ⛔ 修法不是给结构判据也加环境守卫：那会让它在 CI 上整个失效，
+#:   而 CI 正是它最该说话的地方。⇒ 只把这一小块**归一**掉。
+_QT_INTERNAL_TYPES = frozenset({"QAbstractButton"})
+
+
 def _entry(widget, root=None) -> dict:
+    type_name = type(widget).__name__
+    name = widget.objectName()
+    if type_name in _QT_INTERNAL_TYPES:
+        name = "<Qt内部>"
     out = {
-        "type": type(widget).__name__,
-        "name": widget.objectName(),
+        "type": type_name,
+        "name": name,
         "enabled": widget.isEnabled(),
     }
     if root is not None:

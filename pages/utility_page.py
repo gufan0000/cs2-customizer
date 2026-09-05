@@ -387,7 +387,8 @@ class UtilityPage(QWidget):
                     "「地图」和「阵营」现在还认不出来：软件要先往 CS2 里写一份配置文件才读得到，"
                     "去「高级设置」页选一次 CS2 安装目录就会自动写好")
         if not utility_count:
-            missing.append("道具要先把图片放进道具文件夹，再点「刷新道具列表」")
+            missing.append(
+                f"道具要先把图片放进道具文件夹，再点「{self.refresh_utility_btn.text()}」")
         self.state_hint_label.setText(
             "；".join(missing) + "。" if missing
             else "地图、阵营、道具都就位了，按热键就能在游戏里叫出来。"
@@ -551,7 +552,9 @@ class UtilityPage(QWidget):
         self._themed_buttons.append(self.open_team_folder_btn)
         button_grid.addWidget(self.open_team_folder_btn, 1, 0)
         
-        refresh_btn = QPushButton("刷新道具列表")
+        # RN-519：状态条那句话要点名它，名字只能有一份。
+        self.refresh_utility_btn = QPushButton("刷新道具列表")
+        refresh_btn = self.refresh_utility_btn
         refresh_btn.clicked.connect(self._refresh_utilities)
         refresh_btn.setCursor(Qt.PointingHandCursor)
         refresh_btn.setStyleSheet(button_style)
@@ -680,7 +683,7 @@ class UtilityPage(QWidget):
         position_title = QLabel("定位与预览")
         position_title.setObjectName("statusLabel")
         position_layout.addWidget(position_title)
-        position_hint = QLabel("数值偏移适合微调素材落点，预览按钮保留在首屏。")
+        position_hint = QLabel("X / Y 是瞄点图相对默认位置的偏移，改完可以直接预览效果。")
         position_hint.setObjectName("hintLabel")
         position_hint.setWordWrap(True)
         position_layout.addWidget(position_hint)

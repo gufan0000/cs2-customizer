@@ -26,6 +26,10 @@ from widgets.settings_card import SettingsCard
 import os
 
 
+#: RN-519：卡片说明要点名这颗按钮，而说明比按钮先建 —— 名字只留一份。
+REFRESH_STYLES_BUTTON_TEXT = "刷新样式列表"
+
+
 class FlashPage(QWidget):
     """闪光效果设置页面"""
 
@@ -804,7 +808,8 @@ class FlashPage(QWidget):
 
         source_card, source_layout = SettingsCard.make(
             "图片来源",
-            "选一套闪光图片。自己往图片文件夹里加了素材，点「刷新样式列表」才会出现在这里。",
+            "选一套闪光图片。自己往图片文件夹里加了素材，点"
+            f"「{REFRESH_STYLES_BUTTON_TEXT}」才会出现在这里。",
         )
         self.image_style_combo = QComboBox()
         self.image_style_combo.addItem("不使用图片", "none")
@@ -820,7 +825,7 @@ class FlashPage(QWidget):
 
         action_row = QHBoxLayout()
         action_row.setSpacing(8)
-        refresh_btn = QPushButton("刷新样式列表")
+        refresh_btn = QPushButton(REFRESH_STYLES_BUTTON_TEXT)
         refresh_btn.clicked.connect(self._refresh_styles)
         folder_btn = QPushButton("打开图片文件夹")
         folder_btn.clicked.connect(self._open_flash_images_folder)

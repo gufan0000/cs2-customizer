@@ -49,6 +49,7 @@ import re
 from pathlib import Path
 
 import pytest
+from _denominator import must_scan
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -429,7 +430,7 @@ def test_a_half_present_campaign_is_rot_not_a_reason_to_skip():
 def test_no_rn_number_is_used_twice():
     """RN-101 事故：同一个号在同一份登记册里指两件事。"""
     seen: dict[str, int] = {}
-    for _, cells in _rows(_require_registry()):
+    for _, cells in must_scan(_rows(_require_registry()), "登记册里解析到的行", least=300):
         rid = cells[0].strip("* ")
         seen[rid] = seen.get(rid, 0) + 1
     dups = sorted(r for r, n in seen.items() if n > 1)
@@ -504,6 +505,9 @@ def test_the_status_vocabulary_does_not_rot():
 def test_the_registry_table_shapes_are_a_closed_set():
     """⭐ 分母守卫：新加一张判据读不懂的表，里面的条目会**静默**躲开所有断言。"""
     shapes = {h for h, _ in _rows(_require_registry())}
+    # ⭐ 这条自己就是一条分母守卫，而它自己的分母也会空：
+    #   解析器读不到任何表时 `shapes` 是空集，「没有陌生表形」自动成立。
+    must_scan(shapes, "登记册里解析到的表形", least=2)
     unknown = sorted(shapes - KNOWN_TABLE_SHAPES)
     assert not unknown, (
         f"登记册里出现了没见过的表形：{unknown}\n"
@@ -530,7 +534,8 @@ def test_a_row_that_says_closed_somewhere_else_says_it_in_the_status_cell():
     """
     claim = re.compile(r"已结（\d{4}-\d{2}-\d{2}")
     bad = []
-    for header, cells in _rows(_require_registry()):
+    for header, cells in must_scan(_rows(_require_registry()),
+                                   "登记册里解析到的行", least=300):
         rid = cells[0].strip("* ")
         status = _cell(header, cells, "状态")
         if not status or not _is_open(status):

@@ -125,6 +125,12 @@ def structure_of(pages: list[str], expert: bool = False) -> dict:
     use_pristine_config_dir("cs2customizer_renovation_pristine", force=True)
     os.environ["QT_QPA_PLATFORM"] = "offscreen"
     os.environ["CS2C_SAFE_MODE_ACTIVE"] = "1"
+    # RN-146：`audio_health` 在构造里起线程扫盘，扫完得比取样早还是晚，
+    # 决定了这一页是「扫描中」还是结果列表 —— 同一份配置复跑控件树会变
+    # （CI 上实测 18 条差异，本机测不出来）。⇒ 让它这一次同步扫完再返回。
+    # ⚠ 这一行**不能**换成 `enable_audit_mode()`：那个会连热键与账号会话一起中和，
+    #   一次改三件事，而本函数的注释（见上）明说采基线时不做那类中和。
+    os.environ["CS2C_SYNC_HEALTH_SCAN"] = "1"
     from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
     from _audit_sandbox import sandbox_external_writes

@@ -443,8 +443,8 @@ SEARCH_INDEX: List[Tuple[str, str, List[str]]] = [
         "advanced", "theme", "dark mode", "hotkey", "hotkeys", "shortcut", "keybind",
         "autostart", "startup", "tray", "debug", "reset",
     ]),
-    ("audio_health", "音频体检", [
-        "音频体检", "资源体检", "体检", "音频检查", "资源检查", "检查资源", "查一下资源", "修复", "缺失目录", "为什么没声音",
+    ("audio_health", "资源体检", [
+        "资源体检", "音频体检", "体检", "音频检查", "资源检查", "检查资源", "查一下资源", "修复", "缺失目录", "为什么没声音",
         "声音不对", "音效不响", "检查音频", "audio health", "diagnose", "repair",
     ]),
     ("audio_import_wizard", "资源导入向导", [
@@ -458,8 +458,8 @@ SEARCH_INDEX: List[Tuple[str, str, List[str]]] = [
         "回放", "音频回放", "事件记录", "播放历史", "为什么没声音", "刚才响了吗", "音效历史",
         "replay", "event log",
     ]),
-    ("config_snapshot", "配置快照", [
-        "快照", "配置快照", "配置备份", "回滚", "恢复配置", "还原", "存档", "备份配置", "撤销更改",
+    ("config_snapshot", "软件设置快照", [
+        "快照", "软件设置快照", "设置快照", "配置快照", "配置备份", "回滚", "恢复配置", "还原", "存档", "备份配置", "撤销更改",
         "snapshot", "backup", "restore", "rollback",
     ]),
     ("preset_center", "预设中心", [

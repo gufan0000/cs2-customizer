@@ -250,10 +250,16 @@ def test_the_host_no_longer_reimplements_drawing(qapp):
     import ast
     from pathlib import Path
 
+    from _denominator import must_scan
+
     source = (Path(__file__).resolve().parent.parent /
               "dialogs" / "kill_icon_workshop.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    # ⭐ 分母是这个文件里的调用点；文件被搬空之后「没有第二套绘制」自动成立。
+    must_scan([n for n in ast.walk(tree) if isinstance(n, ast.Call)],
+              "dialogs/kill_icon_workshop.py 里的函数调用", least=20)
     painters = [
-        node for node in ast.walk(ast.parse(source))
+        node for node in ast.walk(tree)
         if isinstance(node, ast.Call)
         and getattr(node.func, "id", getattr(node.func, "attr", "")) == "QPainter"
     ]

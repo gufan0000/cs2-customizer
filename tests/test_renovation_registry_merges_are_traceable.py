@@ -85,6 +85,7 @@ from tests.test_renovation_registry_does_not_rot import (  # noqa: E402
     _status_word,
     _statuses,
 )
+from _denominator import must_scan
 
 #: 归宿格允许的非 RN 取值。⚠ 故意**不含**「独立跟踪」这类词 ——
 #: 一条要继续被跟踪的旧账行，正确形态是**升格**（在有状态格的表里开一行，
@@ -200,7 +201,8 @@ def test_a_merge_points_at_a_row_that_actually_exists():
     让条目凭空消失的咒语 —— 而且消失得毫无痕迹，因为它在统计里算结了。
     """
     text = _require_registry()
-    known = set(_statuses(text)) | {rn for _, rn, _ in _old_ledger_rows(text)}
+    known = must_scan(set(_statuses(text)) | {rn for _, rn, _ in _old_ledger_rows(text)},
+                      "登记册里在册的 RN 号（主表 + 旧账表）", least=300)
     bad = []
     for rn, status in _statuses(text).items():
         bare = re.sub(r"\*+", "", status).lstrip("⚠⭐⛔ ")
@@ -253,9 +255,10 @@ def test_the_home_cell_of_an_old_ledger_row_is_a_closed_vocabulary():
     「已关档的页不许有无归宿的行」在**看起来填了**的时候静默放行。
     """
     text = _require_registry()
-    known = set(_statuses(text)) | {rn for _, rn, _ in _old_ledger_rows(text)}
+    known = must_scan(set(_statuses(text)) | {rn for _, rn, _ in _old_ledger_rows(text)},
+                      "登记册里在册的 RN 号（主表 + 旧账表）", least=300)
     bad = []
-    for page, rn, home in _old_ledger_rows(text):
+    for page, rn, home in must_scan(_old_ledger_rows(text), "旧账逐页表的行", least=80):
         bare = re.sub(r"\*+", "", home).strip()
         if bare in UNDECIDED or bare in HOME_WORDS:
             continue
@@ -275,7 +278,8 @@ def test_an_old_ledger_row_does_not_point_at_a_merged_entry():
     一条已经不是真源的条目上。**并号不是改一格，是改一条边。**
     """
     text = _require_registry()
-    merged = _merged(text)
+    merged = must_scan(_merged(text), "状态是「并入 RN-xxx」的条目", least=20)
+    must_scan(_old_ledger_rows(text), "旧账逐页表的行", least=80)
     bad = [
         f"{page} {rn}：归宿指向 {token}，而 {token} 已并入 {merged[token]}"
         for page, rn, home in _old_ledger_rows(text)
@@ -340,7 +344,8 @@ def test_a_closed_page_has_no_homeless_old_ledger_rows():
     """
     board = _require_board()
     text = _require_registry()
-    closed = _closed_pages(board)
+    closed = must_scan(_closed_pages(board), "页面清单里标了「已关档」的页", least=10)
+    must_scan(_old_ledger_rows(text), "旧账逐页表的行", least=80)
     homeless = [
         f"{page} {rn}"
         for page, rn, home in _old_ledger_rows(text)

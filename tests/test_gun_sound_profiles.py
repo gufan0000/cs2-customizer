@@ -127,8 +127,16 @@ def test_the_page_does_not_name_weapon_classes_it_cannot_select():
     import ast
     from pathlib import Path
 
+    from _denominator import must_scan
+
     src = Path(__file__).resolve().parent.parent / "pages" / "gun_sound_page.py"
     tree = ast.parse(src.read_text(encoding="utf-8"))
+
+    # ⭐ 两个分母都要在：这一页得真的有文案，那张「这一页选不到的武器类」名单也不许空。
+    must_scan([n for n in ast.walk(tree)
+               if isinstance(n, ast.Constant) and isinstance(n.value, str)],
+              "gun_sound 页里的字符串字面量", least=20)
+    must_scan(_CLASSES_NOT_ON_THIS_PAGE, "_CLASSES_NOT_ON_THIS_PAGE（这一页选不到的武器类）")
 
     offenders = []
     for node in ast.walk(tree):

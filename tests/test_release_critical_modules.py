@@ -43,6 +43,12 @@ KNOWN_UNLISTED = {
     "core.fun", "core.gun_sound_profiles", "core.hotkeys", "core.hud",
     "core.io_validation", "core.magnifier_sensitivity", "core.presets",
     "core.resource_health", "core.resource_import_wizard", "core.runtime",
+    # 批 48（RN-508）：内部记号 → 用户看得懂的话的词表。
+    # `audio_replay_page` 在**模块层** `from core.audio_event_text import ...`
+    # ⇒ 打包必然收，不需要进 CRITICAL_ARCHIVE_MODULES。
+    # ⚠ 另一份 `core.health_report_text` **不进这张表**：页面不直接 import 它
+    #   （走 `core.resource_health` 转手），它不是链路根 —— 反向断言当场点名。
+    "core.audio_event_text",
     "core.usage_reporter", "core.utils", "crosshair_overlay",
     # ⚠ `gsi_handler_music` 在批 33 从这张表里**摘掉了**，不是因为它变危险了，
     #   而是因为它**不再是页面链路根**：RN-454 撤掉音乐页那颗子开关时，

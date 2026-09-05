@@ -52,6 +52,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from _denominator import must_scan
 
 REPO = Path(__file__).resolve().parent.parent
 BASELINE_DIR = REPO / "tests" / "baselines" / "renovation"
@@ -156,9 +157,13 @@ def test_archived_pages_still_match_their_fingerprint(tmp_path):
     from _page_structure import diff
 
     rotted = {}
+    # ⭐ 分母是「真的比对过的页」。上面几处 `pytest.skip` 是**出口不是守卫** ——
+    #   跳过和通过在门禁上是同一个颜色，所以到了这里必须有东西可比。
+    must_scan(pages, "有指纹基线的已关档页")
     for pid in pages:
         base = json.loads(
             (BASELINE_DIR / pid / "fingerprint.json").read_text(encoding="utf-8"))
+        must_scan(base, f"{pid} 的指纹基线条目", least=5)
         got = now.get(pid)
         assert got is not None, f"{pid} 这一页没取到指纹，但它有基线 —— 别静默放过"
         d = diff(base, got)

@@ -702,7 +702,10 @@ class AdvancedPage(QWidget):
             "改键时若与其他功能撞键，对应页面会给出冲突提示。",
         )
 
-        self.hotkey_overview_label = QLabel("（点击「刷新」查看当前绑定）")
+        # ⚠ RN-519 清存量时发现：这句预填**永远不会被看到** —— 本函数末尾就调
+        #   `_refresh_hotkey_overview()`，它的每一条分支都会把这行字覆盖掉。
+        #   ⇒ 不必点名那颗按钮（点了也是抄一份名字），换成中性的占位。
+        self.hotkey_overview_label = QLabel("正在读取当前绑定…")
         self.hotkey_overview_label.setObjectName("hintLabel")
         self.hotkey_overview_label.setWordWrap(True)
         self.hotkey_overview_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
@@ -809,7 +812,11 @@ class AdvancedPage(QWidget):
         """选择CS:GO目录"""
         directory = QFileDialog.getExistingDirectory(
             self,
-            "选择 CS:GO 安装目录",
+            # ⚠ RN-204（批 45）：屏幕上不再管这个游戏叫「CS:GO」——它是 CS2。
+            #   ⛔ 但**方法名、日志、路径里的 `csgo` 一个字都不许改**：
+            #     CS2 的安装目录里那一层确实还叫 `csgo`（全仓 16 处路径字面量），
+            #     而日志文案改了搜日志的人就找不到（RN-057）。
+            "选择 CS2 安装目录",
             config.csgo_dir if hasattr(config, 'csgo_dir') and config.csgo_dir else ""
         )
         
@@ -829,13 +836,18 @@ class AdvancedPage(QWidget):
                 except Exception as e:
                     self.logger.error(f"创建配置文件失败: {e}")
                 
-                QMessageBox.information(self, "成功", "CS:GO 目录设置成功！")
+                QMessageBox.information(self, "成功", "CS2 目录设置成功！")
                 self.logger.info(f"CS:GO 目录已设置: {directory}")
             else:
                 QMessageBox.critical(
                     self,
                     "错误",
-                    "无效的 CS:GO 目录！\n\n请确保选择的目录包含: game/csgo/cfg 文件夹。"
+                    # ⭐ 这句必须同时说清两件看起来矛盾的事：选的是 **CS2** 目录，
+                    #   而要找的那一层**确实叫 `csgo`**（V 社没改这个目录名）。
+                    #   不说后半句，玩家会以为自己选错了游戏。
+                    "无效的 CS2 目录！\n\n"
+                    "请确保选择的目录包含: game/csgo/cfg 文件夹"
+                    "（CS2 沿用了 csgo 这个目录名，没写错）。"
                 )
                 self.logger.warning(f"无效的 CS:GO 目录: {directory}")
     
@@ -905,7 +917,7 @@ class AdvancedPage(QWidget):
         try:
             from core.config_snapshot_manager import list_snapshots
             _ = list_snapshots  # 只为确认快照子系统可用
-            snapshot_hint = "\n\n执行前会自动保存一份配置快照，重启后可在「配置快照」页恢复。"
+            snapshot_hint = "\n\n执行前会自动保存一份设置快照，重启后可在「软件设置快照」页恢复。"
         except Exception:
             snapshot_hint = "\n\n⚠ 快照子系统不可用，本次重置**无法回滚**。"
 
@@ -934,7 +946,7 @@ class AdvancedPage(QWidget):
                 # 建不了快照就把选择权交回用户，别默默做不可逆的事
                 again = QMessageBox.warning(
                     self, "无法创建快照",
-                    "创建配置快照失败，继续重置将**无法回滚**。\n\n仍要继续吗？",
+                    "创建设置快照失败，继续重置将**无法回滚**。\n\n仍要继续吗？",
                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
                 )
                 if again != QMessageBox.Yes:
@@ -953,7 +965,7 @@ class AdvancedPage(QWidget):
                     self,
                     "成功",
                     "设置已重置！\n\n程序将自动关闭，请重新启动以应用更改。"
-                    + ("\n\n如需找回旧配置：重启后到「配置快照」页恢复 "
+                    + ("\n\n如需找回旧配置：重启后到「软件设置快照」页恢复 "
                        "`before_reset_all`。" if snapshot_ok else ""),
                 )
 

@@ -30,6 +30,7 @@ from kill_icon_overlay import (
     compute_scaled_size,
 )
 from widgets.kill_icon_preview import REFERENCE_SCREEN, KillIconPositionMap
+from _denominator import must_scan
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -233,6 +234,9 @@ def test_page_does_not_reimplement_drawing(page):
     点准心随粗细漂移，两套几何各画各的，只有肉眼能发现。
     """
     tree = ast.parse((REPO / "pages" / "kill_icon_page.py").read_text(encoding="utf-8"))
+    # ⭐ 分母是这一页的调用点；页面被搬空之后「没有第二套绘制」自动成立。
+    must_scan([n for n in ast.walk(tree) if isinstance(n, ast.Call)],
+              "pages/kill_icon_page.py 里的函数调用", least=20)
     painters = [
         node for node in ast.walk(tree)
         if isinstance(node, ast.Call)

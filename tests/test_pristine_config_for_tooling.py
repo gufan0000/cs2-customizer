@@ -31,6 +31,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
+from _denominator import must_scan
 
 REPO = Path(__file__).resolve().parent.parent
 SCRIPTS = REPO / "scripts"
@@ -57,6 +58,9 @@ def test_placeholder_config_is_written_before_anything_can_migrate():
 
     迁移的条件是「新配置不存在」（`config.py:843`），所以占位文件就是那道闸门。
     判据落在**文件真的在不在**上，不是落在"函数有没有被调用"上。
+
+    分母：这条没有分母 —— 它起一个干净子进程、调一次 helper、
+    看那**一个**文件在不在，全程不扫任何集合。
     """
     code = (
         "import json, sys\n"
@@ -182,7 +186,7 @@ def test_only_one_place_in_scripts_touches_the_config_dir_env():
     正是因为当时没有任何东西在问"还有几份"。
     """
     offenders = {}
-    for py in sorted(SCRIPTS.glob("*.py")):
+    for py in must_scan(sorted(SCRIPTS.glob("*.py")), "scripts/*.py", least=20):
         if py.name == _SOLE_OWNER:
             continue
         lines = _sets_config_dir_env(py)
@@ -202,9 +206,11 @@ def test_every_tool_that_builds_pages_uses_the_shared_helper():
     只查"没人另写一份"是不够的 —— 把那几行整段删掉也能让上一条判据变绿，
     而那样一来配置目录就落到用户的**真实配置**上（更糟）。
     """
-    must_use = ["ui_shot_capture.py", "page_fingerprint.py", "bench_page_build.py",
-                "layout_overflow_audit.py", "build_search_index.py",
-                "renovation_baseline.py"]
+    must_use = must_scan(
+        ["ui_shot_capture.py", "page_fingerprint.py", "bench_page_build.py",
+         "layout_overflow_audit.py", "build_search_index.py",
+         "renovation_baseline.py"],
+        "会建页面、必须走干净配置目录的工装", least=6)
     missing = []
     for name in must_use:
         src = (SCRIPTS / name).read_text(encoding="utf-8")

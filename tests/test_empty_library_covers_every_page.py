@@ -38,6 +38,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from _denominator import must_scan
 
 REPO = Path(__file__).resolve().parents[1]
 if str(REPO / "scripts") not in sys.path:
@@ -148,7 +149,7 @@ def test_no_page_grows_its_own_empty_state():
     都必须是**把它当参数交给共用件**，不许自己 `configure_primary`。
     """
     offenders = []
-    for filename in sorted(ALL_WIRED):
+    for filename in must_scan(sorted(ALL_WIRED), "ALL_WIRED（接了空库引导的页面）", least=8):
         path = REPO / "pages" / filename
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):

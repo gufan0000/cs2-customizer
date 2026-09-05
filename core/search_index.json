@@ -22,11 +22,11 @@
   "fun_afterlife": "死亡刷短视频",
   "utility": "道具瞄点",
   "advanced": "高级设置",
-  "audio_health": "音频体检",
+  "audio_health": "资源体检",
   "audio_import_wizard": "资源导入向导",
   "audio_task_panel": "音频任务面板",
   "audio_replay": "音频事件回放",
-  "config_snapshot": "配置快照",
+  "config_snapshot": "软件设置快照",
   "preset_center": "预设中心",
   "about": "关于软件"
  },
@@ -117,9 +117,11 @@
   "XM1014",
   "冲锋枪",
   "刷新风格列表",
+  "应用到全部武器",
   "当前状态",
   "手枪",
   "打开音频资源",
+  "整套套用",
   "未开启",
   "机枪",
   "步枪",
@@ -127,6 +129,7 @@
   "燃烧瓶",
   "狙击枪",
   "近战",
+  "还没有可用的风格 —— 先导入或新建一个",
   "霰弹枪"
  ],
  "items": [
@@ -2380,14 +2383,6 @@
   },
   {
    "page": "hud_color",
-   "text": "载入这套",
-   "card": "预设工作台",
-   "tab": "",
-   "kind": "button",
-   "src": "runtime"
-  },
-  {
-   "page": "hud_color",
    "text": "预设工作台",
    "card": "预设工作台",
    "tab": "",
@@ -3308,14 +3303,6 @@
   },
   {
    "page": "advanced",
-   "text": "点击「刷新」查看当前绑定）",
-   "card": "",
-   "tab": "",
-   "kind": "label",
-   "src": "static"
-  },
-  {
-   "page": "advanced",
    "text": "热键",
    "card": "",
    "tab": "",
@@ -3540,7 +3527,7 @@
   },
   {
    "page": "audio_health",
-   "text": "一键修复（保守）",
+   "text": "一键修复（只补不删）",
    "card": "体检与修复",
    "tab": "",
    "kind": "button",
@@ -3588,16 +3575,8 @@
   },
   {
    "page": "audio_import_wizard",
-   "text": "一键导入（保守）",
-   "card": "导入设置",
-   "tab": "",
-   "kind": "button",
-   "src": "runtime"
-  },
-  {
-   "page": "audio_import_wizard",
    "text": "仅生成建议（不复制文件）",
-   "card": "导入设置",
+   "card": "第 1 步 选目录并扫描",
    "tab": "",
    "kind": "check",
    "src": "runtime"
@@ -3605,23 +3584,15 @@
   {
    "page": "audio_import_wizard",
    "text": "导入模式",
-   "card": "导入设置",
+   "card": "第 1 步 选目录并扫描",
    "tab": "",
    "kind": "label",
    "src": "runtime"
   },
   {
    "page": "audio_import_wizard",
-   "text": "导入设置",
-   "card": "导入设置",
-   "tab": "",
-   "kind": "card",
-   "src": "runtime"
-  },
-  {
-   "page": "audio_import_wizard",
    "text": "打开源目录",
-   "card": "导入设置",
+   "card": "第 1 步 选目录并扫描",
    "tab": "",
    "kind": "button",
    "src": "runtime"
@@ -3629,7 +3600,7 @@
   {
    "page": "audio_import_wizard",
    "text": "打开资源目录",
-   "card": "导入设置",
+   "card": "第 1 步 选目录并扫描",
    "tab": "",
    "kind": "button",
    "src": "runtime"
@@ -3637,7 +3608,7 @@
   {
    "page": "audio_import_wizard",
    "text": "扫描目录",
-   "card": "导入设置",
+   "card": "第 1 步 选目录并扫描",
    "tab": "",
    "kind": "button",
    "src": "runtime"
@@ -3645,25 +3616,33 @@
   {
    "page": "audio_import_wizard",
    "text": "源目录",
-   "card": "导入设置",
+   "card": "第 1 步 选目录并扫描",
    "tab": "",
    "kind": "label",
    "src": "runtime"
   },
   {
    "page": "audio_import_wizard",
-   "text": "扫描与导入结果",
-   "card": "扫描与导入结果",
+   "text": "第 1 步 选目录并扫描",
+   "card": "第 1 步 选目录并扫描",
    "tab": "",
    "kind": "card",
    "src": "runtime"
   },
   {
-   "page": "audio_task_panel",
-   "text": "刷新历史",
-   "card": "",
+   "page": "audio_import_wizard",
+   "text": "开始导入（不覆盖已有文件）",
+   "card": "第 2 步 看清结果再导入",
    "tab": "",
    "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "audio_import_wizard",
+   "text": "第 2 步 看清结果再导入",
+   "card": "第 2 步 看清结果再导入",
+   "tab": "",
+   "kind": "card",
    "src": "runtime"
   },
   {
@@ -3692,14 +3671,6 @@
   },
   {
    "page": "audio_replay",
-   "text": "刷新事件",
-   "card": "",
-   "tab": "",
-   "kind": "button",
-   "src": "runtime"
-  },
-  {
-   "page": "audio_replay",
    "text": "暂无事件",
    "card": "",
    "tab": "",
@@ -3716,7 +3687,15 @@
   },
   {
    "page": "audio_replay",
-   "text": "立即刷新事件",
+   "text": "去「击杀音效」试听一次",
+   "card": "事件列表",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "audio_replay",
+   "text": "清空筛选条件",
    "card": "事件列表",
    "tab": "",
    "kind": "button",
@@ -3725,14 +3704,6 @@
   {
    "page": "audio_replay",
    "text": "事件",
-   "card": "筛选与操作",
-   "tab": "",
-   "kind": "label",
-   "src": "runtime"
-  },
-  {
-   "page": "audio_replay",
-   "text": "关键字",
    "card": "筛选与操作",
    "tab": "",
    "kind": "label",
@@ -3771,11 +3742,11 @@
    "src": "runtime"
   },
   {
-   "page": "config_snapshot",
-   "text": "刷新快照",
-   "card": "",
+   "page": "audio_replay",
+   "text": "音效名",
+   "card": "筛选与操作",
    "tab": "",
-   "kind": "button",
+   "kind": "label",
    "src": "runtime"
   },
   {

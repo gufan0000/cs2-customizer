@@ -15,6 +15,13 @@ from core.audio.audio_file_utils import (
     find_audio_by_stem,
     has_audio_files,
 )
+from core.health_report_text import (
+    label_dir,
+    label_for_key,
+    label_for_reason,
+    relative_path,
+    shorten_path,
+)
 
 
 REQUIRED_AUDIO_DIRS = [
@@ -350,43 +357,52 @@ def apply_conservative_audio_fix() -> Dict[str, object]:
 
 
 def format_audio_resource_health(report: Dict[str, object]) -> str:
+    """音效资源那一半的**人话**渲染（RN-508，2026-09-05 批 48）。
+
+    ⚠ 这里原来打的是 `[Audio Health] / ok: False / missing_directories: 9` 加一串
+    本机绝对路径 —— 外审 6/6 三轮稳定地报「整块英文日志」。
+    ⭐ 路径一律先抹用户名（导出报告是要发给别人的），明细行只写相对那一段。
+    """
     summary = report.get("summary", {})
+    root = str(report.get("audio_root", "") or "")
+    ok = bool(summary.get("ok", False))
     lines = [
-        "[Audio Health]",
-        f"checked_at: {report.get('checked_at', '')}",
-        f"audio_root: {report.get('audio_root', '')}",
-        f"ok: {summary.get('ok', False)}",
-        f"missing_directories: {summary.get('missing_directories', 0)}",
-        f"invalid_config_refs: {summary.get('invalid_config_refs', 0)}",
-        f"empty_style_dirs: {summary.get('empty_style_dirs', 0)}",
+        f"■ 音效资源：{'一切正常' if ok else '发现问题'}",
+        f"  存放位置：{shorten_path(root)}",
     ]
 
     missing = report.get("missing_directories", []) or []
     if missing:
-        lines.append("missing:")
-        lines.extend([f"- {path}" for path in missing])
+        lines.append(f"  少了 {len(missing)} 个目录（对应的音效不会响）：")
+        lines.extend([f"    · {label_dir(relative_path(path, root))}" for path in missing])
 
     issues = report.get("invalid_config_refs", []) or []
     if issues:
-        lines.append("invalid_refs:")
+        lines.append(f"  有 {len(issues)} 项设置指着找不到的东西：")
         for issue in issues:
             lines.append(
-                f"- {issue.get('key')}={issue.get('value')} -> {issue.get('reason')} ({issue.get('expected_path')})"
+                f"    · 「{label_for_key(str(issue.get('key', '')))}」现在选的是"
+                f"「{issue.get('value')}」—— {label_for_reason(str(issue.get('reason', '')))}"
+                f"（应该在 {relative_path(str(issue.get('expected_path', '')), root)}）"
             )
 
     incomplete = report.get("incomplete_styles", []) or []
     if incomplete:
-        lines.append("incomplete_styles:")
+        lines.append(f"  有 {len(incomplete)} 个风格缺连杀文件：")
         for item in incomplete:
-            missing = ",".join(str(x) for x in item.get("missing_levels", []))
+            levels = "、".join(str(x) for x in item.get("missing_levels", []))
             refs = len(item.get("referenced_by", []) or [])
+            kind = "击杀语音" if item.get("kind") == "kill_voice" else "击杀音效"
             lines.append(
-                f"- [{item.get('kind')}] 风格 {item.get('style')} 缺 {missing} 连杀文件"
-                f"（{refs} 把武器引用，触发时将回退或静音）: {item.get('style_dir')}"
+                f"    · [{kind}] 风格「{item.get('style')}」缺 {levels} 连杀的文件"
+                f"（{refs} 把武器在用，打到那一杀时会回退或没声音）"
+                f"：{relative_path(str(item.get('style_dir', '')), root)}"
             )
 
     gsi_cfg = report.get("gsi_cfg", {}) or {}
     if gsi_cfg.get("status") not in ("ok", None, ""):
-        lines.append(f"gsi_cfg: [{gsi_cfg.get('status')}] {gsi_cfg.get('detail', '')}")
+        lines.append(f"  游戏数据接入（GSI）：{gsi_cfg.get('detail', '') or gsi_cfg.get('status')}")
 
+    if len(lines) == 2:
+        lines.append("  没有发现问题。")
     return "\n".join(lines)

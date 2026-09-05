@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+from _denominator import must_scan
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -102,8 +103,9 @@ def test_special_sound_tabs_have_a_single_scroll_root():
     src = (ROOT / "pages" / "special_sound_page.py").read_text(encoding="utf-8")
     tree = ast.parse(src)
     offenders = []
-    for name in ("_create_grenade_tab", "_create_c4_tab",
-                 "_create_health_tab", "_create_round_tab"):
+    for name in must_scan(("_create_grenade_tab", "_create_c4_tab",
+                           "_create_health_tab", "_create_round_tab"),
+                          "special_sound 的四个页签构造函数", least=4):
         fn = next(n for n in ast.walk(tree)
                   if isinstance(n, ast.FunctionDef) and n.name == name)
         # 页签根布局（变量名 layout / outer）上不许再挂 header_card

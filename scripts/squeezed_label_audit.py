@@ -18,7 +18,15 @@
 
 `QLabel#hintLabel` 有 `max-width: {hint_max_width}px`（UP-053，实测 2200px 窗口下
 单行提示会拉到 1936px，远超舒适行长）。**撞到那个上限而折行是设计意图**，不是缺陷。
-所以判定要减掉这一类：只报"既没撞上限、父容器又还有空"的。
+所以判定要减掉这一类：只报"既没撞上限、同一格里又还有空"的。
+
+## ⚠ RN-505（2026-09-05 批 51）：它从上线那天起就是红的
+
+上线时报的 2 条（`kill_icon` / `screen_effects`）**都是假的** ——
+它原来拿 `parentWidget().width()` 当可用宽度，而一个标签能不能变宽
+**由它所在那一格说了算**。竖排里的标签本来就占满整列，这么量必然全报。
+量尺搬到 `_squeeze_room.py`，并有判据钉住（`tests/test_squeeze_audit_measures_the_right_room.py`）。
+⭐⭐ **一道长期 rc=1 的门禁，跑的人会开始把红当成常态** —— 那时它再逮到新问题也没人看得出来。
 """
 from __future__ import annotations
 
@@ -54,6 +62,8 @@ def audit(compact: bool, expert: bool, scale: float) -> list[dict]:
         print("!! 字体库为空 —— 文字宽度全是假的，拒绝出结论")
         raise SystemExit(2)
 
+    from _squeeze_room import (declared_own_width, owning_layout,
+                               room_in_cell)
     from _audit_neutralize import apply as neutralize_apply
     from _audit_neutralize import unsafe_pages
     from _audit_sandbox import sandbox_external_writes
@@ -101,13 +111,22 @@ def audit(compact: bool, expert: bool, scale: float) -> list[dict]:
             # UP-053：撞到 hintLabel 的限宽而折行是设计意图，不算缺陷。
             if lb.width() >= hint_cap - 1:
                 continue
-            parent = lb.parentWidget()
-            spare = (parent.width() - lb.width()) if parent is not None else 0
+            # RN-505：页面显式声明过自己这一列多宽（`setMaximumWidth`），
+            # 撞着自己的声明折行是意图，不是被挤。
+            if declared_own_width(lb):
+                continue
+            # ⚠⚠ 这里原来写的是 `parent.width() - lb.width()` —— **量错了对象**。
+            #   一个标签能不能变宽，由**它所在那一格**说了算，不由父控件的宽度说了算；
+            #   竖排里的标签本来就占满整列，用父宽去量这一类必然全报。
+            #   实测这支审计从上线那天起就 rc=1，两条**都是**这一类（见 `_squeeze_room`）。
+            # ⭐ 一道长期红着的门禁，等于没有这道门禁。
+            spare = room_in_cell(owning_layout(page, lb))
             if need > lb.width() + spare:
                 continue                     # 真的放不下 —— 那是排版审计的活
+            parent = lb.parentWidget()
             found.append({
                 "page": pid, "name": lb.objectName() or "-",
-                "width": lb.width(), "need": need,
+                "width": lb.width(), "need": need, "spare": spare,
                 "parent": parent.width() if parent is not None else 0,
                 "text": text[:40],
             })
@@ -129,7 +148,7 @@ def main() -> int:
     print(f"== {mode}档 · 字号 {args.scale} · 界面 {_ui_mode.describe(args.expert)} ==")
     for f in found:
         print(f"  {f['page']:<18} {f['name']:<14} 宽{f['width']:>4} 需{f['need']:>4} "
-              f"父宽{f['parent']:>5}  {f['text']}")
+              f"同格空着{f['spare']:>5}  {f['text']}")
     print(f"  被挤到折行（空间其实够）：{len(found)} 个")
     # ⚠ 退出码走进程级，别只看这行字（门禁退出码被洗过，见 CLAUDE.md）。
     print(f"RESULT squeezed rc={1 if found else 0}")

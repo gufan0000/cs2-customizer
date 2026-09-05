@@ -148,10 +148,13 @@ def test_both_key_getters_actually_apply_the_melee_fallback():
     import ast
     import pathlib
 
+    from _denominator import must_scan
+
     src = pathlib.Path(__file__).resolve().parent.parent / "gsi_handler_kills.py"
     tree = ast.parse(src.read_text(encoding="utf-8"))
 
     wanted = {"_get_weapon_kill_sound_key", "_get_weapon_kill_voice_key"}
+    must_scan(wanted, "要检查的取键函数名", least=2)
     seen = {}
     for node in ast.walk(tree):
         if isinstance(node, ast.FunctionDef) and node.name in wanted:

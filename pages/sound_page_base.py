@@ -452,6 +452,17 @@ class SoundPageBase:
         self.category_overview_hint_label.setObjectName("hintLabel")
         self.category_overview_hint_label.setWordWrap(True)
         status_card_layout.addWidget(self.category_overview_hint_label)
+
+        # ⭐⭐⭐ RN-181（2026-09-05 批 50）：39 把武器要逐个下拉配置，
+        #   外审 35 发 / 跨 10 页票数最高。批 50 的行为题调研更直接：
+        #   问「你想让全部 34 把枪都用同一个风格，会怎么做」——**30/30 答「找不到」**，
+        #   而他们在找的词是「应用到全部武器」（7 次）、「全局风格」（6 次）。
+        # ⇒ 就叫他们说的那个词，放在**状态卡里**：那张卡说的正是
+        #   「34 把里配了几把」，一个页面级的动作属于它，而且不随页签切换而消失。
+        # ⛔ 没有放进底栏：底栏那颗主按钮现在是「打开音频资源」（安全动作），
+        #   而「应用到全部武器」会**覆盖每一把武器已有的设置** ——
+        #   让同一个像素在这两者之间变身，正是 RN-506 那条线。
+        status_card_layout.addLayout(self._build_apply_all_row())
         layout.addWidget(self.status_card)
 
         # RN-180：空库时的第一步放在**状态卡和武器页签之间** —— 也就是
@@ -477,10 +488,25 @@ class SoundPageBase:
             style_menu = QMenu(self)
             style_menu.addAction("新建风格…", self._open_style_creator)
             style_menu.addAction("管理风格（重命名/删除）…", self._open_style_manager)
+            # 紧凑档（860×640）摆不下那条「整套套用」行 ⇒ 动作从这里也够得着。
+            self._apply_all_menu_action = style_menu.addAction(
+                "应用到全部武器…", self._pick_style_and_apply_to_all)
             self.action_bar.configure_extra("风格工具", None, visible=True)
             self.action_bar.extra_btn.setMenu(style_menu)
         else:
+            # ⚠⚠ 这一支（`STYLE_TOOLS_MENU` 为假：reload_sound / switch_weapon）
+            #   底栏那颗 extra 是**没有菜单**的按钮 —— 第一版只给有菜单的那一支
+            #   挂了紧凑档入口，于是这两页在紧凑档里那个动作**真的消失了**。
+            #   判据当场点名（「藏的是控件，不是能力」）。
+            # ⇒ 这一支也给一颗菜单，把「新建风格」和「应用到全部武器…」都放进去。
+            from PySide6.QtWidgets import QMenu
+
+            plain_menu = QMenu(self)
+            plain_menu.addAction("新建风格…", self._open_style_creator)
+            self._apply_all_menu_action = plain_menu.addAction(
+                "应用到全部武器…", self._pick_style_and_apply_to_all)
             self.action_bar.configure_extra("新建风格", self._open_style_creator, visible=True)
+            self.action_bar.extra_btn.setMenu(plain_menu)
         # RN-153：记下「风格工具/新建风格」的原样 —— 空库态要把这个位置
         # 借给「打开音频资源」，恢复时得原样放回去。
         self._extra_default = (self.action_bar.extra_btn.text(),
@@ -492,6 +518,196 @@ class SoundPageBase:
         self.action_bar.secondary_btn.setMinimumWidth(148)
         self.action_bar.primary_btn.setMinimumWidth(148)
         layout.addWidget(self.action_bar, 0)
+
+        # 建完页先同步一次「整套套用」那一行
+        self._sync_apply_all_row()
+
+    def _build_apply_all_row(self):
+        """「整套套用」那一行：选一个风格 → 套到这一页的全部武器（RN-181）。"""
+        from PySide6.QtWidgets import QComboBox, QHBoxLayout, QPushButton
+
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        row.setContentsMargins(0, 0, 0, 0)
+        self.apply_all_row = row
+
+        self.apply_all_label = QLabel("整套套用")
+        row.addWidget(self.apply_all_label)
+        self.apply_all_combo = QComboBox()
+        self.apply_all_combo.setMinimumWidth(170)
+        self.apply_all_combo.setMinimumHeight(32)
+        row.addWidget(self.apply_all_combo)
+
+        self.apply_all_btn = QPushButton("应用到全部武器")
+        self.apply_all_btn.setObjectName("secondaryButton")
+        self.apply_all_btn.setMinimumHeight(32)
+        self.apply_all_btn.clicked.connect(self._apply_style_to_all_weapons)
+        self.apply_all_combo.currentTextChanged.connect(
+            lambda _t: self._sync_apply_all_hint())
+        row.addWidget(self.apply_all_btn)
+
+        self.apply_all_hint = QLabel("")
+        self.apply_all_hint.setObjectName("hintLabel")
+        self.apply_all_hint.setWordWrap(True)
+        row.addWidget(self.apply_all_hint, 1)
+        return row
+
+    def _pick_style_and_apply_to_all(self) -> None:
+        """紧凑档没有那条下拉行 ⇒ 先问选哪个风格，再走同一个动作。"""
+        from PySide6.QtWidgets import QInputDialog
+
+        options = [o for o in self._apply_all_options()
+                   if o and o != getattr(self, "DISABLED_STYLE_TEXT", "不启用")]
+        if not options:
+            from PySide6.QtWidgets import QMessageBox
+            # ⭐ 按钮名从按钮读，别抄一份（RN-519 的棘轮盯着 —— 它当场逮到了这里）
+            QMessageBox.information(
+                self, "还没有可用的风格",
+                f"先导入或新建一个风格，再用「{self.apply_all_btn.text()}」。")
+            return
+        current = self.apply_all_combo.currentText()
+        index = options.index(current) if current in options else 0
+        style, ok = QInputDialog.getItem(
+            self, "应用到全部武器", "选一个风格：", options, index, False)
+        if not ok or not style:
+            return
+        self.apply_all_combo.setCurrentText(style)
+        self._apply_style_to_all_weapons()   # ⭐ 同一个动作，不另造一条路
+
+    def _apply_all_is_inline(self) -> bool:
+        """这一行摆不摆得出来。
+
+        ⚠ 紧凑档（860×640，内容可视区 548）里，这一行会把整页顶出可视区
+        60px 上下 —— 而这一族本来就欠着 64px 的在册债（RN-196）。
+        ⭐ 但**动作不能因此消失**：紧凑档改由底栏「风格工具」菜单提供同一个动作。
+        """
+        return self.width() >= 960
+
+    def _sync_apply_all_visibility(self) -> None:
+        inline = self._apply_all_is_inline()
+        for w in (getattr(self, "apply_all_label", None), self.apply_all_combo,
+                  self.apply_all_btn, self.apply_all_hint):
+            if w is not None:
+                w.setVisible(inline)
+        # ⚠ 光把控件 hide 掉，布局仍会为这一行留下 spacing（实测紧凑档还剩 3px，
+        #   而棘轮只认「变没变坏」）⇒ 间距也一并收掉。
+        row = getattr(self, "apply_all_row", None)
+        if row is not None:
+            row.setSpacing(8 if inline else 0)
+            row.setContentsMargins(0, 0, 0, 0)
+        action = getattr(self, "_apply_all_menu_action", None)
+        if action is not None:
+            action.setVisible(not inline)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        try:
+            self._sync_apply_all_visibility()
+        except Exception:
+            pass
+
+    def _apply_all_options(self) -> list[str]:
+        """下拉里给出**任意一把武器有的**风格（并集）。
+
+        ⚠⚠ 第一版取的是**交集**，而 `switch_weapon` / `reload_sound` 的风格是
+        **per-weapon** 的（`switch_weapons/<武器>/<风格>/`）—— 交集在真实配置下
+        几乎必然为空。⭐ **那会让这个功能恰好在最痛的那几页上没用**，
+        而 RN-181 原文点名的正是那 34 把枪。
+        （逮到它的是「让判据真的跑起来」：造了风格之后，四页里三页拿不到选项。）
+        ⇒ 用并集，安全性交给**套用时跳过**那一步（见 `_weapons_supporting`）。
+        """
+        seen = set()
+        for weapon in self._get_all_weapons():
+            seen |= set(self._style_options_for(weapon))
+        return sorted(seen)
+
+    def _weapons_supporting(self, style: str) -> list[str]:
+        """这些武器真的有这个风格 —— 其余的**跳过，绝不写一个解析不出来的值**。"""
+        return [w for w in self._get_all_weapons()
+                if style in self._style_options_for(w)]
+
+    def _sync_apply_all_row(self) -> None:
+        """刷新那一行：选项、可用性、旁边那句话。"""
+        if not hasattr(self, "apply_all_combo"):
+            return
+        options = [o for o in self._apply_all_options()
+                   if o != self.DISABLED_STYLE_TEXT]
+        keep = self.apply_all_combo.currentText()
+        self.apply_all_combo.blockSignals(True)
+        self.apply_all_combo.clear()
+        self.apply_all_combo.addItems(options)
+        if keep in options:
+            self.apply_all_combo.setCurrentText(keep)
+        self.apply_all_combo.blockSignals(False)
+
+        usable = bool(options)
+        self.apply_all_combo.setEnabled(usable)
+        self.apply_all_btn.setEnabled(usable)
+        self._sync_apply_all_visibility()
+        if usable:
+            n = len(self._weapons_supporting(self.apply_all_combo.currentText()))
+            self.apply_all_hint.setText(f"把选中的风格一次配给能用它的 {n} 把武器")
+        else:
+            self.apply_all_hint.setText("还没有可用的风格 —— 先导入或新建一个")
+
+    def _sync_apply_all_hint(self) -> None:
+        """换了下拉里的风格，旁边那句话要跟着重算 —— 能用它的武器数会变。"""
+        if not hasattr(self, "apply_all_hint") or not self.apply_all_btn.isEnabled():
+            return
+        n = len(self._weapons_supporting(self.apply_all_combo.currentText()))
+        self.apply_all_hint.setText(f"把选中的风格一次配给能用它的 {n} 把武器")
+
+    def _apply_style_to_all_weapons(self) -> None:
+        """把下拉里选中的风格套给本页**能用它的**武器。
+
+        ⚠ 这是一个**会覆盖用户已有设置**的动作（RN-506 的「破坏性」那一侧），
+        所以：① 先问一句，且那句话里带**确切的数**；② 走每页既有的
+        `_on_weapon_style_changed` 落盘，不在这里造第二条写配置的路。
+        """
+        from PySide6.QtWidgets import QMessageBox
+
+        style = self.apply_all_combo.currentText().strip()
+        weapons = self._get_all_weapons()
+        if not style or not weapons:
+            return
+
+        targets = self._weapons_supporting(style)
+        skipped = len(weapons) - len(targets)
+        if not targets:
+            QMessageBox.information(
+                self, "没有武器能用这个风格",
+                f"这 {len(weapons)} 把武器都没有「{style}」这个风格。")
+            return
+
+        already = sum(1 for w in targets if self._configured_style(w) == style)
+        changing = len(targets) - already
+        if changing == 0:
+            QMessageBox.information(
+                self, "无需改动",
+                f"能用「{style}」的那 {len(targets)} 把武器已经全都配好了。")
+            return
+
+        # ⭐ 把「配几把、跳几把」都说出来 —— 只说「全部」会让跳过的那几把
+        #   变成一个用户以为配了、其实没配的沉默差额。
+        skipped_line = (f"\n另有 {skipped} 把武器没有这个风格，会保持原样。"
+                        if skipped else "")
+        reply = QMessageBox.question(
+            self, "应用到全部武器？",
+            f"会把「{style}」配给 {len(targets)} 把武器，"
+            f"其中 {changing} 把的当前设置会被覆盖。{skipped_line}\n\n继续吗？",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+
+        for weapon in targets:
+            row = self.weapon_rows.get(weapon)
+            if row is not None:
+                row.set_current_style(style)   # 会经 styleChanged 走既有落盘
+            else:
+                self._on_weapon_style_changed(weapon, style)
+        self._refresh_status_badge()
+        self._sync_apply_all_row()
 
     def _create_category_tab(self, weapons: list[str]) -> QWidget:
         """一个分类页签：滚动区 → 卡片 → 响应式武器网格（R9-D 上提）。"""
@@ -566,3 +782,9 @@ class SoundPageBase:
                 self._refresh_style_catalog()
             except Exception:
                 self.logger.exception("进页自动刷新风格列表失败")
+        # 风格清单可能刚变过 ⇒「整套套用」的选项跟着走。
+        # ⚠ 放在冷却判断**外面**：冷却挡的是重扫磁盘，不该连带把这一行冻住。
+        try:
+            self._sync_apply_all_row()
+        except Exception:
+            self.logger.exception("同步「整套套用」那一行失败")

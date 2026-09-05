@@ -35,7 +35,8 @@ def test_audio_replay_page_smoke(qapp, monkeypatch):
     page._refresh_events()
     assert page.table.rowCount() == 2
 
-    page.action_edit.setText("play")
+    # 批 48（RN-508）：动作筛选改成闭集下拉
+    page.action_combo.setCurrentIndex(page.action_combo.findData("play"))
     page._refresh_events()
     assert page.table.rowCount() == 1
 

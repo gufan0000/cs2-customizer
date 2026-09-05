@@ -35,6 +35,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from _denominator import must_scan
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
@@ -128,7 +129,7 @@ def test_only_the_shared_table_may_read_the_device_page_list():
       正当消费者。这条只管 `scripts/`。
     """
     offenders = []
-    for path in sorted((REPO / "scripts").glob("*.py")):
+    for path in must_scan(sorted((REPO / "scripts").glob("*.py")), "scripts/*.py"):
         if path.name == "_audit_neutralize.py":
             continue
         try:
@@ -310,10 +311,13 @@ def test_the_gate_is_never_switched_on_by_product_code():
     （那个变量在真实运行里也会被 `main_widget` 打开）。
     """
     offenders = []
-    for path in REPO.rglob("*.py"):
+    product_files = must_scan(
+        [p for p in REPO.rglob("*.py")
+         if not p.relative_to(REPO).as_posix().startswith(
+             (".build/", "scripts/", "tests/", ".claude/"))],
+        "产品代码 *.py（排除 .build/scripts/tests/.claude）", least=50)
+    for path in product_files:
         rel = path.relative_to(REPO).as_posix()
-        if rel.startswith((".build/", "scripts/", "tests/", ".claude/")):
-            continue
         text = path.read_text(encoding="utf-8", errors="replace")
         if "CS2C_NO_GLOBAL_HOTKEYS" not in text:
             continue

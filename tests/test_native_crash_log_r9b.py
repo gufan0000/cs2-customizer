@@ -191,7 +191,11 @@ def test_nothing_to_compact_leaves_the_file_untouched(compact, tmp_path):
 
 
 def test_missing_or_empty_file_is_a_no_op(compact, tmp_path):
-    """文件不存在 / 是空的，都不许抛异常，也不许凭空造出文件。"""
+    """文件不存在 / 是空的，都不许抛异常，也不许凭空造出文件。
+
+    分母：这条没有分母 —— 它对**两个自己刚造出来的**文件各调一次压缩，
+    看它抛不抛、造不造文件，全程不扫任何集合。
+    """
     missing = tmp_path / "nope.log"
     compact(missing)
     assert not missing.exists()

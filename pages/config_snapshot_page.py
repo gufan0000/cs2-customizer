@@ -54,8 +54,28 @@ class ConfigSnapshotPage(QWidget):
         # 这次重构不动一个像素，四种并存的字号是另一回事（UP-092）。
         from ui_help_panel import PAGE_HELP_TEXTS, install_help_panel
         header = PageHeader(
-            "配置快照",
-            description="给当前设置「拍照」存档，改坏了随时一键回滚。点右上角「?」看用法。",
+            "软件设置快照",
+            # ⚠⚠ 批 45 改完复跑逮到，**外审 9/9 判高**：这句原来只说
+            # （⛔ 这里**故意不写那条还开着的 RN 号** —— 产品代码点名一条未结条目，
+            #   那个指针会跟着状态一起过期，而
+            #   `test_product_code_that_names_an_rn_is_not_still_open` 正是为此存在。
+            #   要查这一条的去向，从档案 `X_补齐清单不等于补齐那件事.md` 走。）
+            #   「给**当前设置**『拍照』存档」——而「当前设置」指谁的设置？
+            #   外审 9 发全部报同一句：不知道备份的是**软件自己的配置**还是
+            #   **CS2 游戏内参数**（键位/准星/画质），「玩家因担心游戏参数被覆盖
+            #   而不敢操作」。
+            # ⭐⭐ 正确的说法**一直存在** —— 帮助文案里逐字写着「快照存的是设置本身
+            #   （config.json），不含音频 / 图片素材」。而它在**折叠面板里**，
+            #   要点「?」才看得到。
+            #   ⇒ 这就是 RN-131 那条：**一句只在模态框/折叠面板里出现过的说明，
+            #     等于没有说明。**
+            # ⛔ 不写「不会影响游戏」这种承诺 —— 只说我们**存了什么、不动什么**
+            #   （RN-011 / RN-254：描述我们做了什么，不承诺别人会怎样）。
+            # ⚠ 这里是 QLabel 纯文本，**不许用 `**` 那种 Markdown 加粗** ——
+            #   它不会渲染成粗体，会原样显示两个星号（我第一版就这么写的）。
+            description=("给这个软件自己的设置「拍照」存档（就是 config.json），"
+                         "改坏了随时一键回滚；不碰 CS2 里的任何游戏配置。"
+                         "点右上角「?」看用法。"),
             title_font_size=None,
             spacing=12,
         )
@@ -82,8 +102,19 @@ class ConfigSnapshotPage(QWidget):
 
         action_row = QHBoxLayout()
         action_row.setSpacing(8)
+        # ⚠⚠ **这一颗我撤过一次，外审 12/12 判高，改完复跑当场逮住。**
+        #   撤的理由是批 31 规则②「留离它作用的对象最近的那一颗」，
+        #   我判断「创建快照作用的对象是**当前设置**，跟这张卡没有比底栏更近的关系」。
+        #   ⭐⭐⭐ **判错了：那张卡的副标题就是它的语境** ——
+        #     副标题逐字写着「**手动创建**适合做版本节点」，
+        #     而撤掉这颗之后，卡里说了「创建」、卡里却没有创建按钮。
+        #     外审 12 发全部报同一句：「文案提示『手动创建』，卡片内却只有
+        #     置灰的『恢复选中』与『刷新』，核心动作被孤立在右下角底栏」。
+        #   ⭐⭐ **我撤掉一颗按钮，让它旁边那句话变成了假话**（批 43 RN-502 同形第二次）。
+        # ⇒ 三个动作全留卡内，底栏**不放按钮**、只留回执（同批 31 在 voice_output 的处置）。
+        #   这一颗是这一页的主动作 ⇒ 它就是这一屏唯一那颗紫的。
         self.create_btn = QPushButton("创建快照")
-        self.create_btn.setObjectName("secondaryButton")
+        self.create_btn.setObjectName("primaryButton")
         self.create_btn.setMinimumHeight(34)
         self.create_btn.clicked.connect(self._create_snapshot)
         action_row.addWidget(self.create_btn)
@@ -142,16 +173,33 @@ class ConfigSnapshotPage(QWidget):
 
         snapshot_count = len(self._snapshots)
         selected_id = self._selected_snapshot_id()
-        self.action_bar.configure_secondary("刷新快照", self._reload, visible=True)
+
+        # ⛔ RN-102（批 45 撤除）：这里原来是 `configure_secondary("刷新快照", …)`，
+        #   而「快照操作」卡里就有一颗「刷新」绑着同一个 `_reload`。
+        #   ⭐ 底栏那颗是**纯副本**：它不携带任何卡内那颗没有的信息。
+        self.action_bar.configure_secondary("", None, visible=False)
+
+        # ⭐⭐⭐ RN-506（批 45）：这颗主按钮原来是**状态相关**的 ——
+        #   没选中时是「创建快照」，选中一行之后**同一个像素**变成「恢复选中」。
+        #   而这两个动作的性质是相反的：创建是多存一份（安全），
+        #   恢复会**覆盖用户当前的全部设置**（本页自己的回执写着
+        #   「恢复前请确认这就是要回退的版本」）。
+        #   ⭐⭐⭐ **肌肉记忆记的是位置，不是文案** —— 一个刚点过「创建」的人，
+        #     选中一行之后在同一个位置按下去，按到的是「恢复」。
+        # ⇒ 底栏**一颗按钮都不放**：三个动作全留在「快照操作」卡里
+        #   （那张卡的副标题就是它们的语境 —— 撤走任何一颗都会让副标题变成假话）。
+        #   底栏只留回执，它本来就是干这个的。
+        # ⚠ 这不是 RN-139（一屏两颗紫的）那一族，方向相反：
+        #   它只有一颗紫的，而**那一颗的含义会变**。
+        self.action_bar.configure_primary("", None, visible=False)
 
         if selected_id:
-            self.action_bar.configure_primary("恢复选中", self._restore_selected, visible=True)
             action_message = (
-                f"当前选中：{self._compact_snapshot_id(selected_id)} · 共 {snapshot_count} 份快照，"
+                f"当前选中：{self._compact_snapshot_id(selected_id)} · 共 {snapshot_count} 份快照；"
+                f"要回退就点上面「快照操作」里的「{self.restore_btn.text()}」——"
                 "恢复前请确认这就是要回退的版本。"
             )
         else:
-            self.action_bar.configure_primary("创建快照", self._create_snapshot, visible=True)
             action_message = (
                 f"当前共有 {snapshot_count} 份快照 · 还没有选中条目，"
                 "适合先创建一个新的安全点再继续调整。"
@@ -174,10 +222,10 @@ class ConfigSnapshotPage(QWidget):
         latest_text = (
             f"最新快照：{latest_snapshot.snapshot_id}（{latest_snapshot.created_at}）"
             if latest_snapshot
-            else "当前还没有可恢复的配置快照。"
+            else "当前还没有可恢复的设置快照。"
         )
         detail_text = (
-            f"当前共有 {snapshot_count} 份配置快照，保留上限 {keep_count} 份。"
+            f"当前共有 {snapshot_count} 份设置快照，保留上限 {keep_count} 份。"
             f"{latest_text}"
         )
         render_badges(self.status_badge_label, badges, detail_tooltip=detail_text)

@@ -117,6 +117,23 @@ def _install_emergency_restore() -> None:
             pass            # 非主线程 / 平台不支持，忽略（磁盘快照仍然兜底）
 
 
+def shard_items(items: list, shard_i: int, shard_n: int) -> list:
+    """把断点切成第 `shard_i`/`shard_n` 片（1 起数）。
+
+    ⭐ **这件事必须是一个可被外面调到的函数，不能只写在 `main()` 里的一行。**
+    批 47 实测：我第一版把切法留在 `main()` 里，配的判据就只能在测试里
+    「自己再切一遍」—— 那等于断言「我在测试里写的切法是个划分」，**恒真**。
+    改坏产品代码那一行，判据 5 passed 纹丝不动。⇒ 判据要量的是**产品代码本身**。
+
+    ⭐ 用 `items[i::n]` 而不是切连续块：断点在 `REVERTS` 里按 RN 组扎堆，
+    切连续块会让某一片全是同一个文件的断点（那一片每次改坏都碰同一个 `path`，
+    别的片闲着）。跨步取保证每片碰到的文件数与全集相似（实测 6 片各碰 51~60 个）。
+    """
+    if not (1 <= shard_i <= shard_n):
+        raise ValueError(f"--shard 越界：{shard_i}/{shard_n}")
+    return items[shard_i - 1::shard_n]
+
+
 class Revert:
     def __init__(self, group, name, rel_path, old, new, selector, defect):
         self.group = group
@@ -3733,8 +3750,12 @@ REVERTS = [
     Revert(
         "RN", "债表变成博物馆（修好了不回来删）",
         "tests/test_one_action_one_entrance.py",
-        '    "audio_task_panel": ("_reload_history",),',
-        '    "audio_task_panel": ("_reload_history", "_this_one_was_fixed_long_ago"),',
+        # ⚠ 锚点 2026-09-04 批 46 搬家（**第二次**）：`audio_task_panel` 那一行
+        #   随专家音频四页清零一起从债表里删掉了 —— 失效体检当场报「出现 0 次」。
+        #   ⭐ **断点会随它守的那一行一起消失，而消失只让它变哑，不让它变红。**
+        #   ⇒ 改锚在债表里现存最长的那一条（`flash`，6 处）。
+        '    "flash": ("_open_flash_audio_folder", "_open_flash_images_folder",',
+        '    "flash": ("_open_flash_audio_folder", "_this_one_was_fixed_long_ago",',
         "tests/test_one_action_one_entrance.py::"
         "test_the_rest_of_the_debt_only_shrinks",
         "RN-188 / RN-452：只判「变没变坏」的棘轮，在缺陷修好之后会**永远停在旧数上** ——"
@@ -3795,9 +3816,23 @@ REVERTS = [
         # ⇒ 定版锚在**扫描的视野**上：把 `SCAN_TOKENS` 掏空 ⇒ 扫不到东西 ⇒
         #    「必须收紧」那条当场红。这正是判据自己注释里警告的那种作弊法
         #    （「收窄 SCAN_TOKENS 只是把它们从视野里挪走」）。
-        '    "glob(", "rglob(", "iterdir(", "walk(", "findChildren(",',
-        '    "__nothing_will_ever_match_this__",',
-        "tests/test_judges_are_not_idling.py::test_idle_risk_only_shrinks",
+        # ④ 2026-09-03 批 42：只掏空**第一行** token 已经不够了 ——
+        #    `SCAN_TOKENS` 后面还有 `_rows(` / `read_text(` 等，剩下的照样能扫到
+        #    60 条以上候选，存在性检查照样绿。⇒ 整个元组一起换掉。
+        #    ⭐ **一个断点的破坏力，随它守的那份名单一起变** ——
+        #      名单长了，只改一行就不再是「掏空」。
+        'SCAN_TOKENS = (\n'
+        '    "glob(", "rglob(", "iterdir(", "walk(", "findChildren(",\n'
+        '    "ls-files", "_rows(", "_page_ids(", "_page_rows(",\n'
+        '    "_tracked_python_files(", "_named_controls(", "_all_pages(",\n'
+        '    "PAGE_HELP_TEXTS", "read_text(",\n'
+        ')',
+        'SCAN_TOKENS = ("__nothing_will_ever_match_this__",)',
+        # ③ 2026-09-03 批 42 收口后 `test_idle_risk_only_shrinks` 这条判据**不存在了**
+        #    （棘轮从「只许变少」换成「必须为 0」，判据也跟着改名）——
+        #    失效体检当场报「判据名已不存在」。⭐ 断点会随它守的判据一起改名，
+        #    而**改名不会让它变红，只会让它变哑**：不做失效体检就查不出来。
+        "tests/test_judges_are_not_idling.py::test_the_scan_actually_finds_something",
         "RN-469：全站 **77 条**判据在结构上「分母一空就全绿」"
         "（① 函数体里有一次扫描 ② 只做否定断言 ③ 没有任何一句断言分母不空）。"
         "⭐⭐ **一条为某个缺陷而写的判据，可以在那个缺陷还没进分母的时候，绿着上线** ——"
@@ -4220,23 +4255,19 @@ REVERTS = [
     #
     # ⭐ 这一页的**行为**一直是对的（`_apply_preset` 一个字节都没写进游戏），
     # 错的是三个词。所以断点分两种：管措辞的，和管行为的 —— 谁也替不了谁。
-    Revert(
-        "RN", "预设按钮退回听起来像一次提交的词",
-        "pages/hud_color_page.py",
-        'QPushButton("载入这套")',
-        'QPushButton("应用预设")',
-        "tests/test_hud_color_has_one_commit_point.py::"
-        "test_the_preset_button_does_not_sound_like_a_commit",
-        "RN-175：外审 4/6 票说「应用预设」和底栏「保存 HUD 规则」构成**双重确认**。"
-        "⭐ 查实这颗按钮的行为一直只是「填进编辑区」—— **错的只是那个词**。"
-        "⭐ 一个动作只有一个生效点",
-    ),
+    # ⛔ 这里原本还有一条「预设按钮退回听起来像一次提交的词」，锚在
+    #   `QPushButton("载入这套")` 上。**2026-09-03 批 43 删除** —— RN-501 把那颗按钮
+    #   连同它守的判据 ① 一起删了（改成「下拉即载入」）。
+    # ⭐ 它是被**失效体检**报出来的（「锚点在源码里出现 0 次」），不是被判红报出来的：
+    #   **断点会随它守的东西一起消失，而消失不会让它变红，只会让它变哑。**
     Revert(
         "RN", "预设动作变成第二个生效点",
         "pages/hud_color_page.py",
-        "        self._apply_rules_to_ui(profile, preset_rules)\n"
+        # ⚠ 锚点 2026-09-03 批 43 更新：中间插进了 `self._last_loaded_profile = profile`
+        #   （RN-501 要记「编辑区现在装的是哪一套」），原来那两行不再相邻。
+        "        self._last_loaded_profile = profile\n"
         "        self._set_dirty(True)",
-        "        self._apply_rules_to_ui(profile, preset_rules)\n"
+        "        self._last_loaded_profile = profile\n"
         "        self._set_dirty(True)\n        config.save_config()",
         "tests/test_hud_color_has_one_commit_point.py::"
         "test_applying_a_preset_still_writes_nothing_to_the_game",
@@ -4507,8 +4538,22 @@ REVERTS = [
     Revert(
         "RN", "悄悄把一个页状态移出分母",
         "tests/test_renovation_progress_board_does_not_rot.py",
-        'STATUS_IN_PROGRESS = ("盘点", "锁基线", "找茬", "待裁定", "动刀", "验收")',
-        'STATUS_IN_PROGRESS = ("盘点", "锁基线", "找茬", "待裁定", "动刀")',
+        # ⚠⚠ **这条断点原来删的是「验收」。2026-09-03 批 43 的回退验证把它判成假绿** ——
+        #   因为那一批关档的 `hud_color` 正是全站**最后一个「验收」态的页**：
+        #   词表里少一个没人用的词，`unknown` 照样是空集。
+        # ⭐⭐⭐ **修好最后一个用例，会让守着那个用例的破坏实验失去对象** ——
+        #   而失去对象的破坏实验不会报错，它会通过（同批 42 那条的同族形态）。
+        # ⇒ 改删**当下真的有人用**的那个词（实测：`动刀` 2 页 / `未开工` 7 / `已关档` 19）。
+        # ⚠ 下次它再假绿，八成又是因为那个词也没人用了 —— 那时**再换一个活着的词**，
+        #   别把断点删掉：它守的「分母缩水不报错」这件事本身没有过期。
+        # ⚠⚠⚠ **2026-09-05 批 52 第三次换对象。** 批 52 把最后一个「动刀」态的页
+        #   （`preset_center`）关了档 ⇒ **全站没有一页在中间态**，
+        #   删 `STATUS_IN_PROGRESS` 里任何一个词，`unknown` 都还是空集 ⇒ 又假绿。
+        #   ⭐⭐⭐ 上一版注释逐字预言了这一天：「下次它再假绿，八成又是因为那个词
+        #     也没人用了 —— 那时再换一个活着的词，别把断点删掉」。照办。
+        #   现在换成 `已关档`（27 页在用，判据第 941 行逐字断言「没有一页是已关档了？」）。
+        'STATUS_CLOSED = "已关档"',
+        'STATUS_CLOSED = "已关档（历史）"',
         "tests/test_renovation_progress_board_does_not_rot.py::"
         "test_the_page_status_vocabulary_does_not_rot",
         "RN-408：从中间态清单里删掉一个词，对账判据**不会变红，只会少查几页** ——"
@@ -4516,10 +4561,22 @@ REVERTS = [
         "缩到 13% 时也不报错）。所以守着它的必须是**状态词表那条双向断言**",
     ),
     Revert(
-        "RN", "「存不存在」拿「结没结」那个分母去答",
+        "RN", "台账的行一条都没读到，判据照样说「没吹牛」",
         "tests/test_renovation_progress_board_does_not_rot.py",
-        '    on_file = {cells[0].strip("* ") for _, cells in _rows(text)}',
-        "    on_file = set(status)",
+        # ⚠⚠ **这条断点原来打在 `on_file = {…}` 上（改成 `set(status)`）。
+        #   2026-09-03 批 42 的回退验证把它判成假绿** —— 批 41 给旧账表补上状态列之后，
+        #   两个分母本来就相等，而那道守卫也跟着从 `>` 放宽成了 `>=`
+        #   （放宽是对的，见判据里那段说明），于是这个破坏再也咬不动。
+        # ⭐⭐⭐ **修好一个盲区，会让专为它写的破坏实验失去对象** ——
+        #   而失去对象的破坏实验**不会报错，它会通过**。
+        # ⇒ 改打在这条判据的**第三个分母**上：台账的行。
+        # ⚠⚠ 第一版写成「把 `must_scan(...)` 换成 `[]`」—— **又是假绿**：
+        #   那样是把守卫整个删掉，而不是把分母清空，守卫根本没被叫到。
+        # ⭐⭐⭐ **要证明一道守卫在承重，破坏点必须落在它守的那个东西上，
+        #   不能落在它自己身上，也不能把它删掉。**（同一轮里我连犯两次。）
+        # ⇒ 打在**解析器的表头**上：表头一改，`_batch_rows` 返回空 ⇒ 守卫开口。
+        '''BATCH_LOG_SHAPE = ("批", "日期", "内容", "关档", "立案", "外审")''',
+        '''BATCH_LOG_SHAPE = ("批-已改名", "日期", "内容", "关档", "立案", "外审")''',
         "tests/test_renovation_progress_board_does_not_rot.py::"
         "test_a_batch_row_only_claims_closures_the_registry_agrees_with",
         "RN-408 判据首跑当场咬到我这条：旧账逐页表那 104 条**没有状态列**，"
@@ -4593,9 +4650,10 @@ REVERTS = [
         "RN", "范围勾选框又掉回折线以下",
         "pages/preset_center_page.py",
         # ⚠ 批 40 补刀把工作台提到「我的预设」之前（RN-486），锚点跟着搬。
-        "        card_order = (status_card, starter_card, scope_card,\n"
+        # ⚠ 锚点在批 52 改过：RN-496 撤掉了「当前状态」卡，`card_order` 少了 `status_card`。
+        "        card_order = (starter_card, scope_card,\n"
         "                      workbench_card, my_presets_card, map_card, preview_card)",
-        "        card_order = (status_card, starter_card, workbench_card,\n"
+        "        card_order = (starter_card, workbench_card,\n"
         "                      my_presets_card, map_card, preview_card, scope_card)",
         "tests/test_preset_center_tells_the_truth.py::"
         "test_every_scope_checkbox_is_above_the_fold",
@@ -4667,18 +4725,26 @@ REVERTS = [
         "因为掏空之后它还是绿的",
     ),
     Revert(
-        "RN", "状态卡上同一个数又写了两遍",
+        "RN", "这一页又长回了状态卡",
         "pages/preset_center_page.py",
-        # ⚠ 批 40 补刀撤掉了「模式 · 合并」那颗胶囊（RN-484），原锚点连同它一起没了。
-        #   ⭐ 这条断点防的事没变（同一个数不许写两遍），换个还在的锚点接着防。
-        '             f"范围 · {len(selected_labels)}/{len(self._TYPE_CHECKBOX_SPEC)} 类"),',
-        '             f"范围 · {len(selected_labels)}/{len(self._TYPE_CHECKBOX_SPEC)} 类"),\n'
-        '            ("info", f"内容 · {item_count} 项"),',
-        "tests/test_preset_center_tells_the_truth.py::"
-        "test_no_two_chips_say_the_same_number",
-        "批 40：改前第一颗写「范围 · 5/7 类」、第三颗写「内容 · 5 项」，"
-        "而 `export_bundle` 每一类**恰好产出一项** ⇒ 那两个 5 永远相等。"
-        "⭐ 同一个数写两遍会被读成两笔（官网那一轮实测过同一条）",
+        # ⚠⚠ **2026-09-05 批 52 换对象。** 原来打在「再加第二颗胶囊」上，
+        #   而 RN-496 把整张「当前状态」卡撤了 ⇒ 那个锚点在源码里 0 次，断点空转。
+        # ⭐ 按既有规矩：别把断点删掉，**换一个活着的对象** ——
+        #   现在钉的是「这张卡不许悄悄回来」，由那条正向守卫接。
+        "        # ⛔⛔ RN-496（批 52）：**这一页不再有「当前状态」卡。**",
+        '        from pages.audio_status_badge import create_badge_label\n'
+        '        _card, _cl = SettingsCard.make("当前状态", spacing=10)\n'
+        '        self.status_badge_label = create_badge_label()\n'
+        '        _cl.addWidget(self.status_badge_label)\n'
+        '        from pages.audio_status_badge import render_badges\n'
+        '        render_badges(self.status_badge_label, [("info", "范围 · 5/7 类")])\n'
+        '        layout.addWidget(_card)',
+        "tests/test_the_status_card_is_a_site_wide_pattern.py::"
+        "test_the_page_that_dropped_it_really_has_none",
+        "RN-496：跨页普查实测 28/28 页都有状态卡，撤掉这一页那张靠的是"
+        "「它那唯一一颗胶囊数的是正下方 12px 就画着的七个勾选框」，"
+        "而**它当初留下来的理由（勾选框在折线以下）批 40 就过期了**。"
+        "⇒ 这条断点钉的是「它不许悄悄回来」——回来了就得重新回答那个问题",
     ),
     # ================================ 批 40 补刀：RN-484 ~ RN-494
     Revert(
@@ -4743,7 +4809,8 @@ REVERTS = [
         #   不是"判据看不看得见这条缺陷"。**
         # ⇒ 换成真的把两张卡的次序换回去（`_chain_tab_order` 也吃这一行，所以
         #   焦点链会跟着一起歪 —— 这正是这条缺陷的完整形态）。
-        "        card_order = (status_card, starter_card, scope_card,\n"
+        # ⚠ 锚点在批 52 改过：RN-496 撤掉了「当前状态」卡，`card_order` 少了 `status_card`。
+        "        card_order = (starter_card, scope_card,\n"
         "                      workbench_card, my_presets_card, map_card, preview_card)",
         "        card_order = (status_card, starter_card, scope_card,\n"
         "                      my_presets_card, workbench_card, map_card, preview_card)",
@@ -4850,6 +4917,275 @@ REVERTS = [
         "⭐⭐ **一道空转守卫，如果拿「某个盲区还在」当自己的存在性证据，"
         "它就会在盲区被补上的那天报警 —— 而那天恰恰是最不该报警的一天**",
     ),
+    # ================ 批 46：RN-102 专家音频四页清零 + 指路文案泛化
+    Revert(
+        "RN", "搜索索引那道门又拿退出码当裁定",
+        ".github/workflows/ci.yml",
+        "          ./.github/verdict.ps1 -Name search_index -LogPath search_index.log",
+        "          if ($LASTEXITCODE -ne 0) { exit 1 }",
+        "tests/test_ci_gates_read_the_verdict_line.py::"
+        "test_every_blocking_audit_step_reads_the_verdict_line",
+        "RN-511：批 45 把这一步加进 CI 时读的就是 `$LASTEXITCODE`，"
+        "而同一份 `ci.yml` 第 86 行的注释逐字写着「一律读裁定行、"
+        "不读退出码」。实测：CI 上「索引与代码同步。」打完、"
+        "收尾 18 步也打完，进程退出码却是 **-1073740791（0xC0000409）** "
+        "⇒ **假红**，与 2026-08-17 `41217bf` 同一形态。"
+        "⭐ 本机同一条命令连跑两遍：管道那遍 0、重定向那遍 "
+        "-1073740791 ⇒ **它是随机的**，所以批 45 加上去那天它绿得毫无道理",
+    ),
+    Revert(
+        "RN", "索引脚本不再自己打裁定行",
+        "scripts/build_search_index.py",
+        '        announce("search_index", code)',
+        '        pass  # announce("search_index", code)',
+        "tests/test_ci_gates_read_the_verdict_line.py::"
+        "test_the_verdict_name_matches_what_the_script_delivers",
+        "RN-511：裁定行必须落在**退出链路之前**。"
+        "⭐⭐⭐ 收尾崩了也改不掉已经打出去的那一行；"
+        "而没走到判定就死掉的，日志里一行裁定都没有 ⇒ "
+        "`verdict.ps1` 按失败处理。**洗不成假绿。**"
+        "⚠ 这里用的是 `announce()` 不是 `deliver()`："
+        "后者打完就 `os._exit`，而这支脚本打完还得拆真窗口、还原沙箱",
+    ),
+    Revert(
+        "RN", "本机入口把索引生成器当审计跑",
+        "scripts/gate.py",
+        "    cmd = [sys.executable, str(script), *DEFAULT_ARGS.get(name, []), *extra]",
+        "    cmd = [sys.executable, str(script), *extra]",
+        "tests/test_ci_gates_read_the_verdict_line.py::"
+        "test_the_local_gate_runs_the_index_script_in_check_mode",
+        "RN-511：`build_search_index.py` 不带 `--check` 时**不是一道门** —— "
+        "它会直接重写 `core/search_index.json` 且一行裁定不打。"
+        "⭐⭐ 「忘了给开关」的后果不是「少测一点」，"
+        "是**本机那一跑去改了产品文件**。"
+        "⭐ 定了表却没拼进命令行，和没有这张表一模一样"
+        "（同批 45：补齐清单不等于补齐那件事）",
+    ),
+    Revert(
+        "RN", "门禁判据的分母退回按脚本名划",
+        "tests/test_ci_gates_read_the_verdict_line.py",
+        'AUDIT_SCRIPT_RE = re.compile(r"python\\s+(scripts/[A-Za-z0-9_]+\\.py)")',
+        'AUDIT_SCRIPT_RE = re.compile(r"python\\s+(scripts/[A-Za-z0-9_]*audit[A-Za-z0-9_]*\\.py)")',
+        "tests/test_ci_gates_read_the_verdict_line.py::"
+        "test_the_extractor_actually_sees_the_audit_steps",
+        "RN-511 的**根因**就在这一行。这条判据守的是「阻断级的门"
+        "不许拿退出码当裁定」，而它的分母是"
+        "「**脚本名里带 audit 的步骤**」——"
+        "于是 `build_search_index.py` 那一道门**结构上进不了分母**，"
+        "拿退出码当裁定用了整整一批，而判据全程绿着。"
+        "⭐⭐⭐ **一条守着某个纪律的判据，如果分母按命名约定划，"
+        "那么第一个不守命名约定的违规者天生在它看不见的地方。**"
+        "（同 RN-483：闭集守卫拿自己的白名单当分母）",
+    ),
+    Revert(
+        "RN", "同步 dry-run 又不说它量的是哪个版本",
+        "build_tools/oss_sync/sync.py",
+        "        warn_uncommitted()",
+        "        pass  # warn_uncommitted()",
+        "tests/test_oss_patches_never_drop_a_fix.py::"
+        "test_the_dry_run_says_which_version_it_measured",
+        "RN-510：批 45 收工报「oss dry-run 75 个补丁全部生效」——**那句话是假的**。"
+        "我在 `git add` 之前跑的，而 `sync.py` 第一步是 `git archive HEAD`，"
+        "取的是**已提交树** ⇒ 它检查的是那一批**还没发生**的那个版本。"
+        "真跑在 HEAD 上是 2 个补丁漂了，正是批 45 改过的那两个文件。"
+        "⭐⭐⭐ **一道门禁跑了、绿了、报的数也是真的 —— 只是它量的是上一个版本。**"
+        "⭐ 总纲 §9.4 逐字写着「先提交再同步」，规矩早就在 ——"
+        "**而一条只靠人记得的规矩，失效率就是人的失效率**（批 35）。"
+        "⇒ 让工具自己说出它量的是哪一版，不阻断",
+    ),
+    Revert(
+        "RN", "指路文案又点名一个侧栏里没有的页",
+        "pages/audio_replay_page.py",
+        'QPushButton("去「击杀音效」试听一次")',
+        'QPushButton("去音效页试听一次")',
+        "tests/test_page_copy_is_user_facing.py::"
+        "test_page_copy_does_not_point_at_a_nonexistent_page",
+        "⭐⭐ **给「上次那个 bug」写的判据，挡不住「同一类的下一个 bug」**："
+        "这条判据原来只硬编码了「首页」三个字面量，于是我新加的「去**音效页**试听一次」"
+        "大摇大摆走过去（侧栏那一项叫「**击杀音效**」）。已泛化成"
+        "「凡是『去/回/到 X页』这种指路句式，X 必须就是某个侧栏标题」。"
+        "⚠ 泛化第一版把包含判断写**反**了（`name in title`），于是"
+        "「音效」被「击杀音效」含住而放过 —— ⭐⭐ **注释写对了，代码写反了，"
+        "而注释不会被执行**",
+    ),
+    Revert(
+        "RN", "专家音频四页的重复入口又长回来",
+        "pages/audio_task_panel_page.py",
+        '        self.action_bar.configure_secondary("", None, visible=False)',
+        '        self.action_bar.configure_secondary("刷新历史", self._reload_history, visible=True)',
+        "tests/test_one_action_one_entrance.py::"
+        "test_the_four_renovated_pages_have_exactly_one_entrance",
+        "RN-102：这四页实测 **11 处**「底栏与卡内绑同一个方法」，一次清零。"
+        "⭐⭐ 债表早就把这 11 处记全了 —— 它是「只许变少」的棘轮，"
+        "**能防止事情变坏，但不会让事情变好**。这正是家族档案的价值：一刀铺四页",
+    ),
+    Revert(
+        "RN", "卡内又长出第二颗绑同一个方法的按钮",
+        "pages/audio_replay_page.py",
+        "        self.empty_refresh_btn.clicked.connect(self._clear_filters)",
+        "        self.empty_refresh_btn.clicked.connect(self._refresh_events)",
+        "tests/test_expert_audio_family_has_one_entrance.py::"
+        "test_no_action_has_two_buttons_inside_the_cards[audio_replay]",
+        "`audio_replay` 的刷新原来有**三个**入口（筛选卡 / 底栏 / 空状态）。"
+        "⭐ 债表那条比的是「底栏 vs 卡内」，**看不见同在卡内的那两颗** —— "
+        "一条判据的分母写成「两个容器之间」时，容器**里面**的重复它看不见",
+    ),
+    Revert(
+        "RN", "底栏主按钮又在安全与破坏之间变身",
+        "pages/audio_health_page.py",
+        '        self.action_bar.configure_primary("", None, visible=False)',
+        '        self.action_bar.configure_primary("恢复默认", None, visible=True)\n'
+        '        self.action_bar.configure_primary("立即体检", None, visible=True)',
+        "tests/test_expert_audio_family_has_one_entrance.py::"
+        "test_the_primary_never_crosses_the_safe_destructive_line[audio_health]",
+        "⭐⭐⭐ 这条判据的命题在批 46 之内被推翻了一次：第一版照 RN-506 直接推出"
+        "「主按钮的文案至多一种」，而外审 24 发逐页驳回 —— 我为了躲开「变身」，"
+        "**用「恒定」换掉了「正确」**（空状态下「刷新」毫无产出、没选目录时点「扫描」会卡住）。"
+        "⇒ **RN-506 的真正边界是「安全 ↔ 破坏性」，不是「变不变」**",
+    ),
+    # ============ 批 45：RN-023 / RN-204 / RN-506 / RN-001b（两页合批关档）
+    Revert(
+        "RN", "搜索索引那道门禁从 CI 里被摘掉",
+        ".github/workflows/ci.yml",
+        "          python scripts/build_search_index.py --check 2>&1 | Tee-Object -FilePath search_index.log",
+        "          echo skip",
+        "tests/test_the_index_gate_is_wired_into_ci.py::test_ci_runs_the_search_index_check",
+        "RN-023（**S2，立案 18 天**）：立案原话「`--check` 不在 CI 里」到批 45 仍逐字成立。"
+        "中间补的两样都不是这一道 —— 退出码合约（16 条）测的是**合约**不是真索引；"
+        "收工清单第 ⑦ 格是**一条靠人记得的制度**（批 35：只在「我想起来」时才生效的制度，"
+        "等于没有这条制度）。⭐⭐ 而它比那一条更隐蔽：**清单里确实有这一格**，"
+        "所以每次收工都能诚实地写「已跑」，漏掉的那一次不留任何痕迹",
+    ),
+    Revert(
+        "RN", "屏幕文案退回管这个游戏叫 CS:GO",
+        "pages/about_page.py",
+        "本工具通过监听 CS2 游戏状态接口 (GSI) 来实现击杀音效等功能。",
+        "本工具通过监听 CS:GO 游戏状态接口 (GSI) 来实现击杀音效等功能。",
+        "tests/test_the_product_names_the_right_game.py::"
+        "test_no_screen_copy_still_calls_the_game_by_its_old_name",
+        "RN-204：立案只说了这一页，AST 扫全站之后是**跨两页 4 处**（另 3 处在**已关档**的"
+        "`advanced` 上）。⭐ **立案的数会过期，而它写小的时候比写大更难发现。**"
+        "⚠ 分类器第一版按方法名判日志，把 `QMessageBox.critical` 那个模态框算成了日志 ⇒"
+        "⭐⭐ **一个名字同时属于两个完全不同的东西时，按名字分类必然出错**",
+    ),
+    Revert(
+        "RN", "底栏主按钮又随选中状态变身成破坏性动作",
+        "pages/config_snapshot_page.py",
+        '        self.action_bar.configure_primary("", None, visible=False)',
+        '        if selected_id:\n'
+        '            self.action_bar.configure_primary("恢复选中", self._restore_selected, visible=True)\n'
+        '        else:\n'
+        '            self.action_bar.configure_primary("创建快照", self._create_snapshot, visible=True)',
+        "tests/test_snapshot_page_has_one_entrance_per_action.py::"
+        "test_the_bottom_primary_never_turns_into_a_destructive_action",
+        "RN-506：没选中时是「创建快照」，选中一行之后**同一个像素**变成「恢复选中」——"
+        "一个多存一份的安全动作，和一个**覆盖用户当前全部设置**的破坏性动作，共用一个位置。"
+        "⭐⭐⭐ **肌肉记忆记的是位置，不是文案。**"
+        "⚠ 它不是 RN-139（一屏两颗紫的）那一族，方向相反：只有一颗紫的，而那一颗的含义会变",
+    ),
+    Revert(
+        "RN", "帮助文案写好了，而那一页不装帮助面板",
+        "pages/about_page.py",
+        '        install_help_panel(header.title_row, header.body, PAGE_HELP_TEXTS["about"])',
+        "        pass",
+        "tests/test_help_button_exists_wherever_help_text_does.py::"
+        "test_every_page_with_help_text_shows_the_question_mark",
+        "RN-001b：⭐⭐⭐ **一个「补齐清单」的动作，可能只补齐了清单，"
+        "而没有补齐它指向的那件事。** 我第一步只往 `PAGE_HELP_TEXTS` 里加了 about 那一段 ——"
+        "覆盖面 24→25、三条相关判据全绿，**而屏幕上那颗「?」根本没出现**"
+        "（面板要每页自己调 `install_help_panel`）。那三条量的都是**那张表**，"
+        "没有一条量屏幕；是**出图看了一眼**才发现的",
+    ),
+    # ================================ 批 44：RN-450 收口（voice_output 关档）
+    #
+    # ⭐⭐⭐ 本批的结论是**否定的**：RN-450 说「唯一那颗紫的把注意力从第一步上拿走了」，
+    #   而行为题 48 发（改前/改后 × 总开关开/关）**48/48 全答「安装驱动」，改前改后
+    #   一模一样**，且 **48/48 引用的是文案、只有 3 发提到颜色**。
+    #   ⇒ 那颗按钮不在承重；为它写的 25 行按铁约束 2 整段撤回。
+    #   留下的是把**真正承重的那句话**钉住的判据（批 8：一个结论所依赖的事实要有判据看着）。
+    Revert(
+        "RN", "驱动没装时只报状态、不说后果",
+        "pages/voice_output_page.py",
+        '                self.driver_hint_label.setText("当前缺少 VB-Cable，安装后才能把音频送进游戏语音。")',
+        '                self.driver_hint_label.setText("当前缺少 VB-Cable。")',
+        "tests/test_the_page_promises_a_feature_it_does_not_have.py::"
+        "test_the_page_says_both_halves_of_the_prerequisite",
+        "RN-450：这一页的引导全靠两句话 ——「它没装」和「不装就用不了」。"
+        "48 发行为题里 **48/48 抄的就是这两句**，而在此之前没有任何东西盯着它们。"
+        "⚠ 另一半（「没装」）**单点破坏测不出来**：屏幕上有四处在说它，"
+        "四处一起拆才红 —— ⭐ **一条被多处独立支撑的断言，单点破坏证明不了它能红**",
+    ),
+    # ================================ 批 43：RN-501 / RN-502（hud_color 关档）
+    Revert(
+        "RN", "预设又变回「选一下、再点一下才载入」",
+        "pages/hud_color_page.py",
+        "        self.profile_combo.currentIndexChanged.connect(self._on_profile_chosen)",
+        "        pass",
+        "tests/test_hud_color_has_one_commit_point.py::"
+        "test_choosing_a_preset_leaves_no_half_applied_state",
+        "RN-501：两套预设差 13 个字段，其中 **12 个**在动下拉那一刻就跟着新预设走了"
+        "（界面上根本没有这些控件），只有 1 个等那颗按钮 ⇒ 中间那一下里，"
+        "屏幕报着新预设名、`_dirty` 也置位，而规则是**两套各一半**。"
+        "⭐ 断点打在**接线**那一句上：它一断，那个半套状态立刻回来",
+    ),
+    Revert(
+        "RN", "预设提示又变回一句无条件的状态陈述",
+        "pages/hud_color_page.py",
+        '            "换完要点右下角保存才写进游戏。")',
+        '            "还没写进游戏，点右下角保存。")',
+        "tests/test_hud_color_has_one_commit_point.py::"
+        "test_no_copy_claims_an_unsaved_state_while_the_page_is_clean",
+        "RN-502（**我自己这一批引入的**，外审改完复跑 8/12 判高）："
+        "旧文案「**载入**只是把这套规则填进编辑区，还没写进游戏」是**条件句**，任何时候都为真；"
+        "改成无条件陈述之后，页面干净时它与状态胶囊「保存 · 已存下」当场打架。"
+        "⭐⭐⭐ **把一句条件句改成陈述句，就把一句永远为真的话，变成了一句多数时候为假的话**",
+    ),
+    # ================================ 批 42：RN-469 收口（分母守卫 must_scan）
+    #
+    # ⚠ 三条都打在**判据自己的承重逻辑**上：这一族防的就是「判据空转」，
+    #   而空转的成因全在判据这一侧，产品代码里没有对应物。
+    Revert(
+        "RN", "搜索索引判据的分母被清空",
+        "tests/test_settings_search_r13.py",
+        # ⚠⚠ **这条断点第一版打在守卫自己身上**（把 `must_scan` 里的
+        #   `len(got) >= least` 放宽成 `>= 0`），回退验证当场判它假绿。
+        # ⭐⭐⭐ **一道分母守卫在健康状态下是休眠的：削弱它测不出任何东西，
+        #   因为它只在分母真的空了的时候才开口。**
+        #   ⇒ 要证明守卫在承重，只能**把分母清空**，看判据红不红。
+        # 这里就是那个实验：`nav_pages` 一空，
+        # `missing = nav_pages - pages_with_items` 恒为空集 ⇒ 没有守卫时它必然全绿。
+        "    nav_pages = {pid for pid, _n, _w in SEARCH_INDEX}",
+        "    nav_pages = set()",
+        "tests/test_settings_search_r13.py::test_index_covers_every_page",
+        "RN-469：这是那 73 条的**代表**。判据问「27 页每页都有索引条目吗」，"
+        "而它的分母是导航表 —— 分母一空，问题就变成「0 页都有吗」，答案永远是「有」。"
+        "⭐ `must_scan` 就是拦这一下的",
+    ),
+    Revert(
+        "RN", "把一整句文案当分母交给守卫",
+        "tests/test_the_page_promises_a_feature_it_does_not_have.py",
+        # ⚠ 同上：断点不能打在类型门自己身上（调用方已经改对了，门是休眠的），
+        #   要打在**调用方**上 —— 把切词那一步撤掉，看守卫拦不拦得住。
+        '    must_scan(visible.split(), f"{PAGE} 页上的可见文案（按空白切出来的词）", least=5)',
+        '    must_scan(visible, f"{PAGE} 页上的可见文案", least=5)',
+        "tests/test_the_page_promises_a_feature_it_does_not_have.py::"
+        "test_no_text_to_speech_engine_is_pretended",
+        "⭐⭐ 字符串是可迭代的，所以 `must_scan(一句文案, least=5)` **不会报错** —— "
+        "它把那句话切成单字，5 个字就「够分母了」，而调用方拿回去的已经不是那句话。"
+        "实测当场踩中：`_visible_text(page)` 返回的是 str。"
+        "⇒ **一个把「明显用错」变成「静静通过」的守卫，比没有守卫更糟**",
+    ),
+    Revert(
+        "RN", "空转扫描器又看不见 must_scan",
+        "tests/test_judges_are_not_idling.py",
+        'SHARED_GUARD = "must_scan("',
+        'SHARED_GUARD = "must_scan_disabled("',
+        "tests/test_judges_are_not_idling.py::"
+        "test_every_scanning_judge_guards_its_denominator",
+        "RN-469 收口后这条棘轮是 **0**，而 0 让「放宽上限」测不出来（批 41 教训）。"
+        "⇒ 断点打在**识别器**上：认不出公共守卫，73 条候选立刻全部回到「缺守卫」清单。"
+        "⭐ 破坏实验要打在会腐烂的那一半上，而一条判据里会腐烂的往往是分母不是阈值",
+    ),
     # ================================ RN-482 / RN-483：里程碑看板与闭集守卫
     #
     # ⚠ 同 RN-408：被测对象在另一个仓，断点只能打在**判据自己的承重逻辑**上。
@@ -4892,12 +5228,22 @@ REVERTS = [
         "它一歪，现算出来的词就会去迎合看板上手写的那个",
     ),
     Revert(
-        "RN", "「当前剩」把已关档的也算进去",
+        "RN", "里程碑那个词又可以手打了",
         "tests/test_renovation_progress_board_does_not_rot.py",
-        "        want = {n for n, done in rows if not done}",
-        "        want = {n for n, done in rows}",
+        # ⚠⚠ **2026-09-05 批 52 换对象。** 原来打在
+        #   `test_an_in_progress_milestone_lists_exactly_what_is_left` 上，
+        #   而批 52 关掉 `preset_center` 之后 **全站再没有「进行中」的里程碑**
+        #   ⇒ 那条判据的分母空了，删它的过滤条件也不会红（回退验证当场判假绿）。
+        # ⭐⭐⭐ 与同族那条（`STATUS_IN_PROGRESS`）**同一天、同一个原因**：
+        #   工程往前走，会把守着某个阶段的破坏实验的对象一起带走。
+        # ⇒ 换到同一族里活着的那条：里程碑词必须**从页面表现算出来**，不许手打。
+        # ⚠ 第一版写的是 `want = word` —— **那是把比较拿掉，不是把它弄错**，
+        #   于是 `bad` 永远为空、判据照绿（回退验证当场判假绿）。
+        # ⭐ 断点要造出的是**那条缺陷**，不是一个什么都不查的判据。
+        "        want = _derive_word(items[MILESTONE_PHASE[name]])",
+        '        want = "未开工"',
         "tests/test_renovation_progress_board_does_not_rot.py::"
-        "test_an_in_progress_milestone_lists_exactly_what_is_left",
+        "test_the_milestone_word_is_recomputed_from_the_pages_not_typed_by_hand",
         "RN-482：⭐⭐ 「未开工」「已完成」这两个词**自己就把清单说全了**，"
         "只有「进行中」不携带这个信息 ⇒ 只有它要带 `⇒ 当前剩：<…>`，"
         "且必须**等于**现算的那一份（批 38「要么说全部，要么等于当前」的看板版）。"
@@ -5376,7 +5722,10 @@ REVERTS = [
     Revert(
         "RN", "底栏那句话不再说「要不要点什么」",
         "pages/magnifier_page.py",
-        '            "改完就存下了；只有「偏移校准」里的 X / Y 要点那张卡上的「应用」才算数。"',
+        # ⚠ 锚点在批 51 改过：RN-519 清存量时，「应用」两个字从字面量换成了
+        #   `self.offset_apply_btn.text()`（同一个名字不许在代码里存两份）。
+        #   ⭐ 失效体检当场逮到这一条 —— 断点一失效就在空转。
+        '            "改完就存下了；只有「偏移校准」里的 X / Y 要点那张卡上的"',
         '            ""',
         "tests/test_the_loudest_button_is_not_the_undo_button.py"
         "::test_the_bar_message_tells_the_truth_about_what_needs_clicking",
@@ -5773,7 +6122,8 @@ REVERTS = [
         # ⚠⚠ 补刀又把 `workbench_card` 提到 `my_presets_card` 之前（RN-486），**第二次搬**。
         #   ⭐ 同一个锚点在一批之内被两次改动推着走了两回 ——
         #     卡序这一行是这一页的**热点**，锚在它上面的断点每次重排都要跟着核一遍。
-        "        card_order = (status_card, starter_card, scope_card,\n"
+        # ⚠ 锚点在批 52 改过：RN-496 撤掉了「当前状态」卡，`card_order` 少了 `status_card`。
+        "        card_order = (starter_card, scope_card,\n"
         "                      workbench_card, my_presets_card, map_card, preview_card)",
         "        card_order = (status_card, workbench_card, scope_card,\n"
         "                      my_presets_card, starter_card, map_card, preview_card)",
@@ -5810,6 +6160,230 @@ REVERTS = [
     #
     # 改成锚在这行不会变的标记上之后，往上面加多少条都不会顶开它。
     # ⇒ 别删这一行、别改它的文字，也别把新条目加到它下面。
+    # ============================================ 批 48：RN-508 / RN-146
+    Revert(
+        "RN", "体检报告又变回整块英文日志",
+        "core/resource_health.py",
+        '        f"结论：{\'一切正常，没有发现问题\' if ok else f\'发现 {total} 项问题\'}",',
+        '        f"ok: {ok}",',
+        "tests/test_health_report_speaks_user_language.py::test_the_report_shown_to_users_has_no_internal_jargon",
+        "RN-508：那块「体检报告」是给用户看的（还有一颗「导出报告」把它发给别人），"
+        "而它原来打的是 `[Resource Health] / ok: False / missing_directories: 17`。"
+        "⭐⭐⭐ 这不是说错了，是**没翻译** —— 屏幕上摆的是给写代码的人看的词",
+    ),
+    Revert(
+        "RN", "体检报告又把本机用户名带上",
+        "core/health_report_text.py",
+        "        if normalized.lower().startswith(value.lower()):\n"
+        "            return token + normalized[len(value):]",
+        "        if False:\n"
+        "            return token + normalized[len(value):]",
+        "tests/test_health_report_speaks_user_language.py::test_the_report_never_carries_the_local_user_name",
+        "RN-508 的隐私面：报告里逐字带着 `C:\\Users\\<你的 Windows 用户名>\\...`，"
+        "而这份报告有一颗「导出报告」按钮 —— 导出的东西是要发给别人的",
+    ),
+    Revert(
+        "RN", "回放页的筛选又变回要用户自己拼内部记号",
+        "pages/audio_replay_page.py",
+        '        self.action_combo = QComboBox()',
+        '        self.action_combo = QLineEdit()',
+        "tests/test_replay_filters_are_pickable.py::test_the_action_filter_is_a_closed_list_not_free_text",
+        "RN-508：三个筛选原来是自由输入框，提示语是 `play/drop/preempt/load` 与 "
+        "`kill/headshot/c4/...` —— ⚠ 而后者给的例子**一行都匹配不上**"
+        "（真实取值是 `kill_voice`/`round_sounds`，且是精确比较）",
+    ),
+    Revert(
+        "RN", "体检页又在构造里起线程扫盘，快照拍到哪一态全看运气",
+        "pages/audio_health_page.py",
+        '        if os.environ.get(self.SYNC_SCAN_ENV) == "1":',
+        '        if False:',
+        "tests/test_health_page_snapshot_is_reproducible.py::test_with_the_switch_the_page_is_settled_right_after_build",
+        "RN-146：扫描完成得比取样早还是晚，决定了这一页是「正在扫描」还是结果列表"
+        "（CI 上实测 18 条差异）。⚠ **本机复现不了** —— 判据自己把扫描变慢才逮得住",
+    ),
+    Revert(
+        "RN", "采基线那条路不再打开同步扫描的开关",
+        "scripts/renovation_baseline.py",
+        '    os.environ["CS2C_SYNC_HEALTH_SCAN"] = "1"',
+        '    pass',
+        "tests/test_health_page_snapshot_is_reproducible.py::test_the_tooling_actually_turns_the_switch_on",
+        "RN-146 的另一半：**开关修好了但没人打开它，等于没修**。"
+        "出图走 `enable_audit_mode`，采基线走这一行，少一条就有一类产物仍然随机",
+    ),
+    # ============================================ 批 49：RN-520 / 帮助文案
+    Revert(
+        "RN", "导入向导第 2 步又变回一块什么都不说的黑框",
+        "pages/audio_import_wizard_page.py",
+        "        self.preview_text.setPlaceholderText(",
+        "        _unused_placeholder = (",
+        "tests/test_expert_audio_pages_catch_you_when_empty.py::test_the_preview_box_says_what_will_appear_there",
+        "RN-520：扫描之前那是一整块 400px 高的纯黑框，外审 4/6 报「易误以为卡死」。"
+        "⭐ **一个什么都不说的框，和一个坏掉的框长得一模一样。**",
+    ),
+    Revert(
+        "RN", "回放页回来之后又要玩家自己点刷新",
+        "pages/audio_replay_page.py",
+        "        super().showEvent(event)\n        try:\n            self._refresh_events()",
+        "        super().showEvent(event)\n        try:\n            pass",
+        "tests/test_expert_audio_pages_catch_you_when_empty.py::test_the_replay_page_refreshes_when_it_comes_back",
+        "RN-520：空状态那颗按钮把玩家送去别处试听，回来还得自己点刷新（外审 3/3）——"
+        "而「回到这一页」本身就是「我试完了」的信号",
+    ),
+    Revert(
+        "RN", "专家音频三页的帮助文案又只进了表、没装那颗问号",
+        "pages/audio_replay_page.py",
+        '        install_help_panel(header.title_row, header.body, PAGE_HELP_TEXTS["audio_replay"])',
+        "        pass",
+        "tests/test_help_button_exists_wherever_help_text_does.py::test_every_page_with_help_text_shows_the_question_mark",
+        "RN-001b 那条教训（批 45）：只往 `PAGE_HELP_TEXTS` 加一段，覆盖面判据全绿，"
+        "而屏幕上那颗「?」根本没出现 —— 面板要每页自己装",
+    ),
+
+    Revert(
+        "RN", "基线判据的分母又只认磁盘上已经有的那些页",
+        "tests/test_a_page_that_claims_a_baseline_has_one.py",
+        "        if any(word in status for word in CLAIMS_BASELINE):",
+        "        if False:",
+        "tests/test_a_page_that_claims_a_baseline_has_one.py::test_every_page_claiming_a_baseline_actually_has_one",
+        "RN-521：结构基线与指纹那两条判据的分母是「基线目录里已经有的那些页」，"
+        "于是**一页没有基线，它就天生不在分母里** —— 批 46 声称锁了四页的基线，"
+        "而那一笔一个基线文件都没碰，两批之后才发现。分母必须来自声称的那一侧",
+    ),
+    # ============================================ 批 50：RN-181 / RN-523 / RN-524
+    Revert(
+        "RN", "gun_sound 又没有整套套用（改基类落不到不继承它的那一页）",
+        "pages/gun_sound_page.py",
+        "        status_card_layout.addLayout(self._build_apply_all_row())",
+        "        pass",
+        "tests/test_apply_one_style_to_every_weapon.py::test_every_page_in_the_family_has_the_action",
+        "RN-181：四页共享 `SoundPageBase`，而 `gun_sound` 自己一套 —— 第一版实测"
+        "**四页里只有立案原文点名的那一页没拿到**。⭐ 分母不许按「继承了哪个基类」划",
+    ),
+    Revert(
+        "RN", "整套套用又不跳过用不了这个风格的武器",
+        "pages/sound_page_base.py",
+        "        return [w for w in self._get_all_weapons()\n"
+        "                if style in self._style_options_for(w)]",
+        "        return list(self._get_all_weapons())",
+        "tests/test_apply_one_style_to_every_weapon.py::test_it_skips_weapons_that_do_not_have_the_style",
+        "RN-181 的安全那一半：选项用并集（否则 per-weapon 的三页上交集必然为空、"
+        "功能恰好在最痛的地方没用），而**套用时跳过**保证绝不写一个解析不出来的值。"
+        "⚠ RN-523：这条判据的第一版拿 `_weapons_supporting()` 定义自己的预期，"
+        "破坏它之后整段断言一句都不执行而全绿",
+    ),
+    Revert(
+        "RN", "「摆着提交按钮就不许说自动保存」又退回认词不认事实",
+        "tests/test_hud_color_has_one_commit_point.py",
+        "        buttons = [t for t in buttons\n"
+        "                   if not _edit_persists_without_pressing(page, t)]",
+        "        buttons = list(buttons)",
+        "tests/test_hud_color_has_one_commit_point.py::test_no_page_says_no_button_needed_while_showing_a_button",
+        "RN-524：它拿四个词认「提交按钮」，而「应用到全部武器」是**动作**不是提交 ——"
+        "不点它，逐个改的那些照样已落盘。⛔ 修法不是开名单白名单，是**用证据换例外**",
+    ),
+    # ======================================== 批 51：RN-505/507/509/519/522
+    Revert(
+        "RN", "用户可见文案的判据又退回只认几个记号（分母塌回 0.7%）",
+        "tests/test_page_copy_is_user_facing.py",
+        "                if fname in TEXT_CTORS:",
+        "                if fname in ():",
+        "tests/test_page_copy_is_user_facing.py::test_the_denominator_does_not_fall_behind",
+        "RN-522：分母只认 `description`/`PAGE_LEAD`/`PAGE_DESC`/`subtitle` 时只看得见 "
+        "**26 条**，而 `pages/` 里含中文的字面量有 3586 条 —— 覆盖 **0.7%**。"
+        "⭐ 补记号只能解决这一次，**量分母本身**才解决下一次，所以断点打在覆盖率那条上",
+    ),
+    Revert(
+        "RN", "机器记号又能原样显示给玩家看",
+        "tests/test_page_copy_is_user_facing.py",
+        "    return bool(MACHINE_TOKEN.match(s) or MACHINE_PAIR.match(s))",
+        "    return False",
+        "tests/test_page_copy_is_user_facing.py::"
+        "test_the_machine_token_rule_still_recognizes_the_thing_it_was_written_for",
+        "RN-522：批 49 制度体检注入的正是 `progress: idle` 这种内部记号。"
+        "⚠ 这条规则今天命中 0 —— **0 命中的规则最容易在重构里被改空而没人发现**，"
+        "所以它必须有一个「必须逮住」的已知样本",
+    ),
+    Revert(
+        "RN", "挤压审计又拿父控件宽度当可用宽度",
+        "scripts/_squeeze_room.py",
+        "    used += max(0, solid - 1) * max(0, layout.spacing())\n"
+        "    return max(0, avail - used)",
+        "    return 99999",
+        "tests/test_squeeze_audit_measures_the_right_room.py::"
+        "test_a_label_in_a_column_is_not_squeezed_just_because_the_page_is_wide",
+        "RN-505：这支审计从上线那天起就是 rc=1，报的 2 条**都是**这一类假报 ——"
+        "竖排里的标签本来就占满整列。⭐⭐ 一道长期红着的门禁，等于没有这道门禁",
+    ),
+    Revert(
+        "RN", "`setFixedWidth` 又被当成「我这一列就这么宽」的声明",
+        "scripts/_squeeze_room.py",
+        "    if widget.minimumWidth() >= cap:            # setFixedWidth：硬尺寸，不是行长意图\n"
+        "        return False",
+        "    pass",
+        "tests/test_squeeze_audit_measures_the_right_room.py::"
+        "test_an_explicit_max_width_is_a_declaration_not_a_squeeze",
+        "RN-505：`setFixedWidth` 把 min 和 max 一起设死，Qt 里和「只设上限」一模一样，"
+        "而它多半是摆位置的硬尺寸 —— **正是这支审计要逮的东西**。"
+        "⭐ 这条例外是新判据写出来当场被它自己逮住的：第一版会把原始那条真缺陷一并放过",
+    ),
+    Revert(
+        "RN", "指路文案的判据又退回手写一条目的分母",
+        "tests/test_gun_special_sound_truth.py",
+        "    destinations = _nav_destinations_in_pages()",
+        '    destinations = {"工具与系统 - 高级设置"}',
+        "tests/test_gun_special_sound_truth.py::"
+        "test_the_shared_hint_points_at_real_navigation_destinations",
+        "RN-507/509 改导航名时实测：全站有 **3 处**「分组 - 页名」式指路文案，"
+        "而判据的分母是一个**手写的单条集合**，只看得见 1 处。"
+        "⭐ 与 RN-522 同一族：按人手登记划分母，没登记的天生看不见",
+    ),
+    Revert(
+        "RN", "改了导航名而点名它的文案留在原地",
+        "gui_widget.py",
+        '("audio_health", "资源体检"),',
+        '("audio_health", "音频体检"),',
+        "tests/test_gun_special_sound_truth.py::"
+        "test_the_shared_hint_points_at_real_navigation_destinations",
+        "RN-509：侧栏叫「音频体检」而页面主标题叫「资源体检」，同一页两个名字；"
+        "而这一页实际检的是音频**和视觉**两类资源 ⇒ 窄的那个名字是错的。"
+        "改名要连着改点名它的文案，这条断点钉的正是「只改了一半」",
+    ),
+    Revert(
+        "RN", "提示文案又把按钮名抄了一份",
+        "pages/audio_import_wizard_page.py",
+        "可点上面「{self.open_resource_btn.text()}」继续核对。",
+        "可点上面「打开资源目录」继续核对。",
+        "tests/test_copy_that_names_a_button_reads_it_from_the_button.py::"
+        "test_no_new_page_hardcodes_the_text_of_its_own_button",
+        "RN-519：批 48 立表时 12 处存量，批 51 逐条清完、表已空。"
+        "⛔ 往那张表里加行 = 判据该红的时候你把它按住了",
+    ),
+    # ======================================== 批 52：RN-496
+    Revert(
+        "RN", "那 113px 又还给「当前状态」卡（交换按钮退回折线以下）",
+        "pages/preset_center_page.py",
+        "        card_order = (starter_card, scope_card,",
+        "        layout.setContentsMargins(16, 129, 16, 16)\n"
+        "        card_order = (starter_card, scope_card,",
+        "tests/test_preset_center_tells_the_truth.py::"
+        "test_the_way_to_open_a_friends_file_is_on_the_first_screen",
+        "RN-496：撤掉那张只剩一颗胶囊的状态卡换来 113px，"
+        "完整档 + 音乐条那两颗交换按钮 **29% → 100%**。"
+        "⚠ 断点打在**音乐条 on** 那一档 —— 它是「放过一次音乐的人永远停在的那一档」"
+        "（RN-195，单向），不是边缘情况；auto 档在缺陷状态下照样是绿的",
+    ),
+    Revert(
+        "RN", "撤卡的例外名单被当成了全站新做法",
+        "tests/test_the_status_card_is_a_site_wide_pattern.py",
+        'DELIBERATELY_WITHOUT = {"preset_center"}',
+        "DELIBERATELY_WITHOUT = set()",
+        "tests/test_the_status_card_is_a_site_wide_pattern.py::"
+        "test_every_other_page_still_has_its_status_card",
+        "RN-496：跨页普查实测 28/28 页都有状态卡，撤掉 `preset_center` 那张是**一页的例外**"
+        "（它那唯一一颗胶囊数的是正下方 12px 就画着的七个勾选框）。"
+        "⭐ 这条断点钉的是「例外名单是承重的」—— 名单一空，正向守卫必须当场红，"
+        "否则它就是一张只会变长的豁免表",
+    ),
     # OSS_SYNC_APPEND_POINT
     # ======================================== 开源版专属：品牌 / 素材 / 文档
     # ⚠ 这三组上游没有，只存在于开源版：BRAND 验「旧品牌名回流时判据变不变红」，
@@ -6058,10 +6632,28 @@ def main() -> int:
     ap.add_argument("--only", default="", help="只跑某一组（R9-A / R9-B / R9-C / R9-D）")
     ap.add_argument("--stale-only", action="store_true",
                     help="只做失效体检（锚点是否还在、判据名是否还在），不改任何文件、不跑用例")
+    ap.add_argument("--shard", default="",
+                    help="只跑第 i 片（共 n 片），形如 `2/6`。给 `revert_verify_parallel.py` 用")
     args = ap.parse_args()
 
     items = [r for r in REVERTS
              if not args.only or r.group == args.only or args.only in r.name]
+
+    # ---- 批 47：分片。**切在失效体检之前** ----
+    # 体检和基线里的 `--collect-only` 是每条判据一次（481 条要 7 分钟），
+    # 不分片的话每一片都要把这 7 分钟重跑一遍，并行就白并了。
+    # 切法本身在 `shard_items()` 里（判据要量得到它，见那个函数的注释）。
+    if args.shard:
+        try:
+            i_str, n_str = args.shard.split("/")
+            shard_i, shard_n = int(i_str), int(n_str)
+        except ValueError:
+            raise SystemExit(f"--shard 要写成 `i/n`，收到的是 {args.shard!r}")
+        try:
+            items = shard_items(items, shard_i, shard_n)
+        except ValueError as e:
+            raise SystemExit(str(e))
+        print(f"【第 {shard_i}/{shard_n} 片】本片 {len(items)} 条断点\n")
 
     # ---- RN-093：先收拾上一轮没跑完留下的烂摊子 ----
     # ⚠ 必须在失效体检**之前**做：留在树上的改坏文件会让锚点变成"出现 0 次"，
@@ -6080,17 +6672,25 @@ def main() -> int:
     print("=" * 78)
     print("失效体检：锚点还在不在、判据名还在不在")
     print("=" * 78)
+    # ⭐ 子集检出（开源版）里，闭源独有的那些文件本来就没有。落在它们上面的断点
+    #   **不是腐烂，是不适用** —— 记成两件事，别让它们共用一个退出码。
+    #   能力检查而不是版本判断：`build_tools/oss_sync/` 是闭源版独有的。
+    subset_build = not (ROOT / "build_tools" / "oss_sync").exists()
     stale = []
+    not_applicable = []
     for r in items:
         if not r.path.exists():
-            stale.append((r, "产品文件已不存在"))
+            if subset_build:
+                not_applicable.append((r, "这个检出里没有这个产品文件（功能子集）"))
+            else:
+                stale.append((r, "产品文件已不存在"))
             continue
         n = r.path.read_text(encoding="utf-8").count(r.old)
         if n != 1:
             stale.append((r, f"锚点在源码里出现 {n} 次（要求恰好 1 次）"))
     checked = {}
     for r in items:
-        if any(r is s for s, _ in stale):
+        if any(r is s for s, _ in stale) or any(r is s for s, _ in not_applicable):
             continue
         if r.selector not in checked:
             checked[r.selector] = selector_is_collectable(r.selector)
@@ -6104,11 +6704,31 @@ def main() -> int:
         print("   本轮跳过这些，其余照跑。修法：把锚点/判据名改到现在的代码上。\n")
     else:
         print(f"✅ {len(items)} 条断点的锚点与判据名都还对得上\n")
-    stale_ids = {id(r) for r, _ in stale}
-    items = [r for r in items if id(r) not in stale_ids]
+    if not_applicable:
+        # ⭐ 不适用 ≠ 失效：这个检出里根本没有那个产品文件（功能子集）。
+        #   照常报出来给人看，但**不影响退出码** —— 否则开源版每次跑都必然非 0，
+        #   而唯一的出路就是拿一个几百行的语义补丁去删登记项（RN-510 那条腐烂源）。
+        print(f"ℹ {len(not_applicable)}/{len(items)} 条断点在这个检出里**不适用**"
+              f"（功能子集里没有对应的产品文件），不计入退出码：")
+        for r, why in not_applicable[:8]:
+            print(f"   - {r.group} {r.name}：{why}")
+        if len(not_applicable) > 8:
+            print(f"   ... 另有 {len(not_applicable) - 8} 条")
+        print()
+    skip_ids = {id(r) for r, _ in stale} | {id(r) for r, _ in not_applicable}
+    items = [r for r in items if id(r) not in skip_ids]
     if args.stale_only:
         return 3 if stale else 0
     if not items:
+        # ⭐ 批 47：**空分片是合法的**（断点数少于片数时，末尾几片天生是空的），
+        # 而「没有汇总行」在并行驱动那里一律按失败处理（同 RN-511）。
+        # ⇒ 空分片也要交一行裁定：验了 0 条、逮住 0 条，这是真话。
+        # 只有**没分片**时的「一条都没匹配上」才是用户写错了筛选条件，仍报 3。
+        if args.shard:
+            print("本片没有分到断点（断点数少于片数），这不是错误。")
+            print("\n" + "=" * 78)
+            print("回退验证：0/0 条判据成功逮住它要防的缺陷")
+            return 0
         print("没有可跑的断点。")
         return 3
 

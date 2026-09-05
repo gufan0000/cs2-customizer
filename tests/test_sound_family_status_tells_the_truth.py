@@ -30,6 +30,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from _denominator import must_scan
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
@@ -73,6 +74,9 @@ def test_no_page_counts_a_raw_config_dict_with_count_enabled_styles(page):
     它就是缺陷本体：数的是**配置里的原始值**，而界面显示的是解析后的值。
     """
     tree = ast.parse(_src(page))
+    # ⭐ 分母是这一页的调用点；页面被搬空之后「没人再这么数」自动成立。
+    must_scan([n for n in ast.walk(tree) if isinstance(n, ast.Call)],
+              f"{page} 页里的函数调用", least=20)
     bad = []
     for node in ast.walk(tree):
         if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
@@ -88,6 +92,7 @@ def test_the_resolver_lives_in_exactly_one_place_for_the_grid_family():
 
     RN-002 的教训：同一份知识抄两遍，抄的时候都对，**漂了才发作**。
     """
+    must_scan(GRID_PAGES, "GRID_PAGES（共用基类的四页）", least=4)
     owners = [p for p in GRID_PAGES if "def _resolved_style(" in _src(p)]
     assert not owners, (
         f"{owners} 自己又写了一份 `_resolved_style` —— 基类 "

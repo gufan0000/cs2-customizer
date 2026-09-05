@@ -82,6 +82,7 @@ import re
 from pathlib import Path
 
 import pytest
+from _denominator import must_scan
 
 REPO = Path(__file__).resolve().parent.parent
 PAGE = REPO / "pages" / "music_page.py"
@@ -502,7 +503,8 @@ def test_no_judge_pins_text_inside_a_control_nobody_can_see():
     #: `summary_label` 断言都算」，于是它去诬告别的页。
     #: ⭐ **一个分母悄悄扩大了的判据，报出来的东西看着跟真缺陷一模一样。**
     pinned = []
-    for path in sorted((REPO / "tests").glob("test_*.py")):
+    for path in must_scan(sorted((REPO / "tests").glob("test_*.py")),
+                          "tests/test_*.py", least=100):
         if path.name == Path(__file__).name:
             continue
         try:

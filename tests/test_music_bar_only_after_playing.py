@@ -27,6 +27,7 @@ import pathlib
 
 import pytest
 from PySide6.QtWidgets import QApplication
+from _denominator import must_scan
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 
@@ -226,8 +227,14 @@ def test_every_deferred_entry_point_goes_through_the_conditional_creator(rel):
     它就不再是事实，是两个会互相打架的猜测。
     """
     src = (REPO / rel).read_text(encoding="utf-8")
+    tree = ast.parse(src)
+    # ⭐ 分母是这个文件里的 `singleShot` 调用。两处延迟创建被整体挪走之后，
+    #   「没有无条件排队」会因为**一个 singleShot 都不剩**而变成真的。
+    must_scan([n for n in ast.walk(tree)
+               if isinstance(n, ast.Call) and getattr(n.func, "attr", "") == "singleShot"],
+              f"{rel} 里的 QTimer.singleShot 调用")
     unconditional = []
-    for node in ast.walk(ast.parse(src)):
+    for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
         func = node.func
@@ -257,6 +264,13 @@ def test_the_music_page_still_has_no_transport_controls_of_its_own():
     src = (REPO / "pages" / "music_page.py").read_text(encoding="utf-8")
     tree = ast.parse(src)
     transport = {"播放", "暂停", "下一首", "上一首"}
+    # ⭐ 分母是这一页建按钮的地方。一页里连 QPushButton 都不剩时，
+    #   「它没有自己的播放控件」是一句自动为真的话 —— 而这条判据正是
+    #   另一条结论的前提，前提靠自动为真撑着等于没有前提。
+    must_scan([n for n in ast.walk(tree)
+               if isinstance(n, ast.Call)
+               and (getattr(n.func, "id", "") or getattr(n.func, "attr", "")) == "QPushButton"],
+              "pages/music_page.py 里建的按钮")
     hits = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):

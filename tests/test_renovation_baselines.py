@@ -25,6 +25,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from _denominator import must_scan
 
 REPO = Path(__file__).resolve().parent.parent
 BASELINE_DIR = REPO / "tests" / "baselines" / "renovation"
@@ -61,6 +62,8 @@ def test_page_structure_matches_baseline(page_id):
 
     base = json.loads(
         (BASELINE_DIR / page_id / "structure.json").read_text(encoding="utf-8"))
+    # ⭐ 分母是基线本身。一份**空的** structure.json 会让 diff 恒空 ⇒ 这一页永远绿。
+    must_scan(base, f"{page_id} 的结构基线条目", least=5)
     # 走子进程：页面结构随设置而变，而 conftest 的配置目录是**跨文件跨轮次累积**的。
     # 在本进程里直接建页，量到的是"这台机器攒下的设置"下的样子，不是基线的含义。
     now = rb._structure_via_subprocess([page_id])[page_id]

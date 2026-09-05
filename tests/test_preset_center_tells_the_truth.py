@@ -79,17 +79,16 @@ def page(qapp, monkeypatch):
 
 
 def _chips(page) -> list[str]:
-    bar = page.status_badge_label
-    layout = bar.layout()
-    if layout is None:
-        return []
-    out = []
-    for i in range(layout.count()):
-        item = layout.itemAt(i)
-        w = item.widget() if item else None
-        if isinstance(w, QLabel) and w.objectName() == "audioStatusChip" and not w.isHidden():
-            out.append(w.text())
-    return out
+    """屏幕上真实存在的状态胶囊。
+
+    ⚠⚠ RN-496（批 52）：这里原来只看 `page.status_badge_label` 那一个容器 ——
+    那张卡撤掉之后它直接 `AttributeError`，而更要紧的是：
+    **胶囊如果被加到别的容器里，它一颗都看不见**。
+    ⭐ 同 RN-522 那一族：**分母不该按“挂在哪个属性上”划**，
+      按“屏幕上是不是真的有这么一颗”划。
+    """
+    return [w.text() for w in page.findChildren(QLabel)
+            if w.objectName() == "audioStatusChip" and not w.isHidden() and w.text()]
 
 
 def _visible_texts(page) -> list[str]:
@@ -400,26 +399,16 @@ def test_no_visible_sentence_names_a_half_list_of_the_supported_kinds(page, qapp
         "\n⭐ 一句枚举类别的话，要么说全部，要么说当前勾选。第三种都是假话。")
 
 
-def test_the_scope_chip_says_how_many_there_are_not_just_how_many_are_ticked(page):
-    """⭐⭐ **这条是改完复跑逼出来的，而它逼出来的是我自己这一批造的。**
-
-    改前：底栏那句假话在，而七个勾选框就在第一屏上 ⇒ 外审 12/12 答「能装 **7** 类」。
-    改后第一版：假话没了，可重排把那七个勾选框挪到了折线以下 ⇒
-    窗口档 **6/6 答「5」**（那是「你现在勾了几个」），整页档才答 7。
-
-    ⭐ 我修掉了那句假话，同时**把这个问题的答案从第一屏上搬走了**；
-      而第一屏上仅存的那颗胶囊「范围 · 5 类」，孤零零地读起来是含糊的 ——
-      批 31 那条（一个控件怎么被读，由它的邻居决定）的另一个形态：
-      **我搬走的是它的邻居，它自己一个字都没改，意思却变了。**
-    ⇒ 让它自带分母。
-    """
-    total = len(page._TYPE_CHECKBOX_SPEC)
-    chips = _chips(page)
-    scope = next((c for c in chips if c.startswith("范围")), None)
-    assert scope, f"找不到「范围」那颗胶囊：{chips}"
-    assert f"/{total}" in scope, (
-        f"「{scope}」只说了勾中几个，没说一共几类。\n"
-        "⭐ 这颗胶囊在第一屏上，而那七个勾选框不在 —— 它得自己把话说完。")
+# ⛔ RN-496（批 52）：`test_the_scope_chip_says_how_many_there_are_not_just_how_many_are_ticked`
+#   在这里退场。它的**前提**逐字写在自己的 docstring 里：
+#   「这颗胶囊在第一屏上，而那七个勾选框不在 —— 它得自己把话说完。」
+#   而批 40 后来把范围卡提到了第 3 位，那七个勾选框**回到了第一屏**
+#   （实测完整档 top=399 底=542，折线 710）。
+#   ⭐⭐ 前提过期之后，那颗胶囊就是一个没有对象的替身 —— 撤卡时它一起走。
+#   它护的那件事（「一共有几类」这个答案必须在第一屏上）现在由
+#   `test_every_scope_checkbox_is_above_the_fold` 两档各钉一遍，比它硬。
+#   ⭐ 删一条判据前先问「它护的那件事还在不在、谁来护」——
+#     这一条两个答案都有，所以可以走。
 
 
 def test_the_bottom_line_does_not_overstate_what_applying_a_preset_does(page):
@@ -935,7 +924,12 @@ def test_no_two_chips_say_the_same_number(page):
     import re as _re
 
     chips = _chips(page)
-    known = ["范围 · 5/7 类"]
+    # ⭐ RN-496（批 52）：闭集收到**空**。这一页不再有状态卡 ——
+    #   跨页普查实测 28/28 页都有一张，而这一页是唯一只剩一颗胶囊的，
+    #   那颗还数着正下方 12px 就画着的七个勾选框。
+    #   ⇒ 谁想把它加回来，会在这里当场变红，被迫先回答
+    #     「这一颗报的事，这一屏上别处看得到吗」。
+    known: list[str] = []
     if len(chips) < 2:
         assert chips == known, (
             f"状态胶囊变成了 {chips}（商定过的是 {known}）。\n"
@@ -1087,11 +1081,15 @@ def test_the_way_to_open_a_friends_file_is_on_the_first_screen(qapp, real_window
         · 音乐条 on （放过一次音乐就永远是这一档）     视口 **587** → **露出 0%**
       ⇒ ⭐⭐ **这条修法对没放过音乐的人成立，对放过音乐的人不成立** ——
         而后者是一条**单向**的路（RN-195：那根条建出来就不再消失）。
-      要腾的那 ~110px 只能来自「当前状态」那张卡，而实测 **27/27 页都有状态徽章**
-      ⇒ 那是一次跨页裁定，归 **RN-496**，不在本批。
-    ⭐ 所以这条判据**两档都跑**，各自钉住当下为真的那件事：
-      auto 档钉「两颗按钮整颗露出」，on 档钉「至少卡的标题还在第一屏上」——
-      **不许只跑容易的那一档然后说这条修好了。**
+
+    ⭐⭐⭐ **RN-496（批 52）把这笔账收了。** `on` 档不再是「别再更糟」，
+      和 `auto` 档同一条线：**两颗按钮整颗露出**。
+      腾出来的 113px 来自撤掉「当前状态」那张卡 —— 跨页普查实测 28/28 页都有一张，
+      而这一页是**唯一只剩一颗胶囊**的，那颗还数着正下方 12px 就画着的七个勾选框
+      （详见 `pages/preset_center_page.py` 里那段账）。
+      实测 `on` 档：**29% → 100%**。
+    ⚠ 紧凑档另有一条自己的线（见 `test_the_friends_file_card_is_reachable_in_compact`），
+      **不是 100%** —— 理由在那条里。
     """
     import _audit_music_bar as mbar
     from PySide6.QtWidgets import QScrollArea
@@ -1106,39 +1104,85 @@ def test_the_way_to_open_a_friends_file_is_on_the_first_screen(qapp, real_window
     scroll = page.findChild(QScrollArea)
     vp = scroll.viewport()
     assert page.window() is win, "量的这一页不在 MainWindow 里 —— 那不是用户看到的那一屏"
+    # ⚠⚠ **容器守卫**（批 52，回退验证逮出来的）：只断言「长在真窗里」是不够的。
+    #   实测这支夹具建出来的这一页比出货的那一页**矮 88px**
+    #   （夹具 1175 / 出图链路 1263）—— 于是「按钮露不露得出来」在这里有 11px 余量，
+    #   而在真实产品里有 95px。断点把 113px 加回去之后，夹具里**照样装得下**，判据照绿。
+    # ⭐⭐⭐ 批 40 那条换了个器官又来一次：**判据跑在一个用户从没见过的容器里** ——
+    #   那次差的是「有没有外壳」，这次差的是**页面内容本身有多高**。
+    # ⇒ 先钉住内容高；对不上就先去搞清楚差在哪，别让露出百分比替一个没人见过的容器背书。
+    _CONTENT_H = 1175          # 批 52 实测（撤掉状态卡之后）
+    actual_h = scroll.widget().height()
+    assert abs(actual_h - _CONTENT_H) <= 24, (
+        f"这一页在夹具里的内容高是 {actual_h}，而登记的是 {_CONTENT_H}（±24）。\n"
+        "⭐ 高度对不上，下面那条「按钮露出 100%」就不算数 —— 它可能只是这个容器"
+        "碰巧比出货的那一页矮/高。\n"
+        "⇒ 要么是页面真的改了（那就更新这个数并说明改了什么），"
+        "要么是夹具和产品跑偏了（那就先修夹具）。")
 
     def _exposure(widget):
         top = widget.mapTo(vp, widget.rect().topLeft()).y()
         shown = max(0, min(top + widget.height(), vp.height()) - max(top, 0))
         return top, 100.0 * shown / max(1, widget.height())
 
-    if music_bar == "auto":
-        for name in ("import_btn", "export_btn"):
-            btn = getattr(page, name)
-            assert btn.isVisibleTo(page), f"{name} 不见了"
-            top, pct = _exposure(btn)
-            assert pct >= 100.0, (
-                f"{name}（{btn.text()!r}）只露出 {pct:.0f}%"
-                f"（top={top}，视口 {vp.width()}x{vp.height()}，"
-                f"内容高 {scroll.widget().height()}）。\n"
-                "⭐ 跟朋友交换配置是这一页存在的理由之一，"
-                "而实测「看不见」= 6/6 找不到、「看得见」= 6/6 一次选对。")
-        return
+    # ⭐ RN-496（批 52）起，两档同一条线 —— 不再有「容易的那一档」。
+    for name in ("import_btn", "export_btn"):
+        btn = getattr(page, name)
+        assert btn.isVisibleTo(page), f"{name} 不见了"
+        top, pct = _exposure(btn)
+        assert pct >= 100.0, (
+            f"[音乐条 {music_bar}] {name}（{btn.text()!r}）只露出 {pct:.0f}%"
+            f"（top={top}，视口 {vp.width()}x{vp.height()}，"
+            f"内容高 {scroll.widget().height()}）。\n"
+            "⭐ 跟朋友交换配置是这一页存在的理由之一，"
+            "而实测「看不见」= 6/6 找不到、「看得见」= 6/6 一次选对。\n"
+            "⚠ `on` 档是**放过一次音乐的人永远停在的那一档**（RN-195，单向）——"
+            "它不是边缘情况。")
+    return
 
-    # 音乐条 on：按钮进不了第一屏（RN-496 在册）。这一档钉的是**别再更糟**：
-    # 那张卡的标题必须还在第一屏上，否则连"这里能跟朋友换配置"都读不到了。
+
+@pytest.mark.parametrize("music_bar", ["auto", "on"])
+def test_the_friends_file_card_is_reachable_in_compact(qapp, real_window, music_bar):
+    """紧凑档（860×640）钉的**不是**「两颗按钮进第一屏」。
+
+    ⭐⭐ 因为那是一条全站没有一页达到的线。本批跨页普查实测（紧凑 860×640）：
+    **26 / 28 页折线以下都有东西**（只有 `utility` 和 `audio_task_panel` 没有），
+    视口只有 550px 而内容普遍 600~2000px。
+    ⇒ 给这一页单独定一条「第四张卡也要进第一屏」的线，是拿一把全站都不及格的尺子
+      只量它一页 —— 那种线绿不了，也不该绿。
+
+    ⭐ 这一档钉的是**别再更糟**：那张卡的**标题**必须整行露在第一屏上，
+    否则连「这里能跟朋友换配置」都读不到，用户不会想到往下滚。
+    （撤掉状态卡换来 113px 之后，实测按钮从 0% 抬到 20%，标题整行可见。）
+    """
+    import _audit_music_bar as mbar
+    from PySide6.QtWidgets import QScrollArea
+
+    win = real_window
+    win.setMinimumSize(860, 640)
+    win.resize(860, 640)
+    mbar.pin(win, qapp, music_bar)
+    for _ in range(3):
+        qapp.processEvents()
+    page = win.pages["preset_center"]
+    assert page.window() is win, "量的这一页不在 MainWindow 里 —— 那不是用户看到的那一屏"
+    scroll = page.findChild(QScrollArea)
+    vp = scroll.viewport()
+
     title = None
     for label in page.findChildren(QLabel):
         if label.objectName() == "cardTitle" and "交换" in label.text():
             title = label
             break
     assert title is not None, "找不到交换配置那张卡的标题 —— 分母塌了"
-    top, pct = _exposure(title)
+    top = title.mapTo(vp, title.rect().topLeft()).y()
+    shown = max(0, min(top + title.height(), vp.height()) - max(top, 0))
+    pct = 100.0 * shown / max(1, title.height())
     assert pct >= 100.0, (
-        f"音乐条建出来（127px）之后，连「{title.text()}」这个标题都掉出第一屏了"
-        f"（top={top}，视口 {vp.width()}x{vp.height()}）。\n"
-        "⭐ 按钮进不了第一屏是 RN-496 的已知欠账；标题再掉下去就是**变得更糟**。")
-
+        f"[紧凑档 · 音乐条 {music_bar}] 「{title.text()}」只露出 {pct:.0f}%"
+        f"（top={top}，视口 {vp.width()}x{vp.height()}，内容高 {scroll.widget().height()}）。\n"
+        "⭐ 紧凑档不要求按钮进第一屏（全站 26/28 页折线以下都有东西），"
+        "但标题读不到就等于这件事在这一屏上不存在。")
 
 def test_the_exchange_card_comes_before_the_one_that_is_empty_for_newcomers():
     """⭐ 第一屏放不下的时候，让位的应该是那张对第一次来的人还没有内容的卡。

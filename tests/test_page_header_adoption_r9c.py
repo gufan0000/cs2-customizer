@@ -16,6 +16,7 @@ from __future__ import annotations
 import ast
 import re
 from pathlib import Path
+from _denominator import must_scan
 
 REPO = Path(__file__).resolve().parent.parent
 PAGES = REPO / "pages"
@@ -93,7 +94,7 @@ def test_pages_do_not_import_qfont_just_for_the_dead_title_size():
     多半是又把那段样板抄回来了。
     """
     bad = []
-    for name, src in _page_sources().items():
+    for name, src in must_scan(_page_sources().items(), "pages/ 的源码", least=20):
         if "QFont" not in src:
             continue
         try:

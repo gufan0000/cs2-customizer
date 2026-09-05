@@ -136,6 +136,7 @@ class AudioImportWizardPage(QWidget):
 
         # UP-047: 页头改用 PageHeader。字号与间距按本页原值传入——
         # 这次重构不动一个像素，四种并存的字号是另一回事（UP-092）。
+        from ui_help_panel import PAGE_HELP_TEXTS, install_help_panel
         header = PageHeader(
             "资源导入向导",
             description="先扫描外部素材、看清识别成了什么，确认无误再写入资源目录 —— 确认之前不动你现有的音效库。",
@@ -144,6 +145,9 @@ class AudioImportWizardPage(QWidget):
         )
         self.page_lead_label = header.description_label
         layout.addWidget(header)
+        # ⚠ 批 45（RN-001b）：只往 `PAGE_HELP_TEXTS` 加一段是不够的 ——
+        #   那颗「?」要每页自己装，否则表里有、屏幕上没有。
+        install_help_panel(header.title_row, header.body, PAGE_HELP_TEXTS["audio_import_wizard"])
 
         card, card_layout = SettingsCard.make("当前状态")
         self.status_card = card
@@ -157,9 +161,19 @@ class AudioImportWizardPage(QWidget):
         card_layout.addWidget(self.summary_label)
         layout.addWidget(card)
 
+        # ⭐⭐ RN-508（2026-09-05 批 48）：外审 3 发逐字报「虽叫向导却无分步流程」。
+        #   这一页**确实是三步**（选目录 → 扫描 → 确认后导入），页头那句话也是这么写的，
+        #   只是屏幕上没有任何地方说得出「我现在在第几步」。
+        # ⛔ 没有去重排布局（那几颗按钮参与 `actions_row` 的紧凑模式响应式切换，
+        #   动它要另一轮审查）。⇒ 先把**步骤显式化**：卡片标题就是步骤名。
+        #   哪一步是"当下该做的"仍由 `_sync_first_step()` 按状态定（批 46 的裁定）。
         controls_card, controls_layout = SettingsCard.make(
-            "导入设置",
-            "先选源目录，再决定导入模式和是否只做预演；保守导入默认不会覆盖已有文件。",
+            # ⚠ 标题里**不许有 `·` 或 `：`**：搜索索引把「X · Y」「X：Y」当成
+            #   状态条文案整条丢掉（`_STATUS_COMPOSITE` / `_STATUS_LABELED`），
+            #   逗号同理（`_SENTENCE`）。第一版写成「第 1 步 · 选目录，然后扫描」，
+            #   索引里这一页的卡片标题**一条都不剩**，判据当场点名（批 40 同族）。
+            "第 1 步 选目录并扫描",
+            "扫描只看不写，不会动你现有的音效库。导入模式和「只预演」都在这一步定。",
         )
 
         source_row = QHBoxLayout()
@@ -173,7 +187,7 @@ class AudioImportWizardPage(QWidget):
         self.source_edit.setMinimumHeight(34)
         source_row.addWidget(self.source_edit, 1)
 
-        browse_btn = QPushButton("选择目录")
+        self.browse_btn = browse_btn = QPushButton("选择目录")
         browse_btn.setObjectName("secondaryButton")
         browse_btn.setMinimumHeight(34)
         browse_btn.clicked.connect(self._choose_source_dir)
@@ -212,9 +226,17 @@ class AudioImportWizardPage(QWidget):
         actions.setSpacing(8)
         self.actions_row = actions
 
+        # ⭐ 批 46：底栏那颗变身式主按钮撤掉之后，这一屏一颗主按钮都不剩，
+        #   外审当场报「按钮平级、无视觉重心」。⇒ 把**第一步**升为主按钮，
+        #   且**恒定不变**（不像底栏那颗随状态换词）。这一页的第一步是「扫描目录」：外审 3 发逐字报「玩家想图快直奔一键导入却不知必须先扫描」。
         self.scan_btn = QPushButton("扫描目录")
+        # ⚠ 主/次由 `_sync_first_step()` 按「选没选源目录」定，不在这里写死 ——
+        #   批 46 第一版把「扫描目录」恒定为主，外审 3 发报
+        #   「未选目录时『扫描目录』却是唯一高亮，极易诱导玩家开局盲点导致报错」。
         self.scan_btn.setObjectName("secondaryButton")
-        self.import_btn = QPushButton("一键导入（保守）")
+        # RN-508：「保守」是内部说法。外审 5/6 报「不知道保守会动什么、不敢点」。
+        #   ⇒ 按钮上直接写它的安全性质。
+        self.import_btn = QPushButton("开始导入（不覆盖已有文件）")
         self.import_btn.setObjectName("secondaryButton")
         # v2.2.1: 未识别文件不再是死胡同——手动归类为新风格
         self.classify_btn = QPushButton("把未识别音频导入为新风格…")
@@ -227,12 +249,18 @@ class AudioImportWizardPage(QWidget):
         for button in (self.scan_btn, self.import_btn, self.classify_btn, self.open_source_btn, self.open_resource_btn):
             button.setMinimumHeight(34)
 
+        # ⭐⭐⭐ RN-508 改完复跑（外审 **6/6 全报同一条**，两档六发）：
+        #   「一键导入」原来和「扫描目录」并排放在**第 1 步**里，于是
+        #   「第 2 步 看清结果再导入」那句话说完，本区一颗按钮都没有 ——
+        #   玩家看完结果得**倒回上一张卡**才找得到导入。
+        # ⚠ 我第一版只把这件事写进副标题（「确认无误后点…」），
+        #   而版面自述那条判据（RN-077）当场判它违规：**描述版面的文案会随版面腐烂**。
+        #   ⇒ 真正的修法不是换句话说，是**把按钮搬到它该在的那一步**。
+        # ⛔ 搬不是复制：第 1 步里这两颗**没有留下副本**（RN-102）。
         work_row = QHBoxLayout()
         work_row.setSpacing(8)
         work_row.setContentsMargins(0, 0, 0, 0)
         work_row.addWidget(self.scan_btn)
-        work_row.addWidget(self.import_btn)
-        work_row.addWidget(self.classify_btn)
 
         open_row = QHBoxLayout()
         open_row.setSpacing(8)
@@ -247,14 +275,32 @@ class AudioImportWizardPage(QWidget):
         layout.addWidget(controls_card)
 
         preview_card, preview_layout = SettingsCard.make(
-            "扫描与导入结果",
-            "这里会展示可识别、冲突和未识别条目，方便在真正导入前先确认目录结构是否符合预期。",
+            "第 2 步 看清结果再导入",
+            "这里列出能认出来的、有冲突的和没认出来的条目。"
+            "确认无误后再导入。",
         )
 
         self.preview_text = QTextEdit()
         self.preview_text.setReadOnly(True)
         self.preview_text.setMinimumHeight(400)
+        # ⭐ RN-520：扫描之前这里是**一整块纯黑**，外审 4/6 报「易误以为卡死」。
+        #   一个 400px 高、什么都不说的框，和一个坏掉的框长得一模一样。
+        # ⛔ 文案里那个按钮名**从按钮读**，别抄一份（RN-519 的棘轮盯着）。
+        self.preview_text.setPlaceholderText(
+            f"还没有扫描结果。\n\n"
+            f"选好源目录后点「{self.scan_btn.text()}」，"
+            f"这里会列出：能认出来的、有冲突的、没认出来的条目各多少。\n"
+            f"扫描只看不写，不会动你现有的音效库。")
         preview_layout.addWidget(self.preview_text)
+
+        # 「确认无误后再导入」——那就把导入放在确认的地方。
+        import_row = QHBoxLayout()
+        import_row.setSpacing(8)
+        import_row.setContentsMargins(0, 0, 0, 0)
+        import_row.addWidget(self.import_btn)
+        import_row.addWidget(self.classify_btn)
+        import_row.addStretch()
+        preview_layout.addLayout(import_row)
 
         layout.addWidget(preview_card)
         layout.addStretch()
@@ -318,38 +364,60 @@ class AudioImportWizardPage(QWidget):
         source_dir = self.source_edit.text().strip()
         mode_text = self._mode_text()
         dry_run = bool(self.dry_run_checkbox.isChecked())
-        self.action_bar.configure_secondary("扫描目录", self._scan_source, visible=True)
+        # ⛔ RN-102 / RN-506（2026-09-04 批 46）：底栏这两颗**全是副本**——
+        #   「扫描目录」与「导入设置」卡里那颗是同一个方法；而主按钮在
+        #   **四种**状态之间换文案（打开资源目录 / 生成建议 / 一键导入（保守）/
+        #   打开源目录 / 打开资源目录），四个动作卡内全都有。
+        # ⭐⭐ 这是这一族里变身最夸张的一页 —— 同一个位置，四种含义。
+        # ⇒ 底栏不放按钮，动作全留「导入设置」卡（它的副标题就是语境）。
+        self.action_bar.configure_secondary("", None, visible=False)
+        self.action_bar.configure_primary("", None, visible=False)
+        self._sync_first_step(bool(source_dir))
 
         if self._last_import_result:
             summary = self._last_import_result.get("summary", {}) or {}
             copied = int(summary.get("copied_count", 0) or 0)
             skipped = int(summary.get("skipped_conflicts_count", 0) or 0)
             failed = int(summary.get("failed_count", 0) or 0)
-            self.action_bar.configure_primary("打开资源目录", self._open_resource_dir, visible=True)
             action_message = (
                 f"当前模式：{mode_text} · 最近一次{'预演' if dry_run else '导入'}结果 "
-                f"{copied}/{skipped}/{failed}，可直接打开资源目录继续核对。"
+                f"{copied}/{skipped}/{failed}，可点上面「{self.open_resource_btn.text()}」继续核对。"
             )
         elif self._scan_report:
             summary = (self._scan_report or {}).get("summary", {}) or {}
             recognized = int(summary.get("recognized_count", 0) or 0)
             conflicts = int(summary.get("conflict_count", 0) or 0)
-            primary_text = "生成建议" if dry_run else "一键导入（保守）"
-            self.action_bar.configure_primary(primary_text, self._run_import, visible=True)
             action_message = (
                 f"当前模式：{mode_text} · 已扫描 {recognized} 个可识别条目、{conflicts} 个冲突；"
-                f"下一步可直接{'生成建议' if dry_run else '执行保守导入'}。"
+                f"下一步可直接{'生成建议' if dry_run else '开始导入'}。"
             )
         elif source_dir:
-            self.action_bar.configure_primary("打开源目录", self._open_source_dir, visible=True)
             action_message = (
                 f"当前模式：{mode_text} · 已选中源目录 {self._compact_source_text(source_dir)}，"
                 "建议先扫描再决定是否导入。"
             )
         else:
-            self.action_bar.configure_primary("打开资源目录", self._open_resource_dir, visible=True)
             action_message = f"当前模式：{mode_text} · 先选择源目录并扫描，确认识别结果后再执行导入。"
         self.action_bar.set_message(action_message)
+
+    def _sync_first_step(self, has_source: bool):
+        """⭐ 那一颗紫的必须是**当下的第一步**（批 44 RN-450 的裁定）。
+
+        没选源目录 ⇒ 第一步是「选择目录」（这时点扫描只会报错）；
+        选了 ⇒ 第一步是「扫描目录」（副标题写着「先选源目录，再决定导入模式」）。
+        ⚠ 两个都是**安全动作**（都不写任何文件），所以在它们之间换
+          不触碰 RN-506 那条线。
+        """
+        from page_theme_helper import style_as_primary_button, style_as_secondary_button
+
+        first, other = ((self.scan_btn, self.browse_btn) if has_source
+                        else (self.browse_btn, self.scan_btn))
+        style_as_primary_button(first)
+        style_as_secondary_button(other)
+        for btn in (first, other):
+            btn.style().unpolish(btn)
+            btn.style().polish(btn)
+            btn.update()
 
     def _sync_status_strip(self):
         source_dir = self.source_edit.text().strip()
@@ -359,7 +427,7 @@ class AudioImportWizardPage(QWidget):
         badges = [
             ("positive" if source_dir else "warning", f"源目录 · {self._compact_source_text(source_dir)}"),
             ("info", f"模式 · {mode_text}"),
-            ("info" if dry_run else "positive", f"策略 · {'预演' if dry_run else '保守导入'}"),
+            ("info" if dry_run else "positive", f"策略 · {'只预演' if dry_run else '不覆盖已有'}"),
         ]
 
         if self._last_import_result:
@@ -370,7 +438,7 @@ class AudioImportWizardPage(QWidget):
             badges.append(("positive" if failed == 0 else "warning", f"结果 · {copied}/{skipped}/{failed}"))
             detail_text = (
                 f"当前使用“{mode_text}”模式，"
-                f"{'只做预演，不写入文件' if dry_run else '按保守策略执行导入'}。"
+                f"{'只做预演，不写入文件' if dry_run else '导入时不覆盖已有文件'}。"
                 f"最近一次执行结果：成功 {copied}，冲突跳过 {skipped}，失败 {failed}。"
             )
         elif self._scan_report:
@@ -387,7 +455,7 @@ class AudioImportWizardPage(QWidget):
             badges.append(("warning" if source_dir else "info", "结果 · 待扫描"))
             detail_text = (
                 f"当前使用“{mode_text}”模式，"
-                f"{'只做预演，不写入文件' if dry_run else '按保守策略执行导入'}。"
+                f"{'只做预演，不写入文件' if dry_run else '导入时不覆盖已有文件'}。"
                 "先选择源目录并扫描，再决定是否导入。"
             )
 

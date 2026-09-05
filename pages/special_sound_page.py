@@ -48,6 +48,11 @@ from widgets.settings_card import SettingsCard
 from widgets.page_header import PageHeader
 
 
+#: RN-519：卡片说明要点名这颗按钮，而说明比按钮先建 —— 名字只留一份。
+#: ⚠ 这一页有 4 颗同名的「测试」（四种投掷物各一颗），更不能各抄一份。
+TEST_BUTTON_TEXT = "测试"
+
+
 class SpecialSoundPage(QWidget):
     """特殊音效配置页面。"""
 
@@ -450,7 +455,7 @@ class SpecialSoundPage(QWidget):
 
         header_card, header_layout = SettingsCard.make(
             "投掷物音效",
-            "每种投掷物各选一个风格，点「测试」就能听到实际效果。",
+            f"每种投掷物各选一个风格，点「{TEST_BUTTON_TEXT}」就能听到实际效果。",
         )
         self.grenade_enabled_checkbox = QCheckBox("启用投掷物音效")
         self.grenade_enabled_checkbox.setChecked(bool(config.grenade_sound_enabled))
@@ -506,7 +511,7 @@ class SpecialSoundPage(QWidget):
             )
             controls_row.addWidget(combo, 1)
 
-            test_btn = QPushButton("测试")
+            test_btn = QPushButton(TEST_BUTTON_TEXT)
             test_btn.setObjectName("secondaryButton")
             test_btn.setFixedWidth(80)
             self._set_compact_heights(test_btn)
@@ -588,7 +593,7 @@ class SpecialSoundPage(QWidget):
             )
             row_layout.addWidget(combo, 1)
 
-            test_btn = QPushButton("测试")
+            test_btn = QPushButton(TEST_BUTTON_TEXT)
             test_btn.setObjectName("secondaryButton")
             test_btn.setFixedWidth(80)
             self._set_compact_heights(test_btn)
@@ -670,7 +675,7 @@ class SpecialSoundPage(QWidget):
         self.health_style_combo.currentIndexChanged.connect(self._on_health_style_changed)
         style_layout.addWidget(self.health_style_combo, 1)
 
-        test_btn = QPushButton("测试")
+        test_btn = QPushButton(TEST_BUTTON_TEXT)
         test_btn.setObjectName("secondaryButton")
         test_btn.setFixedWidth(80)
         self._set_compact_heights(test_btn)
@@ -817,7 +822,7 @@ class SpecialSoundPage(QWidget):
             )
             controls_row.addWidget(combo, 1)
 
-            test_btn = QPushButton("测试")
+            test_btn = QPushButton(TEST_BUTTON_TEXT)
             test_btn.setObjectName("secondaryButton")
             test_btn.setFixedWidth(80)
             self._set_compact_heights(test_btn)

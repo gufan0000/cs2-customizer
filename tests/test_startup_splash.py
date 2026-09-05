@@ -592,6 +592,11 @@ def test_compose_splash_renders_title_and_status_inside_safe_boxes(tmp_path):
 
 
 def test_compose_splash_missing_source_preserves_existing_output(tmp_path):
+    """源图不存在时，既有产物一个字节都不许动，也不许留下临时文件。
+
+    分母：这条没有分母 —— 末尾那句 glob 本身**就是断言**（「不许留下 .tmp.png」），
+    它不是一个会悄悄变空的比对面；空正是它要的结果。
+    """
     output = tmp_path / "splash.png"
     original = b"existing splash content"
     output.write_bytes(original)
@@ -652,6 +657,10 @@ def test_compose_splash_retries_transient_windows_replace_error(monkeypatch, tmp
 
 
 def test_compose_splash_exhausted_replace_retries_preserve_output(monkeypatch, tmp_path):
+    """重试耗尽后仍要保住既有产物，且不留临时文件。
+
+    分母：同上 —— 末尾那句 glob 是断言本身，不是比对面。
+    """
     source = tmp_path / "source.png"
     output = tmp_path / "splash.png"
     Image.new("RGB", (900, 600), (12, 12, 18)).save(source)
@@ -672,6 +681,10 @@ def test_compose_splash_exhausted_replace_retries_preserve_output(monkeypatch, t
 
 
 def test_compose_splash_supports_eight_concurrent_writers(tmp_path):
+    """八个并发写入者跑完之后，产物可读且不留临时文件。
+
+    分母：同上 —— 末尾那句 glob 是断言本身，不是比对面。
+    """
     source = tmp_path / "source.png"
     output = tmp_path / "splash.png"
     Image.new("RGB", (900, 600), (12, 12, 18)).save(source)

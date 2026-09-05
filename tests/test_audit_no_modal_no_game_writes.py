@@ -33,6 +33,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from _denominator import must_scan
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
@@ -104,7 +105,7 @@ def test_every_script_that_uses_sys_imports_it():
     于是"我加了 UTF-8 兜底"这句话是假的，而且永远不会有人看见它假。
     """
     offenders = []
-    for path in sorted((REPO / "scripts").glob("*.py")):
+    for path in must_scan(sorted((REPO / "scripts").glob("*.py")), "scripts/*.py"):
         if path.as_posix().endswith(_UP091):
             continue
         try:
@@ -139,10 +140,13 @@ def test_the_game_dir_exit_has_exactly_one_mechanism():
     """
     banned = "CS2C_NO_GAME_DIR_WRITES"
     hits = []
-    for path in REPO.rglob("*.py"):
+    scanned = must_scan(
+        [p for p in REPO.rglob("*.py")
+         if not p.relative_to(REPO).as_posix().startswith((".build/", ".claude/"))
+         and p.relative_to(REPO).as_posix() != "tests/" + Path(__file__).name],
+        "全仓 *.py（排除 .build/.claude 与本文件）", least=100)
+    for path in scanned:
         rel = path.relative_to(REPO).as_posix()
-        if rel.startswith((".build/", ".claude/")) or rel == "tests/" + Path(__file__).name:
-            continue
         text = path.read_text(encoding="utf-8", errors="replace")
         if banned not in text:
             continue

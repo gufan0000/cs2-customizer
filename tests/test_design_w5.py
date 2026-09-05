@@ -11,6 +11,7 @@ import re
 from pathlib import Path
 
 import pytest
+from _denominator import must_scan
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -184,7 +185,7 @@ def test_no_colored_emoji_for_states_that_also_use_monochrome():
     """
     colored = {"✅", "❌", "✔️", "✖️", "☑️"}
     offenders = []
-    for path in sorted((ROOT / "pages").glob("*.py")):
+    for path in must_scan(sorted((ROOT / "pages").glob("*.py")), "pages/*.py", least=20):
         text = path.read_text(encoding="utf-8", errors="replace")
         for char in colored:
             if char in text:

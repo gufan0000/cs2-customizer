@@ -84,6 +84,7 @@ from PySide6.QtWidgets import (QLabel, QLineEdit, QPlainTextEdit, QPushButton,
 from tests.test_master_switch_effect_is_honest import (  # noqa: E402
     main_window as _shared_main_window,
 )
+from _denominator import must_scan
 
 main_window = _shared_main_window
 
@@ -217,12 +218,16 @@ def test_no_text_to_speech_engine_is_pretended(main_window, qapp):
     **「没有 TTS」和「文案不提 TTS」这两件事保持一致**。
     哪天真做了 TTS，这条会提醒把文案改回来。
     """
-    engines = ("pyttsx", "gtts", "edge_tts", "espeak", "sapi", "speechsdk")
+    engines = must_scan(
+        ("pyttsx", "gtts", "edge_tts", "espeak", "sapi", "speechsdk"),
+        "要扫的 TTS 引擎名单", least=6)
     found = []
-    for path in sorted((ROOT).rglob("*.py")):
-        if any(part in path.parts for part in
-               (".venv", "build", "dist", "__pycache__", ".build", ".claude", "tests")):
-            continue
+    scanned = must_scan(
+        [p for p in sorted((ROOT).rglob("*.py"))
+         if not any(part in p.parts for part in
+                    (".venv", "build", "dist", "__pycache__", ".build", ".claude", "tests"))],
+        "产品代码 *.py（排除 venv/build/tests 等）", least=50)
+    for path in scanned:
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"))
         except (SyntaxError, UnicodeDecodeError):
@@ -238,7 +243,11 @@ def test_no_text_to_speech_engine_is_pretended(main_window, qapp):
                     found.append((path.name, m))
 
     page = _open_page(main_window, qapp)
-    claims = _hits(_visible_text(page))
+    # ⭐ 第三个分母：这一页得真的有可见文案。页面建不出来时
+    #   「文案没有吹牛」会因为**一个字都没有**而变成真的。
+    visible = _visible_text(page)
+    must_scan(visible.split(), f"{PAGE} 页上的可见文案（按空白切出来的词）", least=5)
+    claims = _hits(visible)
     if found:
         pytest.skip(f"仓里出现了 TTS 引擎（{found[:3]}）—— "
                     "如果功能真做了，请把页头那句话加回来，并删掉本条 skip")
@@ -347,3 +356,98 @@ def test_opening_the_page_does_not_land_at_the_bottom_of_the_list(main_window, q
     assert sa.verticalScrollBar().value() == 0, (
         f"刚打开这一页，槽位列表就停在 {sa.verticalScrollBar().value()} 而不是顶部 —— "
         "建页铺初始槽位那一路（auto_init）跟着滚了")
+
+
+# ============================================================ 批 44：RN-450
+#
+# ⭐⭐⭐ **唯一那颗紫的，把注意力从真正的第一步上拿走了**（RN-139「两颗紫的
+# 等于零颗」的反面）。批 29 的行为题：「你会先点哪个」改前 **10/24 答「安装驱动」、
+# 8/24 答「添加槽位」**；批 29 只撤了红、加了量程说明，同题同图就变成 **19/24**。
+#
+# ⚠⚠ 批 44 开工先复量了一遍立案时的说法，**其中一半不成立**：
+#   RN-450 原文说「核心前置阻断项被埋掉」——而真窗实测（四档：完整/紧凑 ×
+#   音乐条 auto/on）「安装驱动」与「✗ VB-Cable未安装」**四档全部露出 100%**
+#   （top=322 / 276，视口最小 479）。它们就在第一屏正中间。
+#   ⇒ 真正的问题不是**位置**，是**分量**：驱动那两颗是描边次级，
+#     而唯一一颗紫色实心的说的是「添加槽位」—— 一个在驱动没装时做了也白做的动作。
+#
+# ⚠ 而「页签栏在第一屏之外」那一半**在默认完整档已经不成立**
+#   （实测露出 100%；批 30 记的是 9%，批 31 撤掉重复按钮之后它自己浮上来了，没人复量）。
+#   只有紧凑档（0%）与音乐条开着（13%）仍然成立 ⇒ 那属于 RN-496 那一族（容器高度），
+#   归跨页 C6，不在本批。
+#   ⭐ **一条立案会随产品一起改变，而它不会自己改口。**
+
+def _purple_buttons(page):
+    from PySide6.QtWidgets import QPushButton
+
+    return [b for b in page.findChildren(QPushButton)
+            if b.objectName() == "primaryButton" and b.isVisibleTo(page)]
+
+
+def test_exactly_one_purple_button_on_this_page(main_window, qapp):
+    """① 一屏只许一颗紫的（RN-139 的全站口径，在这一页上钉住）。
+
+    ⚠ 含底栏那颗 —— 它和卡内那些在同一屏上，玩家不分「这颗属于哪个容器」。
+    """
+    page = _open_page(main_window, qapp)
+    purple = _purple_buttons(page)
+    assert len(purple) == 1, (
+        f"这一页上有 {len(purple)} 颗主按钮："
+        f"{[b.text().strip() for b in purple]}\n"
+        "⭐ 两颗紫的等于零颗（RN-139）；而零颗紫的也是零颗。"
+    )
+
+
+# ⛔⛔ 这里原本有 `_fill()` 与 `test_the_purple_button_is_whatever_the_first_step_is`
+#   ——「驱动没装时，唯一那颗紫的必须是『安装驱动』」。**2026-09-04 批 44 全部撤除，
+#   连同产品那边 `_sync_first_step_emphasis()` 那 25 行一起。**
+#
+# ⭐⭐⭐ 撤除的理由是**实测**，不是口味：带阳性写法的行为题「你会先点哪一个东西」
+#   跑了 **48 发**（改前/改后 × 总开关开/关，各 12 发）——
+#
+#       48/48 全部答「**安装驱动**」，改前改后**一模一样**。
+#       引用理由时 **48/48 抄的是文案**（「✗ VB-Cable未安装」/「安装后才能把音频
+#       送进游戏语音」/ 页头「都要先装好虚拟声卡」），**只有 3 发提到颜色或高亮**。
+#
+#   ⇒ 这一页的引导是**那句话**在承担，不是那颗紫按钮。
+#     我改的是一个**没有在承重**的东西，而且**没有产生任何可观测的行为差异**。
+#     ⛔ 铁约束 2「不引入新复杂度」：零收益的改动不该留在产品里。
+#
+# ⭐⭐ 而 RN-450 立案时的数是「10/24 答安装驱动、8/24 答添加槽位」——
+#   它**已经被批 30 的修法顺手解决了**：RN-451 把页头那句假话换成
+#   「两件事：…**都要先装好虚拟声卡**」，而那正是现在 48/48 引用的那句话。
+#   ⭐⭐⭐ **一条立案会随产品一起改变，而它不会自己改口**（批 43 同一形态第二次）。
+#
+# ⇒ 留下的是 `test_exactly_one_purple_button_on_this_page`（RN-139 的口径，
+#   在我动手之前就是绿的），外加下面那条把**真正承重的那句话**钉住的判据。
+
+
+def test_the_page_says_both_halves_of_the_prerequisite(main_window, qapp):
+    """③ **RN-450 的真正结论**：驱动没装时，屏幕上必须同时说清两件事 ——
+    **「它没装」** 和 **「不装就用不了」**。
+
+    ⭐ 这条不是我想出来的，是行为题**逐字抄回来的**：48 发全部指向「安装驱动」，
+    而 48/48 给的理由都是这两句话（只有 3 发提到颜色）。
+    ⭐⭐ **一个结论所依赖的事实，要有判据看着**（批 8）——
+      在此之前，这一页的引导全靠这两句话，而没有任何东西盯着它们。
+
+    ⚠ 判据只要求「说到了这两件事」，不锁具体措辞：锁措辞会把
+      「把这句话写得更好」变成一次判据失败（批 24 那条）。
+    """
+    page = _open_page(main_window, qapp)
+    if page._driver_ready():
+        import pytest as _pytest
+
+        _pytest.skip("这台机器上 VB-Cable 已就绪 —— 本条问的是「没装」那一支")
+
+    text = must_scan(_visible_text(page).splitlines(), "这一页的可见文案", least=5)
+    joined = " ".join(text)
+
+    says_missing = any(k in joined for k in ("未安装", "待安装", "缺少"))
+    says_consequence = any(k in joined for k in ("才能", "才可以", "无法", "不能"))
+    assert says_missing, (
+        "驱动没装，而屏幕上没有一句说它没装。 "
+        "⭐ 行为题 48/48 就是靠这句话找到第一步的。")
+    assert says_consequence, (
+        "屏幕上说了「没装」，却没说**不装会怎样**。 "
+        "⭐ 一句只报状态、不报后果的提示，读的人不知道要不要现在处理它。")

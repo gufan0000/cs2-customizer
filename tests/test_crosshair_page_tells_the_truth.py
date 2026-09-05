@@ -37,6 +37,7 @@ from PySide6.QtWidgets import QAbstractButton, QApplication
 
 from config import config
 import pages.crosshair_page as crosshair_page_module
+from _denominator import must_scan
 
 REPO = Path(__file__).resolve().parent.parent
 PAGE_SRC = REPO / "pages" / "crosshair_page.py"
@@ -174,6 +175,8 @@ def test_the_crosshair_page_never_writes_a_game_file():
     而"没有"往往正是断言的全部内容。）
     """
     tree = ast.parse(PAGE_SRC.read_text(encoding="utf-8"))
+    # ⭐ 分母是那张「写游戏」的调用名单：它一空，下面这条否定断言必然全绿。
+    must_scan(GAME_WRITE_CALLS, "GAME_WRITE_CALLS（写游戏文件的调用名单）", least=3)
     hits = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Attribute) and node.attr in GAME_WRITE_CALLS:
@@ -346,6 +349,9 @@ def test_the_activation_story_is_told_in_exactly_one_place():
         if isinstance(node, ast.Constant) and isinstance(node.value, str)
         and id(node) not in docstrings
     ]
+    # ⭐ 分母是「这一页的用户可见字面量」。页面被搬空 / 文案全挪进资源文件时，
+    #   下面那条否定断言会安静地全绿。
+    must_scan(literals, "准心页里的非 docstring 字符串字面量", least=20)
     tellers = [s for s in literals if "进游戏" in s and "看" in s]
     assert not tellers, (
         f"页面里又出现了第二处讲「怎么生效」的文案：{tellers}。"

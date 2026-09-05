@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from core import config_snapshot_manager as snap_mod
+from _denominator import must_scan
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -101,7 +102,11 @@ def test_restore_snapshot_leaves_no_temp_file(tmp_path, monkeypatch):
 
 
 def test_restore_rejects_corrupted_snapshot(tmp_path, monkeypatch):
-    """快照文件损坏时必须拒绝恢复，而不是把坏内容写进 config.json 还报成功。"""
+    """快照文件损坏时必须拒绝恢复，而不是把坏内容写进 config.json 还报成功。
+
+    分母：这条没有分母 —— 它造一份坏快照、调一次恢复、看返回值和文件内容，
+    全程不扫任何集合（`read_text(` 读的是它自己刚写的那一个文件）。
+    """
     cfg_file = _snapshot_env(tmp_path, monkeypatch)
     cfg_file.write_text(json.dumps({"v": "good"}), encoding="utf-8")
     snap = snap_mod.create_snapshot("s")
@@ -168,6 +173,11 @@ def test_theme_manager_has_no_chip_text_attribute():
 def test_gui_widget_does_not_call_chip_text_on_manager():
     """用 AST 而不是文本匹配——避免命中解释这件事的注释（R7 栽过四次）。"""
     tree = ast.parse((ROOT / "gui_widget.py").read_text(encoding="utf-8"))
+    # ⭐ 分母不是「这个文件的字节数」，是「它还认不认识 theme_manager」——
+    #   哪天主题管理器整个搬出 gui_widget，这条就在量一件不存在的事。
+    must_scan([n for n in ast.walk(tree)
+               if isinstance(n, ast.Attribute) and n.attr == "theme_manager"],
+              "gui_widget.py 里对 theme_manager 的引用")
     bad = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Attribute) or node.attr != "_chip_text":

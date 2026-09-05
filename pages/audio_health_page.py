@@ -71,7 +71,12 @@ class AudioHealthPage(QWidget):
         from ui_help_panel import PAGE_HELP_TEXTS, install_help_panel
         header = PageHeader(
             "资源体检",
-            description="检查音效 / 图片资源是否完整，回答「为什么这个音效不响」。点右上角「?」看用法。",
+            # ⚠ RN-509 改完复跑逼出来的第二刀：把侧栏从「音频体检」改成「资源体检」之后，
+            #   行为题（击杀图标不出现的玩家会不会来这一页）**只在紧凑档翻了身**，
+            #   完整档 4/4 仍答「不会」—— 理由逐字指向这一句：它只举了「音效不响」一个例子，
+            #   于是这一页又被框回声音。⭐ **改了容器的名字，里面那句话还在替旧名字说话。**
+            description=("检查音效和图片素材是不是齐的 —— 音效不响、击杀图标不出现，"
+                         "都先来这儿查一遍。点右上角「?」看用法。"),
             title_font_size=None,
             spacing=12,
         )
@@ -94,15 +99,24 @@ class AudioHealthPage(QWidget):
 
         actions_card, actions_layout = SettingsCard.make(
             "体检与修复",
-            "先体检，再决定是否执行保守修复；导出报告适合留档或发给我继续排查。",
+            # RN-508：按钮已改名成「一键修复（只补不删）」，这句话得跟着说人话。
+            "先体检，看清楚缺什么，再决定要不要让软件把缺的目录补上；导出报告适合留档或发给我继续排查。",
         )
 
         actions = QHBoxLayout()
+        # ⭐ 批 46：底栏那颗变身式主按钮撤掉之后，这一屏一颗主按钮都不剩，
+        #   外审当场报「按钮平级、无视觉重心」。⇒ 把**第一步**升为主按钮，
+        #   且**恒定不变**（不像底栏那颗随状态换词）。这一页的第一步是「立即体检」：副标题自己写着「先体检，再决定是否执行保守修复」。
         self.check_btn = QPushButton("立即体检")
-        self.fix_btn = QPushButton("一键修复（保守）")
+        # RN-508：「保守」是内部说法。外审 5/6 报「不知道会动什么文件、不敢点」。
+        #   ⇒ 按钮上直接写它的安全性质（它只建缺的目录、清失效引用，不删素材）。
+        self.fix_btn = QPushButton("一键修复（只补不删）")
         self.open_btn = QPushButton("打开资源目录")
         self.export_btn = QPushButton("导出报告")
-        self.check_btn.setObjectName("secondaryButton")
+        # ⚠ 这两颗的主/次由 `_sync_first_step()` 按体检结果定，不在这里写死 ——
+        #   批 46 第一版把「立即体检」恒定为主，外审 3 发报
+        #   「已检出 17 项问题但主视觉仍高亮『立即体检』」。
+        self.check_btn.setObjectName("primaryButton")
         self.fix_btn.setObjectName("secondaryButton")
         self.open_btn.setObjectName("secondaryButton")
         self.export_btn.setObjectName("secondaryButton")
@@ -150,16 +164,48 @@ class AudioHealthPage(QWidget):
         issue_count += int(summary.get("invalid_config_refs", 0) or 0)
         issue_count += int(summary.get("empty_style_dirs", 0) or 0)
 
-        self.action_bar.configure_secondary("立即体检", self._run_health_check, visible=True)
+        # ⛔ RN-102 / RN-506（2026-09-04 批 46）：底栏原来有两颗，**都是副本**——
+        #   `configure_secondary("立即体检", self._run_health_check)` 与
+        #   「体检与修复」卡里那颗「立即体检」是同一个方法；
+        #   而主按钮**随体检结果变身**：健康时是「导出报告」、有问题时是
+        #   「一键修复（保守）」—— 而这两颗卡内**也都有**。
+        # ⭐⭐ 一颗位置固定、含义会变的按钮，比两颗按钮更难防（肌肉记忆记的是位置）。
+        # ⇒ 底栏不放按钮，四个动作全留「体检与修复」卡 —— 那张卡的副标题
+        #   （「先体检，再决定是否执行保守修复；导出报告适合留档…」）就是它们的语境。
+        self.action_bar.configure_secondary("", None, visible=False)
+        self.action_bar.configure_primary("", None, visible=False)
+        self._sync_first_step(overall_ok)
+        # ⚠⚠ 改完复跑逮到（外审 r3 逐字报「底部提示写『一键修复（保守）』，
+        #   而按钮实为『一键修复（只补不删）』」）：**我改了按钮名，
+        #   而点名它的这句话留在原地** —— 批 45 那条教训的同一形态第二次。
+        # ⭐ 顺手把「在上面…里的」也去掉：那是在描述版面（RN-077），版面一动它就腐烂。
         if overall_ok:
-            self.action_bar.configure_primary("导出报告", self._export_report, visible=True)
-            action_message = "当前状态：资源健康 · 音频和视觉目录都正常，可导出报告留档。"
+            action_message = "当前状态：资源健康 · 音频和视觉目录都正常，需要留档就导出报告。"
         else:
-            self.action_bar.configure_primary("一键修复（保守）", self._run_conservative_fix, visible=True)
             action_message = (
-                f"当前状态：发现 {issue_count} 项问题 · 建议先查看报告，确认后再执行保守修复。"
+                f"当前状态：发现 {issue_count} 项问题 · 建议先看报告，"
+                f"确认后再点「{self.fix_btn.text()}」。"
             )
         self.action_bar.set_message(action_message)
+
+    def _sync_first_step(self, overall_ok: bool):
+        """⭐ 那一颗紫的必须是**当下的第一步**（批 44 RN-450 的裁定）。
+
+        健康 ⇒ 第一步是再体检一次（或什么都不用做）；
+        发现问题 ⇒ 第一步是修它。
+        ⚠ 这两个都是**安全动作**（保守修复只补不删），所以在它们之间换
+          不触碰 RN-506 那条线（安全 ↔ 破坏性）。
+        """
+        from page_theme_helper import style_as_primary_button, style_as_secondary_button
+
+        first, other = ((self.check_btn, self.fix_btn) if overall_ok
+                        else (self.fix_btn, self.check_btn))
+        style_as_primary_button(first)
+        style_as_secondary_button(other)
+        for btn in (first, other):
+            btn.style().unpolish(btn)
+            btn.style().polish(btn)
+            btn.update()
 
     def _sync_status_strip(self, report: dict):
         summary = (report or {}).get("summary", {}) or {}
@@ -206,9 +252,29 @@ class AudioHealthPage(QWidget):
         self._sync_status_strip(report)
         self.report_text.setPlainText(format_resource_system_health(report))
 
+    #: ⭐⭐⭐ RN-146：**这一页的控件树在同一份配置下复跑会变**（CI 上实测 18 条差异，
+    #: 本机测不出来）。根因是构造函数第 52 行就起了一个后台线程去扫盘 ——
+    #: 扫描完成得比快照早还是晚，决定了屏幕上是「扫描中」（按钮置灰、芯片还没算）
+    #: 还是结果列表。**它是一场竞速，而基线是在随机的某一刻拍的。**
+    #:
+    #: ⛔ 修法**不是**「工装下就别扫」：那会让基线拍到一个几乎没有内容的空壳，
+    #:   报告区域以后怎么坏都没人看得见。这正是 `_audit_sandbox` 当年选
+    #:   「重定向」而不是「禁写」的同一条理由 —— **别把被审计的对象改掉**。
+    #: ⇒ 改成：工装可以要求这一次**同步扫**，扫完再返回。拍到的是**结果态**，
+    #:   也就是用户真正会停留的那一态，而且每次都一样。
+    #: ⚠ 产品代码任何地方都不设这个环境变量（同 `CS2C_NO_GLOBAL_HOTKEYS` 的口径）。
+    SYNC_SCAN_ENV = "CS2C_SYNC_HEALTH_SCAN"
+
     def _run_health_check(self):
         """触发体检：扫描在后台线程执行，UI 显示进行中占位。"""
         if self._health_checking:
+            return
+        if os.environ.get(self.SYNC_SCAN_ENV) == "1":
+            # 工装档：就地扫完再回去，不留竞速窗口。
+            try:
+                self._render_report(collect_resource_system_health())
+            except Exception as e:
+                self.logger.error(f"Audio health check failed: {e}")
             return
         self._health_checking = True
         try:
@@ -252,7 +318,7 @@ class AudioHealthPage(QWidget):
             QMessageBox.information(
                 self,
                 "修复完成",
-                "保守修复已执行。"
+                "修复已执行（只补缺的、不删你的文件）。"
                 f"\n音频目录补齐：{created_audio}"
                 f"\n视觉目录补齐：{created_visual}"
                 f"\n回退配置项：{reset}",

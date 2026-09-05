@@ -28,6 +28,7 @@ from core.settings_search import (
     search_items,
     search_pages,
 )
+from _denominator import must_scan
 
 ROOT = Path(__file__).resolve().parent.parent
 INDEX_PATH = ROOT / "core" / "search_index.json"
@@ -59,6 +60,7 @@ def test_index_covers_every_page():
     data = json.loads(INDEX_PATH.read_text(encoding="utf-8"))
     pages_with_items = {it["page"] for it in data["items"]}
     nav_pages = {pid for pid, _n, _w in SEARCH_INDEX}
+    must_scan(nav_pages, "导航表里的页面 id（本条判据的分母）", least=20)
     missing = sorted(nav_pages - pages_with_items)
     assert not missing, f"这些页面没有任何项级索引: {missing}"
 
@@ -66,6 +68,9 @@ def test_index_covers_every_page():
 def test_index_has_no_runtime_state_text():
     """索引里不许有状态条文案——它是收割那一刻的快照，进了库就是永久过期数据。"""
     data = json.loads(INDEX_PATH.read_text(encoding="utf-8"))
+    # ⭐ 分母是索引里的条目。索引生成器出错写出一个空 items 时，
+    #   「没有状态文案混进来」是一句自动为真的话。
+    must_scan(data["items"], "搜索索引里的条目", least=100)
     dirty = [it["text"] for it in data["items"] if "·" in it["text"]]
     assert not dirty, f"状态复合文案混进索引: {dirty[:5]}"
 

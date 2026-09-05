@@ -42,6 +42,7 @@ from kill_icon_overlay import (
     render_frame_to_image,
     scale_animation,
 )
+from _denominator import must_scan
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -366,6 +367,9 @@ def test_geometry_helpers_are_pure_functions():
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.module:
             modules.add(node.module)
+    # ⭐ 分母是这个模块的 import 面。它一空（文件被搬空/改名后重建），
+    #   「没有 QtWidgets」就变成一句自动为真的话。
+    must_scan(modules, "kill_icon_overlay.py 的 from-import 模块名", least=2)
     assert not any(m.startswith("PySide6.QtWidgets") for m in modules)
 
 

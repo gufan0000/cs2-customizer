@@ -61,6 +61,12 @@ AUDITS: dict[str, str] = {
     # 从批 45 起就在 CI 里，却一直不在本机入口里 —— 于是本机只能靠 `echo $?`，
     # 而这个进程的退出码实测被洗成过 -1073740791（0xC0000409）。
     "search_index": "build_search_index.py",
+    # 批 47：回退验证的并行驱动也打裁定行（少一片汇总行 = 失败），所以它也得
+    # 在本机入口里。⭐ 这一条是 RN-511 那道判据**当场逮出来的** —— 我写完驱动、
+    # 全量一跑，`test_ci_gates_read_the_verdict_line` 立刻点名
+    # 「revert_verify ← scripts/revert_verify_parallel.py 进不了 gate.py」。
+    # 拓宽分母那一改，第一个抓到的违规者是我自己。
+    "revert_verify": "revert_verify_parallel.py",
 }
 
 #: 有的门禁脚本**不是「跑起来就是审计」**：它还有别的模式（生成 / 统计 / 交叉核对），

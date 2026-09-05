@@ -22,6 +22,10 @@ from widgets.page_header import PageHeader
 from widgets.page_action_bar import PageActionBar
 from widgets.settings_card import SettingsCard
 
+#: RN-519（上游批 51）：正文里那句「本页下方的…」要点名它，而正文比按钮先建
+#: ⇒ 名字只留一份。
+ONBOARDING_BUTTON_TEXT = "三步上手引导"
+
 # 开源版刻意不再引用 service_urls：那里的官网域名、QQ 群号属于闭源商业版的运营资产，
 # 而且 fork 出去的客户端不该继续访问原作者的服务器（更新检查/更新日志接口同理已移除）。
 # 这里只保留一组指向本仓库自身的常量，换 owner 时改这一处即可。
@@ -70,12 +74,13 @@ class AboutPage(QWidget):
             f"<b>项目：</b>{PROJECT_NAME}（原「 CS2 Customizer 」开源版）<br>"
             "<b>作者：</b>孤帆<br>"
             f"<b>仓库：</b>{PROJECT_REPO_URL}<br><br>"
-            "本工具通过监听 CS2 官方游戏状态接口 (GSI) 来实现击杀音效等功能，"
+            "本工具通过监听 CS2 游戏状态接口 (GSI) 来实现击杀音效等功能。"
             "只读取游戏状态并读写 cfg 文件。<br>"
             # ⚠ 这句话不能只说「要做什么」。紧凑模式下它出现在折叠线以上、
             # 而下面那个「三步上手引导」按钮在折叠线以下 —— 外审看的就是这一屏，
             # 报的是「提示了却没有任何操作入口」。⇒ 句子自己把入口点出来。
-            "请确保已正确选择 CS 文件夹 —— 本页下方的「三步上手引导」可以直接完成。<br><br>"
+            f"请确保已正确选择 CS 文件夹 —— 本页下方的「{ONBOARDING_BUTTON_TEXT}」"
+            "可以直接完成。<br><br>"
             f"<span style='color: {get_color('info')};'>"
             f"<b>开源软件 · {PROJECT_LICENSE} 许可 · 自由使用与修改</b></span>"
             "</p>"
@@ -141,6 +146,11 @@ class AboutPage(QWidget):
         )
         self.page_lead_label = header.description_label
         layout.addWidget(header)
+        # ⭐⭐⭐ RN-001b（上游批 45）：帮助面板**不是按表自动装的** ——
+        #   那一页得自己调一次；写好的帮助文案不会自己长出那颗按钮。
+        from ui_help_panel import PAGE_HELP_TEXTS, install_help_panel
+
+        install_help_panel(header.title_row, header.body, PAGE_HELP_TEXTS["about"])
 
         status_card = QFrame()
         status_card.setFrameShape(QFrame.StyledPanel)
@@ -204,7 +214,7 @@ class AboutPage(QWidget):
         setup_hint.setObjectName("hintLabel")
         setup_hint.setWordWrap(True)
         setup_row.addWidget(setup_hint, 1)
-        self.goto_onboarding_button = QPushButton("三步上手引导")
+        self.goto_onboarding_button = QPushButton(ONBOARDING_BUTTON_TEXT)
         style_as_secondary_button(self.goto_onboarding_button)
         self.goto_onboarding_button.setFixedHeight(36)
         self.goto_onboarding_button.setMinimumWidth(132)

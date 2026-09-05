@@ -101,6 +101,12 @@ def enable_audit_mode() -> None:
     # 而这些图的下一站就是外审（发给 Google）。闸门的实现见
     # `account_session_store.SessionStore.load()`。
     os.environ["CS2C_NO_ACCOUNT_SESSION"] = "1"
+    # RN-146：**资源体检那道**。`audio_health` 在 `__init__` 里就起线程去扫盘，
+    # 扫完得比快照早还是晚，决定了屏幕上是「扫描中」还是结果列表 ——
+    # 于是同一份配置复跑，这一页的控件树会变（CI 上实测 18 条差异）。
+    # ⭐ 与 RN-472 同形（构造期起的异步活儿），修法也同形：不禁掉它（禁了就拍不到
+    #   报告那一段），而是让这一次**同步跑完**，拍到的永远是结果态。
+    os.environ["CS2C_SYNC_HEALTH_SCAN"] = "1"
     # ⚠ 游戏目录那条出口**不在这里**，走 `scripts/_audit_sandbox.py`（UP-090）。
     # 我一度想在这儿加一个 `CS2C_NO_GAME_DIR_WRITES` 禁写闸门，是错的：
     # 那会让 `csgo_dir` 留空 ⇒ 页面走「未配置 CS2 目录」分支 ⇒ 文案和布局都变，

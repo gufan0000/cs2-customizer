@@ -18,6 +18,7 @@ import json
 from pathlib import Path
 
 import pytest
+from _denominator import must_scan
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -532,6 +533,12 @@ def test_qa010_no_bare_numeric_cast_left_in_load_config():
     """
     src = (ROOT / "config.py").read_text(encoding="utf-8")
     fn = _func("config.py", "load_config")
+    # ⭐ 分母是 `load_config` 里的数值转换。这个函数被拆小 / 转换整体搬走之后，
+    #   「没有裸转换」会因为**一个 int()/float() 都不剩**而变成真的。
+    must_scan([n for n in ast.walk(fn)
+               if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+               and n.func.id in ("int", "float")],
+              "load_config 里的 int()/float() 转换", least=5)
 
     # 收集所有「兜住了 TypeError/ValueError 的 try」的行号区间
     guarded_ranges = []

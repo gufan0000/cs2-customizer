@@ -33,6 +33,7 @@ from __future__ import annotations
 import ast
 import re
 from pathlib import Path
+from _denominator import must_scan
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -340,7 +341,8 @@ def test_every_page_id_reaches_its_own_source_files():
     （文件是 `pages/fun_page.py`）。这类错配以后每加一页都可能再来一次。
     """
     degraded = []
-    for _source, page_id, _name in _named_controls():
+    for _source, page_id, _name in must_scan(
+            _named_controls(), "帮助文案里点名的控件（page_id 来源）", least=50):
         own = [
             p for p in _family_files(page_id)
             if p not in SHARED_SOURCES and p.exists()

@@ -68,6 +68,7 @@ from pathlib import Path
 import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QPushButton
+from _denominator import must_scan
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
@@ -82,12 +83,6 @@ REPO = Path(__file__).resolve().parent.parent
 #:   它们改由下面 `test_the_four_renovated_pages_have_exactly_one_entrance` 钉死。
 BAR_CARD_DUPLICATE_ACTIONS = {
     "advanced": ("_browse_for_csgo_dir",),
-    "audio_health": ("_export_report", "_run_conservative_fix", "_run_health_check"),
-    "audio_import_wizard": ("_open_resource_dir", "_open_source_dir",
-                            "_run_import", "_scan_source"),
-    "audio_replay": ("_export_json", "_refresh_events", "_replay_selected"),
-    "audio_task_panel": ("_reload_history",),
-    "config_snapshot": ("_create_snapshot", "_reload", "_restore_selected"),
     "flash": ("_open_flash_audio_folder", "_open_flash_images_folder",
               "_preview_flash", "_refresh_audio_styles", "_refresh_styles",
               "_reset_settings"),
@@ -98,13 +93,24 @@ BAR_CARD_DUPLICATE_ACTIONS = {
     #   而它作用的对象正是同一张卡里「导入预设包」读进来的那一份。
     # ⭐ `utility` 曾是这张表里**最长的一条（5 处，全站最多的一页）**，
     #   2026-08-31 批 36 清零 ⇒ 移到下面 `RENOVATED_PAGES` 由那几条钉死。
+    # ⭐⭐ **专家音频四页 2026-09-04 批 46 一起清零（11 处）** ⇒ 同上。
+    #   这是「家族档案」第一次兑现它的价值：同一条主题一刀铺四页。
+    #   撤的是每一页底栏那几颗副本 + 底栏那颗**随状态变身**的主按钮
+    #   （`audio_import_wizard` 最夸张，四种文案）。
+    #   ⚠ `audio_task_panel` 的底栏主按钮**保留** ——「定位最新任务」是
+    #     底栏独有的动作，且不换词：⭐ **撤副本不等于清空底栏。**
+    # ⭐ `config_snapshot` 2026-09-04 批 45 清零 ⇒ 同上。撤的是：卡内那颗
+    #   「创建快照」（副本）、底栏那颗「刷新快照」（纯副本）、以及底栏主按钮
+    #   **随选中状态变身成「恢复选中」**这件事本身（RN-506：它把安全动作和
+    #   覆盖当前设置的破坏性动作放在了右下角同一个像素上）。
 }
 
 #: 已动刀清零的页。清零之后**一处都不许再长回来**。
 #: ⭐ 2026-08-31 批 36 加入 `utility` —— 它是原债表里最长的一条（5 处），
 #:   而全站 36 处里这一页独占 5 处，是最多的一页。
-RENOVATED_PAGES = ("about", "account", "preset_center", "utility",
-                   "viewmodel", "voice_output")
+RENOVATED_PAGES = ("about", "account", "audio_health", "audio_import_wizard",
+                   "audio_replay", "audio_task_panel", "config_snapshot",
+                   "preset_center", "utility", "viewmodel", "voice_output")
 
 #: 本批撤掉的那七个入口，撤的是**副本**，不是动作本身。
 #: ⭐ 这张表是**反面守卫**：撤重复最容易犯的错是把两颗一起删掉，
@@ -273,7 +279,7 @@ def test_the_rest_of_the_debt_only_shrinks():
     从「守着一条线」退化成「记录一个历史」（同 RN-196 / RN-188）。
     """
     grew, shrank = [], []
-    for page_id in _all_page_ids():
+    for page_id in must_scan(_all_page_ids(), "全站页面 id", least=20):
         bar, card = _scan(page_id)
         actual = tuple(sorted(bar & card))
         declared = tuple(sorted(BAR_CARD_DUPLICATE_ACTIONS.get(page_id, ())))
@@ -356,8 +362,22 @@ def test_the_runtime_scan_sees_buttons(four_pages):
         "（这条 fixture 的名字还叫 `four_pages`，而 2026-08-31 批 36 之后是 5 页；"
         "名字没改是因为改名会同时动 6 处引用而不带来任何信息 —— 分母走 "
         "`RENOVATED_PAGES`，不走这个名字。）")
+    # ⚠⚠ 这里原来是 `len(rows) >= 3`（每一页至少三颗）。
+    #   **2026-09-04 批 46 它红在一件好事上**：`audio_task_panel` 撤掉底栏那颗副本
+    #   之后只剩 2 颗可见按钮（「刷新」+「前往资源导入向导」），
+    #   而「定位最新任务」只在有历史时才出现。
+    # ⭐⭐ **拿一个会被自己的改动推着走的数当守卫，它迟早会红在一件好事上**
+    #   （批 40 那条：`vp.height() <= 700` 在撤掉两颗按钮之后自己长到了 714）。
+    # ⇒ 换成问它**真正想确认的事**：这一半是运行时扫描，它得证明自己
+    #   「把页面建出来了、并且看得见按钮」—— 那是**每页至少一颗**，
+    #   加上**全家合计**有一个不会被单页改动推着走的下界。
     for page_id, rows in four_pages.items():
-        assert len(rows) >= 3, f"{page_id} 只扫到 {len(rows)} 颗可见按钮，扫描器瞎了"
+        assert rows, f"{page_id} 一颗可见按钮都没扫到 —— 扫描器瞎了，或者页面没建出来"
+    total = sum(len(rows) for rows in four_pages.values())
+    assert total >= 20, (
+        f"{len(four_pages)} 页合计只扫到 {total} 颗可见按钮 —— 扫描器多半瞎了。\n"
+        "⭐ 下界钉在**合计**上：单页的按钮数会被每一次「撤副本」推着走，"
+        "而合计不会（撤的是重复，不是动作）。")
 
 
 def test_no_visible_button_text_appears_both_in_a_card_and_in_the_bar(four_pages):
@@ -450,6 +470,11 @@ def test_the_dirty_flag_is_not_read_back_out_of_a_label():
     """
     src = (REPO / "pages" / "viewmodel_page.py").read_text(encoding="utf-8")
     tree = ast.parse(src)
+    # ⭐ 分母是这一页里所有 `.text()` 调用。页面把状态渲染整层换掉之后，
+    #   「没人读那个标签」会因为**一次 `.text()` 都不剩**而变成真的。
+    must_scan([n for n in ast.walk(tree)
+               if isinstance(n, ast.Call) and getattr(n.func, "attr", "") == "text"],
+              "pages/viewmodel_page.py 里的 .text() 调用")
     offenders = []
     for node in ast.walk(tree):
         # `self._cfg_status_label.text()` —— 只要还有人读它，就有可能拿它当状态
@@ -476,6 +501,9 @@ def test_about_keeps_exactly_one_purple_button():
     if not impl.exists():
         pytest.skip("这个 build 里没有 about 页 —— 样本不可比（RN-140）")
     tree = ast.parse(impl.read_text(encoding="utf-8"))
+    # ⭐ 分母是这一页的调用点；about 页被搬空之后「没有第二颗紫按钮」自动成立。
+    must_scan([n for n in ast.walk(tree) if isinstance(n, ast.Call)],
+              "pages/about_page.py 里的函数调用", least=20)
     primaries = [
         n for n in ast.walk(tree)
         if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)

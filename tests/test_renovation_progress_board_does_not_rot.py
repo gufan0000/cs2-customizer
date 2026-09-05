@@ -62,6 +62,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from _denominator import must_scan
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -499,6 +500,10 @@ def test_every_batch_the_registry_tagged_has_a_row_on_the_board():
     logged = {int(re.search(r"(\d+)", _strip(c[0])).group(1))
               for c in _batch_rows(_require_board()) if re.search(r"\d", c[0])}
     tagged = _batches_the_registry_tagged()
+    # ⭐ 两个分母都要在：台账解析不到行、或登记册一个批号都没打过，
+    #   `tagged - logged` 都是空集，而这条判据会安静地绿。
+    must_scan(logged, "批次台账里解析到的批号", least=20)
+    must_scan(tagged, "登记册状态格里打过的批号", least=10)
     missing = sorted(tagged - logged)
     assert not missing, (
         f"这几批在登记册的状态格里有记录，页面清单的批次台账里却没有：{missing}\n"
@@ -551,7 +556,12 @@ def test_a_batch_row_only_claims_closures_the_registry_agrees_with():
         "这条判据的存在性检查已经瞎了。"
     )
     bad_closed, dangling, unknowable = [], [], []
-    for cells in _batch_rows(_require_board()):
+    # ⭐ 第三个分母，2026-09-03 批 42 补：上面两句守的是**登记册**那两个分母，
+    #   而这个循环走的是**台账**的行 —— 它一空，「台账没吹牛」是一句自动为真的话。
+    #   实测这个洞是回退验证逼出来的：给这条判据配的那个断点已经成了假绿，
+    #   而重新找一个能真的咬到它的破坏点时才发现，台账行数从来没人守过。
+    #   ⭐⭐ **一条判据可以有好几个分母，而守住了其中两个不代表守住了第三个。**
+    for cells in must_scan(_batch_rows(_require_board()), "批次台账的行", least=20):
         batch = _strip(cells[0])
         for rid in RN_ID.findall(cells[3]):
             if rid not in on_file:
@@ -668,6 +678,8 @@ def test_a_page_in_progress_has_something_open_in_the_registry():
     """
     board = _require_board()
     page_ids = {_strip(c[1]) for c in _page_rows(board) if re.fullmatch(r"[a-z_]+", _strip(c[1]))}
+    # ⭐ 分母是页面表真的被解析到了。解析器一坏，下面那个 `bad` 恒空。
+    must_scan(page_ids, "页面清单里解析到的 page_id", least=20)
     opens = _open_entries_by_page(page_ids)
     bad = []
     for cells in _page_rows(board):

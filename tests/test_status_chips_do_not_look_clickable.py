@@ -92,6 +92,7 @@ from PySide6.QtWidgets import (
 from tests.test_master_switch_effect_is_honest import (  # noqa: E402
     main_window as _shared_main_window,
 )
+from _denominator import must_scan
 
 main_window = _shared_main_window
 
@@ -348,7 +349,9 @@ def test_no_status_chip_is_allowed_to_wrap(main_window, qapp):
       高度量出来的是一个用户看不到的版面（见本文件开头）。
     """
     wrapping = []
-    for page_id in list(main_window._page_names.keys()):
+    seen_chips = 0
+    for page_id in must_scan(list(main_window._page_names.keys()),
+                             "主窗注册的页面 id", least=20):
         try:
             main_window.ensure_page_loaded(page_id)
             main_window.show_page(page_id, animated=False, force=True)
@@ -359,8 +362,14 @@ def test_no_status_chip_is_allowed_to_wrap(main_window, qapp):
         if page is None:
             continue
         for chip in page.findChildren(QLabel):
-            if chip.objectName() == CHIP and chip.wordWrap():
+            if chip.objectName() != CHIP:
+                continue
+            seen_chips += 1
+            if chip.wordWrap():
                 wrapping.append(f"{page_id} · {chip.text().strip()!r}")
+    # ⭐ 分母是**真的量到的状态胶囊**。上面那圈 `except: continue` 会把建不出来的页
+    #   悄悄踢出分母 —— 全踢光时「没有胶囊折行」是一句自动为真的话。
+    must_scan(range(seen_chips), "全站量到的状态胶囊", least=10)
     assert not wrapping, (
         f"{len(wrapping)} 颗状态胶囊还允许折行 —— 折行的 QLabel 会把自己的宽度"
         "报小，然后折成两行、比同排高一截：\n  "

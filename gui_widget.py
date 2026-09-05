@@ -1195,11 +1195,11 @@ class MainWindow(QMainWindow):
             ("工具与系统", [
                 ("utility", "道具瞄点"),
                 ("advanced", "高级设置"),
-                ("audio_health", "音频体检"),
+                ("audio_health", "资源体检"),
                 ("audio_import_wizard", "资源导入向导"),
                 ("audio_task_panel", "音频任务面板"),
                 ("audio_replay", "音频事件回放"),
-                ("config_snapshot", "配置快照"),
+                ("config_snapshot", "软件设置快照"),
                 ("preset_center", "预设中心"),
                 ("about", "关于软件"),
             ]),
@@ -2017,14 +2017,14 @@ class MainWindow(QMainWindow):
         self.system_status_health_btn = self._create_home_tool_button(
             "立即体检",
             self._run_audio_health_from_home,
-            tooltip="运行音频体检并跳转查看结果",
+            tooltip="运行资源体检并跳转查看结果",
         )
         expert_tools_layout.addWidget(self.system_status_health_btn)
 
         self.system_status_open_health_btn = self._create_home_tool_button(
             "体检页面",
             lambda: self.show_page("audio_health"),
-            tooltip="打开音频体检页面",
+            tooltip="打开资源体检页面",
         )
         expert_tools_layout.addWidget(self.system_status_open_health_btn)
 

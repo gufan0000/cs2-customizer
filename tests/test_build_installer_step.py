@@ -17,6 +17,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from _denominator import must_scan
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -153,8 +154,11 @@ def test_no_second_hardcoded_iscc_locator():
     散文里提"Inno Setup 7"不算，那不构成第二份实现。
     """
     offenders = []
-    for path in sorted(PROJECT_ROOT.glob("build_tools/**/*.py")) + \
-            sorted(PROJECT_ROOT.glob("scripts/**/*.py")):
+    candidates = must_scan(
+        sorted(PROJECT_ROOT.glob("build_tools/**/*.py"))
+        + sorted(PROJECT_ROOT.glob("scripts/**/*.py")),
+        "build_tools/**/*.py + scripts/**/*.py", least=20)
+    for path in candidates:
         if path.name == "inno_setup.py":
             continue
         if "ISCC.exe" in path.read_text(encoding="utf-8", errors="replace"):

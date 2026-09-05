@@ -33,6 +33,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from _denominator import must_scan
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
@@ -94,6 +95,12 @@ def test_no_private_method_is_dead(page):
     """
     tree = ast.parse(_src(page))
     src = _src(page)
+    # ⭐ 分母是这一页定义的私有方法。一页被拆空之后「没有死方法」是真的，
+    #   但那句真话跟这条判据要防的事没有关系。
+    must_scan([n for n in ast.walk(tree)
+               if isinstance(n, ast.FunctionDef)
+               and n.name.startswith("_") and not n.name.startswith("__")],
+              f"{page} 页里定义的私有方法", least=3)
     dead = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.FunctionDef):
@@ -130,11 +137,11 @@ def test_round_event_list_is_not_handwritten_again():
     # 那条链上被吃成了退格符（0x08），正则从此永不匹配
     # ⇒ **判据变成假绿**，比假报更危险。
     # 所以第三版换掉手段：走 AST 只取字符串常量，不再跟转义符较劲。
-    hits = sorted({
-        node.value for node in ast.walk(ast.parse(_src("special_sound")))
-        if isinstance(node, ast.Constant) and isinstance(node.value, str)
-        and re.fullmatch(r"round_[a-z_]+_style", node.value)
-    })
+    literals = must_scan(
+        [node.value for node in ast.walk(ast.parse(_src("special_sound")))
+         if isinstance(node, ast.Constant) and isinstance(node.value, str)],
+        "special_sound 页里的字符串字面量", least=20)
+    hits = sorted({s for s in literals if re.fullmatch(r"round_[a-z_]+_style", s)})
     assert not hits, (
         f"special_sound 又手写了回合样式字段名：{hits} —— "
         "从 `ROUND_TYPE_META`（派生自事件表）取，别再抄第二份清单。")
@@ -507,17 +514,58 @@ def test_no_dead_parameters_in_the_shared_copy_helpers():
         "\n要么把它真正用起来，要么连同所有调用点一起删掉。")
 
 
-#: 提示里点名的**导航目的地**（不是本页按钮）。写成「分组 - 页名」。
-#: ⚠ 它们不该混进按钮判据 —— 但也不能因此不管：页名一改这句话同样变成假的。
-#: 所以下面给它单独一条判据，去真正的导航注册表里查。
-_NAV_DESTINATIONS = {"工具与系统 - 音频体检"}
+#: ⭐ 锚：这一条是当初逼出这条判据的那句话，扫描器必须仍然找得到它。
+#: ⛔ 它**不是分母** —— 分母见 `_nav_destinations_in_pages()`。
+_ANCHOR_DESTINATION = "工具与系统 - 资源体检"
+
+#: 指路句式：「分组 - 页名」。
+_NAV_POINTER = re.compile(r"「\s*([^」\s]{2,8})\s*-\s*([^」\s]{2,8})\s*」")
+
+
+def _nav_destinations_in_pages() -> set[str]:
+    """`pages/*.py` 里所有点名「分组 - 页名」的文案。
+
+    ⚠⚠ 这里原来是一个**手写的一条目集合**（`{"工具与系统 - 音频体检"}`）。
+    批 51 改导航名时实测：全站其实有 **3 处**这种指路文案
+    （`about_page` 那两处「工具与系统 - 高级设置」**从来没被查过**），
+    判据只看得见其中 **1 处**。
+    ⭐ 与 RN-522 同一族：**按人手登记划分母，没登记的天生看不见。**
+    ⇒ 分母改成扫出来的：新写一句照样进。
+
+    ⚠ 走 AST 取字符串常量并摘掉 docstring —— 否则注释里的散文也会进来
+    （这条规矩在 `test_page_copy_is_user_facing` 里已经踩过一次）。
+    """
+    import ast as _ast
+
+    found = set()
+    pages = must_scan(sorted((Path(__file__).resolve().parents[1] / "pages").glob("*.py")),
+                      "pages/*.py", least=20)
+    for path in pages:
+        try:
+            tree = _ast.parse(path.read_text(encoding="utf-8"))
+        except SyntaxError:
+            continue
+        skip = {
+            id(node.body[0].value)
+            for node in _ast.walk(tree)
+            if isinstance(getattr(node, "body", None), list) and node.body
+            and isinstance(node.body[0], _ast.Expr)
+            and isinstance(node.body[0].value, _ast.Constant)
+            and isinstance(node.body[0].value.value, str)
+        }
+        for node in _ast.walk(tree):
+            if (isinstance(node, _ast.Constant) and isinstance(node.value, str)
+                    and id(node) not in skip):
+                for m in _NAV_POINTER.finditer(node.value):
+                    found.add(f"{m.group(1)} - {m.group(2)}")
+    return found
 
 
 def test_the_shared_hint_points_at_real_navigation_destinations(qapp):
     """提示里写的「分组 - 页名」必须在**真正的导航注册表**里存在。
 
     ⭐ 这条是写按钮判据时顺出来的：`invalid` 那支说
-    「也可以到「工具与系统 - 音频体检」看明细」——
+    「也可以到「工具与系统 - 资源体检」看明细」——
     它既不是按钮，也不是随便一句话，而是一条**指路**。
     页名或分组名一改，这句话就变成假的，且**没有任何东西会响**
     （RN-163 / RN-167 同一个形状）。
@@ -526,7 +574,14 @@ def test_the_shared_hint_points_at_real_navigation_destinations(qapp):
 
     source = (Path(gui_widget.__file__).read_text(encoding="utf-8"))
     missing = []
-    for dest in sorted(_NAV_DESTINATIONS):
+    destinations = _nav_destinations_in_pages()
+    assert _ANCHOR_DESTINATION in destinations, (
+        f"扫不到锚点「{_ANCHOR_DESTINATION}」—— 扫描器多半瞎了，"
+        f"当前扫到：{sorted(destinations)}")
+    # ⚠ least=2 而不是 3：实测全站 3 **处**这类文案，但 `about_page`
+    #   那两处指的是同一个目的地 ⇒ 去重后 2 个。
+    for dest in must_scan(sorted(destinations),
+                          "pages/ 里点名「分组 - 页名」的指路文案", least=2):
         group, _, page_name = dest.partition(" - ")
         for part in (group, page_name):
             if f'"{part}"' not in source:
@@ -564,7 +619,7 @@ def test_the_shared_hint_names_no_button_that_is_missing_on_some_page(qapp):
         assert text, f"「{state_name}」这条分支返回了空串 —— 判据在空转"
         for name in _re.findall(r"[「『]([^」』]{2,16})[」』]", text):
             # 导航目的地不是本页按钮，由上面那条判据单独管。
-            if name in _NAV_DESTINATIONS:
+            if _NAV_POINTER.fullmatch(f"「{name}」"):
                 continue
             quoted.append((state_name, name))
     assert quoted, "三条分支一个按钮都没点名 —— 抽取器瞎了，判据在空转"
@@ -621,9 +676,11 @@ def test_hint_only_names_buttons_that_exist(qapp, monkeypatch):
     pages.append(("special_sound", SpecialSoundPage()))
 
     problems = []
-    for name, page in pages:
-        buttons = {b.text().strip() for b in page.findChildren(QPushButton) if b.text().strip()}
-        for label in page.findChildren(QLabel):
+    for name, page in must_scan(pages, "被检查的两页", least=2):
+        buttons = must_scan(
+            {b.text().strip() for b in page.findChildren(QPushButton) if b.text().strip()},
+            f"{name} 页上有文字的按钮")
+        for label in must_scan(page.findChildren(QLabel), f"{name} 页上的标签", least=5):
             text = label.text()
             if not text or label.isHidden():
                 continue
@@ -715,9 +772,11 @@ def test_one_word_for_one_thing_in_user_facing_copy(page):
                 if isinstance(sub, ast.Constant) and isinstance(sub.value, str):
                     logged.add(sub.value)
 
-    bad = [node.value for node in ast.walk(tree)
-           if isinstance(node, ast.Constant) and isinstance(node.value, str)
-           and "样式" in node.value
-           and node.value not in docs and node.value not in logged]
+    visible = must_scan(
+        [node.value for node in ast.walk(tree)
+         if isinstance(node, ast.Constant) and isinstance(node.value, str)
+         and node.value not in docs and node.value not in logged],
+        f"{page} 页里用户看得见的字符串字面量", least=20)
+    bad = [s for s in visible if "样式" in s]
     assert not bad, (
         f"{page} 的界面文案里还有「样式」：{bad} —— 家族统一叫「风格」（RN-057）")

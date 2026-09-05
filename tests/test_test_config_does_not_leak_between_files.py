@@ -47,7 +47,15 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parent.parent
-SEED = Path(tempfile.gettempdir()) / "cs2customizer_test_config" / "config.json"
+
+#: ⚠⚠ 批 47：这里原来写死 `gettempdir()/"cs2customizer_test_config"`，**抄了 conftest 一份**。
+#: 并行化给配置目录加上工作槽位后缀（`cs2customizer_test_config_w3`）之后，这条判据
+#: 就在读**另一个文件** —— 它照样绿，因为它污染的和它检查的是同一个（错的）文件。
+#: 回退验证逮到：撤掉修复它**仍然绿**（346/348 里的那一条）。
+#: ⭐ **别抄真源，去读真源。** `conftest` 把最终路径放在 `CS2C_CONFIG_DIR` 里，
+#:   那就是唯一的答案；抄一份就等于多一个会各自漂移的副本。
+SEED = (Path(os.environ["CS2C_CONFIG_DIR"]) if os.environ.get("CS2C_CONFIG_DIR")
+        else Path(tempfile.gettempdir()) / "cs2customizer_test_config") / "config.json"
 
 #: 污染**直接写进种子文件**，不去赌"哪支测试碰巧会存盘"。
 #:

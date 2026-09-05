@@ -27,6 +27,7 @@ import pages.kill_icon_page as page_module
 from config import config
 from core.kill_icon_library import LEVELS
 from kill_icon_overlay import KillIconAnimation
+from _denominator import must_scan
 
 #: 这一页允许露在外面的「本页自有的可操作控件」上限。
 #:
@@ -177,8 +178,13 @@ def test_the_page_stays_simple(page):
 
 def test_the_editor_did_not_follow_the_page(page):
     """更直接的一条：清单板与逐等级的节奏控件不许出现在这一页上。"""
+    from PySide6.QtWidgets import QWidget
+
     from widgets.kill_icon_level_grid import KillIconLevelCell, KillIconLevelGrid
 
+    # ⭐ 分母是这一页真的建出了控件。页面构造失败时它是空的，
+    #   而空页面上「没有清单板」是一句自动为真的话。
+    must_scan(page.findChildren(QWidget), "击杀图标设置页上的控件", least=10)
     assert not page.findChildren(KillIconLevelGrid), "清单板又回到设置页上了"
     assert not page.findChildren(KillIconLevelCell)
 
