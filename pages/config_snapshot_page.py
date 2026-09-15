@@ -149,6 +149,23 @@ class ConfigSnapshotPage(QWidget):
         self.table.itemSelectionChanged.connect(self._sync_status_strip)
         list_layout.addWidget(self.table)
 
+        # ⭐⭐⭐ RN-526：一份快照都没有时，这里原来是**一大片全黑的空表格** ——
+        #   外审两个视口 6/6 判高，逐字「极易被误认为数据加载失败或软件卡死」。
+        # ⭐ 照 `audio_replay_page` 那个先例做（空时藏表、显一句话），
+        #   **不另起一套**：那一页解决的正是「表空了怎么办」这同一个形状。
+        # ⛔ 而这里**不加按钮**：本页 RN-102/506 已裁定「三个动作全留在
+        #   「快照操作」卡里，底栏一颗不放」—— 空态再放一颗「创建快照」
+        #   就是那条裁定要防的纯副本。⇒ 只给一句**点名那颗按钮**的话。
+        # ⚠ 按名字指路，不按位置指路（RN-081）：不写「上面那张卡」。
+        # ⚠ 按钮名**从按钮上读**，不在这里抄一份字面量 —— 批 48 实测过：
+        #   改了按钮名而点名它的这句话留在原地，两处同时出现、指的是同一颗。
+        self.empty_hint_label = QLabel("")
+        self.empty_hint_label.setObjectName("hintLabel")
+        self.empty_hint_label.setAlignment(Qt.AlignCenter)
+        self.empty_hint_label.setWordWrap(True)
+        self.empty_hint_label.setMinimumHeight(110)
+        list_layout.addWidget(self.empty_hint_label)
+
         layout.addWidget(list_card)
         layout.addStretch()
         scroll.setWidget(content)
@@ -244,6 +261,15 @@ class ConfigSnapshotPage(QWidget):
             values = [snap.snapshot_id, snap.created_at, snap.reason, str(snap.size), snap.sha256[:16]]
             for col, value in enumerate(values):
                 self.table.setItem(row, col, QTableWidgetItem(value))
+        # RN-526：一份都没有时把表让位给那句话（同 `audio_replay_page`）。
+        has_any = bool(self._snapshots)
+        self.table.setVisible(has_any)
+        if hasattr(self, "empty_hint_label"):
+            self.empty_hint_label.setVisible(not has_any)
+            if not has_any:
+                self.empty_hint_label.setText(
+                    f"还没有快照。「快照操作」卡里的「{self.create_btn.text()}」"
+                    f"会存下第一份 —— 存的是这个软件自己的设置，不是游戏里的存档。")
         self._sync_status_strip()
 
     def _selected_snapshot_id(self) -> str:

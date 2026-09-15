@@ -80,7 +80,10 @@ def _tracked_python_files() -> list[Path]:
                          capture_output=True, text=True, timeout=60)
     if out.returncode != 0 or not out.stdout.strip():
         pytest.skip("拿不到 git 跟踪清单，跳过（宁可跳过也不假绿）")
-    return [REPO / line for line in out.stdout.splitlines() if line.strip()]
+    # ⛔ RN-164：`git ls-files` 列的是**索引**，不是磁盘 —— 开源同步管道把删除
+    #   写进工作区却不入索引，这里就会拿到一个已经不存在的文件。⇒ 只留磁盘上真有的。
+    return [p for p in (REPO / line for line in out.stdout.splitlines() if line.strip())
+            if p.exists()]
 
 
 def _is_summary_attr(attr: str) -> bool:

@@ -31,6 +31,11 @@
   ② 需要专家模式的判据**自己钉**（已改：`test_ui_visual_r1_fixes`、
      `test_tool_pages_ui_polish`、`test_advanced_page_ui_polish`）。
 
+⚠ RN-646（批 97）：钉两个键挡不住第三个 —— 特殊音效那条判据存下 round/c4/health 三组风格值，
+下一次会话别的判据把它们读成「配了但风格不在」（红在没改过的 HEAD 上）。
+⇒ 第 ③ 层：conftest 每个进程启动时**先删掉整份 config.json**，再钉那两个键。
+本文件最后一条判的就是 ③：污染一个**没钉的**键，下一个进程也不许看到它。
+
 本文件判的是 ①，而且是**端到端**判：先在子进程里跑一支已知会存盘专家模式的测试，
 再起一个新进程看它读到什么。不去读 conftest 的源码 ——
 那只能证明"字面量还在"，证明不了"这件事真的成立"。
@@ -129,3 +134,43 @@ def test_the_seed_file_on_disk_is_pinned_too():
         f"落盘的测试配置里 ui_expert_mode = {data.get('ui_expert_mode')!r}。\n"
         "conftest 只在内存里改是不够的：`run_tests.py` 逐文件起独立进程，"
         "下一个进程读的是**这个文件**。")
+
+
+#: RN-646：探针问一个**没被 conftest 钉住的**键 —— 钉两个键挡不住第三个。
+_PROBE_UNPINNED = (
+    "import sys; sys.path.insert(0, '.'); sys.path.insert(0, 'tests');"
+    " import conftest;"
+    " from config import config;"
+    " print('ROUND=' + str(getattr(config, 'round_start_style', None)))"
+)
+
+
+def test_a_polluted_unpinned_key_does_not_survive_either():
+    """端到端：种子文件里被写进一个 conftest **没钉**的键，下一个进程也看不到它（RN-646）。
+
+    ⚠ 与上一条的区别就在「没钉」：上一条即使只靠 `_want` 钉桩也能绿，
+    这一条只有「整份清掉」才能绿 —— 回退断点打在这一条上。
+    """
+    if not SEED.exists():
+        pytest.skip("还没有测试种子配置（全新环境，conftest 还没写过）")
+
+    backup = SEED.read_text(encoding="utf-8")
+    try:
+        data = json.loads(backup)
+        data["round_start_style"] = "__polluted_by_previous_file__"
+        SEED.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+        assert json.loads(SEED.read_text(encoding="utf-8"))["round_start_style"].startswith("__polluted")
+
+        probe = subprocess.run(
+            [sys.executable, "-c", _PROBE_UNPINNED],
+            cwd=REPO, capture_output=True, text=True, env=dict(os.environ),
+            encoding="utf-8", errors="replace", timeout=600)
+        blob = (probe.stdout or "") + (probe.stderr or "")
+        got = next((line.split("=", 1)[1].strip() for line in blob.splitlines() if line.startswith("ROUND=")), None)
+        assert got is not None, f"探针没吐出结果：\n{blob[-1500:]}"
+    finally:
+        SEED.write_text(backup, encoding="utf-8")
+
+    assert not got.startswith("__polluted"), (
+        f"种子配置里被写进一个没钉的键之后，下一个进程读到的还是它：{got!r}。\n"
+        "⇒ 钉两个键挡不住第三个（RN-646）：conftest 要在每个进程启动时先清掉整份 config.json。")

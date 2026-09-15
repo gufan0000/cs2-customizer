@@ -395,7 +395,7 @@ class KillVoicePage(SoundPageBase, QWidget):
         detail_tooltip = build_health_detail_tooltip(health)
 
         badges = [
-            ("success" if enabled else "warn", f"开关 · {'已启用' if enabled else '未启用'}"),
+            ("success" if enabled else "warn", f"开关 · {'已开启' if enabled else '未开启'}"),
             self._configured_badge(selected_count, stale_count),
             (
                 "success" if current_selected else "info",
@@ -407,7 +407,7 @@ class KillVoicePage(SoundPageBase, QWidget):
         ]
 
         detail_lines = [
-            f"总开关：{'已启用' if enabled else '已关闭'}",
+            f"总开关：{'已开启' if enabled else '未开启'}",
             f"当前分类：{current_category}",
             f"当前分类已配置：{current_selected}/{len(current_weapons)}",
             f"全部武器已配置：{selected_count}/{len(self._get_all_weapons())}",

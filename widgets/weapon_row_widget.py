@@ -51,10 +51,17 @@ class WeaponRowWidget(QWidget):
         self.style_combo.addItems(style_options)
         self.style_combo.setCurrentText(current_style)
         self.style_combo.setMinimumWidth(220)
+        # ⭐⭐⭐ RN-442 的副作用（批 62 改完复跑逮到）：「测试」按钮从 118 缩回 72
+        #   之后，多出来的 46px 全被这颗 `Expanding` 的下拉框吃掉 ——
+        #   外审同一页同一档 **批 61 两发全 NONE、批 62 3/3** 报
+        #   「选项文字与下拉箭头之间大片异常留白，箭头被推到『测试』按钮旁」。
+        #   ⇒ 给它一个上限，多出来的空间交给弹簧，别交给控件。
+        self.style_combo.setMaximumWidth(420)
         self.style_combo.setMinimumHeight(34)
         self.style_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.style_combo.currentTextChanged.connect(self._on_style_changed)
         layout.addWidget(self.style_combo, 1)
+        layout.addStretch()
         
         # 测试按钮。v2.2.1: 提供档位时用带下拉的分裂按钮（默认播1连杀，
         # 下拉可选 2-5 连杀试听——旧版永远只能试听第 1 连杀）

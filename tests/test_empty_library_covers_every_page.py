@@ -250,9 +250,9 @@ def test_flash_only_guides_on_the_two_asset_tabs():
                 if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
                 and n.func.attr == "configure_primary"
                 and n.args and isinstance(n.args[0], ast.Constant)
-                and n.args[0].value == "启动"]
+                and n.args[0].value == "启动监听"]
     assert len(starters) == 1, (
-        f"flash 的「启动」入口有 {len(starters)} 处，应该恰好 1 处 —— "
+        f"flash 的「启动监听」入口有 {len(starters)} 处，应该恰好 1 处 —— "
         "那是全页唯一能让后台监听真正跑起来的按钮（RN-079 / RN-192）")
 
 

@@ -342,7 +342,7 @@ class ReloadSoundPage(SoundPageBase, QWidget):
         detail_tooltip = build_health_detail_tooltip(health)
 
         badges = [
-            ("success" if enabled else "warn", f"开关 · {'已启用' if enabled else '未启用'}"),
+            ("success" if enabled else "warn", f"开关 · {'已开启' if enabled else '未开启'}"),
             self._configured_badge(selected_count, stale_count),
             (
                 "success" if current_count else "info",
@@ -354,7 +354,7 @@ class ReloadSoundPage(SoundPageBase, QWidget):
         ]
 
         detail_lines = [
-            f"总开关：{'已启用' if enabled else '已关闭'}",
+            f"总开关：{'已开启' if enabled else '未开启'}",
             f"当前分类：{current_tab_name}",
             f"当前分类已配置：{current_count}/{len(current_weapons)}",
             f"全局已配置：{selected_count}/{sum(len(weapons) for weapons in self.CATEGORIES.values())}",

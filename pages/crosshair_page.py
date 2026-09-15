@@ -645,7 +645,7 @@ class CrosshairPage(QWidget):
         blank_custom = self._custom_style_is_blank()
         style_text = self._format_style_text(style_value)
         badges = [
-            ("positive" if enabled else "warning", f"显示 · {'已启用' if enabled else '未启用'}"),
+            ("positive" if enabled else "warning", f"显示 · {'已开启' if enabled else '未开启'}"),
             ("warning" if blank_custom else "info",
              f"样式 · {style_text}（未绘制）" if blank_custom else f"样式 · {style_text}"),
             ("info", f"颜色 · {self._format_color_text(color_value)}"),

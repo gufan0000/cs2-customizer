@@ -295,17 +295,17 @@ class AudioTaskPanelPage(QWidget):
         self._reload_history()
 
     def _navigate_to_page(self, page_id: str):
-        """Phase1-1.3: 空状态按钮跳转到指定功能页（经主窗口导航）。"""
-        win = self.window()
-        try:
-            ensure = getattr(win, "ensure_page_loaded", None)
-            if callable(ensure):
-                ensure(page_id)
-            nav = getattr(win, "show_page", None)
-            if callable(nav):
-                nav(page_id)
-        except Exception:
-            pass
+        """空状态按钮跳转到指定功能页。
+
+        ⚠ 批 74（RN-528）：这一段原来和 `audio_replay_page` 里那份**逐字相同**
+        （除 docstring）—— 而 RN-197 刚教过「一条改在一处的修法，覆盖不了
+        说同样话的那几处」。⇒ 实现收进 `widgets/page_route.goto_page` 一份。
+        ⭐ 顺带修好一件事：原来两份都**不带 `force=True`**，于是普通模式下
+        目标页没有导航入口时 `show_page` 会静默 return —— **点了什么都不会发生**。
+        """
+        from widgets.page_route import goto_page
+
+        goto_page(self, page_id)
 
     def _reload_history(self):
         history = self.runner.get_history(limit=150)

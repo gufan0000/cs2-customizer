@@ -1,0 +1,101 @@
+{
+  "contract": {
+    "core.hotkeys": [],
+    "core.hotkeys.registry": [
+      "declare_interest",
+      "find_conflicts",
+      "hotkey_has_game_critical_key",
+      "list_bindings",
+      "register_hook",
+      "register_hotkey",
+      "register_key",
+      "register_mouse",
+      "unregister",
+      "unregister_owner"
+    ]
+  },
+  "contract_total": 10,
+  "external_use": {
+    "core.hotkeys": {
+      "files": [
+        "gsi_handler_utility.py",
+        "pages/advanced_page.py",
+        "pages/magnifier_page.py",
+        "pages/voice_output_page.py",
+        "tests/test_audit_can_see_every_page.py",
+        "tests/test_hotkey_registry.py"
+      ],
+      "names": {}
+    },
+    "core.hotkeys.registry": {
+      "files": [
+        "gsi_handler_utility.py",
+        "pages/advanced_page.py",
+        "pages/magnifier_page.py",
+        "pages/voice_output_page.py",
+        "tests/test_audit_can_see_every_page.py",
+        "tests/test_hotkey_registry.py"
+      ],
+      "names": {
+        "declare_interest": 9,
+        "find_conflicts": 8,
+        "hotkey_has_game_critical_key": 13,
+        "list_bindings": 7,
+        "register_hook": 2,
+        "register_hotkey": 2,
+        "register_key": 2,
+        "register_mouse": 2,
+        "unregister": 2,
+        "unregister_owner": 8
+      }
+    }
+  },
+  "imported_but_no_contract": [],
+  "internal_only_modules": [],
+  "loc": {
+    "core.hotkeys": 12,
+    "core.hotkeys.registry": 388
+  },
+  "reexport_only_modules": [
+    "core.hotkeys"
+  ],
+  "surface": {
+    "core.hotkeys": {
+      "classes": [],
+      "constants": [],
+      "functions": []
+    },
+    "core.hotkeys.registry": {
+      "classes": [
+        "_Binding"
+      ],
+      "constants": [
+        "_GAME_CRITICAL_KEYS",
+        "_MODIFIER_KEYS",
+        "_bindings",
+        "_lock",
+        "_token_seq",
+        "logger"
+      ],
+      "functions": [
+        "_binding_keys",
+        "_expand_combo",
+        "_new_token",
+        "_norm_key",
+        "_query_keys",
+        "declare_interest",
+        "find_conflicts",
+        "hotkey_has_game_critical_key",
+        "hotkeys_disabled",
+        "list_bindings",
+        "register_hook",
+        "register_hotkey",
+        "register_key",
+        "register_mouse",
+        "unregister",
+        "unregister_owner"
+      ]
+    }
+  },
+  "unreferenced_modules": []
+}

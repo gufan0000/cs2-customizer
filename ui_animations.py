@@ -368,24 +368,3 @@ def get_animation_manager():
     if _animation_manager is None:
         _animation_manager = AnimationManager()
     return _animation_manager
-
-
-def animate_fade_in(widget, duration=None):
-    """快捷函数：淡入动画"""
-    return get_animation_manager().fade_in(widget, duration)
-
-
-def animate_fade_out(widget, duration=None):
-    """快捷函数：淡出动画"""
-    return get_animation_manager().fade_out(widget, duration)
-
-
-def animate_shake(widget, intensity=10):
-    """快捷函数：摇晃动画（错误反馈）"""
-    return get_animation_manager().shake(widget, intensity)
-
-
-def animate_pulse(widget, scale_factor=1.05, count=1):
-    """快捷函数：脉冲动画（强调）"""
-    return get_animation_manager().pulse(widget, scale_factor, count=count)
-

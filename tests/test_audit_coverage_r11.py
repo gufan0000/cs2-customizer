@@ -229,6 +229,100 @@ def test_compact_size_matches_the_product_code():
     assert (w, h) == (860, 640)
 
 
+def test_the_pin_judge_makes_its_own_worst_start():
+    """⛔ RN-598（批 78）：那条钉档判据**必须自己先把音乐条推到展开**。
+
+    ⭐⭐⭐ 回退验证逮到的假绿：断点把 `_set_expanded(win, app, want)` 改成
+    `… if want else None`（＝只推展开、不再推回折叠），而
+    `test_the_report_line_names_the_shape_it_pinned` **照样绿** ——
+    因为音乐条本来就折叠着，「推」和「不推」结果一样。
+    ⭐ RN-571 那条教训（**钉一个档 = 把它推到那个状态**）对判据自己同样成立：
+    一条判据能不能看见差别，取决于它跑之前世界是什么样 —— 那也得由它自己钉住。
+
+    ⚠ 而它此前一直没被报出来：并行版把它分到某一片，那一片进程里的残留状态
+    恰好让它红。⭐ **一条判据绿不绿，可以取决于它前面跑过谁。**
+
+    ⇒ 这条查**源码形状**（那一行在不在、在不在阻断档那次之前），
+    而不是再跑一遍那条判据 —— 后者会把同一个环境依赖原样继承下来。
+    """
+    import ast
+    import inspect
+    import textwrap
+
+    import test_the_audit_says_which_worst_case_it_pinned as T
+
+    src = textwrap.dedent(inspect.getsource(T.test_the_report_line_names_the_shape_it_pinned))
+    tree = ast.parse(src)
+    pins = []
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Call)
+                and getattr(node.func, "attr", "") == "pin"
+                and len(node.args) == 3):
+            mode = node.args[2]
+            pins.append(getattr(mode, "attr", None) or getattr(mode, "id", None))
+
+    assert len(pins) >= 3, (
+        f"分母塌了：那条判据里只找到 {len(pins)} 次 `pin(...)` 调用（期望 ≥3，"
+        "第一次是把世界推到最坏的起点）—— 它可能已经改写过了")
+    assert pins[0] == "MODE_EXPANDED", (
+        f"那条判据的第一次 `pin` 用的是 {pins[0]!r} —— 必须先推到 `MODE_EXPANDED`。\n"
+        "⇒ 不先把音乐条推到展开，「阻断档有没有把它折叠回去」这件事就没有差别可看，"
+        "而缺陷放回去它照样绿（RN-598）。")
+    assert "MODE_WORST_CASE" in pins[1:], (
+        f"第一次推最坏起点之后没有再钉阻断档：{pins}")
+
+
+def test_layout_audit_checks_button_text_vertically():
+    """⭐⭐⭐ RN-591/592：排版审计那条「按钮文案截断」**只查了宽度这一个轴**。
+
+    它的模块文档第一句逐字写着「按钮被钉死**宽度**时布局放得下、只是文字被裁」——
+    从写下那天起就没想到纵向。实测代价：`advanced` 那颗「查看将上报的内容」
+    被压到 22px（16px 的字只画得出上半截，外审整页图 3/3 报「完全无法辨认」），
+    而**挤压审计**（分母是 `QLabel`+`wordWrap`）与**本审计的横向那条**都判绿。
+
+    ⚠ 这条**不查源码形状**（批 73 那一族：查形状会被换个写法绕过，且会假绿）——
+    它真造一颗矮按钮喂给 `_squashed_buttons`，再造一颗正常的当阴性对照。
+    """
+    import sys
+
+    sys.path.insert(0, str(ROOT / "scripts"))
+    pytest.importorskip("PySide6")
+    from PySide6.QtWidgets import QApplication, QPushButton, QWidget
+
+    from layout_overflow_audit import _squashed_buttons
+
+    from PySide6.QtCore import Qt
+
+    app = QApplication.instance() or QApplication([])
+    host = QWidget()
+    host.setAttribute(Qt.WA_DontShowOnScreen, True)   # ⛔ 不弹真窗口（§3）
+    host.resize(400, 200)
+
+    probe = QPushButton("量字高用的", host)
+    fh = probe.fontMetrics().height()
+    probe.deleteLater()
+    # ⚠ 尺寸**按实测字高算**，不写死 —— 裸按钮没有 QSS 的 padding，
+    #   我第一版写死 14px 时 SE 高正好等于字高 12，判据不该报也确实没报，
+    #   而我差点把那当成「判据在空转」（批 40「参数不许我自己挑」同族）。
+    tall = QPushButton("正常高度的按钮", host)
+    tall.setFixedSize(200, fh * 3)
+    short = QPushButton("被压扁的按钮", host)
+    short.setFixedSize(200, max(4, fh - 4))
+    short.move(0, fh * 4)
+    host.show()
+    app.processEvents()
+
+    hits = {t for t, _have, _need in _squashed_buttons(host)}
+    host.hide()
+    app.processEvents()
+
+    assert "被压扁的按钮" in hits, (
+        "14px 高的按钮里画 16px 的字，审计没报 —— 那条纵向判据在空转。"
+        f"实际报了：{hits}")
+    assert "正常高度的按钮" not in hits, (
+        f"阴性对照被误报了 —— 40px 的按钮装得下，报它说明容差写错了：{hits}")
+
+
 @pytest.mark.parametrize("needle", [
     "--compact",
     "tab_order_audit.py",

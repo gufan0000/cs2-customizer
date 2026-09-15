@@ -100,6 +100,16 @@ class FunPage(QWidget):
             self, "fun_afterlife_enabled", "死亡刷短视频")
         status_layout.addWidget(self.master_switch_row)
 
+        # ⭐⭐ RN-540（批 59）：这一页缺那条胶囊的**抬头**，于是 RN-428 那条改动
+        #   （关着的时候标题从「当前状态」改成「当前配置」）在这一页上**没有落点**。
+        #   ⚠ 它是被 RN-538 把本页加进 `EXPECTED_KEYS` 之后，那支判据当场报出来的 ——
+        #   在此之前这一页结构上不在分母里。
+        #   ⭐ 标题是这条胶囊里唯一一个「说这一整条是什么」的位置：
+        #     没在跑的时候，那一排列的是配置，不是状态。
+        self.status_strip_title = QLabel("当前状态")
+        self.status_strip_title.setObjectName("statusLabel")
+        status_layout.addWidget(self.status_strip_title)
+
         # ⚠ RN-102 族（批 34）：状态原来是一行裸文字，而全站 26/28 页用徽章条。
         self.status_badge_label = create_badge_label()
         status_layout.addWidget(self.status_badge_label)

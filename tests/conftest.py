@@ -25,6 +25,15 @@ _cs2customizer_worker = os.environ.get("CS2C_TEST_WORKER", "")
 _cs2customizer_test_cfg_dir = os.path.join(tempfile.gettempdir(),
                                     "cs2customizer_test_config" + _cs2customizer_worker)
 os.makedirs(_cs2customizer_test_cfg_dir, exist_ok=True)
+# RN-646（批 97）：这个目录**跨次运行持久**，而不少用例会让页面真的 `save_config()`
+# （特殊音效页那条一存就是 round/c4/health 三组风格值）。下一次会话里别的用例把它们
+# 读成「配了但风格不在」—— 「已选 · 4 · 3 项失效」当场红，且红在**没改过的 HEAD** 上。
+# ⭐ 一条判据的结果取决于上一条判据留下的文件，就不是判据。目录只为「别写用户真实配置」
+# 而存在，不为跨次保留 ⇒ 每个会话从空配置起步。只删 config.json，不动子目录。
+try:
+    os.remove(os.path.join(_cs2customizer_test_cfg_dir, "config.json"))
+except FileNotFoundError:
+    pass
 os.environ["CS2C_CONFIG_DIR"] = _cs2customizer_test_cfg_dir
 
 # 同理隔离日志目录（UP-004）：否则测试会往用户真实的
@@ -34,6 +43,26 @@ _cs2customizer_test_log_dir = os.path.join(tempfile.gettempdir(),
                                     "cs2customizer_test_logs" + _cs2customizer_worker)
 os.makedirs(_cs2customizer_test_log_dir, exist_ok=True)
 os.environ["CS2C_LOG_DIR"] = _cs2customizer_test_log_dir
+
+# RN-434（批 72）：覆盖层前提那句话会去读这台机器上的 CS2 显示设置
+# （`core/cs2_video_mode`）—— 于是**同一份代码在两台机器上出的字不一样**。
+# 钉成通用那一档；要测「读到独占全屏」的那一档，用例自己 monkeypatch 这个变量。
+# ⭐ 用 `setdefault` 是为了让上面那句「用例自己钉」也能从外面钉进来。
+os.environ.setdefault("CS2C_CS2_DISPLAY_MODE", "unknown")
+
+# ==================== 第四个出口：启动期源码备份（RN-635）====================
+# ⭐⭐⭐ `MainWindow.__init__` 会起一条后台线程走全树、逐个 SHA-256、
+# 指纹一变就把整份源码抄进配置目录。**每建一次主窗口就跑一次**，
+# 而这里一个用例建一次、六路并行 ⇒ 实测 `%TEMP%/cs2customizer_test_config*`
+# 攒到 **130.51 GB / 735 万个文件 / 5,846 份快照**（一份应是 590 个、上限 30 份）。
+# 单文件实测：开着 107s、关掉 **36s**。
+#
+# ⚠ 这条中和**早就存在，而且有三份**（`build_search_index` /
+# `probe_search_popup_render` / `build_cs2customizer_local_manual` 各自抄了一遍）——
+# ⭐⭐⭐ **唯独最大的消费者没有它。** ⇒ 改成产品侧一个明写的开关，
+# 而不是在这里再抄第四份（RN-002：只要还有第二份副本，修好一份就等于没修）。
+# ⛔ 用 `environ[...]` 不是 `setdefault`：外面偶然带进来一个空值也要盖掉。
+os.environ["CS2C_SKIP_SOURCE_BACKUP"] = "1"
 
 # ==================== 第三个出口：CS2 游戏目录（UP-090）====================
 # 上面两条隔离管的是配置和日志，管不到 `config.csgo_dir`——那是**存在配置里**

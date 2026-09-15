@@ -407,7 +407,7 @@ class KillSoundPage(SoundPageBase, QWidget):
         # 不新开第五颗徽章是有意的：这一行已经四颗，再加会挤，而且这条信息
         # 只在出问题时才有意义。文案与"短到能单行"的理由都在基类 `_configured_badge`。
         badges = [
-            ("success" if enabled else "warn", f"开关 · {'已启用' if enabled else '未启用'}"),
+            ("success" if enabled else "warn", f"开关 · {'已开启' if enabled else '未开启'}"),
             self._configured_badge(selected_count, stale_count),
             (
                 "success" if current_selected else "info",
@@ -419,7 +419,7 @@ class KillSoundPage(SoundPageBase, QWidget):
         ]
 
         detail_lines = [
-            f"总开关：{'已启用' if enabled else '已关闭'}",
+            f"总开关：{'已开启' if enabled else '未开启'}",
             f"当前分类：{current_category}",
             f"当前分类已配置：{current_selected}/{len(current_weapons)}",
             f"全部武器已配置：{selected_count}/{len(self._get_all_weapons())}",

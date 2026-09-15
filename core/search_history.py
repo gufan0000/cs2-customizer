@@ -17,6 +17,7 @@ import threading
 from typing import List
 
 from config import get_app_data_dir
+from core.io_validation import replace_with_retry
 
 MAX_ENTRIES = 8
 # 太短的查询存下来没意义（用户下次不会想点"a"），太长的多半是误粘贴
@@ -49,7 +50,7 @@ def _write(items: List[str]) -> None:
     try:
         with open(tmp, "w", encoding="utf-8") as fh:
             json.dump(items, fh, ensure_ascii=False, indent=1)
-        os.replace(tmp, path)
+        replace_with_retry(tmp, path)
     except Exception:
         try:
             os.remove(tmp)

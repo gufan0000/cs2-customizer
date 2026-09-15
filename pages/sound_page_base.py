@@ -115,8 +115,14 @@ class SoundPageBase:
         ⚠ 不是"没配"（那是 `_configured_weapon_count`，是用户的选择），
         是"根本没得配"。两者的修法完全相反：没配 ⇒ 去配；没得配 ⇒ 先去拿素材。
         """
-        return not any(self._weapon_styles(weapon)
-                       for weapon in self._get_all_weapons())
+        # RN-641：分母必须和下拉框一致。kill_sound / kill_voice 的风格有两个来源 ——
+        # 全局池（`_get_style_options`）与每把枪自己的目录（`_weapon_styles`）；
+        # 原来只数后者，于是用户把素材放在全局池里时，下拉框 39 把枪全有得选、
+        # 横幅却写「还没有任何可用风格」（用户真实配置实测：全局 5 / per-weapon 0）。
+        disabled = getattr(self, "DISABLED_STYLE_TEXT", "不启用")
+        return not any(option != disabled
+                       for weapon in self._get_all_weapons()
+                       for option in self._style_options_for(weapon))
 
     def _sync_community_guidance(self) -> None:
         """空库时把底栏主按钮换成「去社区拿一套」（RN-153）。
@@ -313,11 +319,20 @@ class SoundPageBase:
         ⚠ RN-009：`summary_label` 建出来就 `hide()`，全仓没有任何地方再显示它。
         kill_sound 那轮我把这句话写进过它，等于没写 —— 外审复跑一句
         「醒目报错却无修复引导，易让玩家误判为软件损坏」直接点破。
+
+        ⭐⭐ RN-197（批 72）：原来只说「重新选一个即可」，默认**替代品是有的**，
+        而玩家丢的往往正是他要的那一个 —— **一个只在极端状态下才给出口的引导，
+        等于在所有正常状态下都没有出口**。出口的形状（零高度的链接，不是按钮）
+        与理由见 `community_library.stale_style_route`。
         """
+        from widgets import community_library
+
         if not stale_count:
             return ""
-        return (f"有 {stale_count} 把枪配的风格已经不在了（被改名或删除），"
+        text = (f"有 {stale_count} 把枪配的风格已经不在了（被改名或删除），"
                 "下面显示成「不启用」，重新选一个即可。")
+        return text + community_library.stale_style_route(
+            self.COMMUNITY_CATEGORY_KEY, what="风格")
 
     # ---------------------------------------------------------------- 文案
 
@@ -451,6 +466,13 @@ class SoundPageBase:
         self.category_overview_hint_label = QLabel("")
         self.category_overview_hint_label.setObjectName("hintLabel")
         self.category_overview_hint_label.setWordWrap(True)
+        # RN-197：失效项那句话里带一条「去社区补回来」的链接（`_stale_style_hint`）。
+        # ⚠ 链接**不走系统浏览器的默认打开**（`setOpenExternalLinks` 保持 False）：
+        #   地址要由 `community_library` 那一份唯一真源来拼，页面不许自己拼 URL。
+        from widgets import community_library as _cl
+
+        _cl.wire_stale_route(self.category_overview_hint_label,
+                             lambda: self.COMMUNITY_CATEGORY_KEY)
         status_card_layout.addWidget(self.category_overview_hint_label)
 
         # ⭐⭐⭐ RN-181（2026-09-05 批 50）：39 把武器要逐个下拉配置，

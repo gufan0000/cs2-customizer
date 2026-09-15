@@ -1,0 +1,322 @@
+{
+  "contract": {
+    "account_auth_client": [
+      "AuthClientError",
+      "AuthConflict",
+      "AuthInvalidCredentials",
+      "AuthNetworkError",
+      "AuthRequestError",
+      "AuthSessionExpired",
+      "CS2CustomizerAuthClient"
+    ],
+    "account_help": [
+      "ACCOUNT_HELP_TEXT"
+    ],
+    "account_session_store": [
+      "SessionStore",
+      "SessionStoreError"
+    ],
+    "core.cloud.config_sync": [
+      "CloudConfigSyncController",
+      "CloudSyncState"
+    ],
+    "core.cloud.resource_provenance": [
+      "ProvenanceStore",
+      "SOURCE_BUILTIN",
+      "SOURCE_COMMUNITY"
+    ],
+    "service_urls": [
+      "ACCOUNT_REGISTER_URL",
+      "ACCOUNT_SERVICE_BASE_URL",
+      "CHANGELOG_API_URL",
+      "CLIENT_UPDATE_API_URL",
+      "COMMUNITY_CATEGORY_URLS",
+      "DEFAULT_COMMUNITY_TRACK_URL",
+      "HELP_KIT_URL",
+      "OFFICIAL_WEBSITE_URL",
+      "OPENSOURCE_REPO_URL",
+      "SUPPORT_APP_SEARCH_KEYWORD",
+      "SUPPORT_APP_SEARCH_URL",
+      "SUPPORT_BILIBILI_NAME",
+      "SUPPORT_BILIBILI_SEARCH_URL",
+      "SUPPORT_GROUP_ID"
+    ],
+    "update_runtime": [
+      "UpdatePolicy",
+      "UpdateRuntimeChecker",
+      "build_block_message",
+      "build_startup_announcement_text",
+      "build_update_text",
+      "compare_versions",
+      "is_version_disabled",
+      "parse_client_update_payload",
+      "parse_get_changelog_payload"
+    ]
+  },
+  "contract_total": 38,
+  "external_use": {
+    "account_auth_client": {
+      "files": [
+        "gui_widget.py",
+        "tests/test_client_config_api.py",
+        "tests/test_official_domain_migration.py",
+        "tests/test_service_unavailable_dialogs.py"
+      ],
+      "names": {
+        "AuthClientError": 1,
+        "AuthConflict": 1,
+        "AuthInvalidCredentials": 2,
+        "AuthNetworkError": 2,
+        "AuthRequestError": 2,
+        "AuthSessionExpired": 1,
+        "CS2CustomizerAuthClient": 4
+      }
+    },
+    "account_help": {
+      "files": [
+        "ui_help_panel.py"
+      ],
+      "names": {
+        "ACCOUNT_HELP_TEXT": 1
+      }
+    },
+    "account_session_store": {
+      "files": [
+        "gui_widget.py",
+        "tests/test_audit_never_shows_the_real_account.py"
+      ],
+      "names": {
+        "SessionStore": 4,
+        "SessionStoreError": 1
+      }
+    },
+    "core.cloud.config_sync": {
+      "files": [
+        "tests/test_cloud_config_sync.py"
+      ],
+      "names": {
+        "CloudConfigSyncController": 1,
+        "CloudSyncState": 1
+      }
+    },
+    "core.cloud.resource_provenance": {
+      "files": [
+        "tests/test_resource_provenance.py"
+      ],
+      "names": {
+        "ProvenanceStore": 1,
+        "SOURCE_BUILTIN": 1,
+        "SOURCE_COMMUNITY": 1
+      }
+    },
+    "service_urls": {
+      "files": [
+        "core/crash_reporter.py",
+        "core/usage_reporter.py",
+        "gui_widget.py",
+        "music_player.py",
+        "pages/about_page.py",
+        "pages/account_page.py",
+        "service_unavailable_dialog.py",
+        "tests/test_about_music_ui_polish.py",
+        "tests/test_about_opensource_entry.py",
+        "tests/test_account_page_tells_the_truth.py",
+        "widgets/community_library.py"
+      ],
+      "names": {
+        "ACCOUNT_REGISTER_URL": 2,
+        "ACCOUNT_SERVICE_BASE_URL": 1,
+        "CHANGELOG_API_URL": 1,
+        "CLIENT_UPDATE_API_URL": 1,
+        "COMMUNITY_CATEGORY_URLS": 1,
+        "DEFAULT_COMMUNITY_TRACK_URL": 1,
+        "HELP_KIT_URL": 2,
+        "OFFICIAL_WEBSITE_URL": 5,
+        "OPENSOURCE_REPO_URL": 2,
+        "SUPPORT_APP_SEARCH_KEYWORD": 1,
+        "SUPPORT_APP_SEARCH_URL": 1,
+        "SUPPORT_BILIBILI_NAME": 1,
+        "SUPPORT_BILIBILI_SEARCH_URL": 1,
+        "SUPPORT_GROUP_ID": 3
+      }
+    },
+    "update_runtime": {
+      "files": [
+        "main_widget.py",
+        "pages/about_page.py",
+        "scripts/release/verify_online.py",
+        "tests/test_official_domain_migration.py",
+        "tests/test_update_runtime.py"
+      ],
+      "names": {
+        "OFFICIAL_WEBSITE_URL": 1,
+        "UpdatePolicy": 1,
+        "UpdateRuntimeChecker": 5,
+        "build_block_message": 1,
+        "build_startup_announcement_text": 1,
+        "build_update_text": 1,
+        "compare_versions": 1,
+        "is_version_disabled": 1,
+        "parse_client_update_payload": 1,
+        "parse_get_changelog_payload": 1
+      }
+    }
+  },
+  "imported_but_no_contract": [],
+  "internal_only_modules": [],
+  "loc": {
+    "account_auth_client": 255,
+    "account_help": 30,
+    "account_session_store": 217,
+    "core.cloud.config_sync": 406,
+    "core.cloud.resource_provenance": 80,
+    "service_urls": 52,
+    "update_runtime": 477
+  },
+  "reexport_only_modules": [],
+  "surface": {
+    "account_auth_client": {
+      "classes": [
+        "AuthClientError",
+        "AuthConflict",
+        "AuthInvalidCredentials",
+        "AuthNetworkError",
+        "AuthRequestError",
+        "AuthSessionExpired",
+        "CS2CustomizerAuthClient"
+      ],
+      "constants": [],
+      "functions": []
+    },
+    "account_help": {
+      "classes": [],
+      "constants": [
+        "ACCOUNT_HELP_TEXT"
+      ],
+      "functions": []
+    },
+    "account_session_store": {
+      "classes": [
+        "DATA_BLOB",
+        "SessionStore",
+        "SessionStoreError"
+      ],
+      "constants": [
+        "CRYPTPROTECT_UI_FORBIDDEN",
+        "_APP_ENTROPY",
+        "_crypt32",
+        "_kernel32"
+      ],
+      "functions": [
+        "_bytes_to_blob",
+        "_protect_bytes",
+        "_unprotect_bytes"
+      ]
+    },
+    "core.cloud.config_sync": {
+      "classes": [
+        "CloudConfigSyncController",
+        "CloudSyncState"
+      ],
+      "constants": [
+        "ACT_AUTO_RESTORE",
+        "ACT_DOWNLOAD",
+        "ACT_MANUAL",
+        "ACT_OPEN_LINK",
+        "CLOUD_EXCLUDE",
+        "FIELD_DOMAIN",
+        "MAX_CLOUD_BYTES",
+        "META_KEYS",
+        "PULL_APPLY",
+        "PULL_CLOUD_EMPTY",
+        "PULL_CONFLICT",
+        "PULL_NEED_UPGRADE",
+        "PULL_NOOP"
+      ],
+      "functions": [
+        "blob_sha256",
+        "build_default_controller",
+        "classify_missing_resources",
+        "decide_pull_action",
+        "domain_for_config_key",
+        "execute_reconciliation",
+        "filter_for_upload",
+        "make_default_reconcile_handlers",
+        "merge_for_download",
+        "plan_reconciliation",
+        "settings_sha",
+        "size_ok"
+      ]
+    },
+    "core.cloud.resource_provenance": {
+      "classes": [
+        "ProvenanceStore"
+      ],
+      "constants": [
+        "SOURCE_BUILTIN",
+        "SOURCE_COMMUNITY",
+        "SOURCE_LOCAL",
+        "SOURCE_NETDISK",
+        "VALID_SOURCES"
+      ],
+      "functions": [
+        "_key"
+      ]
+    },
+    "service_urls": {
+      "classes": [],
+      "constants": [
+        "ACCOUNT_REGISTER_URL",
+        "ACCOUNT_SERVICE_BASE_URL",
+        "CHANGELOG_API_URL",
+        "CLIENT_UPDATE_API_URL",
+        "COMMUNITY_CATEGORY_IDS",
+        "COMMUNITY_CATEGORY_URLS",
+        "COMMUNITY_KILL_ICON_URL",
+        "COMMUNITY_WEBSITE_URL",
+        "DEFAULT_COMMUNITY_TRACK_URL",
+        "HELP_KIT_URL",
+        "OFFICIAL_WEBSITE_URL",
+        "OPENSOURCE_REPO_URL",
+        "SUPPORT_APP_SEARCH_KEYWORD",
+        "SUPPORT_APP_SEARCH_URL",
+        "SUPPORT_BILIBILI_NAME",
+        "SUPPORT_BILIBILI_SEARCH_URL",
+        "SUPPORT_GROUP_ID"
+      ],
+      "functions": []
+    },
+    "update_runtime": {
+      "classes": [
+        "UpdateCheckResult",
+        "UpdatePolicy",
+        "UpdateRuntimeChecker"
+      ],
+      "constants": [
+        "_NUMBER_PATTERN",
+        "_SESSION",
+        "_VERSION_PATTERN"
+      ],
+      "functions": [
+        "_build_policy",
+        "_clean_text",
+        "_normalize_download_links",
+        "_normalize_lines",
+        "_pick_download_url",
+        "_policy_from_cache",
+        "_policy_to_cache",
+        "_sha256_for_url",
+        "_version_numbers",
+        "build_block_message",
+        "build_startup_announcement_text",
+        "build_update_text",
+        "compare_versions",
+        "is_version_disabled",
+        "normalize_version",
+        "parse_client_update_payload",
+        "parse_get_changelog_payload"
+      ]
+    }
+  },
+  "unreferenced_modules": []
+}

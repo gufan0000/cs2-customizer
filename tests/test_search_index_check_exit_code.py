@@ -17,9 +17,22 @@ Exception，`teardown` 的 `except Exception` 兜不住，会绕过 `sys.exit(ma
 
 * 函数层：`_emit` / `main()` 的返回值对不对。快，但它证明不了"进程真按这个码退出"
   ——这次的缺陷恰恰就发生在返回值正确之后。
-* 进程层：真起一个子进程，读它的 `returncode`。这才是 CI 实际读的那个数。
-  子进程里把两条重通道（`build` / `teardown`）替换成桩，所以不建 27 个页面、
-  不碰 Qt，整个文件 1 秒内跑完。
+* 进程层：真起一个子进程，读它的 `returncode`。子进程里把两条重通道
+  （`build` / `teardown`）替换成桩，所以不建 27 个页面、不碰 Qt，整个文件 1 秒内跑完。
+
+## ⛔⛔ 这支判据**看不见**什么（RN-172，2026-09-13 批 90 补写）
+
+**它桩掉的那一段，正是今天真的会产生错误退出码的那一段。**
+实测连跑 6 次真 `--check`：**1 次退出码 `3221226505`（`0xC0000409`，Qt 原生层
+栈保护），而同一次的裁定行是「索引与代码同步。」** 那个崩溃发生在 `teardown()` 里，
+早于任何 Python 层接管 —— `_teardown_guarded` 的 `except` 接不住、看门狗 Timer
+也来不及响。
+⭐⭐⭐ **一支专门测退出码的判据，把产生错误退出码的那一段桩掉了。**
+⚠ 这不是说它写错了：它要跑进 1 秒就必须桩掉 Qt。错的是**把它读成全覆盖** ——
+「进程层用例全绿」证明的是「**teardown 是空操作时**退出码管线是对的」。
+⇒ 真正在守用户的是另一条路：裁定行（`announce()`）落在退出链路**之前**，
+CI 走 `.github/verdict.ps1`、本机走 `scripts/gate.py` 的 `parse_verdict`，
+**都不读退出码**。那条纪律由 `tests/test_nobody_trusts_the_index_scripts_exit_code.py` 钉住。
 
 （本项目测试逐文件跑：`python -m pytest tests/test_search_index_check_exit_code.py`）
 """

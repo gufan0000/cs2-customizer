@@ -154,10 +154,137 @@ def _checks(theme):
         ("ghost 按钮 pressed 文字(读QSS)", ghost_pressed_fg, (ghost_pressed_bg,), AA_NORMAL),
         # UP-076（R8-W5 修）：同样从 QSS 产物里取，回退到裸 accent 就会红。
         ("action 按钮 hover 文字(读QSS)", action_hover_fg, action_hover_bgs, AA_NORMAL),
-        # 注：输入框/聚焦边框的非文字对比度（WCAG 1.4.11）9 个主题全部只有
-        # 1.2~1.9:1。那是**设计层**议题（改了全站边框都会变重），已另立 UP-063
-        # 留到 R7 设计系统收敛时连同 border token 一起定，本轮不在此判失败。
+        # ⭐⭐⭐ 2026-09-06 批 61：这里原来写着「非文字对比度…已另立 UP-063
+        #   留到 R7 …… 本轮不在此判失败」。R4 推给 R7、R7 又推一次，
+        #   UP-063 现在记作**已放弃** —— 而同一件事在翻新工程账上是
+        #   **RN-045（S2）**，一直挂着。⭐ **一条写在注释里的缓期，
+        #   没有任何东西看着它到期**（同 RN-538）。
+        #   ⇒ 非文字那一档现在有自己的分母，见 `_nontext_checks()`。
     ]
+
+
+# ⭐ WCAG 2.1 §1.4.11「非文字对比度」：图形对象与**用户界面组件的边界**
+#   要 ≥ 3:1。它管的不是「好不好看」，是「看不看得出这里有个东西」。
+#   滚动条把手是最典型的一例 —— 看不出能滚，对用户就等于「下面没有内容」。
+NONTEXT_THRESHOLD = AA_LARGE  # 3.0
+
+
+def _nontext_checks(theme):
+    """返回 [(名称, 前景, 背景s, 阈值), ...]；背景取最差的那一档。"""
+    c = theme.colors
+    bgs = (c.bg_primary, c.bg_secondary, c.bg_card)
+    out = [
+        ("滚动条把手 scrollbar_handle", c.scrollbar_handle, bgs),
+        ("滚动条 hover scrollbar_hover", c.scrollbar_hover, bgs),
+        ("主边框 border_primary", c.border_primary, bgs),
+    ]
+    for token in ("border_secondary", "border_focus"):
+        val = getattr(c, token, None)
+        if val:
+            out.append((f"边框 {token}", val, bgs))
+    # RN-640：静态控件边框这一档**照量、照进 rows，但不算违规**（理由见 EXEMPT_CONTROL_REASON）。
+    out.append((f"边框 {EXEMPT_CONTROL_TOKEN}", resting_control_border(theme), bgs))
+    return [(label, fg, bg, NONTEXT_THRESHOLD) for label, fg, bg in out]
+
+
+def resting_control_border(theme) -> str:
+    """静态控件边框的**合成色** —— 和 `generate_stylesheet` 用同一条推导，别各算各的。"""
+    from theme_manager import Theme
+
+    return Theme.resting_border(theme.colors)
+
+
+# ---- 存量债 ----
+# ⭐ 批 61 建这张表时有 18 项；批 62 逐项裁定后**清零**：
+#   · `border_primary` 8 项 + `border_focus` 2 项 ⇒ **修好了**（推过 3:1）；
+#   · `border_secondary` 8 项 ⇒ **裁定豁免**，理由见下面 `EXEMPT_*`。
+# ⛔ 这张表只许变短。新欠的账不许往这儿记 —— 要么修，要么单独立案。
+NONTEXT_DEBT: set[tuple[str, str]] = set()
+
+# ---- 豁免：`border_secondary` 这一档 ----
+# WCAG 2.1 §1.4.11 管的是「**用户界面组件**的边界」和「理解内容所必需的图形」。
+# `border_secondary` 实测只用在三类地方，三类都不在射程内：
+#   ① 装饰性容器与分隔线（QFrame#card / #section / #group / 侧栏容器 /
+#      QMenu::separator / 表格网格线与表头）——它们是版面，不是可操作的组件；
+#   ② `:disabled` 与 `[masterOff="true"]` 失效态 —— 规范**明确豁免**禁用控件；
+#   ③ 没有第三类。
+# ⭐⭐ **这条豁免的死期就写在下面那条断言里**：只要有人把 `border_secondary`
+#   用到一个真的控件边界上，理由当场不成立、判据当场红。
+#   ⚠ 它在写下来的当天就抓到两个（批 62）：`QPushButton#modeToggleButton,
+#     QPushButton#modeToggleIconButton` 和 `QTextEdit, QPlainTextEdit` ——
+#     两个都是控件边界，已改走 `border_primary`。
+#   ⭐ **一条豁免只要求你写下理由，就会自己筛掉不该被豁免的那几个。**
+# ---- 豁免：`border_control` 这一档（RN-640，用户裁定 2026-09-15）----
+# 这是**用户界面组件的静止边**，WCAG 1.4.11 字面上管得着 —— 所以这不是「不在射程内」，
+# 是**明知在射程内而放弃**：批 61 把它抬到 3:1 之后，用户在真机上的原话是
+# 「主要让我难受的就是这些密密麻麻的边框」。深色主题上 3:1 的静态边 = 每个控件一根亮线。
+# 放弃的范围只有静止态：hover 仍走 border_primary、focus 仍走 border_focus，两者照旧 ≥3:1 判红。
+# ⚠ 数字照量、照进 rows，不许因为豁免就不量 —— 想把它调回来的人得先看到现在的数。
+EXEMPT_CONTROL_TOKEN = "border_control"
+EXEMPT_CONTROL_REASON = "用户裁定放弃静止态控件边框的 3:1（RN-640）；hover/focus 态不豁免"
+
+EXEMPT_TOKEN = "border_secondary"
+EXEMPT_REASON = "装饰容器 / 分隔线 / 表格网格 / 禁用与失效态 —— 均不属 WCAG 1.4.11 的「用户界面组件边界」"
+# 允许出现 `c.border_secondary` 的选择器长什么样（命中任一即算装饰或失效态）
+EXEMPT_SELECTOR_MARKS = (
+    ":disabled", 'masterOff="true"',
+    "QFrame#", "QWidget#", "QGroupBox", "QMenu::separator",
+    "QHeaderView::section", "QTableCornerButton::section",
+    "QListWidget", "QTableWidget", "QTreeWidget", "QTableView", "QTreeView",
+)
+
+
+def exempt_selectors_are_still_decorative():
+    """把「豁免的理由」本身跑一遍：返回**说不通**的那几个选择器。"""
+    import re as _re
+    from pathlib import Path as _Path
+
+    src = (_Path(__file__).resolve().parent.parent / "theme_manager.py").read_text(
+        encoding="utf-8")
+    lines = src.splitlines()
+    bad, seen = [], 0
+    for i, ln in enumerate(lines):
+        if f"c.{EXEMPT_TOKEN}" not in ln:
+            continue
+        seen += 1
+        sel = "(没找到选择器)"
+        for j in range(i, max(0, i - 60), -1):
+            m = _re.match(r"^\s*([^\n{]+?)\s*\{\{\s*$", lines[j])
+            if m and not lines[j].lstrip().startswith("#"):
+                sel = m.group(1).strip()
+                break
+        if not any(mark in sel for mark in EXEMPT_SELECTOR_MARKS):
+            bad.append((i + 1, sel))
+    return seen, bad
+
+
+def audit_nontext():
+    """现量一遍非文字对比度，返回 (全部结果, 新增违规, 已修好却还在册的)。
+
+    ⭐ **现量，别读自己冻的那份**（RN-544 那条）：这里每次都从 `ThemeColors`
+      重算，判据也调这个函数，所以判据和门禁看到的是同一份数。
+    """
+    from theme_manager import get_theme_manager
+
+    rows, fresh, healed = [], [], []
+    tm = get_theme_manager()
+    for name, theme in tm.themes.items():
+        if name in SKIP_THEMES:
+            continue
+        for label, fg, bgs, threshold in _nontext_checks(theme):
+            ratio = worst_contrast(fg, bgs)
+            rows.append((name, label, fg, ratio, threshold))
+            # ⭐ 豁免那一档照量、照进 rows（数字要看得见），但不算违规。
+            #   真正会判红的是 `exempt_selectors_are_still_decorative()` ——
+            #   **豁免的理由本身**。
+            if EXEMPT_TOKEN in label or EXEMPT_CONTROL_TOKEN in label:
+                continue
+            in_debt = (name, label) in NONTEXT_DEBT
+            if ratio < threshold and not in_debt:
+                fresh.append((name, label, fg, ratio, threshold))
+            elif ratio >= threshold and in_debt:
+                healed.append((name, label, fg, ratio, threshold))
+    return rows, fresh, healed
 
 
 def _disabled_distinguishable(theme) -> tuple[bool, float]:
@@ -209,6 +336,33 @@ def main() -> int:
                   f"{ratio:.2f}:1 (需 1.6)")
         elif args.verbose:
             print(f"     禁用态与常态文字可分辨   {theme.colors.text_disabled}  {ratio:.2f}:1")
+
+    # ---- 非文字那一档（WCAG 1.4.11）----
+    rows, fresh, healed = audit_nontext()
+    checked += len(rows)
+    exempt_rows = [r for r in rows if EXEMPT_TOKEN in r[1]]
+    debt_now = [r for r in rows if r[3] < r[4] and EXEMPT_TOKEN not in r[1]]
+    seen, not_decorative = exempt_selectors_are_still_decorative()
+    print(f"   豁免 {len(exempt_rows)} 项（{EXEMPT_TOKEN}，{EXEMPT_REASON}）；"
+          f"实测比值 {min(r[3] for r in exempt_rows):.2f}~{max(r[3] for r in exempt_rows):.2f}:1，"
+          f"用在 {seen} 处")
+    for line, sel in not_decorative:
+        print(f"  ❌ 第 {line} 行 `{sel}` 在用 {EXEMPT_TOKEN} —— 这看着是控件边界，"
+              f"而豁免的理由是「只用在装饰与失效态」")
+        failures.append((sel, f"{EXEMPT_TOKEN} 的豁免理由不成立", "-", 0.0, 3.0))
+    print(f"\n== 非文字对比度（WCAG 1.4.11，门槛 {NONTEXT_THRESHOLD}）：{len(rows)} 项，欠着 {len(debt_now)} 项 ==")
+    for name, label, fg, ratio, threshold in debt_now:
+        if EXEMPT_TOKEN in label or EXEMPT_CONTROL_TOKEN in label:
+            tag = "豁免"          # 照量照印，但按上面写下的理由不算违规
+        else:
+            tag = "存量" if (name, label) in NONTEXT_DEBT else "**新增**"
+        print(f"  {tag} [{name}] {label}: {fg} → {ratio:.2f}:1，需 ≥{threshold}")
+    for row in fresh:
+        failures.append(row)
+    for name, label, fg, ratio, threshold in healed:
+        print(f"  ✅ [{name}] {label} 已达标（{ratio:.2f}:1）—— **请把它从 NONTEXT_DEBT 里删掉**")
+        failures.append((name, f"{label}（已修好却还挂在存量册上）",
+                         fg, ratio, threshold))
 
     print(f"\n== 共检查 {checked} 项，{len(failures)} 项不达标 ==")
     for theme_name, label, fg, ratio, threshold in failures:

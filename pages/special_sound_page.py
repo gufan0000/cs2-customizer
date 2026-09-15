@@ -227,10 +227,10 @@ class SpecialSoundPage(QWidget):
         当场逮住。⇒ **收敛文案时先问"原来说的哪句话被我弄没了"。**
         """
         if enabled:
-            return " · 模块已启用"
+            return " · 功能已开启"
         if selected:
-            return " · 模块已关闭（配了也不会响）"
-        return " · 模块已关闭"
+            return " · 功能已关闭（配了也不会响）"
+        return " · 功能已关闭"
 
     def _count_enabled_modules(self):
         return sum(
@@ -746,6 +746,10 @@ class SpecialSoundPage(QWidget):
         self.round_enabled_checkbox.toggled.connect(self._on_round_enabled_toggled)
         header_layout.addWidget(self.round_enabled_checkbox)
         self.round_summary_label = self._create_summary_label()
+        from widgets import community_library as _cl  # RN-197 出口接线
+
+        _cl.wire_stale_route(self.round_summary_label,
+                             lambda: self.COMMUNITY_CATEGORY_KEY)
         header_layout.addWidget(self.round_summary_label)
 
         volume_row, volume_layout = self._row_card()
@@ -1039,6 +1043,20 @@ class SpecialSoundPage(QWidget):
         families.append(self._available_styles("health_warning_styles"))
         return not any(families)
 
+    def _current_tab_is_empty(self) -> bool:
+        """当前页签那一类一个可用风格都没有才算空（RN-650；整页口径见 `_library_is_empty`）。"""
+        tab = (self.tab_widget.tabText(self.tab_widget.currentIndex())
+               if hasattr(self, "tab_widget") and self.tab_widget.count() else "")
+        families = {
+            "投掷物": lambda: [self._available_styles(g, grenade=True) for g in self.GRENADE_TYPES],
+            "C4": lambda: [self._available_styles("c4_sound_styles")],
+            "血量警告": lambda: [self._available_styles("health_warning_styles")],
+            "回合": lambda: [self._available_styles(meta[1]) for meta in self.ROUND_TYPE_META.values()],
+        }
+        if tab not in families:
+            return self._library_is_empty()
+        return not any(families[tab]())
+
     def _sync_community_guidance(self) -> None:
         """空库时把底栏换成一条走得通的路（RN-165）。
 
@@ -1059,7 +1077,7 @@ class SpecialSoundPage(QWidget):
 
         applied = community_library.guide_empty_library(
             bar,
-            empty=self._library_is_empty(),
+            empty=self._current_tab_is_empty(),   # RN-650：按页签算空
             category_key=self.COMMUNITY_CATEGORY_KEY,
             cta_text="去社区拿一套特殊音效",
             keep_text="打开当前资源",
@@ -1130,10 +1148,10 @@ class SpecialSoundPage(QWidget):
             "血量警告": (health_on and health_effective != "0",
                        f"阈值 · {health_threshold}"),
             "回合": (round_on, f"回合音量 · {round_volume}%"),
-        }.get(current_tab, (enabled_modules, f"模块 · {enabled_modules}/4"))
+        }.get(current_tab, (enabled_modules, f"功能 · {enabled_modules}/4"))
 
         badges = [
-            ("success" if enabled_modules else "warn", f"模块 · {enabled_modules}/4"),
+            ("success" if enabled_modules else "warn", f"功能 · {enabled_modules}/4"),
             (style_level, style_text),
             ("success" if tab_badge[0] else "info", tab_badge[1]),
             # RN-035：分级收进 `resource_badge()` 一份 —— 七个音效页原先各抄一遍
@@ -1162,8 +1180,12 @@ class SpecialSoundPage(QWidget):
         self.summary_label.setToolTip(summary_text)
         self.status_card.setToolTip(summary_text)
 
+        from widgets import community_library as _cl  # RN-197
+
         stale_note = (f"（有 {stale_count} 项配的风格已被改名或删除，"
-                      "下面显示成「不启用」，重新选一个即可）") if stale_count else ""
+                      "下面显示成「不启用」，重新选一个即可）"
+                      + _cl.stale_style_route(self.COMMUNITY_CATEGORY_KEY)
+                      ) if stale_count else ""
 
         if hasattr(self, "grenade_summary_label"):
             self.grenade_summary_label.setText(

@@ -79,8 +79,44 @@ class FlashProcessManager:
         # 从配置加载设置
         self.load_settings_from_config()
     
+    def _style_parameters_for(self, style):
+        """取出**这个样式**的参数表。
+
+        RN-621（S3，批 86）：`config.flash_style_params` 有两层形状，而两边的代码
+        各用各的 ——
+          · 写的一方（`pages/flash_page._on_param_changed`）按
+            `{样式名: {参数名: 值}}` 两层存；
+          · 读的一方（这里，原来是 `self.style_parameters = config.flash_style_params`）
+            把**整个 dict** 当成参数表交给 `FlashEffect.update_style_parameters`，
+            而那边是按 `if "blur_factor" in parameters` 一层读的。
+        ⭐⭐⭐ 而 `config.py` 里那份**默认值恰好是一层的**（8 个参数名平铺）⇒
+        全新安装一切正常，**只有真的调过参数的用户才坏**：
+        他调的那一份被存进 `{"standard": {...}}`，读的一方永远看不见，
+        于是「改完滑块 → 重启 → 又变回默认」，界面上一个字提示都没有。
+        实测复现见 `scripts/x4_flash_params_repro.py`。
+
+        ⭐ 修法只动读侧：**用户的值一直好好躺在盘上**（实测读回来还在），
+        从来没人去那一层拿而已 ⇒ 不需要迁移数据，改完这一版就自动接上。
+
+        平铺的那 8 个键保留为**底座**：它们和 `FlashEffect.__init__` 的内置默认
+        逐个相等（实测），所以没调过参数的用户行为一个字节都不变。
+        """
+        params = getattr(self.config, 'flash_style_params', None)
+        if not isinstance(params, dict):
+            return {}
+        # 底座 = 平铺的那几个（值不是 dict 的才算，dict 的是「某个样式的那一份」）
+        base = {k: v for k, v in params.items() if not isinstance(v, dict)}
+        per_style = params.get(style)
+        if isinstance(per_style, dict):
+            base.update(per_style)
+        return base
+
     def load_settings_from_config(self):
-        """从配置加载设置"""
+        """从配置加载设置
+
+        ⚠ 顺序有讲究：`flash_style` 必须先于 `flash_style_params` 读 ——
+        后者要按**当前样式**去取那一层（`_style_parameters_for`）。
+        """
         if hasattr(self.config, 'flash_bg_color'):
             self.bg_color = self.config.flash_bg_color
         if hasattr(self.config, 'flash_max_opacity'):
@@ -94,8 +130,8 @@ class FlashProcessManager:
         if hasattr(self.config, 'flash_style'):
             self.flash_style = self.config.flash_style
         if hasattr(self.config, 'flash_style_params'):
-            self.style_parameters = self.config.flash_style_params
-            
+            self.style_parameters = self._style_parameters_for(self.flash_style)
+
         # 加载淡入淡出设置 - 修复点：添加这部分代码
         if hasattr(self.config, 'flash_fade_in_enabled'):
             self.fade_in_enabled = self.config.flash_fade_in_enabled

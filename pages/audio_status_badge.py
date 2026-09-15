@@ -24,6 +24,22 @@ def _restyle_widget(widget: QWidget):
     widget.update()
 
 
+#: 状态芯片各自的解释。键是「·」前面那几个字。
+#: ⭐ RN-232（批 60）：在此之前**只有整条有一份共享明细**，而且它写死给第 3 颗。
+CHIP_EXPLAINS = {
+    "GSI": "GSI = 游戏状态联动。CS2 启动后会自动连上；没连上时击杀音效、"
+           "击杀图标这些跟着游戏走的功能不会触发。"
+           "还没配过的话，去「高级设置」写入 GSI 配置。",
+    "音频": "软件要用到的音频素材。「需检查 N」是指有 N 项对不上，"
+            "多半是素材还没放进来，或者配置指向的风格已经没了。",
+    "配置": "你改的设置有没有落盘。写着「已保存」就是已经写进配置文件了。",
+    "账号": "登录只用来同步云端配置和社区资源；不登录也能用全部现有功能。",
+    "界面": "普通模式只显示日常要用的东西；专家模式会多出几页工具。"
+            "在本页「游戏模式」卡片的「界面」下拉里可以随时换回来。",
+    "主题": "深色 / 浅色外观。在本页右上角的「主题」下拉里换。",
+}
+
+
 class AudioStatusBadgeBar(QFrame):
     """Reusable chip container for concise status badges."""
 
@@ -69,12 +85,42 @@ class AudioStatusBadgeBar(QFrame):
         self._apply_detail_tooltip()
 
     def _apply_detail_tooltip(self):
-        for idx, chip in enumerate(self._chip_pool):
+        """每颗芯片认**自己那一句**；认不出来的才退回整条那份明细。
+
+        ⚠⚠ 原来这里写死的是 `idx == 2` —— **哪一颗拿到解释，取决于它排第几**。
+        批 59 把状态带重排了一次（RN-532），那份明细就**静悄悄换了主人**，
+        而没有任何东西会报。
+        ⭐ 一个按位置寻址的东西，会在别人重排的那一刻指向另一个对象。
+        ⭐⭐ RN-232：「GSI」这四个字母对玩家是生僻的，而那颗芯片
+        **连 tooltip 都是空的** —— 屏幕上四个字母，别处一个字都没有。
+        ⚠ 补 tooltip 不等于修好（RN-541 刚记过：只靠悬停才说话的控件
+          在静态截图上是哑的），但「一个字都没有」和「悬停有一句人话」
+          之间的差别是实的。
+
+        ⚠⚠⚠ **RN-044 后半（批 67）：那句 `or` 让通用解释永久压住了具体明细。**
+        实测 `audio_health` 四颗芯片，只有「音频」那一颗**拿不到明细** ——
+        因为只有它的名字在上面那张表里；另外三颗照常拿到
+        「共发现 0 项问题。缺失目录 0 项，失效引用 0 项…」。
+        ⭐ **而「音频」正是会变红的那一颗**（「音频 · 需检查 3」）：
+          玩家悬上去，得到的是「『需检查 N』是指有 N 项对不上」这句**定义**，
+          从头到尾没有一个字说是**哪 3 项**。立案原话「红色异常徽章无法点击
+          查看具体错误」说的就是这个。
+        ⭐⭐ 它是 RN-232（批 60）那次修法的副作用 —— 同 RN-549 一个形状：
+          **一次「把大部分修好」的改动，会把另一件事弄坏。**
+        ⇒ 两句都给：解释回答「这是什么」，明细回答「现在具体怎么了」。
+        """
+        detail = self._detail_tooltip or ""
+        for chip in self._chip_pool:
             if chip.isHidden():
                 chip.setToolTip("")
                 continue
-            chip.setToolTip(self._detail_tooltip if idx == 2 and self._detail_tooltip else "")
-        self.setToolTip(self._detail_tooltip if self._detail_tooltip else "")
+            head = str(chip.text() or "").split("·")[0].strip()
+            explain = CHIP_EXPLAINS.get(head) or ""
+            if explain and detail and explain != detail:
+                chip.setToolTip(f"{explain}\n\n{detail}")
+            else:
+                chip.setToolTip(explain or detail)
+        self.setToolTip(detail if detail else "")
 
     def set_badges(self, badges: Sequence[tuple[str, str]]):
         badge_list = list(badges or [])

@@ -44,6 +44,7 @@ from core.kill_icon_import import (
     parse_level_name,
 )
 from core.utils.logger import get_logger
+from core.io_validation import replace_with_retry
 
 logger = get_logger("KillIconPack")
 
@@ -55,8 +56,6 @@ MANIFEST_NAME = "style.json"
 #: 包里的等级条目：`3.png` / `3.json` / `3hs.png` / `3hs.json`。
 LEVEL_ENTRY_RE = re.compile(r"^([1-5])(hs)?\.(png|json)$", re.IGNORECASE)
 
-#: 允许出现在包根上的附加文件。
-EXTRA_ENTRIES = ("style.json", "preview.png", "readme.txt", "readme.md", "license.txt")
 
 # ---- 以下三条是"外来 zip"的护栏，别为了兼容某个包把它们放宽 ----
 
@@ -431,7 +430,7 @@ def export_pack(style_name, output_path, author="", description="",
                         progress(index + 1, len(entries), "打包")
                     except Exception:
                         pass
-        os.replace(temp_path, output_path)
+        replace_with_retry(temp_path, output_path)
     finally:
         shutil.rmtree(staging, ignore_errors=True)
         if os.path.exists(temp_path):

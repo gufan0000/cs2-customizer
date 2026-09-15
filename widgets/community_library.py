@@ -367,6 +367,65 @@ def empty_library_message(what: str, refresh_label: str = "刷新风格列表") 
             f"用旁边那颗按钮打开资源目录放进去 → 点「{refresh_label}」。")
 
 
+#: RN-197 那条链接的 href。真地址由 `open_category` 现拼，**页面不许自己拼 URL**
+#: —— 一个写死在页面里的地址，换域名时没有任何东西会发现它没跟着换。
+STALE_ROUTE_HREF = "cs2customizer:community"
+
+#: 链接文案。判据按它认，别在页面里另写一份。
+STALE_ROUTE_TEXT = "去社区补回来"
+
+
+def route_link_color() -> str:
+    """出口链接的颜色。**实算，不许交给 Qt 默认**（RN-577）。
+
+    QSS 的 `color` 管不到富文本链接色（那走 `QPalette::Link`，全仓没设过）
+    ⇒ 裸 `<a>` 是纯蓝 `#0000ff`，实测 9 主题 **5 个不达 AA 4.5:1**（最差 1.79）。
+    ⚠ 也不能直接用 `accent_primary`：它自己就有 5 个主题不达标（RN-573 复发）。
+    数与四条渲染路径的实测见 `tests/test_the_way_back_is_not_only_for_an_empty_library.py`。
+    """
+    from core.utils.contrast import ensure_contrast
+    from theme_manager import get_color
+
+    return ensure_contrast(get_color("accent_primary"),
+                           (get_color("bg_secondary"), get_color("bg_tertiary")),
+                           4.5)
+
+
+def stale_style_route(category_key: str, *, what: str = "风格") -> str:
+    """「配的那个已经不在了」时，那条**零高度**的出口（RN-197）。
+
+    ⛔ **零高度**是硬约束，不是省事：紧凑档（860×640）加一行卡片就会
+    把状态卡压掉 51px、徽章画到字上（RN-185，外审 3/3 × 3 页报「重叠」）——
+    ⭐ **给一个被挤的容器加下限，挤压不会消失，只会换个样子出现。**
+
+    ⚠ 没有社区站的发行版（开源版）**返回空串** —— 同 `guide_empty_library`：
+    一条指向空地址的链接比没有链接更糟。
+
+    ⚠ 颜色写进**内联 style**：实测 `setPalette(QPalette.Link)` 不生效，
+    内联 style 生效 —— 与直觉相反，见 `route_link_color`。
+    """
+    if not has_category(category_key):
+        return ""
+    return (f"想找回原来那套{what}，"
+            f"<a href=\"{STALE_ROUTE_HREF}\" style=\"color:{route_link_color()};\">"
+            f"{STALE_ROUTE_TEXT}</a>。")
+
+
+def wire_stale_route(label, category_key_getter) -> None:
+    """把一个标签接上「失效项出口」这条链接。**全仓只有这一份接线。**
+
+    ⭐⭐⭐ RN-197：**一条改在基类里的修法，覆盖的是继承它的那些页，
+    不是说同一句话的那些页** —— 另外三页各有一份同样的文案却不继承基类。
+    `category_key_getter` 收可调用对象：接线在建页时、取值在点击时。
+    """
+    from PySide6.QtCore import Qt
+
+    label.setTextFormat(Qt.RichText)
+    # ⛔ 不开 `openExternalLinks`：href 是占位符，真地址只能由 `open_category` 现拼。
+    label.setOpenExternalLinks(False)
+    label.linkActivated.connect(lambda _href: open_category(category_key_getter()))
+
+
 def open_category(key: str) -> bool:
     """用系统浏览器打开这一类资源的社区页面。回报有没有真的打开。"""
     url = category_url(key)

@@ -49,7 +49,7 @@ def test_crosshair_page_overview_badges_sync(qapp, monkeypatch):
     assert page.page_lead_label.objectName() == "pageLeadLabel"
     chips = _visible_audio_status_chip_texts(page.status_badge_label)
     assert len(chips) == 6
-    assert any(text == "显示 · 已启用" for text in chips)
+    assert any(text == "显示 · 已开启" for text in chips)
     assert any(text == "样式 · 圆圈" for text in chips)
     assert any(text == "颜色 · 黄色" for text in chips)
     assert any(text == "大小 · 28 / 4" for text in chips)
@@ -62,7 +62,7 @@ def test_crosshair_page_overview_badges_sync(qapp, monkeypatch):
     monkeypatch.setattr(config, "crosshair_enabled", False, raising=False)
     page._sync_overview_status()
     chips = _visible_audio_status_chip_texts(page.status_badge_label)
-    assert any(text == "显示 · 未启用" for text in chips)
+    assert any(text == "显示 · 未开启" for text in chips)
     assert page.crosshair_summary_label.text().startswith("显示关闭 ·")
 
     page._on_style_changed("custom")

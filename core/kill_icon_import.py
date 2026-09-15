@@ -43,6 +43,7 @@ import tempfile
 from dataclasses import dataclass, field
 
 from core.utils.logger import get_logger
+from core.io_validation import replace_with_retry
 
 logger = get_logger("KillIconImport")
 
@@ -861,7 +862,7 @@ def _atomic_write(path, writer):
     os.close(handle)
     try:
         writer(temp_path)
-        os.replace(temp_path, path)
+        replace_with_retry(temp_path, path)
     finally:
         if os.path.exists(temp_path):
             try:

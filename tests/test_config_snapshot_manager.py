@@ -5,6 +5,11 @@ import json
 from pathlib import Path
 
 from core import config_snapshot_manager as snap_mod
+#: ⚠ 批 84（RN-613）：退避重试搬到了 `core/io_validation.py`（全仓共用一份），
+#: 所以下面两条要打的桩在**它**身上，不在快照模块身上。
+#: ⭐ 调用点仍走 `snap_mod._replace_with_retry` —— 那是同一个函数对象，
+#:   这样一并验到「快照模块确实接的是共用的那一份」。
+from core import io_validation as io_val
 
 
 def test_snapshot_create_list_restore_prune(tmp_path, monkeypatch):
@@ -66,8 +71,8 @@ def test_replace_with_retry_survives_transient_permission_error(monkeypatch):
             raise PermissionError(5, "拒绝访问")
         return None                    # 第三次放行；这里只数重试次数，不动磁盘
 
-    monkeypatch.setattr(snap_mod.os, "replace", flaky)
-    monkeypatch.setattr(snap_mod.time, "sleep", lambda _s: None)   # 别真等
+    monkeypatch.setattr(io_val.os, "replace", flaky)
+    monkeypatch.setattr(io_val.time, "sleep", lambda _s: None)   # 别真等
 
     snap_mod._replace_with_retry("a", "b")
     assert calls["n"] == 3, f"没有重试到成功，只调了 {calls['n']} 次 replace"
@@ -82,8 +87,8 @@ def test_replace_with_retry_still_raises_when_it_never_frees_up(monkeypatch):
     def always_denied(src, dst):
         raise PermissionError(5, "拒绝访问")
 
-    monkeypatch.setattr(snap_mod.os, "replace", always_denied)
-    monkeypatch.setattr(snap_mod.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(io_val.os, "replace", always_denied)
+    monkeypatch.setattr(io_val.time, "sleep", lambda _s: None)
 
     try:
         snap_mod._replace_with_retry("a", "b")
@@ -92,42 +97,70 @@ def test_replace_with_retry_still_raises_when_it_never_frees_up(monkeypatch):
     raise AssertionError("一直被拒还是成功返回了，调用方会以为写成功了")
 
 
-def test_index_write_and_restore_both_go_through_the_retry():
-    """索引写入与恢复替换**都**要走重试，不能只修一处。
+def test_no_file_in_the_product_calls_os_replace_without_the_retry():
+    """**全仓**：`os.replace` 只许出现在那个退避重试的函数里。
 
-    用 AST 找 `os.replace(` 的直接调用——本项目的判据纪律是"判断调用永远走 AST"，
+    ⭐⭐⭐ 这条判据批 84（RN-613）**把分母从一个文件放宽到了整个产品**，
+    而放宽的理由就是它自己漏掉的那条缺陷：
+    它原来只扫 `config_snapshot_manager.py`，于是
+    **`config.py` 的 `_do_save_config` 裸调 `os.replace` 一直没人管** ——
+    而那是**主配置**的写盘点，比快照要紧得多：撞上 Defender 的扫描窗口就
+    记一行日志、删掉临时文件、静默丢掉用户刚改的那一项。
+    ⚠ 那 8% 的失败率是这个文件自己量出来的（见模块头），
+    ⭐⭐ **量到了、修好了手上这一处、然后把尺子也只对着这一处。**
+
+    ⇒ 现在的规矩只有一句：**`os.replace` 只许出现在 `replace_with_retry` 里面。**
+    （`build_tools/make_installer_assets.py` 自带的那份同名函数也算数 ——
+    判的是**函数名**不是文件名，所以将来谁再抄一份也照样合规。）
+
+    用 AST 找调用 —— 本项目的判据纪律是「判断调用永远走 AST」，
     字符串匹配会被注释和字符串字面量骗过去。
     """
     import ast
     from pathlib import Path as _Path
 
-    def os_replace_lines(root) -> set[int]:
+    from _denominator import must_scan
+
+    root = _Path(snap_mod.__file__).resolve().parents[1]
+    skip_parts = {".build", "__pycache__", "output", "node_modules",
+                  ".git", ".claude", "release"}
+
+    def os_replace_lines(node_root) -> set[int]:
         found = set()
-        for node in ast.walk(root):
-            if not isinstance(node, ast.Call):
-                continue
-            func = node.func
-            if (
-                isinstance(func, ast.Attribute)
-                and func.attr == "replace"
-                and isinstance(func.value, ast.Name)
-                and func.value.id == "os"
-            ):
+        for node in ast.walk(node_root):
+            func = getattr(node, "func", None)
+            if (isinstance(node, ast.Call)
+                    and isinstance(func, ast.Attribute) and func.attr == "replace"
+                    and isinstance(func.value, ast.Name) and func.value.id == "os"):
                 found.add(node.lineno)
         return found
 
-    tree = ast.parse(_Path(snap_mod.__file__).read_text(encoding="utf-8"))
-    # 允许的那两处在 `_replace_with_retry` 内部（重试循环 + 最后一次不吞异常的）
-    inside_helper = {
-        line
-        for fn in ast.walk(tree)
-        if isinstance(fn, ast.FunctionDef) and fn.name == "_replace_with_retry"
-        for line in os_replace_lines(fn)
-    }
-    assert inside_helper, "_replace_with_retry 里已经不调 os.replace 了，这条判据的落点变了"
-    leaked = sorted(os_replace_lines(tree) - inside_helper)
+    scanned, leaked, helpers = [], [], 0
+    for path in sorted(root.rglob("*.py")):
+        rel = path.relative_to(root).as_posix()
+        parts = set(path.relative_to(root).parts)
+        if parts & skip_parts or any("_manual_backup" in p or p.startswith("_archive")
+                                     for p in parts):
+            continue
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
+        except SyntaxError:
+            continue
+        scanned.append(rel)
+        allowed = set()
+        for fn in ast.walk(tree):
+            if isinstance(fn, ast.FunctionDef) and fn.name.lstrip("_") == "replace_with_retry":
+                allowed |= os_replace_lines(fn)
+                helpers += 1
+        leaked += [f"{rel}:{ln}" for ln in sorted(os_replace_lines(tree) - allowed)]
+
+    must_scan(scanned, "扫过的 .py 文件", least=200)
+    assert helpers, (
+        "全仓找不到任何 `replace_with_retry` —— 这条判据的落点没了，"
+        "它会对着一个不存在的例外永远绿下去。")
     assert not leaked, (
-        f"这些行直接调了 os.replace 而没走重试：{leaked}。"
-        "Windows 上它会被 Defender 的扫描窗口打断，见 _replace_with_retry 的说明。"
-    )
+        "这些地方直接调了 os.replace，没走退避重试：\n  " + "\n  ".join(leaked)
+        + "\n⇒ Windows 上它有 ~8% 的概率被 Defender / 索引服务的扫描窗口打断"
+          "（本文件模块头有实测数）。改成 "
+          "`from core.io_validation import replace_with_retry`。")
 

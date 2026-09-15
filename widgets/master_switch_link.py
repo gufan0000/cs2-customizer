@@ -116,6 +116,11 @@ class MasterSwitchRow(QWidget):
         # 一个词把它钉死。
         self._state_label = QLabel("")
         self._state_label.setObjectName("hintLabel")
+        # RN-568：这一颗**不进搜索索引** —— 文字是「当前值」不是「设置项的名字」，
+        # 而索引随包发布 ⇒ 收进去等于把生成器那台机器的配置状态发出去。
+        # ⚠ 用 property 而不是改 objectName：那两个名字是**为配色起的**，
+        #   索引却拿它们当「收不收」的判据。机制与实测数见 `CS2 Customizer_翻新工程/档案/X_本机绿不等于CI绿.md`。
+        self._state_label.setProperty("fp_index_skip", True)
         layout.addWidget(self._state_label)
 
         # RN-407 第②件的**说话**部分：「可调、会保存、但现在不生效」。

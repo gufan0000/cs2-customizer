@@ -227,10 +227,9 @@ class ViewmodelPage(QWidget):
         )
         self.crosshair_secondary_checkbox.stateChanged.connect(self._on_crosshair_secondary_changed)
         crosshair_layout.addWidget(self.crosshair_secondary_checkbox)
-        self.crosshair_summary_label = QLabel("")
-        self.crosshair_summary_label.setObjectName("hintLabel")
-        self.crosshair_summary_label.setWordWrap(True)
-        crosshair_layout.addWidget(self.crosshair_summary_label)
+        # ⛔ RN-183（批 81）：这里原来有一行「当前准星回正：已启用 / 未启用」。
+        #   删它的理由不是「重复」三个字 —— 是**正上方那个复选框本身就是这个状态**，
+        #   而顶部芯片「准星回正 · 关」是第三遍。外审 6/6 逐字点了这一处。
         left_column_layout.addWidget(crosshair_card)
 
         # ⚠ RN-177：这张卡以前**排在「持枪切换」下面**，而且外面套了一层
@@ -264,10 +263,8 @@ class ViewmodelPage(QWidget):
             "持枪切换",
             "按一个键在几组视角预设之间循环，也可以让它按固定间隔自动切。",
         )
-        self.viewmodel_summary_label = QLabel("")
-        self.viewmodel_summary_label.setObjectName("hintLabel")
-        self.viewmodel_summary_label.setWordWrap(True)
-        viewmodel_layout.addWidget(self.viewmodel_summary_label)
+        # ⛔ RN-183（批 81）：这里原来有一行「当前循环键：X · 自动切换未启用」。
+        #   正下方那两个输入框（循环键 / 自动切换间隔）**就是这两个值本身**。
         control_grid = QGridLayout()
         control_grid.setContentsMargins(0, 0, 0, 0)
         control_grid.setHorizontalSpacing(10)
@@ -403,18 +400,11 @@ class ViewmodelPage(QWidget):
             return
 
         is_dirty = self._cfg_is_dirty()
-        cycle_key = self._compact_badge_text(
-            self.cycle_key_input.text() if hasattr(self, "cycle_key_input") else "",
-            "CAPSLOCK",
-            10,
-        )
-        auto_key = self._compact_badge_text(
-            self.auto_switch_key_input.text() if hasattr(self, "auto_switch_key_input") else "",
-            "-",
-            8,
-        )
+        # ⭐ RN-183：`cycle_key` / `auto_key` / `preset_count` 三个值连同它们那一段
+        #   `_compact_badge_text` 计算已随底栏复述一起删掉 —— **它们唯一的去处就是那句复述**。
+        #   ⇒ 底栏为了把上方那一排芯片重画一遍，把三个值又算了一遍。
+        #   （ruff 的 F841 当场把这三个点了出来，是本条最硬的一份证据。）
         auto_enabled = self.auto_switch_checkbox.isChecked() if hasattr(self, "auto_switch_checkbox") else False
-        preset_count = len(getattr(self, "preset_vars", []))
 
         self.action_bar.configure_secondary(
             "关闭自动切换" if auto_enabled else "启用自动切换",
@@ -422,32 +412,27 @@ class ViewmodelPage(QWidget):
             visible=True,
         )
         self.action_bar.configure_primary("保存到CFG", self._save_viewmodel_cfg, visible=True)
+        # RN-504：CFG 已同步的时候这颗按钮别再喊（芯片那一颗同时写着「CFG · 已同步」）
+        self.action_bar.set_primary_pending(is_dirty)
+        # ⛔ RN-183：这里**不许再复述芯片的值**。原文逐字是
+        #   「当前状态：CFG已同步 · 循环键 CAPSLOCK · 自动切换关闭（V） · 共 5 组预设。」
+        #   —— ⭐⭐⭐ **开头就是「当前状态：」，而上方那一排芯片正是「当前状态」这个控件**；
+        #   5 颗里 4 颗被逐值复述。底栏不是在补充，是在用纯文本重画一遍那一排。
+        # ⇒ 底栏只留**芯片承载不了的那一件事**：怎么让当局立刻生效。
+        #   这句话是**因果**不是状态，任何 is_dirty 下都为真（同 RN-502 的教训：
+        #   说动作的后果，不说当前的状态）。
         action_message = (
-            f"当前状态：CFG{'待同步' if is_dirty else '已同步'} · 循环键 {cycle_key}"
-            f" · 自动切换{'开启' if auto_enabled else '关闭'}"
-            f"{f'（{auto_key}）' if auto_key != '-' else ''} · 共 {preset_count} 组预设。"
+            "写进 CFG 之后下一局自动生效；当局要立刻见效，"
+            "在游戏控制台敲 exec cs2customizer.cfg。"
         )
         self.action_bar.set_message(action_message)
 
     def _sync_panel_summaries(self):
-        is_dirty = self._cfg_is_dirty()
-        cycle_key = (
-            self.cycle_key_input.text().strip()
-            if hasattr(self, "cycle_key_input") and self.cycle_key_input.text().strip()
-            else "CAPSLOCK"
-        )
-        auto_key = (
-            self.auto_switch_key_input.text().strip()
-            if hasattr(self, "auto_switch_key_input") and self.auto_switch_key_input.text().strip()
-            else "-"
-        )
-        auto_interval = (
-            self.auto_switch_interval_input.text().strip()
-            if hasattr(self, "auto_switch_interval_input") and self.auto_switch_interval_input.text().strip()
-            else "3.0"
-        )
-        auto_enabled = self.auto_switch_checkbox.isChecked() if hasattr(self, "auto_switch_checkbox") else False
-        crosshair_enabled = self.crosshair_reset_checkbox.isChecked() if hasattr(self, "crosshair_reset_checkbox") else False
+        # ⭐⭐⭐ RN-183（批 81）：这里原来还取着 `is_dirty` / `cycle_key` / `auto_key` /
+        #   `auto_interval` / `auto_enabled` / `crosshair_enabled` 六个值，
+        #   加上底栏那边的三个，一共**九个只为了「把控件自己的状态再念一遍」而做的取值**。
+        #   ⇒ **「同一件事说了四遍」在源码里的形状，就是同一个值被取了四次** ——
+        #   而 ruff 的 F841 是唯一把它们指出来的东西。
         preset_count = len(getattr(self, "preset_vars", []))
 
         # ⚠ RN-177：这里原来是 `[:3]` —— 摘要自称"共 5 组"却只列 3 组，
@@ -460,29 +445,22 @@ class ViewmodelPage(QWidget):
             preset_preview.append(f"{name}({key})")
         preset_preview_text = " / ".join(preset_preview) if preset_preview else "等待配置"
 
-        if hasattr(self, "crosshair_summary_label"):
-            crosshair_text = f"当前准星回正：{'已启用' if crosshair_enabled else '未启用'}"
-            self.crosshair_summary_label.setText(crosshair_text)
-            self.crosshair_summary_label.setToolTip(crosshair_text)
-
-        if hasattr(self, "viewmodel_summary_label"):
-            viewmodel_text = (
-                f"当前循环键：{cycle_key} · 自动切换{'已启用' if auto_enabled else '未启用'}"
-                f"{f'（{auto_key} / {auto_interval} 秒）' if auto_enabled else ''}"
-            )
-            self.viewmodel_summary_label.setText(viewmodel_text)
-            self.viewmodel_summary_label.setToolTip(viewmodel_text)
-
+        # ⛔ RN-183（批 81）：`crosshair_summary_label` 与 `viewmodel_summary_label`
+        #   已随控件一起撤掉 —— 它们复述的是**同一张卡里那个控件自己**。
         if hasattr(self, "cfg_summary_label"):
-            cfg_summary = (
-                f"当前状态：CFG{'待同步' if is_dirty else '已同步'} · "
-                f"写入后会同时刷新准星回正与 {preset_count} 组视角预设。"
-            )
+            # ⭐ 只留**因果**那半句。前半句「当前状态：CFG已同步」是芯片的活，
+            #   而「写入后会刷新到什么」这一句别处没有，它是这张卡存在的理由。
+            cfg_summary = f"写入后会同时刷新准星回正与 {preset_count} 组视角预设。"
             self.cfg_summary_label.setText(cfg_summary)
             self.cfg_summary_label.setToolTip(cfg_summary)
 
         if hasattr(self, "presets_summary_label"):
-            presets_text = f"当前共 {preset_count} 组预设 · 常用快捷键 {preset_preview_text}"
+            # ⚠ 这一条**不整条删**：后半句那串快捷键预览有**明写的理由**
+            #   （「摘要本身就成了 5 组确实都在的凭证，不必先滚到底才能确认」）——
+            #   ⭐ 批 75 的教训是「写了理由不等于理由是对的」，而它反过来也成立：
+            #   **逐条核过之后，有理由的那一条不能跟着一起删。**
+            #   删的只是前半句「当前共 N 组预设」，那是芯片「预设 · N 组」的活。
+            presets_text = f"常用快捷键 {preset_preview_text}"
             self.presets_summary_label.setText(presets_text)
             self.presets_summary_label.setToolTip(presets_text)
 

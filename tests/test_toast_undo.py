@@ -20,8 +20,13 @@ def app():
 def test_action_button_hidden_by_default(app):
     t = Toast()
     t.show_message("普通消息", Toast.INFO, 10)
-    assert t.action_button.isHidden() or not t.action_button.isVisible() or not t.action_button.isVisibleTo(t) or True
-    # offscreen 下 visible 语义不稳,直接断言文本与回调
+    # ⚠⚠ 这一行原本以 `or True` 结尾 —— **它一个字都没有在断言**（批 74 的
+    #   AST 普查逮到，147 条碰可见性的断言里它是唯一一条）。作者的顾虑是真的
+    #   （「offscreen 下 visible 语义不稳」），但答案不是短路掉它：
+    #   ⭐ `isVisibleTo(t)` 问的是「若祖先显示出来它会不会露脸」，
+    #     **不需要真的显示**，offscreen 下语义是稳的。
+    assert not t.action_button.isVisibleTo(t), (
+        "没给回调的普通 toast，撤销按钮却会露脸")
     assert t._action_callback is None
     t.close()
 

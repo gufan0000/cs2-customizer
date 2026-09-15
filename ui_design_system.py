@@ -6,7 +6,6 @@ UI设计系统 - 统一组件规范
 """
 
 from dataclasses import dataclass, fields
-from typing import Dict
 
 
 # ========== 设计标准 ==========
@@ -79,6 +78,30 @@ class LetterSpacing:
     tight: float = -0.4    # H1/H2 紧凑
     normal: float = 0.0    # 正文
     wide: float = 0.5      # 标签 uppercase
+
+
+def qss_box(total: int, padding: int = 0, border: int = 0) -> int:
+    """把「整个控件多大」的令牌，换算成 QSS 的 `min-*` / `max-*` 要的**内容盒**数。
+
+    ⭐⭐⭐ RN-551（批 67）：本模块所有名字叫 `*_height` / `*_min_width` 的令牌，
+    说的都是**整个控件**在屏幕上占多大；而 Qt 样式表跟 CSS 一样，
+    `min-height` / `min-width` 量的是**内容盒**，padding 与 border 在它之外。
+    于是 `min-height: {button.secondary_height}px` 发出去的 36，
+    屏幕上是 **36 + padding 8×2 + border 1×2 = 54**（高 50%）。
+
+    后果不是「差一点」，是**调用点写下的高度全成了死信**：`setFixedHeight(36)`
+    把 max 定到 36，而样式表把 min 顶到 54，**Qt 在 min > max 时取 min** ⇒ 54。
+    ⭐ **规格与调用点两处独立声明写着同一个数，而屏幕给的是第三个数。**
+    批 66 全站实测 342 个受管控件里 **260 个**实高大于以它命名的那个令牌。
+
+    ⚠ RN-442（宽 133 颗）与 RN-547（高 161 颗）都是它的表征，两条当时的修法
+    是给按钮打 `fp_narrow` / `fp_short` 把**下限清零** —— 那是在下游一颗一颗补，
+    上游的单位错配一直在，而且清零之后规格下限对那些按钮也一起没了。
+
+    ⚠ `:focus` 档换 border 时 padding 也跟着减（`max(0, padding - Δborder)`），
+    所以内容盒不变、总高不变 —— 换算只需按**常态**那一档算一次。
+    """
+    return max(0, total - 2 * padding - 2 * border)
 
 
 @dataclass
@@ -193,12 +216,12 @@ class ToggleSpec:
 class SliderSpec:
     """滑块规范"""
     # 水平滑块
-    horizontal_height: int = 6
+    horizontal_height: int = 4      # RN-642：6 → 4，槽是一根线不是一条带
     horizontal_handle_size: int = 16
-    horizontal_border_radius: int = 3
-    
+    horizontal_border_radius: int = 2
+
     # 垂直滑块
-    vertical_width: int = 6
+    vertical_width: int = 4
     vertical_handle_size: int = 16
     vertical_border_radius: int = 3
     
@@ -266,9 +289,60 @@ class ContainerSpec:
 
 
 @dataclass
+class Density:
+    """紧凑档的版面密度（RN-548，批 65）。
+
+    ⭐⭐⭐ 紧凑档**只是把窗口改小**：1280×800 → 860×640，侧栏收成浮层。
+    内容可视区从 750px 掉到 462px（少 288px），而**版面密度一档都没跟着变** ——
+    卡片内边距、分组间距、页面边距全是完整档那套数。
+    ⇒ 竖向余量不到 1px：滚动条从 6 加到 **7px 就当场红**（批 62 实测）。
+    ⭐ 这也解释了历史上那次「收窄到 6px，更精致」是怎么来的：**不是审美，是没地方了。**
+
+    ⚠⚠ **而 RN-548 立案说的修法（给 `ui_design_system` 加一档）本身走不通** ——
+    批 65 用 AST 数了一遍：全仓 **813 处** `setContentsMargins` / `setSpacing` /
+    `setFixedHeight` / `setMinimumHeight` 里，实参来自本模块 token 的只有 **8 处（1%）**，
+    `spacing` / `container` 两组 token 的读取点只剩 `gui_widget.py` 6 处。
+    ⭐⭐⭐ **给一个没人在读的规格加一档，等于什么都没做。**
+    ⇒ 所以这一档不是「另一套 token 让页面去读」，而是一条**上限**：
+    由 `ui_style_applier.apply_compact_density()` 在页面建完之后**把已经写死的数收一收**。
+    这是唯一够得着那 813 处的办法，也和 `mark_compact_buttons()` 同一个形状。
+
+    ⚠ 只收**竖向**（上下边距、竖向间距）。横向一律不动 —— 这一档买的是竖向余量，
+    而紧凑档横向本来就不缺（860 宽只比完整档少 420，侧栏收走的正好抵掉）。
+    """
+
+    #: 竖向间距上限（QVBoxLayout.spacing / QGridLayout.verticalSpacing）
+    compact_max_vertical_spacing: int = 8
+    #: 上下内边距上限（任何 layout 的 contentsMargins 的 top / bottom）
+    compact_max_vertical_margin: int = 8
+
+
+@dataclass
 class ScrollbarSpec:
-    """滚动条规范（v4: 收窄到 6px，更精致）"""
-    width: int = 6
+    """滚动条规范。
+
+    ⚠⚠ 2026-09-06 批 62（RN-045 后一半）：v4 那次「收窄到 6px，更精致」
+    把可发现性一起收窄掉了。批 61 把把手的对比度从 1.06 推到 3.41~3.80，
+    行为题（同题面改前/改后各 24 发）问「这一页显示完了吗、你从哪看出来的」，
+    依据提到滚动条的只从 **0/12 变成 3/21** —— **对比度过线了，尺寸没过线**。
+    WCAG 2.1 §1.4.11 只管对比度，而「看不看得出这里能滚」是两件事。
+    ⚠⚠ 批 62 试过 6 → 10px，**紧凑档当场多出 13 处「最小高超出可视区」**
+    （gun_sound 四个页签各 19px + 整页 16px、kill_voice 八个页签各 12px、
+    magnifier 由 48 变 60）；退回 6px 全部消失。7px 就已经开始红。
+    ⭐⭐⭐ **一个已经零余量的容器，会把任何一次改进都变成一次「变坏」** ——
+    那是 RN-529 的题目（26/28 页紧凑档折线以下有内容），排在批 64。
+    ⇒ 当时宽度**留在 6px**；可发现性改用**把轨道画出来**买（不占版面）。
+
+    ⚠⚠⚠ **批 64 补跑外审证明那个替代方案无效，RN-045 重开。** 同题面四档：
+    修之前 **0/12（0%）** → 只修对比度 **3/21（14%）** → 加宽到 10px **10/20（50%）**
+    → 发货那版「6px + 把轨道画出来」**1/24（4%）**。
+    ⭐⭐⭐ **我用一个「看起来等价、又不占版面」的替代方案，换掉了一个已经被数
+    证明有效的方案 —— 而换的时候手上没有数。** 换来的比只修对比度那版还低。
+    ⇒ 批 65 先做 RN-548（给紧凑档一档自己的版面密度，腾出竖向余量），
+      再把宽度加回 **10px**。⭐ 那 4px 一直要不起，不是因为它贵，
+      是因为**装它的那个容器早就没有余量了**。
+    """
+    width: int = 10
     border_radius: int = 3
     handle_min_height: int = 36
     margin: int = 2
@@ -339,35 +413,11 @@ class DesignSystem:
         self.toggle = ToggleSpec()
         self.slider = SliderSpec()
         self.container = ContainerSpec()
+        self.density = Density()
         self.scrollbar = ScrollbarSpec()
         self.tooltip = TooltipSpec()
         self.table = TableSpec()
         self.list = ListSpec()
-    
-    def get_component_spec(self, component_type: str) -> Dict:
-        """
-        获取组件规范
-        
-        Args:
-            component_type: 组件类型（button, input, toggle, slider等）
-        
-        Returns:
-            组件规范字典
-        """
-        spec_map = {
-            'button': self.button,
-            'input': self.input,
-            'toggle': self.toggle,
-            'slider': self.slider,
-            'container': self.container,
-            'scrollbar': self.scrollbar,
-            'tooltip': self.tooltip,
-            'table': self.table,
-            'list': self.list,
-        }
-        
-        return spec_map.get(component_type)
-
 
 # ========== 全局访问函数 ==========
 
@@ -417,6 +467,15 @@ def apply_font_scale(scale) -> float:
     base_button = ButtonSpec()
     for name in ("primary_font_size", "secondary_font_size", "action_font_size", "danger_font_size"):
         setattr(ds.button, name, max(9, round(getattr(base_button, name) * scale)))
+
+    # ⚠⚠ RN-592（批 82 实测，**记在这里是为了挡住下一个人走同一条路**）：
+    #   我在这里加过一段「按钮高度也跟着 scale 缩放」，理由看起来很硬 ——
+    #   本函数文档写着「按档位缩放**全部字号 token**」，而装字的高度显然该跟着字号走。
+    #   ⭐⭐⭐ **实测买 0：1.25 档 41 处纵向放不下 → 还是 41 处。**
+    #   根因：下限一超过**调用点写死的上限**，`mark_compact_buttons()` 就打 `fp_short`，
+    #   而那个变体**整条摘掉下限**（最坏那颗 `basic`「重置ID」min 被摘到 18、max 钉在 28）。
+    #   ⇒ 承重的是调用点那句写死的高度（RN-442 那一族的纵向双胞胎）。已撤回 ——
+    #   ⭐ 留着它就是一段「看起来像修好了」的死码。
 
     base_input = InputSpec()
     for name in ("text_font_size", "textarea_font_size", "combobox_font_size"):

@@ -1,0 +1,212 @@
+{
+  "contract": {
+    "core.resource_catalog": [],
+    "core.resource_health": [
+      "apply_conservative_resource_fix",
+      "collect_resource_system_health",
+      "collect_visual_resource_health",
+      "format_resource_system_health"
+    ],
+    "core.resource_import_wizard": [
+      "apply_resource_import_plan",
+      "scan_resource_import_candidates"
+    ],
+    "resource_manager": [
+      "MIGRATION_CRITICAL_FILES",
+      "MIGRATION_MARKER_FILENAME",
+      "MIGRATION_MARKER_SCHEMA",
+      "ResourceManager",
+      "_RESOURCE_COPY_DONE"
+    ]
+  },
+  "contract_total": 11,
+  "external_use": {
+    "core.resource_catalog": {
+      "files": [],
+      "names": {}
+    },
+    "core.resource_health": {
+      "files": [
+        "core/cloud/config_sync.py",
+        "pages/audio_health_page.py",
+        "tests/test_health_report_speaks_user_language.py",
+        "tests/test_resource_health.py"
+      ],
+      "names": {
+        "apply_conservative_resource_fix": 2,
+        "collect_resource_system_health": 2,
+        "collect_visual_resource_health": 1,
+        "format_resource_system_health": 2
+      }
+    },
+    "core.resource_import_wizard": {
+      "files": [
+        "pages/audio_import_wizard_page.py",
+        "tests/test_resource_import_wizard.py"
+      ],
+      "names": {
+        "apply_resource_import_plan": 2,
+        "scan_resource_import_candidates": 2
+      }
+    },
+    "resource_manager": {
+      "files": [
+        "background_loader.py",
+        "core/audio/audio_manager.py",
+        "core/audio/audio_resource_health.py",
+        "core/audio/style_creator.py",
+        "core/cloud/config_sync.py",
+        "core/kill_icon_import.py",
+        "core/kill_icon_library.py",
+        "core/kill_icon_pack.py",
+        "dialogs/kill_icon_workshop.py",
+        "dialogs/sprite_sheet_maker.py",
+        "flash_process_manager.py",
+        "gsi_handler_utility.py",
+        "gui_widget.py",
+        "kill_icon_overlay.py",
+        "kill_icon_player.py",
+        "main_widget.py",
+        "pages/audio_health_page.py",
+        "pages/audio_import_wizard_page.py",
+        "pages/audio_replay_page.py",
+        "pages/gun_sound_page.py",
+        "pages/kill_icon_page.py",
+        "pages/preset_center_page.py",
+        "pages/reload_sound_page.py",
+        "pages/switch_weapon_page.py",
+        "pages/utility_page.py",
+        "scripts/kill_icon_format_matrix.py",
+        "tests/test_apply_one_style_to_every_weapon.py",
+        "tests/test_audio_resource_health.py",
+        "tests/test_kill_icon_import_ki2.py",
+        "tests/test_kill_icon_overlay_ki1.py",
+        "tests/test_kill_icon_resources.py",
+        "tests/test_qa_non_ui_r12.py",
+        "tests/test_resource_health.py",
+        "tests/test_resource_migration_marker.py",
+        "tests/test_style_creator.py",
+        "utility_display.py",
+        "utils.py"
+      ],
+      "names": {
+        "MIGRATION_CRITICAL_FILES": 1,
+        "MIGRATION_MARKER_FILENAME": 1,
+        "MIGRATION_MARKER_SCHEMA": 1,
+        "ResourceManager": 48,
+        "VERSION": 4,
+        "_RESOURCE_COPY_DONE": 2
+      }
+    }
+  },
+  "imported_but_no_contract": [],
+  "internal_only_modules": [
+    "core.resource_catalog"
+  ],
+  "loc": {
+    "core.resource_catalog": 80,
+    "core.resource_health": 282,
+    "core.resource_import_wizard": 248,
+    "resource_manager": 746
+  },
+  "reexport_only_modules": [],
+  "resource_manager_instance": {
+    "init_keys": [],
+    "methods": [
+      "_copy_file_if_missing",
+      "_copy_resources_to_appdata_impl",
+      "_directory_has_files",
+      "_directory_has_images",
+      "_get_migration_marker_path",
+      "_merge_directory",
+      "_merge_directory_missing_only",
+      "_note_migration_failure",
+      "_read_migration_marker",
+      "_should_skip_migration",
+      "_write_migration_marker",
+      "copy_resources_to_appdata",
+      "ensure_crosshair_directory",
+      "ensure_directory",
+      "ensure_flash_audio_directory",
+      "ensure_flash_images_directory",
+      "ensure_gun_sounds_directory",
+      "ensure_kill_icons_directory",
+      "ensure_utility_guides_directory",
+      "get_app_data_path",
+      "get_exe_resource_path",
+      "get_kill_icon_legacy_frames_dir",
+      "get_kill_icon_metadata_path",
+      "get_kill_icon_sprite_sheet_paths",
+      "get_kill_icon_style_dir",
+      "has_kill_icon_level_assets",
+      "list_kill_icon_styles",
+      "migrate_gun_sounds",
+      "migrate_legacy_flat_audio_files",
+      "migrate_old_kill_icons",
+      "style_has_kill_icons"
+    ],
+    "other_attrs": []
+  },
+  "surface": {
+    "core.resource_catalog": {
+      "classes": [
+        "ResourceSpec"
+      ],
+      "constants": [
+        "CROSSHAIR_EXTENSIONS",
+        "IMAGE_EXTENSIONS",
+        "KILL_ICON_EXTENSIONS",
+        "RESOURCE_SPECS"
+      ],
+      "functions": [
+        "build_spec_lookup",
+        "get_resource_spec",
+        "iter_resource_specs",
+        "resolve_import_domain"
+      ]
+    },
+    "core.resource_health": {
+      "classes": [],
+      "constants": [],
+      "functions": [
+        "_dir_has_crosshair_files",
+        "_human_time",
+        "_make_issue",
+        "_style_dir_has_images",
+        "apply_conservative_resource_fix",
+        "collect_resource_system_health",
+        "collect_visual_resource_health",
+        "format_resource_system_health",
+        "format_visual_resource_health"
+      ]
+    },
+    "core.resource_import_wizard": {
+      "classes": [],
+      "constants": [],
+      "functions": [
+        "_extract_target_rel_path",
+        "_normalize_extension",
+        "apply_resource_import_plan",
+        "scan_resource_import_candidates"
+      ]
+    },
+    "resource_manager": {
+      "classes": [
+        "ResourceManager"
+      ],
+      "constants": [
+        "AUDIO_EXTENSIONS",
+        "IMAGE_EXTENSIONS",
+        "MIGRATION_CRITICAL_FILES",
+        "MIGRATION_MARKER_FILENAME",
+        "MIGRATION_MARKER_SCHEMA",
+        "_RESOURCE_COPY_DONE",
+        "_RESOURCE_COPY_LOCK",
+        "_RESOURCE_COPY_STARTED",
+        "logger"
+      ],
+      "functions": []
+    }
+  },
+  "unreferenced_modules": []
+}

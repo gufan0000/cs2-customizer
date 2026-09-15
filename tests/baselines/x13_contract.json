@@ -1,0 +1,448 @@
+{
+  "contract": {
+    "core.utils.__init__": [],
+    "core.utils.autostart": [
+      "is_enabled",
+      "is_supported",
+      "refresh_if_enabled",
+      "set_enabled"
+    ],
+    "core.utils.contrast": [
+      "AA_LARGE",
+      "AA_NORMAL",
+      "best_on_color",
+      "contrast_ratio",
+      "ensure_contrast",
+      "parse_hex",
+      "relative_luminance",
+      "to_hex",
+      "worst_contrast"
+    ],
+    "core.utils.elevation": [
+      "is_admin",
+      "restart_as_admin"
+    ],
+    "core.utils.format_utils": [
+      "format_percent"
+    ],
+    "core.utils.idle_watcher": [
+      "_instance",
+      "get_idle_watcher",
+      "start_idle_watcher"
+    ],
+    "core.utils.jank_monitor": [
+      "_instance",
+      "start_jank_monitor"
+    ],
+    "core.utils.lazy_module": [
+      "LazyModule",
+      "lazy_module"
+    ],
+    "core.utils.log_filter": [
+      "SensitiveFilter",
+      "redact_text"
+    ],
+    "core.utils.logger": [
+      "Logger",
+      "_purge_old_logs",
+      "_want_debug_file_log",
+      "get_logger"
+    ],
+    "core.utils.mem_monitor": [
+      "_MAX_CONSECUTIVE_FAILURES",
+      "_instance",
+      "_read_memory_bytes",
+      "start_mem_monitor"
+    ]
+  },
+  "contract_total": 33,
+  "external_use": {
+    "core.utils.__init__": {
+      "files": [],
+      "names": {}
+    },
+    "core.utils.autostart": {
+      "files": [
+        "main_widget.py",
+        "pages/advanced_page.py"
+      ],
+      "names": {
+        "is_enabled": 2,
+        "is_supported": 1,
+        "refresh_if_enabled": 1,
+        "set_enabled": 1
+      }
+    },
+    "core.utils.contrast": {
+      "files": [
+        "gui_widget.py",
+        "scripts/ui_contrast_audit.py",
+        "tests/test_a_named_page_is_reachable_from_where_it_is_named.py",
+        "tests/test_correctness_r8a.py",
+        "tests/test_design_system_r7.py",
+        "tests/test_master_switch_effect_is_honest.py",
+        "tests/test_status_chips_do_not_look_clickable.py",
+        "tests/test_the_way_back_is_not_only_for_an_empty_library.py",
+        "tests/test_theme_contrast.py",
+        "theme_manager.py",
+        "widgets/community_library.py"
+      ],
+      "names": {
+        "AA_LARGE": 1,
+        "AA_NORMAL": 6,
+        "best_on_color": 4,
+        "contrast_ratio": 13,
+        "ensure_contrast": 10,
+        "parse_hex": 2,
+        "relative_luminance": 2,
+        "to_hex": 1,
+        "worst_contrast": 2
+      }
+    },
+    "core.utils.elevation": {
+      "files": [
+        "main_widget.py",
+        "pages/advanced_page.py",
+        "pages/magnifier_page.py"
+      ],
+      "names": {
+        "is_admin": 2,
+        "restart_as_admin": 2
+      }
+    },
+    "core.utils.format_utils": {
+      "files": [
+        "pages/flash_page.py",
+        "pages/gun_sound_page.py",
+        "pages/kill_icon_page.py",
+        "pages/magnifier_page.py",
+        "pages/music_page.py",
+        "pages/utility_page.py",
+        "pages/voice_output_page.py"
+      ],
+      "names": {
+        "format_percent": 7
+      }
+    },
+    "core.utils.idle_watcher": {
+      "files": [
+        "gui_widget.py",
+        "main_widget.py",
+        "tests/test_idle_watcher.py"
+      ],
+      "names": {
+        "_instance": 4,
+        "get_idle_watcher": 4,
+        "start_idle_watcher": 11
+      }
+    },
+    "core.utils.jank_monitor": {
+      "files": [
+        "main_widget.py",
+        "tests/test_jank_monitor.py"
+      ],
+      "names": {
+        "_instance": 3,
+        "start_jank_monitor": 7
+      }
+    },
+    "core.utils.lazy_module": {
+      "files": [
+        "crosshair_animation.py",
+        "tests/test_lazy_imports_r8a.py"
+      ],
+      "names": {
+        "LazyModule": 4,
+        "lazy_module": 4
+      }
+    },
+    "core.utils.log_filter": {
+      "files": [
+        "pages/about_page.py",
+        "tests/test_diagnostics.py",
+        "tests/test_log_filter.py"
+      ],
+      "names": {
+        "SensitiveFilter": 1,
+        "redact_text": 3
+      }
+    },
+    "core.utils.logger": {
+      "files": [
+        "audio.py",
+        "background_loader.py",
+        "cfg_utils.py",
+        "config.py",
+        "core/audio/audio_manager.py",
+        "core/audio/audio_task_runner.py",
+        "core/audio/game_audio_ducker.py",
+        "core/cfg_compiler.py",
+        "core/config_reload_bus.py",
+        "core/fun/afterlife.py",
+        "core/fun/sticky_browser.py",
+        "core/hotkeys/registry.py",
+        "core/kill_icon_import.py",
+        "core/kill_icon_library.py",
+        "core/kill_icon_pack.py",
+        "core/presets/map_rules.py",
+        "core/presets/my_presets.py",
+        "core/presets/preset_center.py",
+        "core/settings_search.py",
+        "core/shutdown.py",
+        "crosshair_animation.py",
+        "crosshair_overlay.py",
+        "dialogs/add_url_dialog.py",
+        "dialogs/kill_icon_workshop.py",
+        "dialogs/onboarding_dialog.py",
+        "dialogs/sprite_sheet_maker.py",
+        "dialogs/style_creator_dialog.py",
+        "dialogs/style_manager_dialog.py",
+        "flash_process_manager.py",
+        "gsi_handler_flash.py",
+        "gsi_handler_fun.py",
+        "gsi_handler_hud_color.py",
+        "gsi_handler_kills.py",
+        "gsi_handler_music.py",
+        "gsi_handler_sounds.py",
+        "gsi_handler_special.py",
+        "gsi_handler_stats.py",
+        "gsi_handler_utility.py",
+        "gsi_server.py",
+        "gui_widget.py",
+        "kill_icon_overlay.py",
+        "kill_icon_player.py",
+        "main_widget.py",
+        "music_control_bar.py",
+        "music_player.py",
+        "pages/about_page.py",
+        "pages/advanced_page.py",
+        "pages/audio_health_page.py",
+        "pages/audio_import_wizard_page.py",
+        "pages/audio_replay_page.py",
+        "pages/audio_task_panel_page.py",
+        "pages/config_snapshot_page.py",
+        "pages/crosshair_page.py",
+        "pages/death_sound_page.py",
+        "pages/flash_page.py",
+        "pages/fun_page.py",
+        "pages/gun_sound_page.py",
+        "pages/hud_color_page.py",
+        "pages/kill_icon_page.py",
+        "pages/kill_sound_page.py",
+        "pages/kill_voice_page.py",
+        "pages/magnifier_page.py",
+        "pages/music_page.py",
+        "pages/preset_center_page.py",
+        "pages/reload_sound_page.py",
+        "pages/screen_effects_page.py",
+        "pages/special_sound_page.py",
+        "pages/switch_weapon_page.py",
+        "pages/utility_page.py",
+        "pages/viewmodel_page.py",
+        "pages/voice_output_page.py",
+        "request_admin.py",
+        "resource_manager.py",
+        "screen_effect_overlay.py",
+        "tests/test_logger_policy.py",
+        "tests/test_ui_system_status_smoke.py",
+        "theme_manager.py",
+        "ui_animations.py",
+        "ui_effects.py",
+        "ui_ripple_effect.py",
+        "ui_shimmer.py",
+        "ui_toast.py",
+        "ui_transitions.py",
+        "update_runtime.py",
+        "url_resolver.py",
+        "utility_usage_tracker.py",
+        "voice_output_manager.py",
+        "widgets/community_library.py",
+        "widgets/drop_import_mixin.py",
+        "widgets/kill_icon_import_task.py",
+        "widgets/master_switch_effect.py",
+        "widgets/master_switch_link.py",
+        "widgets/page_route.py"
+      ],
+      "names": {
+        "Logger": 2,
+        "Path": 2,
+        "_purge_old_logs": 6,
+        "_want_debug_file_log": 6,
+        "get_logger": 96
+      }
+    },
+    "core.utils.mem_monitor": {
+      "files": [
+        "main_widget.py",
+        "tests/test_mem_monitor.py"
+      ],
+      "names": {
+        "_MAX_CONSECUTIVE_FAILURES": 1,
+        "_instance": 3,
+        "_read_memory_bytes": 5,
+        "group": 2,
+        "start_mem_monitor": 7
+      }
+    }
+  },
+  "imported_but_no_contract": [],
+  "internal_only_modules": [],
+  "loc": {
+    "core.utils.__init__": 4,
+    "core.utils.autostart": 95,
+    "core.utils.contrast": 134,
+    "core.utils.elevation": 70,
+    "core.utils.format_utils": 36,
+    "core.utils.idle_watcher": 104,
+    "core.utils.jank_monitor": 62,
+    "core.utils.lazy_module": 79,
+    "core.utils.log_filter": 117,
+    "core.utils.logger": 338,
+    "core.utils.mem_monitor": 146
+  },
+  "reexport_only_modules": [],
+  "surface": {
+    "core.utils.__init__": {
+      "classes": [],
+      "constants": [
+        "__all__"
+      ],
+      "functions": []
+    },
+    "core.utils.autostart": {
+      "classes": [],
+      "constants": [
+        "_RUN_KEY",
+        "_VALUE_NAME",
+        "logger"
+      ],
+      "functions": [
+        "_launch_command",
+        "is_enabled",
+        "is_supported",
+        "refresh_if_enabled",
+        "set_enabled"
+      ]
+    },
+    "core.utils.contrast": {
+      "classes": [],
+      "constants": [
+        "AA_LARGE",
+        "AA_NORMAL",
+        "__all__"
+      ],
+      "functions": [
+        "_linearize",
+        "best_on_color",
+        "contrast_ratio",
+        "ensure_contrast",
+        "parse_hex",
+        "relative_luminance",
+        "to_hex",
+        "worst_contrast"
+      ]
+    },
+    "core.utils.elevation": {
+      "classes": [],
+      "constants": [],
+      "functions": [
+        "_build_relaunch_command",
+        "is_admin",
+        "restart_as_admin"
+      ]
+    },
+    "core.utils.format_utils": {
+      "classes": [],
+      "constants": [],
+      "functions": [
+        "clamp",
+        "format_percent"
+      ]
+    },
+    "core.utils.idle_watcher": {
+      "classes": [
+        "IdleWatcher"
+      ],
+      "constants": [
+        "_INPUT_EVENTS",
+        "_instance"
+      ],
+      "functions": [
+        "get_idle_watcher",
+        "start_idle_watcher"
+      ]
+    },
+    "core.utils.jank_monitor": {
+      "classes": [
+        "JankMonitor"
+      ],
+      "constants": [
+        "_INTERVAL_MS",
+        "_THRESHOLD_MS",
+        "_instance"
+      ],
+      "functions": [
+        "start_jank_monitor"
+      ]
+    },
+    "core.utils.lazy_module": {
+      "classes": [
+        "LazyModule"
+      ],
+      "constants": [],
+      "functions": [
+        "lazy_module"
+      ]
+    },
+    "core.utils.log_filter": {
+      "classes": [
+        "SensitiveFilter"
+      ],
+      "constants": [
+        "_RULES",
+        "__all__"
+      ],
+      "functions": [
+        "redact_text"
+      ]
+    },
+    "core.utils.logger": {
+      "classes": [
+        "Logger"
+      ],
+      "constants": [
+        "APP_NAME",
+        "_LOG_RETENTION_DAYS",
+        "_logger_instance"
+      ],
+      "functions": [
+        "_purge_old_logs",
+        "_resolve_config_dir_for_log",
+        "_want_debug_file_log",
+        "debug",
+        "error",
+        "exception",
+        "get_logger",
+        "info",
+        "warning"
+      ]
+    },
+    "core.utils.mem_monitor": {
+      "classes": [
+        "MemMonitor"
+      ],
+      "constants": [
+        "_INTERVAL_MS",
+        "_MAX_CONSECUTIVE_FAILURES",
+        "_instance"
+      ],
+      "functions": [
+        "_read_memory_bytes",
+        "start_mem_monitor"
+      ]
+    }
+  },
+  "unreferenced_modules": [
+    "core.utils.__init__"
+  ]
+}

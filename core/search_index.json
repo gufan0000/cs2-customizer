@@ -122,7 +122,6 @@
   "手枪",
   "打开音频资源",
   "整套套用",
-  "未开启",
   "机枪",
   "步枪",
   "燃烧弹",
@@ -151,10 +150,50 @@
   },
   {
    "page": "basic",
+   "text": "击杀语音",
+   "card": "分类音量",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "击杀音效",
+   "card": "分类音量",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
    "text": "分类音量",
    "card": "分类音量",
    "tab": "",
    "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "切枪音效",
+   "card": "分类音量",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "换弹音效",
+   "card": "分类音量",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "枪声替换",
+   "card": "分类音量",
+   "tab": "",
+   "kind": "label",
    "src": "runtime"
   },
   {
@@ -175,7 +214,7 @@
   },
   {
    "page": "basic",
-   "text": "准心",
+   "text": "准心 ›",
    "card": "功能开关",
    "tab": "",
    "kind": "label",
@@ -183,7 +222,7 @@
   },
   {
    "page": "basic",
-   "text": "击杀图标",
+   "text": "击杀图标 ›",
    "card": "功能开关",
    "tab": "",
    "kind": "label",
@@ -191,7 +230,7 @@
   },
   {
    "page": "basic",
-   "text": "击杀语音",
+   "text": "击杀语音 ›",
    "card": "功能开关",
    "tab": "",
    "kind": "label",
@@ -199,7 +238,7 @@
   },
   {
    "page": "basic",
-   "text": "击杀音效",
+   "text": "击杀音效 ›",
    "card": "功能开关",
    "tab": "",
    "kind": "label",
@@ -207,7 +246,7 @@
   },
   {
    "page": "basic",
-   "text": "切枪音效",
+   "text": "切枪音效 ›",
    "card": "功能开关",
    "tab": "",
    "kind": "label",
@@ -223,7 +262,7 @@
   },
   {
    "page": "basic",
-   "text": "动态HUD",
+   "text": "动态HUD ›",
    "card": "功能开关",
    "tab": "",
    "kind": "label",
@@ -231,7 +270,7 @@
   },
   {
    "page": "basic",
-   "text": "屏幕特效",
+   "text": "屏幕特效 ›",
    "card": "功能开关",
    "tab": "",
    "kind": "label",
@@ -239,7 +278,7 @@
   },
   {
    "page": "basic",
-   "text": "开镜放大",
+   "text": "开镜放大 ›",
    "card": "功能开关",
    "tab": "",
    "kind": "label",
@@ -247,7 +286,7 @@
   },
   {
    "page": "basic",
-   "text": "换弹音效",
+   "text": "换弹音效 ›",
    "card": "功能开关",
    "tab": "",
    "kind": "label",
@@ -255,7 +294,7 @@
   },
   {
    "page": "basic",
-   "text": "枪声替换",
+   "text": "枪声替换 ›",
    "card": "功能开关",
    "tab": "",
    "kind": "label",
@@ -263,7 +302,7 @@
   },
   {
    "page": "basic",
-   "text": "死亡刷短视频",
+   "text": "死亡刷短视频 ›",
    "card": "功能开关",
    "tab": "",
    "kind": "label",
@@ -271,7 +310,7 @@
   },
   {
    "page": "basic",
-   "text": "自定闪光",
+   "text": "自定闪光 ›",
    "card": "功能开关",
    "tab": "",
    "kind": "label",
@@ -279,7 +318,7 @@
   },
   {
    "page": "basic",
-   "text": "被击杀修改",
+   "text": "被击杀修改 ›",
    "card": "功能开关",
    "tab": "",
    "kind": "label",
@@ -295,7 +334,7 @@
   },
   {
    "page": "basic",
-   "text": "语音播放",
+   "text": "语音播放 ›",
    "card": "功能开关",
    "tab": "",
    "kind": "label",
@@ -303,7 +342,7 @@
   },
   {
    "page": "basic",
-   "text": "道具瞄点",
+   "text": "道具瞄点 ›",
    "card": "功能开关",
    "tab": "",
    "kind": "label",
@@ -311,7 +350,7 @@
   },
   {
    "page": "basic",
-   "text": "音乐联动",
+   "text": "音乐联动 ›",
    "card": "功能开关",
    "tab": "",
    "kind": "label",
@@ -442,14 +481,6 @@
    "text": "HE手雷",
    "card": "",
    "tab": "手雷/道具",
-   "kind": "label",
-   "src": "runtime"
-  },
-  {
-   "page": "kill_sound",
-   "text": "已开启",
-   "card": "",
-   "tab": "",
    "kind": "label",
    "src": "runtime"
   },
@@ -1407,14 +1438,6 @@
   },
   {
    "page": "magnifier",
-   "text": "基础",
-   "card": "",
-   "tab": "",
-   "kind": "button",
-   "src": "runtime"
-  },
-  {
-   "page": "magnifier",
    "text": "基础灵敏度",
    "card": "",
    "tab": "",
@@ -1512,6 +1535,14 @@
   {
    "page": "magnifier",
    "text": "触发方式",
+   "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "magnifier",
+   "text": "跳到",
    "card": "",
    "tab": "",
    "kind": "label",
@@ -1695,7 +1726,7 @@
   },
   {
    "page": "flash",
-   "text": "启动",
+   "text": "启动监听",
    "card": "",
    "tab": "",
    "kind": "button",
@@ -2239,14 +2270,6 @@
   },
   {
    "page": "hud_color",
-   "text": "已开启",
-   "card": "",
-   "tab": "",
-   "kind": "label",
-   "src": "runtime"
-  },
-  {
-   "page": "hud_color",
    "text": "效果预设",
    "card": "",
    "tab": "",
@@ -2391,6 +2414,14 @@
   },
   {
    "page": "screen_effects",
+   "text": "击杀触发屏幕边缘特效",
+   "card": "",
+   "tab": "",
+   "kind": "check",
+   "src": "static"
+  },
+  {
+   "page": "screen_effects",
    "text": "当前方案概况",
    "card": "",
    "tab": "",
@@ -2419,14 +2450,6 @@
    "card": "",
    "tab": "",
    "kind": "button",
-   "src": "runtime"
-  },
-  {
-   "page": "screen_effects",
-   "text": "击杀触发屏幕边缘特效",
-   "card": "快速控制台",
-   "tab": "",
-   "kind": "check",
    "src": "runtime"
   },
   {
@@ -3339,6 +3362,14 @@
    "card": "",
    "tab": "",
    "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "advanced",
+   "text": "跳到",
+   "card": "",
+   "tab": "",
+   "kind": "label",
    "src": "runtime"
   },
   {

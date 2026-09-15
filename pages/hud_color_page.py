@@ -112,7 +112,6 @@ class HudColorPage(QWidget):
         """
         combo = QComboBox()
         combo.setFixedWidth(130)
-        combo.setFixedHeight(32)
         for name, value in COLOR_OPTIONS:
             if value < 0 and not allow_disabled:
                 continue
@@ -126,7 +125,6 @@ class HudColorPage(QWidget):
     def _create_effect_combo(self):
         combo = QComboBox()
         combo.setFixedWidth(90)
-        combo.setFixedHeight(32)
         for name, value in EFFECT_OPTIONS:
             combo.addItem(name, value)
         return combo
@@ -260,9 +258,17 @@ class HudColorPage(QWidget):
         #   （主语是那个动作），它任何时候都为真；我把它改成陈述句，就把一句真话
         #   变成了一句**多数时候为假**的话。
         # ⇒ 说**动作的后果**，不说**当前的状态**：状态由状态条负责，这里只讲因果。
+        # ⛔⛔ RN-565（批 81）：后半句「换完要点右下角保存才写进游戏」已撤。
+        #   它**本身没写错**（条件句，说的是换预设这个动作的后果，任何时候都为真）——
+        #   ⭐⭐⭐ 撤它的理由是「保存了没有」这件事这一屏上已经有**两个专门的状态面**：
+        #   芯片「保存 · 有改动没存 / 已存下」（`_sync_status_strip`）与主按钮的
+        #   pending 态（RN-504 的 `set_primary_pending`）。它是第三遍，
+        #   而同屏底栏还写着「**已**写进游戏的 cfg」。
+        #   ⚠ RN-565 立案量到：A/B 12/12 一格没动，而 12 发**逐字引用的就是这句话**，
+        #   4 发明写「即便状态栏显示『已同步』」。
+        #   ⭐⭐ **一句正确的条件句，在读者眼里仍然是一条待办。**
         profile_tip = QLabel(
-            "换一套会把默认色和事件设置整套换掉（数字键那 9 个不动）；"
-            "换完要点右下角保存才写进游戏。")
+            "换一套会把默认色和事件设置整套换掉（数字键那 9 个不动）。")
         profile_tip.setObjectName("hintLabel")
         profile_tip.setWordWrap(True)
         profile_column.addWidget(profile_tip)
@@ -461,7 +467,7 @@ class HudColorPage(QWidget):
         ]
 
         detail_text = (
-            f"HUD 总开关：{'已开启' if master_enabled else '已关闭'}\n"
+            f"HUD 总开关：{'已开启' if master_enabled else '未开启'}\n"
             f"当前预设：{self.profile_combo.currentText() if hasattr(self, 'profile_combo') else '未设置'}\n"
             f"默认颜色：{default_color}\n"
             f"数字键映射：{key_count} 项\n"
@@ -530,6 +536,8 @@ class HudColorPage(QWidget):
         self._refresh_dirty_ui()
 
     def _refresh_dirty_ui(self):
+        # RN-504：规则已存下的时候这颗按钮别再喊（芯片那一颗同时写着「保存 · 已存下」）
+        self.action_bar.set_primary_pending(bool(self._dirty))
         if self._dirty:
             self.save_btn.setText("保存 HUD 规则 *")
             # ⚠⚠ 走 `set_message`，**不许直接对 message_label 写字**。

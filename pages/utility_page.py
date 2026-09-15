@@ -31,6 +31,48 @@ from widgets.page_header import PageHeader
 from widgets.page_action_bar import PageActionBar
 
 
+
+def _utility_button_style() -> str:
+    """`utility` 页那几颗按钮的样式。
+
+    ⚠ RN-435 同族（批 64）：这段原来在本文件里**写了两遍**（一字不差），
+    而且**没有 `:focus`** —— 实测「预览」「打开道具文件夹」「刷新道具列表」
+    三颗的聚焦像素差都是 **0**。
+    ⭐ 一个自带样式表的控件，等于把自己从「所有还没写的」全站规则里摘了出去
+      （RN-453 账号按钮 → RN-546 焦点环 → RN-435 magnifier 箭头 → 这里）。
+    """
+    from theme_manager import get_color
+
+    return f"""
+            QPushButton {{
+                background-color: {get_color('bg_secondary')};
+                color: {get_color('text_primary')};
+                border: 1px solid {get_color('border_primary')};
+                border-radius: 8px;
+                padding: 8px 12px;
+                text-align: center;
+                font-weight: 600;
+                min-height: 38px;
+            }}
+            QPushButton:hover {{
+                background-color: {get_color('accent_hover')};
+                border-color: {get_color('accent_primary')};
+            }}
+            QPushButton:pressed {{
+                background-color: {get_color('accent_pressed')};
+                border-color: {get_color('accent_primary')};
+            }}
+            QPushButton:focus {{
+                border: 2px solid {get_color('border_focus')};
+            }}
+            QPushButton:disabled {{
+                background-color: {get_color('bg_tertiary')};
+                color: {get_color('text_tertiary')};
+                border-color: {get_color('border_primary')};
+            }}
+    """
+
+
 class UtilityPage(QWidget):
     """道具瞄点页面"""
     
@@ -128,6 +170,10 @@ class UtilityPage(QWidget):
         self.state_hint_label = QLabel("")
         self.state_hint_label.setObjectName("hintLabel")
         self.state_hint_label.setWordWrap(True)
+        # RN-528：这句里的页名是可点的（接线全仓只有 `page_route` 那一份）。
+        from widgets.page_route import wire_page_routes
+
+        wire_page_routes(self.state_hint_label)
         status_card_layout.addWidget(self.state_hint_label)
 
         self.summary_label = QLabel("")
@@ -383,9 +429,16 @@ class UtilityPage(QWidget):
             if self._gsi_cfg_ready():
                 missing.append("「地图」和「阵营」要进对局才认得出来（软件从游戏里实时读）")
             else:
+                # ⭐⭐⭐ RN-528：这句指路本身是对的，错在**目标不在这一屏上** ——
+                #   站在本页时侧栏正好把「高级设置」滚出视口，外审 3/3 逐字报
+                #   「左侧导航无此入口且无跳转按钮，前置配置直接卡死」。
+                #   ⇒ 让那个页名自己可点（零高度，不加控件）。
+                from widgets import page_route as _pr
+
+                target = _pr.page_route("advanced", _pr.page_label(self, "advanced"))
                 missing.append(
                     "「地图」和「阵营」现在还认不出来：软件要先往 CS2 里写一份配置文件才读得到，"
-                    "去「高级设置」页选一次 CS2 安装目录就会自动写好")
+                    f"去{target}页选一次 CS2 安装目录就会自动写好")
         if not utility_count:
             missing.append(
                 f"道具要先把图片放进道具文件夹，再点「{self.refresh_utility_btn.text()}」")
@@ -488,33 +541,8 @@ class UtilityPage(QWidget):
         button_hint.setWordWrap(True)
         button_layout.addWidget(button_hint)
         
-        # 按钮样式（使用主题色）
-        from theme_manager import get_color
-        button_style = f"""
-            QPushButton {{
-                background-color: {get_color('bg_secondary')};
-                color: {get_color('text_primary')};
-                border: 1px solid {get_color('border_primary')};
-                border-radius: 8px;
-                padding: 8px 12px;
-                text-align: center;
-                font-weight: 600;
-                min-height: 38px;
-            }}
-            QPushButton:hover {{
-                background-color: {get_color('accent_hover')};
-                border-color: {get_color('accent_primary')};
-            }}
-            QPushButton:pressed {{
-                background-color: {get_color('accent_pressed')};
-                border-color: {get_color('accent_primary')};
-            }}
-            QPushButton:disabled {{
-                background-color: {get_color('bg_tertiary')};
-                color: {get_color('text_tertiary')};
-                border-color: {get_color('border_primary')};
-            }}
-        """
+        # 按钮样式（使用主题色，见 ）
+        button_style = _utility_button_style()
 
         button_grid = QGridLayout()
         button_grid.setHorizontalSpacing(8)
@@ -585,32 +613,7 @@ class UtilityPage(QWidget):
     
     def _apply_theme_styles(self):
         """重新应用主题样式到所有按钮"""
-        from theme_manager import get_color
-        button_style = f"""
-            QPushButton {{
-                background-color: {get_color('bg_secondary')};
-                color: {get_color('text_primary')};
-                border: 1px solid {get_color('border_primary')};
-                border-radius: 8px;
-                padding: 8px 12px;
-                text-align: center;
-                font-weight: 600;
-                min-height: 38px;
-            }}
-            QPushButton:hover {{
-                background-color: {get_color('accent_hover')};
-                border-color: {get_color('accent_primary')};
-            }}
-            QPushButton:pressed {{
-                background-color: {get_color('accent_pressed')};
-                border-color: {get_color('accent_primary')};
-            }}
-            QPushButton:disabled {{
-                background-color: {get_color('bg_tertiary')};
-                color: {get_color('text_tertiary')};
-                border-color: {get_color('border_primary')};
-            }}
-        """
+        button_style = _utility_button_style()
         for btn in self._themed_buttons:
             keep_inline_style(btn)  # UP-019: 样式由 token 现算,免于统一清理
             btn.setStyleSheet(button_style)

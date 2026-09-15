@@ -27,6 +27,7 @@ import re
 import shutil
 import signal
 import subprocess
+import time
 import sys
 from pathlib import Path
 
@@ -64,28 +65,86 @@ SNAPSHOT_DIR = ROOT / ".revert_verify_snapshot"
 MANIFEST = SNAPSHOT_DIR / "manifest.json"
 
 
+def _git_head() -> str:
+    try:
+        out = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(ROOT),
+                             capture_output=True, text=True, timeout=30)
+        return out.stdout.strip() if out.returncode == 0 else ""
+    except Exception:
+        return ""
+
+
 def save_snapshot(snapshot: dict[Path, bytes]) -> None:
-    """把改坏之前的原文写到磁盘上，进程被杀也还能找回来。"""
+    """把改坏之前的原文写到磁盘上，进程被杀也还能找回来。
+
+    ⭐⭐⭐ RN-637（批 93）：**顺手记下当时的 HEAD**。没有它，这份快照就是一颗定时炸弹 ——
+    见 `restore_from_disk`。
+    """
     shutil.rmtree(SNAPSHOT_DIR, ignore_errors=True)
     SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
-    manifest = {}
+    files = {}
     for i, (path, data) in enumerate(sorted(snapshot.items(), key=lambda kv: str(kv[0]))):
         bak = SNAPSHOT_DIR / f"{i:03d}.bak"
         bak.write_bytes(data)
-        manifest[path.relative_to(ROOT).as_posix()] = bak.name
+        files[path.relative_to(ROOT).as_posix()] = bak.name
+    manifest = {"head": _git_head(), "saved_at": time.time(), "files": files}
     MANIFEST.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def restore_from_disk() -> list[str]:
-    """把上一轮没跑完留下的改坏文件还原，返回被还原的相对路径。"""
+#: 快照落盘超过这个时长，就不再相信「树上那些差异是改坏的」——
+#: 一次被砍断的回退验证，几分钟内就会被发现；几小时后的差异是人改的。
+SNAPSHOT_MAX_AGE_SECONDS = 2 * 3600
+
+
+def snapshot_is_stale() -> str | None:
+    """⭐⭐⭐ RN-637：**一份被砍断的快照，在几小时后会把它之后所有的改动当成「改坏」还原掉。**
+
+    批 93 实测：09:55 一次回退验证被 App 重启砍断，快照留在盘上；下午 13 小时内提交了
+    两批、改了十几个文件；23 点跑一次 `--stale-only`，启动时的「善后」把 **130 个文件**
+    静默写回 09:55 的样子 —— 其中有已经提交的判据、有没提交的修法，报告里只有一行
+    「已自动还原」。⭐ 它只问「现在和当时一不一样」，而这个问题在几小时后**必然答「不一样」**。
+
+    ⇒ 两条判别，任一成立就**拒绝还原、留下快照、让人看**：
+      ① 记的 HEAD 和现在的 HEAD 不同 —— 中间提交过，树上的差异不是改坏的；
+      ② 快照超过 `SNAPSHOT_MAX_AGE_SECONDS`；
+      ③ 旧格式的清单（没记 HEAD）—— 来路不明，同样不动手。
+    返回 None = 可以还原；返回一句话 = 为什么不能。
+    """
     if not MANIFEST.exists():
+        return None
+    try:
+        manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    if not isinstance(manifest, dict) or "files" not in manifest:
+        return "快照清单是旧格式（没记 HEAD），来路不明"
+    head_then, head_now = str(manifest.get("head") or ""), _git_head()
+    # ⚠ 两边都拿不到 HEAD（临时目录里没有 git）算「同一个」—— 否则 RN-093 那条判据在
+    #   玩具树上永远还原不了；真仓库里 HEAD 一定拿得到。
+    if head_then != head_now:
+        return f"快照记的 HEAD 是 {head_then[:10] or '（空）'}，现在是 {head_now[:10] or '（空）'} —— 中间提交过"
+    age = time.time() - float(manifest.get("saved_at") or 0)
+    if age > SNAPSHOT_MAX_AGE_SECONDS:
+        return f"快照已经 {age / 3600:.1f} 小时了（上限 {SNAPSHOT_MAX_AGE_SECONDS // 3600} 小时）"
+    return None
+
+
+def restore_from_disk() -> list[str]:
+    """把上一轮没跑完留下的改坏文件还原，返回被还原的相对路径。
+
+    ⛔ 调用方必须先问 `snapshot_is_stale()`；这里自己也再问一遍 —— 不靠调用方记得。
+    """
+    if not MANIFEST.exists():
+        return []
+    if snapshot_is_stale():
         return []
     try:
         manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return []
+    files = manifest["files"] if isinstance(manifest, dict) and "files" in manifest else manifest
     restored = []
-    for rel, bak_name in manifest.items():
+    for rel, bak_name in files.items():
         path, bak = ROOT / rel, SNAPSHOT_DIR / bak_name
         if not bak.exists() or not path.exists():
             continue
@@ -1485,10 +1544,24 @@ REVERTS = [
     Revert(
         "V", "方形约束又落回共用的 modeToggleButton 上",
         "theme_manager.py",
-        "            QPushButton#modeToggleIconButton {{\n"
-        "                padding: 0px;",
-        "            QPushButton#modeToggleButton {{\n"
-        "                padding: 0px;",
+        # ⚠⚠ 2026-09-06 批 65 修了两次，而第二次才是要害：
+        #   ① 原锚点写的是 `padding: 0px;`，RN-541 改成了 `padding: 0px 10px;`
+        #      ⇒ 这条断点从那时起**一直在空转**，直到并行回退验证的失效体检点名。
+        #   ② 把锚点改对之后它**照样没逮住** —— 因为 RN-541 同时把
+        #      `max-width: 38px` 从那块里拿掉了，「把这块搬到共用选择器上」
+        #      如今只会加一条 `min-width`，压不扁任何东西。
+        #   ⭐⭐⭐ **一个空转很久的断点，修好锚点之后模拟的往往已经不是当年那个缺陷了**
+        #      —— 腐烂的不只是坐标，还有「这一刀砍下去会发生什么」。
+        #   ③ 只加 `max-width` 也还是不红：全站按钮如今有一条 `min-width: 80px`
+        #      的地板（RN-442），**min > max 时 Qt 取 min** ⇒ 宽度停在 80，压不到 38。
+        #      ⭐ 判据没坏，是**那一刀砍不动了** —— 另一条改动顺手把这类伤害挡住了。
+        #   ⇒ 照 docstring 里写的那一刀原样来：`min-width` 和 `max-width` 一起给。
+        "            QPushButton#modeToggleButton, QPushButton#modeToggleIconButton {{\n"
+        "                background-color: transparent;",
+        "            QPushButton#modeToggleButton, QPushButton#modeToggleIconButton {{\n"
+        "                min-width: 38px;\n"
+        "                max-width: 38px;\n"
+        "                background-color: transparent;",
         "tests/test_ui_visual_r1_fixes.py::"
         "test_sidebar_mode_button_is_not_squeezed_into_a_square",
         "侧栏底部「紧凑模式 «」被压成 38px 方块，文字裁成「奏模式」"
@@ -1726,8 +1799,10 @@ REVERTS = [
     Revert(
         "RN", "Alt+N 的上限又写死成 4",
         "gui_widget.py",
-        "        for idx in range(min(9, len(self.nav_groups))):",
-        "        for idx in range(min(4, len(self.nav_groups))):",
+        # ⚠ 2026-09-06 批 58 重锚：RN-025 把分母换成 `_nav_groups_in_view()`，
+        #   原锚点在源码里出现 0 次 ⇒ 这条断点变哑（同批 57 那一次，都是失效体检逮的）。
+        "        for idx in range(min(9, len(self._nav_groups_in_view()))):",
+        "        for idx in range(min(4, len(self._nav_groups_in_view()))):",
         "tests/test_sidebar_nav_structure.py::"
         "test_every_nav_group_gets_an_alt_shortcut",
         "写死的 4 恰好等于当时的分组数 ⇒ 加一组之后最后一组悄悄没了快捷键，"
@@ -2065,8 +2140,8 @@ REVERTS = [
     Revert(
         "RN", "选了风格但模块没开这件事又没人说",
         "pages/special_sound_page.py",
-        "            return \" · 模块已关闭（配了也不会响）\"",
-        "            return \" · 模块已关闭\"",
+        "            return \" · 功能已关闭（配了也不会响）\"",
+        "            return \" · 功能已关闭\"",
         "tests/test_gun_special_sound_truth.py::"
         "test_special_sound_warns_when_style_chosen_but_module_off",
         "RN-051：本页有两层开关（模块复选框 + 每项的「不启用」）。"
@@ -2486,7 +2561,7 @@ REVERTS = [
         "RN", "flash 底栏主按钮又变回纯导航",
         "pages/flash_page.py",
         # ⚠ RN-192：「启用」归总开关、按钮只管「启动」，那颗按钮已经改名。
-        '                self.action_bar.configure_primary("启动", self._enable_and_start, visible=True)',
+        '                self.action_bar.configure_primary("启动监听", self._enable_and_start, visible=True)',
         '                self.action_bar.configure_primary("前往效果预览", self._open_preview_tab, visible=True)',
         "tests/test_flash_viewmodel_truth.py::"
         "test_flash_bottom_bar_primary_actually_changes_something",
@@ -2779,13 +2854,16 @@ REVERTS = [
         "根本不会触发任何一次更新**。而它失效时毫无声响：指示条只是一直灭着",
     ),
     Revert(
-        "RN", "界面模式又能在测试文件之间漏过去",
+        "RN", "测试配置目录又在会话之间攒东西",
         "tests/conftest.py",
-        '    _want = {"csgo_dir": _cs2customizer_game_sandbox, "ui_expert_mode": False}',
-        '    _want = {"csgo_dir": _cs2customizer_game_sandbox}',
+        '    os.remove(os.path.join(_cs2customizer_test_cfg_dir, "config.json"))',
+        '    pass  # 断点：不清 config.json，只靠 _want 钉两个键',
         "tests/test_test_config_does_not_leak_between_files.py::"
-        "test_a_polluted_seed_does_not_change_what_the_next_process_sees",
-        "RN-142：测试的配置目录是**固定路径、跨文件跨轮次累积**的，而 run_tests 逐文件"
+        "test_a_polluted_unpinned_key_does_not_survive_either",
+        "RN-646（批 97）：钉两个键挡不住第三个 —— 特殊音效判据存下的 round/c4/health 风格值让别的判据"
+        "红在没改过的 HEAD 上。断点把「每会话清整份 config.json」撤掉 ⇒ 污染一个没钉的键、下一个进程照样看到。"
+        "⚠ 这条原来是 RN-142 的（撤掉 `_want` 里的 ui_expert_mode）——清盘之后那一撤已经逮不住"
+        "（651/652 实测），故改守清盘本身。RN-142 原文：测试的配置目录是**固定路径、跨文件跨轮次累积**的，而 run_tests 逐文件"
         "起独立进程 —— 前一个文件把 `ui_expert_mode=True` 存了盘，后一个文件就接着用。"
         "实测代价：`test_advanced_page_ui_polish`（字母序靠前）看到初始值，CI 当场红；"
         "`test_ui_visual_r1_fixes`（字母序靠后）的空转守卫要求 ≥20 项导航，"
@@ -3163,7 +3241,7 @@ REVERTS = [
         "RN", "flash 的启动入口被空库引导顶掉",
         "pages/flash_page.py",
         # ⚠ RN-192：同上，按钮改名成「启动」。
-        '                self.action_bar.configure_primary("启动", self._enable_and_start, visible=True)',
+        '                self.action_bar.configure_primary("启动监听", self._enable_and_start, visible=True)',
         '                self._guide_empty_library(True, "去社区拿一套自定闪光", "打开图片文件夹", self._open_flash_images_folder, "刷新样式列表")',
         "tests/test_empty_library_covers_every_page.py::"
         "test_flash_only_guides_on_the_two_asset_tabs",
@@ -3544,7 +3622,13 @@ REVERTS = [
         #    改指 RN-104（「资源·异常 N」红标无原因，跨页 8 页）——
         #    ⚠ 它同样会有关档的那一天；⭐ **这类断点没有结构性的修法，
         #      只有"全组跑"这一个发现机制** ⇒ 收工只跑新组是不够的。
-        "# 属 RN-104 族（文案点名了这一页不存在的东西）",
+        # ⚠⚠ 2026-09-06 批 60：**RN-104 关档了，同一件事第三次发生**
+        #    （批 12 → 批 21 → 本批）。上面那句"没有结构性的修法"因此
+        #    只剩一条可操作的推论：**挑一条「关不掉」的**。
+        #    改指 RN-535（产品代码 +15% vs DoD 第 9 条）——
+        #    它挂在 M7、且**要用户裁定**，是全册里生命期最长的那一条。
+        #    ⭐ 全组跑逮到它的那一刻，正是它第三次证明「收工只跑新组不够」。
+        "# 属 RN-535 族（文案点名了这一页不存在的东西）",
         "tests/test_renovation_registry_does_not_rot.py::"
         "test_product_code_that_names_an_rn_is_not_still_open",
         "RN-198：登记册是全工程唯一一个**没有棘轮**的真相源。一次对账查出 **14 条**"
@@ -5131,14 +5215,20 @@ REVERTS = [
     Revert(
         "RN", "预设提示又变回一句无条件的状态陈述",
         "pages/hud_color_page.py",
-        '            "换完要点右下角保存才写进游戏。")',
+        '            "换一套会把默认色和事件设置整套换掉（数字键那 9 个不动）。")',
         '            "还没写进游戏，点右下角保存。")',
         "tests/test_hud_color_has_one_commit_point.py::"
         "test_no_copy_claims_an_unsaved_state_while_the_page_is_clean",
-        "RN-502（**我自己这一批引入的**，外审改完复跑 8/12 判高）："
+        "RN-502（**我自己那一批引入的**，外审改完复跑 8/12 判高）："
         "旧文案「**载入**只是把这套规则填进编辑区，还没写进游戏」是**条件句**，任何时候都为真；"
         "改成无条件陈述之后，页面干净时它与状态胶囊「保存 · 已存下」当场打架。"
-        "⭐⭐⭐ **把一句条件句改成陈述句，就把一句永远为真的话，变成了一句多数时候为假的话**",
+        "⭐⭐⭐ **把一句条件句改成陈述句，就把一句永远为真的话，变成了一句多数时候为假的话**。"
+        "⚠⚠ **批 81：这条断点被本批自己拆掉了** —— RN-565 撤掉了后半句"
+        "「换完要点右下角保存才写进游戏」，而锚点抄的是整句 ⇒ 源码里 0 次命中、**静默空转**。"
+        "⭐⭐⭐ 同批 80 那条**同形第二次**：那次是「一次合规的改判拆了守着别不合规改的门」，"
+        "这次是「一次合规的删文案拆了守着别把这句文案改坏的门」——"
+        "**两次都是我把那句话改对了，而门就挂在那句话的字面上。**"
+        "⇒ 已重新指向留下来的那半句（它仍是一句条件句，正是 RN-502 要守的形状）",
     ),
     # ================================ 批 42：RN-469 收口（分母守卫 must_scan）
     #
@@ -5218,8 +5308,11 @@ REVERTS = [
     Revert(
         "RN", "「关档了没有」改按另一个词判，里程碑状态词的现算全塌",
         "tests/test_renovation_progress_board_does_not_rot.py",
-        "        out.setdefault(phase, []).append((name, status.startswith(STATUS_CLOSED)))",
-        "        out.setdefault(phase, []).append((name, status.startswith(STATUS_NOT_STARTED)))",
+        # ⚠ 2026-09-05 批 57 换锚点：`_phase_items` 从两态改成三态（RN-537）之后，
+        #   原锚点 `status.startswith(STATUS_CLOSED)` 在源码里出现 0 次 ⇒ 这条断点变哑，
+        #   **失效体检逮到的，不是我记得的**（同批 42：断点会随它守的判据一起改）。
+        "    if status.startswith(STATUS_CLOSED):\n        return STATUS_CLOSED",
+        "    if status.startswith(STATUS_NOT_STARTED):\n        return STATUS_CLOSED",
         "tests/test_renovation_progress_board_does_not_rot.py::"
         "test_the_milestone_word_is_recomputed_from_the_pages_not_typed_by_hand",
         "RN-482：看板上的状态词必须**从页面表现算**，看板自己不许当真源。"
@@ -5548,9 +5641,9 @@ REVERTS = [
         #   CRLF 到这儿已经归一成 LF。⭐ 第一版写成 `\r\n`，四条断点全部
         #   「锚点出现 0 次」被跳过 —— 而失效体检把它报成「一直在空转」，
         #   ⭐⭐ **一条从没匹配上过的断点，和一条腐烂掉的断点，报出来是同一句话。**
+        # RN-643 之后基础规则没有色条那一行了；锚点跟着挪
         "                background-color: transparent;\n"
-        "                border: none;\n"
-        "                border-left: 3px solid {c.text_tertiary};\n"
+        "                border: none;   /* RN-643：色条去掉 —— 胶囊 = 纯文字（RN-103 候选 C，与 B 只差 1 票、在地板内） */\n"
         "                border-radius: 0px;\n",
         "                background-color: {c.bg_card};\n"
         "                border: 1px solid {c.border_secondary};\n"
@@ -5565,11 +5658,11 @@ REVERTS = [
     Revert(
         "RN", "只改基础规则、忘了 warn 那条特化（框只剩警告那几颗留着）",
         "theme_manager.py",
+        # RN-643 之后胶囊是纯文字：warn 特化只剩字色 + 字重；断点给它单独加回一圈闭合框
         "                color: {self._chip_text(c.accent_warm)};\n"
-        "                background-color: transparent;\n"
-        "                border: none;\n"
-        "                border-left: 3px solid {self._chip_text(c.accent_warm)};\n",
+        "                font-weight: 600;\n",
         "                color: {self._chip_text(c.accent_warm)};\n"
+        "                font-weight: 600;\n"
         "                background-color: {self._hex_to_rgba(c.accent_warm, 28)};\n"
         "                border: 1px solid {self._hex_to_rgba(self._chip_text(c.accent_warm), 120)};\n",
         "tests/test_status_chips_do_not_look_clickable.py::test_a_status_chip_is_not_drawn_as_a_closed_box",
@@ -5579,8 +5672,7 @@ REVERTS = [
     Revert(
         "RN", "降权那条把闭合轮廓加回来（总开关关着的页面上又变回框）",
         "theme_manager.py",
-        "                border: none;\n"
-        "                border-left: 3px solid {c.text_tertiary};\n"
+        "                border: none;   /* RN-643：连左侧色条一起去 */\n"
         "            }}\n\n            /* ⚠⚠ **这两处原来是橙色的",
         "                border: 1px solid {c.border_secondary};\n"
         "            }}\n\n            /* ⚠⚠ **这两处原来是橙色的",
@@ -5591,15 +5683,16 @@ REVERTS = [
         "**一条只在某个祖先属性下才生效的规则，需要一个带那个祖先的标本**",
     ),
     Revert(
-        "RN", "左侧色条也删了（胶囊什么都不画）",
+        "RN", "胶囊左侧色条又被画回来（RN-643 改判为纯文字之后）",
         "theme_manager.py",
+        "                border: none;   /* RN-643：色条去掉 —— 胶囊 = 纯文字（RN-103 候选 C，与 B 只差 1 票、在地板内） */\n"
+        "                border-radius: 0px;\n",
+        "                border: none;\n"
         "                border-left: 3px solid {c.text_tertiary};\n"
         "                border-radius: 0px;\n",
-        "                border-radius: 0px;\n",
-        "tests/test_status_chips_do_not_look_clickable.py::test_the_chip_still_has_something_on_its_left",
-        "RN-103：色条是它**还在说「这是一组状态项」**的唯一凭据。"
-        "⭐ 这条不是靠票数立的（四个候选 12/12 都答「分得开」），"
-        "是**给未来的自己留的下界**",
+        "tests/test_status_chips_do_not_look_clickable.py::test_the_chip_has_no_left_bar_either",
+        "RN-103 → RN-643 改判：原来这条守的是「色条必须还在」，用户 2026-09-15 实机指着这一族"
+        "色条说「很突兀很 AI」，而 RN-103 那轮候选 B 与 C 只差 1 票、在 RN-570 地板内 ⇒ 改守「不许再画」",
     ),
     Revert(
         "RN", "胶囊又能折行了（同排高度不齐）",
@@ -5720,20 +5813,221 @@ REVERTS = [
         "它本来就在武器卡表头，紧贴那 54 个复选框 —— 在那儿点，用户看得见自己改了什么",
     ),
     Revert(
-        "RN", "底栏那句话不再说「要不要点什么」",
+        "RN", "底栏整行又不回答「要不要点什么」了",
         "pages/magnifier_page.py",
-        # ⚠ 锚点在批 51 改过：RN-519 清存量时，「应用」两个字从字面量换成了
-        #   `self.offset_apply_btn.text()`（同一个名字不许在代码里存两份）。
-        #   ⭐ 失效体检当场逮到这一条 —— 断点一失效就在空转。
-        '            "改完就存下了；只有「偏移校准」里的 X / Y 要点那张卡上的"',
-        '            ""',
+        # ⚠⚠ 锚点在批 84 第二次搬家，而**两次搬家的原因是同一条**：
+        #   批 51（RN-519）「应用」两个字从字面量换成了 `self.offset_apply_btn.text()`；
+        #   批 84（RN-444）那句话整段撤掉了 —— 例外消灭之后，
+        #   「存不存」由共用回执说，页面不再自己写。
+        #   ⭐ 两次都是**合规改动**把断点的锚拆掉的（RN-609 同族，这是第四次）。
+        #   ⇒ 这次把锚钉在**开关本身**上：它是「谁来回答那个问题」的唯一真源，
+        #     而那句话是它的产物。⭐ 锚在因上，不锚在果上。
+        "    SAVES_AUTOMATICALLY = True",
+        "    SAVES_AUTOMATICALLY = False",
         "tests/test_the_loudest_button_is_not_the_undo_button.py"
         "::test_the_bar_message_tells_the_truth_about_what_needs_clicking",
-        "RN-277：本页 `SAVES_AUTOMATICALLY = False`，共用回执**不替它说存不存**（批 24）。"
-        "两颗按钮撤走之后，这句话是唯一还在回答「我到底要不要点什么」的东西。"
-        "⭐ 判据不比「有没有『保存』两个字」，比的是**它自己声称的那件事**："
-        "说了「应用」就必须真有那颗按钮，说了「存下」就必须真有 "
-        "`stateChanged.connect(self.save_settings)`（AST 验）",
+        "RN-277 / RN-444：底栏两颗按钮都撤了，所以「改动存不存」只剩底栏那一行在答。"
+        "批 24~83 由页面自己写（那时本页 `SAVES_AUTOMATICALLY = False`，"
+        "共用回执不替它说）；批 84 例外消灭后改回 `True`，**共用回执自己说**。"
+        "⭐ 判据钉的是**那个问题有没有人答**，不是哪一个控件来答 —— "
+        "把开关拨回 False，两边就都不说了",
+    ),
+    Revert(
+        "RN", "偏移的 X / Y 又回到「不点「应用」就丢」",
+        "pages/magnifier_page.py",
+        "        self.x_offset_input.editingFinished.connect(self._apply_offset)",
+        "        self.x_offset_input.returnPressed.connect(self._apply_offset)",
+        "tests/test_hud_color_has_one_commit_point.py"
+        "::test_the_offset_probe_actually_collects_evidence",
+        "RN-444（批 84）：这一页原来有**两套保存规则** —— 除偏移 X / Y 之外全部即时保存，"
+        "而那两个框要点一下「应用」才写下去，外审 5 发判「保存逻辑割裂」。"
+        "⇒ 修法是**消灭那个例外**（接 `editingFinished`，"
+        "`base_sensitivity_input` 从一开始就是这么写的）。"
+        "⭐⭐⭐ 守它的判据要的是「**这一页没有任何一个输入框是例外**」，"
+        "不是「有一个输入框会落盘」—— 第一版写成后者，"
+        "把缺陷原样装回去之后**判据 12 条全绿**（探针在另一个框上就取到证据返回了）",
+    ),
+    Revert(
+        "RN", "写盘失败又变回「记一行日志就算了」",
+        "config.py",
+        # ⚠ 锚点在批 87 从 `if` 变成了 `elif`（RN-624 在前面插了一个 `self._exiting` 分支）。
+        #   ⭐⭐⭐ 那一改**把这条断点悄悄关掉了** —— 而唯一告诉我这件事的是回退验证
+        #   开跑前的失效体检（「1/485 条断点已失效，它们一直在空转」）。
+        #   改一行代码，同时关掉守着这行的那道岗，两件事在 diff 里长得一模一样。
+        "                elif self._save_retries_left > 0:",
+        "                elif False:",
+        "tests/test_a_failed_config_write_is_retried_not_dropped.py"
+        "::test_a_write_that_exhausts_the_backoff_is_retried_and_eventually_lands",
+        "RN-622（批 86）：⭐⭐⭐ **RN-613 把「一次就放弃」改成了「五次才放弃」，"
+        "而「放弃」那一格的代码一个字都没改。** 退避用尽之后照旧是：记一行 ERROR、"
+        "删掉临时文件、**什么都不做** —— 用户刚改的那一项静默丢掉，"
+        "和 RN-613 要修的那件事一模一样。"
+        "⚠ 怎么发现的：RN-617 查到第三次时改成**编排时序**"
+        "（`scripts/x4_probe_restore_race_orchestrated.py`），编排成功了，"
+        "而跑出来的不是 RN-617 预言的「新旧混杂落盘」—— "
+        "`load_config` 的 `with open(...)` 包住了 500 行赋值、读句柄全程开着"
+        "（实测窗口 **0.6 ms**），Windows 上 `os.replace` 必然 `WinError 5`，"
+        "**那份混杂的配置根本落不了盘**；代价换成了「那一次保存整个丢掉」"
+        "（五次退避实测共 267 ms，全撞在同一个句柄上）。"
+        "⭐⭐ **挡住 RN-617 的是一个顺带的副作用，没有人是为了这个才那么写的。**"
+        "⛔ 修法里不许调 `save_config()` 重排：失败分支正握着不可重入的 `_save_lock`",
+    ),
+    Revert(
+        "RN", "闪光样式参数又变回「整个 dict 端给进程」",
+        "flash_process_manager.py",
+        "            self.style_parameters = self._style_parameters_for(self.flash_style)",
+        "            self.style_parameters = self.config.flash_style_params",
+        "tests/test_the_flash_style_params_are_read_from_the_layer_they_were_written_to.py"
+        "::test_a_style_parameter_the_user_changed_survives_a_restart",
+        "RN-621（S3，批 86）：`config.flash_style_params` **写的是两层、读的是一层**。"
+        "闪光页把用户拖的值存进 `{样式名: {参数名: 值}}`，"
+        "而进程管理器把**整个 dict** 当参数表交给 `update_style_parameters`，"
+        "那边按 `if \"blur_factor\" in parameters` 一层取。"
+        "⭐⭐⭐ 而 `config.py` 里那份默认值**恰好是一层的** ⇒ "
+        "全新安装一切正常，**只有真的调过参数的用户才坏**：拖完滑块、重启、又变回去，"
+        "界面上一个字提示都没有（症状和 RN-619 一模一样，根因完全不同）。"
+        "⭐⭐ 用户的值**一直好好躺在盘上**，从来没人去那一层拿 ⇒ 修法只动读侧，不迁移数据。"
+        "⚠ 探针第一版在自己体内**抄了一份读逻辑**，于是修好之后照样报「复现」"
+        "（RN-616 同款）⇒ 现在一律构造真的 `FlashProcessManager`",
+    ),
+    Revert(
+        "RN", "看门狗那一刀之前又变回「排个定时器慢慢写」",
+        "gui_widget.py",
+        "                self.config.save_config_on_exit()",
+        "                self.config.save_config_now()",
+        "tests/test_a_write_at_exit_is_not_scheduled_into_a_future_that_never_comes.py"
+        "::test_every_exit_path_saver_is_the_synchronous_one",
+        "RN-624（批 87）：⭐⭐⭐ **重试是一句关于未来的承诺，而退出正是把未来拿走的那一刻。** "
+        "上一批的 RN-622 把「写盘失败就放弃」改成了「排一个 1 秒后的 daemon Timer」—— "
+        "运行期对，而 15s 看门狗的下一行就是 `os._exit(0)`，**那一刀连 atexit 都不跑**，"
+        "排好的重试连同线程一起蒸发，结果和 RN-622 修之前一模一样。"
+        "⭐⭐ **一个正确的函数被从错误的地方调用，在任何行为判据下都是绿的** —— "
+        "所以守它的那一支量的是「调用点是谁」，不是「那个函数对不对」。"
+        "实测（`scripts/x5_exit_retry_probe.py`，三条臂，真的攥住 config.json 不 mock）："
+        "正常退出 ✅ / 看门狗+同步重试**关** ⛔ / 看门狗+同步重试**开** ✅ —— "
+        "⭐ 阳性对照与被测项只差 `attempts=1` 一个开关。"
+        "⛔ 预算必须小（看门狗的职责是保证关得掉）：3 次 × 0.2s，最坏约 1.4s",
+    ),
+    Revert(
+        "RN", "退出清理表又可以把「改配置」排到「落盘」后面",
+        "gui_widget.py",
+        '            ("保存音乐进度", self._save_music_progress_on_close),',
+        '            ("保存音乐进度", lambda: None),',
+        "tests/test_the_exit_order_is_a_table_not_a_suggestion.py"
+        "::test_every_step_that_changes_the_config_runs_before_it_is_saved",
+        "RN-623（批 87）：把 18 步退出清理表**整个倒过来**再跑全量 ⇒ "
+        "**288/288 文件 · 3584 用例 · 0 红**，这一族一条都没人守。"
+        "⭐⭐⭐ 结构原因比 X4 那条还精确：X4 是「没有判据调用过 `main()`」，"
+        "而这里**有**判据调 `closeEvent`、还调了两次 —— 两次都走 `ask`/`tray` 分支，"
+        "**在 `_run_shutdown_steps()` 之前就 `return` 了**（那支判据自己写着「只验路由」，"
+        "它没做错任何事）⇒ 覆盖率表上写着「closeEvent 被测过」，真正的退出一次都没跑过。"
+        "⚠ 顺序违反是多行搬家，单行替换表达不了 ⇒ 这条断点拆的是**同一条契约的另一头**："
+        "唯一那个改配置的步骤整个消失。⭐⭐ 而这一拆当场逼出一条自查 —— "
+        "它本该让「改配置的必须排在落盘前」变红，实际会让它**恒绿**（分母空了）。"
+        "⇒ 判据里先钉分母（`movers` 非空）再查违规，"
+        "断点也改指向那一句；这正是 RN-615「从被测对象推出来的分母抓不住对象被拆掉」的第三次。"
+        "整表倒置由 `scripts/x5_step_shuffler.py` 验过，红的正好是两条契约、反面对照保持绿。"
+        "⭐ 那条契约**没有人写下来过**：第 2 步把播放位置写进 `self.config`，"
+        "而它只靠第 17 步落盘 —— 排到落盘之后就是静默丢掉，界面上一个字都没有",
+    ),
+    Revert(
+        "RN", "撤副本撤过头：整个动作被删掉，而反面守卫静默跳过",
+        "pages/voice_output_page.py",
+        "    def _add_slot(",
+        "    def _add_slot_RENAMED(",
+        "tests/test_one_action_one_entrance.py"
+        "::test_removing_the_copy_did_not_remove_the_action",
+        "RN-495（批 90 落地）：那支反面守卫自称防的是「撤重复时把两颗一起删掉」，"
+        "而它的跳过条件 `if f\"def {method}(\" not in src: continue` "
+        "**把「主仓里删没了」也一起放过去了** —— 那条 `continue` 的注释写明它只为"
+        "**开源子集里改了名**而设（RN-140）。"
+        "⭐⭐⭐ 两种情况的**症状完全相同**（源码里找不到那个 `def`），"
+        "分它们的只能是**能力**不是症状：闭源全量里有 `build_tools/oss_sync`，子集里没有"
+        "（同 `revert_verify` 自己的 `subset_build` 判法）。"
+        "⇒ 全量里「方法不见了」= 缺陷，子集里 = 不可比。"
+        "⚠ 顺带把分母下限按 build 分档：写死 4 的那一版在闭源全量（8 条）里"
+        "等于「删掉一半入口也照样绿」—— 4 那个数本来是给子集用的",
+    ),
+    Revert(
+        "RN", "索引校验的裁定行挪到了退出链路之后",
+        "scripts/build_search_index.py",
+        '        announce("search_index", code)\n    _flush_streams()\n'
+        "    _teardown_guarded(handles, code)",
+        "    _flush_streams()\n    _teardown_guarded(handles, code)\n"
+        '    announce("search_index", code)',
+        "tests/test_nobody_trusts_the_index_scripts_exit_code.py"
+        "::test_the_verdict_line_is_printed_before_the_exit_path",
+        "RN-172（批 90 落地）：`build_search_index.py --check` 的退出码**结构上不可信** —— "
+        "2026-09-13 连跑 6 次实测：**1 次 `3221226505`（`0xC0000409`，Qt 原生层栈保护），"
+        "而同一次的裁定是对的**（立案那天拿到的是 1 / 127 / 0 / 3221226505 四种）。"
+        "⛔ 不去修那个崩溃：它早于任何 Python 层接管，`except` 接不住、看门狗也来不及响。"
+        "⇒ 守的是「别再有人回去读退出码」，而**前提是裁定行落在退出链路之前** —— "
+        "它一旦挪到后面，崩溃那 1/6 连裁定行都没有，而「没有裁定行」按规矩算失败 ⇒ 变成假红。"
+        "⭐⭐⭐ 顺带一条自查：既有那支退出码判据**把 `build` 和 `teardown` 都桩掉了**，"
+        "而真实的崩溃正好发生在 `teardown` 里 —— "
+        "**一支专门测退出码的判据，把产生错误退出码的那一段桩掉了**；"
+        "它本身没写错（要跑进 1 秒就必须桩掉 Qt），错的是把它读成全覆盖。已在它自己文件里写明",
+    ),
+    Revert(
+        "RN", "漂移补丁表的归宿被删掉（变成一张永久豁免表）",
+        "tests/test_oss_patches_never_drop_a_fix.py",
+        "#: **归宿**（⛔ 这一行不许删 —— 一张没有归宿的「已知问题」表就是一张永久豁免表）：",
+        "#: （归宿这一行被删掉了）",
+        "tests/test_oss_patches_never_drop_a_fix.py"
+        "::test_the_drift_list_is_not_a_place_to_park_a_patch_forever",
+        "RN-156（批 90 落地）：**语义补丁的上下文窗口是看不见的** —— "
+        "改动落进窗口里不会有任何提示，只在下一次同步时变成「整个文件 patch does not apply」。"
+        "⇒ 把「看不见」换成「声明过」：四条当期漂移逐条写明是哪一批干的，**只许缩不许长**。"
+        "⛔⛔ **本批试过一把更便宜的尺子，量完之后否掉了**：拿补丁的上下文行去上游文件里找，"
+        "找不到就报漂 —— 实测 **4 个已知漂移全中，而其余 69 个里误报 27 个（39%）**，"
+        "因为机械替换本来就会改掉那些行。"
+        "⭐⭐⭐ **一把 39% 误报的门禁，两批之内一定会被调静音。先量误报率，再决定要不要做成判据。**"
+        "⚠ 而这张表必须带归宿（`--apply` + 重捕，等用户在场）—— "
+        "**一张没有归宿的「已知问题」表就是一张永久豁免表**",
+    ),
+    Revert(
+        "RN", "配置版本号又会被旧版本静默拉低",
+        "config.py",
+        "        if from_version > CONFIG_SCHEMA_VERSION:",
+        "        if False:",
+        "tests/test_the_config_does_not_rewrite_what_it_cannot_read.py"
+        "::test_a_config_from_a_newer_version_does_not_get_its_version_lowered",
+        "RN-614（批 85）：`_run_schema_migrations` 原来**无条件**把版本号拉到当前值。"
+        "用户装过新版（配置已是 v3）、又退回只认 v2 的旧版跑一次 ⇒ 迁移循环一次都不进，"
+        "而**版本号被改写成 2 并落盘**；再升回去时，新版会把 2→3 的迁移"
+        "**在已经是 v3 的数据上再跑一遍**。"
+        "⭐ 版本号是**唯一**记录「这份数据是什么形状」的东西",
+    ),
+    Revert(
+        "RN", "陌生的键又会被兼容分支物化成正经条目",
+        "config.py",
+        "                        if key not in self.hud_color_dynamic_map:",
+        "                        if False:",
+        "tests/test_the_config_does_not_rewrite_what_it_cannot_read.py"
+        "::test_the_two_buckets_that_promise_to_filter_actually_filter",
+        "RN-615（批 85）：这个循环的两条分支原来对「陌生的键算不算数」给出**相反**的答案 —— "
+        "`dict` 那支守着 `key in ...`，而**兼容 V1 旧格式的 `int` 那支不守**；"
+        "⚠ 而不守的那一支，正是**老配置文件会走的那一支**。"
+        "实测塞 `{\"__x3__\": 1}` 会被物化成一个正经条目并原样写回盘，界面上清不掉。"
+        "⚠⚠ 这条判据的分母**不许**再从「有没有那道守卫」推出来："
+        "第一版那么写，删掉守卫之后那个桶同时离开了分母，判据照样全绿"
+        "（⭐⭐⭐ 一个从被测对象推出来的分母，抓不住那个对象被拆掉）",
+    ),
+    Revert(
+        "RN", "`_load_plain` 的键名列表少一个逗号（而语法完全合法）",
+        "config.py",
+        '                                 "kill_sound_enabled", "kill_voice_enabled", "cfg_check_enabled", "mode", "csgo_dir", "kill_icon_enabled",',
+        '                                 "kill_sound_enabled", "kill_voice_enabled", "cfg_check_enabled", "mode", "csgo_dir", "kill_icon_enabled"',
+        "tests/test_the_config_does_not_rewrite_what_it_cannot_read.py"
+        "::test_every_plain_load_key_is_a_real_attribute",
+        "RN-619（S2，批 85）：X3 关档减重把 167 条机械读折叠成 26 次 `_load_plain(...)`，"
+        "而生成器**漏了续行末尾的逗号** ⇒ Python 把相邻字符串字面量**悄悄拼起来**，"
+        "去找一个叫 `kill_icon_enableddebug_mode` 的键 ⇒ **两个配置项都读不回来（共坏 16 个）**。"
+        "⭐⭐⭐ **语法合法、`ruff` 全绿、全套判据全绿** —— 落到用户身上是"
+        "「改了设置、重启之后又变回去了」，而界面上一个字的提示都没有。"
+        "⭐⭐ **在这门语言里，「少了一个逗号」不是语法错误，是语义错误。**"
+        "⚠ 守它的判据参照的是**独立的一侧**（`Config` 实例上真有哪些属性）—— "
+        "往返那条判据逮不住它，因为它的键名列表取自同一批 `_load_plain` 参数",
     ),
     Revert(
         "RN", "方向键那一行又变回不能换行的 QHBoxLayout",
@@ -5925,9 +6219,16 @@ REVERTS = [
     Revert(
         "RN", "没装 GSI 配置时也让人去「进对局」（一句假的指路）",
         "pages/utility_page.py",
+        # ⚠⚠ 2026-09-10 批 74：这个锚点**被我自己那一批改哑了**。RN-528 把
+        #   句子里的「高级设置」换成了 `page_route(...)` 生成的可点链接，
+        #   于是这段字面量在源码里出现 **0 次**，断点静默停跑 ——
+        #   而回退验证的汇总行照样是「✅ 97/97」，失效那条只在**分片日志**里。
+        #   ⭐⭐⭐ **改一句文案，就会让一条守着这句文案的断点悄悄退休；
+        #     而它退休的样子，和它守得好好的样子，在汇总行上一模一样。**
+        #   ⇒ 锚点跟着新写法走（`f"去{target}页…"`），并把「失效」当红对待。
         '                missing.append(\n'
         '                    "「地图」和「阵营」现在还认不出来：软件要先往 CS2 里写一份配置文件才读得到，"\n'
-        '                    "去「高级设置」页选一次 CS2 安装目录就会自动写好")',
+        '                    f"去{target}页选一次 CS2 安装目录就会自动写好")',
         '                missing.append("「地图」和「阵营」要进对局才认得出来")',
         "tests/test_utility_finishes_its_sentences.py"
         "::test_the_empty_state_explains_itself_on_the_screen_it_happens_on",
@@ -6384,6 +6685,1204 @@ REVERTS = [
         "⭐ 这条断点钉的是「例外名单是承重的」—— 名单一空，正向守卫必须当场红，"
         "否则它就是一张只会变长的豁免表",
     ),
+    # ======================================== 批 55：X1 契约快照
+    # ======================================== 批 56：X1 外部效应快照
+    Revert(
+        "RN", "主窗又多了一个常驻定时器",
+        "gui_widget.py",
+        "        self._page_names = {}",
+        "        self._page_names = {}\n"
+        "        from PySide6.QtCore import QTimer as _T\n"
+        "        self._extra_timer = _T(self)\n"
+        "        self._extra_timer.start(30)",
+        "tests/test_x1_external_effects_are_frozen.py::"
+        "test_the_repeating_timer_count_did_not_grow",
+        "总纲 §8 逐字写着「**新增常驻 Timer 一律 B 堆**」，"
+        "而在这份快照之前**没有任何东西数得出主窗常驻了几个定时器**。"
+        "实测冻下来的是 **11 种定时器 / 常驻 3 个**（3s / 15s / 30min）。"
+        "⭐ X1 要动的正是这个容器 —— 动完之后多一个 30ms 的常驻定时器，"
+        "在测试报告上是看不见的",
+    ),
+    # ======================================== 批 57：X1 链路行为
+    Revert(
+        "RN", "切一页把 28 页全造出来（懒加载被打开）",
+        "gui_widget.py",
+        "    def show_page(self, page_id, animated=True, force=False):",
+        "    def show_page(self, page_id, animated=True, force=False):\n"
+        "        for _pid in list(self._page_names):\n"
+        "            self.ensure_page_loaded(_pid)",
+        "tests/test_x1_link_behavior.py::"
+        "test_switching_to_a_page_builds_exactly_that_one_page",
+        "懒加载是一条**性能契约**，而它在测试报告上是隐形的："
+        "把预加载顺手打开之后，28 页会在切一页时全造出来，"
+        "而**功能全对、判据全绿**，只是启动慢了几秒。"
+        "⭐ X1 动刀改的正是这条链路",
+    ),
+    # ======================================== 批 58：X1 导航分组顺序
+    Revert(
+        "RN", "分组顺序退回静态表（Alt+1 又跳到屏幕上的第二组）",
+        "gui_widget.py",
+        "        layout = getattr(self, \"_nav_layout\", None)",
+        "        layout = None  # 退回 RN-025 之前：只认静态表",
+        "tests/test_x1_link_behavior.py::"
+        "test_alt_1_reaches_the_group_that_sits_first_on_screen",
+        "`nav_groups` 只装静态分组，而「常用」是 `insertWidget(0)` 插进布局的 ⇒ "
+        "**每一处遍历它的代码都漏了它**：Alt+1 跳到屏幕上的第二组，"
+        "最后一组根本没有快捷键（只发了 len(nav_groups) 个）。"
+        "⭐ 而这件事在**没有使用数据的机器上复现不出来**（CI 和新装的机器就是），"
+        "所以判据必须自己种下常用组 —— 同 RN-516",
+    ),
+    # ======================================== 批 59：首页开关的归属
+    Revert(
+        "RN", "标签统一宽度被撤掉（三列开关又参差错位）",
+        "gui_widget.py",
+        "            uniform = max(lb.sizeHint().width() for lb in switch_labels)",
+        "            uniform = 0  # 撤掉统一宽度",
+        "tests/test_a_switch_is_nearest_to_its_own_label.py::"
+        "test_the_switches_still_line_up_in_columns",
+        "⭐⭐ **改完复跑逼出来的那一刀**：把弹簧挪到开关后面修好 RN-530（S2）之后，"
+        "开关跟着标签字数长短跑，外审同一批图 **6/6 发**报「开关未按列对齐，参差错位」。"
+        "⚠ 那是我为了修 RN-530 亲手引入的，而**几何判据一条都看不见它**"
+        "（序关系照样成立、间距照样小）—— 统一标签宽度才两件事同时成立",
+    ),
+    # ======================================== 批 60：X1 收官
+    Revert(
+        "RN", "顶栏那颗按钮的宽度又被样式表锁死（文字当场被裁掉）",
+        "theme_manager.py",
+        "                padding: 0px 10px;  /* RN-541：带文字了，宽度放开 */\n                min-width: 38px;",
+        "                padding: 0px;\n                min-width: 38px; max-width: 38px;",
+        "tests/test_every_status_chip_explains_itself.py::"
+        "test_the_top_bar_toggle_says_what_it_does_on_itself",
+        "⭐⭐⭐ **一个只靠悬停才说话的控件，在任何一张静态截图上都是哑的**（RN-541）。"
+        "它自己是有 tooltip 的（「切换到紧凑模式」），而外审 5 发照样报"
+        "「只有图标、无法识别用途」—— 因为**截图上没有 tooltip**，"
+        "而截图正是用户看到的第一眼",
+    ),
+    Revert(
+        "RN", "能点的功能名撤掉记号（又只有 tooltip 知道它能点）",
+        "gui_widget.py",
+        '        label = (ClickableLabel(f"{text} \u203a") if target_page else QLabel(text))',
+        '        label = (ClickableLabel(text) if target_page else QLabel(text))',
+        "tests/test_every_status_chip_explains_itself.py::"
+        "test_a_clickable_switch_name_looks_clickable",
+        "⭐⭐ **我判过这条「实测后不成立」，同一批外审 3 发把我顶了回来**（RN-235）。"
+        "那 17 个功能名本来就能点，而屏幕上没有任何东西说它能点。"
+        "⚠ 只在卡片顶上补一句说明**不够**（复跑 5 发仍报）—— "
+        "困惑发生在每一个名字上，记号就得落在每一个名字上",
+    ),
+    Revert(
+        "RN", "状态芯片又共用同一句解释（重排一次就换主人）",
+        "pages/audio_status_badge.py",
+        '            explain = CHIP_EXPLAINS.get(head) or ""',
+        '            explain = ""  # \u9000\u56de\u5171\u7528\u4e00\u53e5',
+        "tests/test_every_status_chip_explains_itself.py::"
+        "test_no_two_chips_share_one_borrowed_explanation",
+        "⭐⭐ **按位置认主人的东西，会在别人重排时静悄悄换主人**（RN-232）。"
+        "原来那句解释写死给「第 3 颗」，我批 59 一重排状态带它就跟错了人，"
+        "而**没有任何东西会因此变红**",
+    ),
+    # ======================================== 批 61：X2 非文字对比度
+    Revert(
+        "RN", "滚动条把手退回原来那个和底色同亮度的颜色",
+        "theme_manager.py",
+        '        scrollbar_handle="#6e7079",',
+        '        scrollbar_handle="#2a2d3a",',
+        "tests/test_nontext_contrast_has_a_denominator.py::"
+        "test_no_new_nontext_violation",
+        "⭐⭐⭐ RN-045（**S2**）：深色主题的把手 `#2a2d3a` 压在 `#14161C` 上，"
+        "实测对比度 **1.06:1**（WCAG 2.1 §1.4.11 要 3:1）—— 后果不是不好看，"
+        "是**用户看不出内容还有下文**。批 61 把九个主题全部沿亮度轴推过 3:1",
+    ),
+    Revert(
+        "RN", "把手又被兑 alpha（兑水兑得少一点还是水）",
+        "theme_manager.py",
+        "                background: {c.scrollbar_handle};\n"
+        "                border-radius: {scrollbar.border_radius}px;\n"
+        "                min-height: {scrollbar.handle_min_height}px;",
+        "                background: {self._hex_to_rgba(c.scrollbar_handle, 60)};\n"
+        "                border-radius: {scrollbar.border_radius}px;\n"
+        "                min-height: {scrollbar.handle_min_height}px;",
+        "tests/test_nontext_contrast_has_a_denominator.py::"
+        "test_the_handle_is_not_watered_down_with_alpha",
+        "⭐⭐ **颜色够亮和「不兑水」是两件事**：有人早就把病诊断对了，"
+        "并把侧栏那一处从 alpha 60 抬到 130 —— 实测只把深色主题从 1.06 抬到 1.16，"
+        "因为病根是把手色本身就和底色几乎同亮度。而同一根滚动条会压在"
+        "bg_primary / bg_secondary / bg_card 三种底色上，一个 alpha 不可能三处都对",
+    ),
+    Revert(
+        "RN", "非文字对比度的分母塌掉（一个主题都不量）",
+        "scripts/ui_contrast_audit.py",
+        'SKIP_THEMES = {"minimal"}',
+        'SKIP_THEMES = {"minimal", "dark", "light", "green", "purple", "warm", "contrast", "rose", "ocean"}',
+        "tests/test_nontext_contrast_has_a_denominator.py::"
+        "test_the_denominator_actually_covers_the_themes",
+        "⭐⭐⭐ 这支审计跑 96 项、0 项不达标、rc=0，而它自己最后一条注释逐字写着"
+        "「非文字对比度 9 个主题全部只有 1.2~1.9:1 …… 本轮不在此判失败」，"
+        "并挂到 UP-063 / R7；R4 推给 R7、R7 又推一次，UP-063 最后记作**已放弃**。"
+        "⭐ **一条写在注释里的缓期，没有任何东西看着它到期**（同 RN-538）",
+    ),
+    # ======================================== 批 62：X2 第二刀
+    Revert(
+        "RN", "紧凑标记整个不干活了（125 颗按钮又比调用点声明的宽）",
+        "ui_style_applier.py",
+        "    changed = 0\n    for b in root.findChildren(QAbstractButton):",
+        "    changed = 0\n    for b in []:",
+        "tests/test_a_declared_width_is_not_a_dead_letter.py::"
+        "test_no_button_is_wider_than_its_caller_declared",
+        "⭐⭐⭐ RN-442：规范的下限写在样式表里、调用点的意图写在 `setFixedWidth` 里，"
+        "**Qt 在 min > max 时取 min** ⇒ 调用点那一行不产生任何效果也不报错。"
+        "实测 656 颗按钮里 133 颗，差 6~46px。⚠ 立案点名的是 `_style_button`，"
+        "⚠⚠ 这条断点批 63 搬过一次家：它原来打在 `_apply_style` 那一处调用上，"
+        "而批 63 给 `_load_page` 也加了一处 ⇒ 拆掉一处另一处照样兜住，当场判假绿。"
+        "⭐ 同批 44/57：**一条被多处独立支撑的断言，单点破坏测不出来** ——"
+        "改打在唯一承重的那件事上（`mark_compact_buttons()` 的函数体）。"
+        "而承重的是样式表那条 `min-width`（改成 10px 时 min 当场从 118 掉到 72）",
+    ),
+    Revert(
+        "RN", "样式表的规范下限被删（这一类按钮没有下限了）",
+        "theme_manager.py",
+        "                min-width: {qss_box(button.primary_min_width, button.secondary_padding_horizontal, button.secondary_border_width)}px;",
+        "                /* 下限没了 */",
+        "tests/test_a_declared_width_is_not_a_dead_letter.py::"
+        "test_the_spec_floor_still_applies_to_unconstrained_buttons",
+        "⚠⚠ 修 RN-442 时我真的这么干过一版：删掉样式表那三条 `min-width`，"
+        "min>max 当场清零 —— **而全站按钮的下限也一起没了**"
+        "（min 分布从「一堵 118 的墙」散成 72/80/84/…）。"
+        "⭐ **「把重复的那一个删掉」只有在剩下那个真的在工作时才成立。**"
+        "⚠ 这条断点的守卫必须**逐个 objectName 看** —— 只删一类时，"
+        "另外两类的达标率会把它盖过去（破坏验证第一版就是这么假绿的）",
+    ),
+    Revert(
+        "RN", "多行输入框退回 border_secondary（豁免的理由不成立）",
+        "theme_manager.py",
+        "                border: {input_spec.textarea_border_width}px solid {c.border_primary};  /* RN-545：控件边界 */",
+        "                border: {input_spec.textarea_border_width}px solid {c.border_secondary};",
+        "tests/test_nontext_contrast_has_a_denominator.py::"
+        "test_the_exemption_reason_still_holds",
+        "⭐⭐⭐ RN-545：`border_secondary` 整档被判「装饰与失效态，不进 WCAG 1.4.11 分母」，"
+        "而**那句话本身就是一条判据** —— 只要有人把它用到真控件边界上，理由当场不成立。"
+        "⚠ 它在写下来的当天就抓到两个：顶栏模式切换按钮、多行输入框。"
+        "⭐ **一条豁免只要求你写下理由，就会自己筛掉不该被豁免的那几个。**"
+        "⚠ 而它原来只跑在审计脚本的 main() 里，破坏验证当场判它假绿 —— "
+        "**一条只在某一条路上生效的守卫，在另一条路上就是不存在**",
+    ),
+    Revert(
+        "RN", "滚动条轨道又画成透明（只剩一小节把手浮着）",
+        "theme_manager.py",
+        "            QScrollBar:vertical {{\n                background: {c.bg_tertiary};",
+        "            QScrollBar:vertical {{\n                background: transparent;",
+        "tests/test_nontext_contrast_has_a_denominator.py::"
+        "test_the_scrollbar_track_is_drawn_not_transparent",
+        "⭐⭐⭐ RN-045 后一半：**对比度过线不等于看得见。**"
+        "行为题三档：修之前 **0/12**、只修把手对比度 **3/21（14%）**、"
+        "把宽度加到 10px **10/20（50%）**。⚠ 而那 4px 没敢要 —— 紧凑档当场多出 13 处"
+        "「最小高超出可视区」，**7px 就开始红**（余量不到 1px，那是 RN-529 的题目）。"
+        "⇒ 改用不占版面的那一半：把 `transparent` 的轨道画出来",
+    ),
+    # ======================================== 批 63：X2 第三刀
+    Revert(
+        "RN", "八类按钮的焦点环整条没了（Tab 上去一个像素都不变）",
+        "theme_manager.py",
+        "QPushButton#navButton:focus, ",
+        "QPushButton#nav_never_matches:focus, ",
+        "tests/test_keyboard_focus_is_visible.py::"
+        "test_every_button_shows_something_when_focused",
+        "⭐⭐⭐ RN-546（**S2**）：WCAG 2.1 §2.4.7 要求键盘焦点可见，而实测这 8 类"
+        "（侧栏导航 / 汉堡 / 帮助 / 账号 / 模式切换…）**聚焦前后像素差全部为 0**。"
+        "根因是它们只落到 `QPushButton:focus {{ outline: none }}` 上 —— "
+        "而那条规则上面的注释写着「navButton 等**也走这**」。"
+        "⭐ 注释说「这些也走这里」，而那条规则什么都没给它们",
+    ),
+    Revert(
+        "RN", "建页那次标记不再推迟一拍（又被 polish 覆盖回去）",
+        "gui_widget.py",
+        "                _QTimer.singleShot(0, lambda p=page: mark_compact_buttons(p))",
+        "                mark_compact_buttons(page)",
+        "tests/test_a_declared_width_is_not_a_dead_letter.py::"
+        "test_no_button_is_taller_than_its_caller_declared",
+        "⭐⭐⭐ RN-547：同一个顺序问题绊了四次（`_style_button` / `_load_page` / "
+        "`install_help_panel` / `show_page`）—— **只要样式表还会再 polish 一次，"
+        "任何「提前打的标记」都会被覆盖**。推迟到事件循环下一拍之后，"
+        "高度方向 161 → 0（判据那条路上）。⭐ **「什么时候」比「在哪儿」更要紧**",
+    ),
+    # ======================================== 批 64：自带样式表的按钮
+    Revert(
+        "RN", "magnifier 箭头按钮的焦点环没了（自带样式表压过全站 QSS）",
+        "pages/magnifier_page.py",
+        "            QPushButton:focus {{\n"
+        "                border: 2px solid {get_color('border_focus')};\n"
+        "            }}",
+        "            /* 焦点环没了 */",
+        "tests/test_self_styled_buttons_still_have_states.py::"
+        "test_a_self_styled_button_still_shows_focus",
+        "⭐⭐⭐ **一个自带样式表的控件，等于把自己从「所有还没写的」全站规则里摘了出去。**"
+        "同一形状第四次：批 23 修全站 `:disabled` → 批 37（RN-453）账号按钮漏了 → "
+        "批 63（RN-546）补焦点环它又漏了 → 批 64 这 8 颗箭头**聚焦和禁用两样一起漏**"
+        "（实测像素差都是 0）。⇒ 判据不再按名字点名，改成**按形状划分母**：凡是自带样式表的按钮，两个状态都得看得见",
+    ),
+    Revert(
+        "RN", "magnifier 箭头按钮的禁用态没了（禁用了但看不出来）",
+        "pages/magnifier_page.py",
+        "            QPushButton:disabled {{\n"
+        "                background-color: transparent;\n"
+        "                color: {get_color('text_muted')};",
+        "            QPushButton:never_matches {{\n"
+        "                background-color: transparent;\n"
+        "                color: {get_color('text_muted')};",
+        "tests/test_self_styled_buttons_still_have_states.py::"
+        "test_a_self_styled_button_still_looks_disabled",
+        "「禁用了但看不出来」是批 23 花整整一批修掉的东西 —— "
+        "而**每一个自带样式表的控件都会把它重新引进来一次**",
+    ),
+    # ======================================== 批 65：紧凑档的版面密度
+    Revert(
+        "RN", "紧凑档不再有自己的密度档（上限调成天文数字 = 等于没这一档）",
+        "ui_design_system.py",
+        "    compact_max_vertical_spacing: int = 8",
+        "    compact_max_vertical_spacing: int = 9999",
+        "tests/test_compact_mode_has_its_own_density.py::"
+        "test_the_tier_actually_squeezes_something",
+        "⭐⭐⭐ RN-548：紧凑档以前**只是把窗口改小**（可视区 750 → 462px），"
+        "版面密度一档都没跟着变 ⇒ 竖向余量不到 1px，滚动条加到 **7px 就当场红**。"
+        "⭐ **一个已经零余量的容器，会把任何一次改进都变成一次「变坏」**",
+    ),
+    Revert(
+        "RN", "密度档拨不回去（原样每次重记，收过的数被当成原样）",
+        "ui_style_applier.py",
+        "        origin = lay.property(_DENSITY_ORIGIN)\n        if origin is None:",
+        "        origin = lay.property(_DENSITY_ORIGIN)\n        if True:",
+        "tests/test_compact_mode_has_its_own_density.py::"
+        "test_the_tier_round_trips",
+        "紧凑/完整是界面上一颗按钮，用户随时会拨回来 —— 还不回原样就等于"
+        "**把紧凑档的间距永久带进了完整档**。⭐ 这一档是上限，不是重排版面",
+    ),
+    Revert(
+        "RN", "滚动条又被收窄回 6px",
+        "ui_design_system.py",
+        "    width: int = 10",
+        "    width: int = 6",
+        "tests/test_compact_mode_has_its_own_density.py::"
+        "test_the_scrollbar_is_wide_enough_to_be_discoverable",
+        "⭐⭐⭐ RN-045 的五档行为题：0/12 → 3/21 → **10/20（10px）** → "
+        "1/24（6px + 把轨道画出来）→ 8/24。**我用一个「看起来等价、又不占版面」"
+        "的替代方案，换掉了一个已经被数证明有效的方案 —— 而换的时候手上没有数。**"
+        "⭐ 那 4px 一直要不起，不是因为它贵，是因为装它的容器早就没有余量了",
+    ),
+    # ======================================== 批 66：锚点条 / 一排里的高度
+    Revert(
+        "RN", "锚点芯片的高度又被通用下限顶起来",
+        "theme_manager.py",
+        "                min-height: {qss_box(26, 2, 1)}px;\n"
+        "                max-height: {qss_box(26, 2, 1)}px;",
+        "                /* 高度声明没了 */",
+        "tests/test_the_anchor_bar_says_where_you_are.py::"
+        "test_anchor_chips_are_the_height_their_caller_declared",
+        "RN-547 残余：**第一次进这一页**时那 14 颗渲染成 34px（声明 26，高 31%）。"
+        "⭐ 通用 `QPushButton { min-height }` 是内容盒，加 padding/border 折成 34 —— "
+        "RN-551 那条根因的又一个表征",
+    ),
+    Revert(
+        "RN", "锚点条不再说「现在在哪一段」",
+        "widgets/anchor_bar.py",
+        "        chip.setCheckable(True)",
+        "        chip.setCheckable(False)",
+        "tests/test_the_anchor_bar_says_where_you_are.py::"
+        "test_the_current_section_is_marked",
+        "⭐ RN-431：外审原话「10 个密集标签缺乏激活态指示，**分不清是切页还是锚点**」。"
+        "四档行为题实测：改前 `magnifier` 2/6 · `advanced` **0/6** 看得出，加上之后两页都 6/6",
+    ),
+    Revert(
+        "RN", "锚点条的前导词没了（这排又被读成二级页签）",
+        "widgets/anchor_bar.py",
+        '*, lead="跳到：") -> list:',
+        '*, lead=None) -> list:',
+        "tests/test_the_anchor_bar_says_where_you_are.py::"
+        "test_the_bar_says_the_jump_stays_in_this_page",
+        "⭐⭐⭐ **同一个改动，在两页上买到的东西完全不同**：`advanced` 改前就 6/6 "
+        "答对「本页内跳转」，前导词一分钱没买到；而 `magnifier` 改前 **0/6**、"
+        "只加当前态仍 5/6 误读成页签、**加上前导词才 6/6**。"
+        "⇒ 我差一点因为 advanced 那一轮就把它撤掉（批 44 那条「零收益就撤回」）",
+    ),
+    Revert(
+        "RN", "底栏那颗按钮又只给下限不给上限",
+        "pages/gun_sound_page.py",
+        "        bar.adopt_button(btn)",
+        "        btn.setObjectName(\"secondaryButton\")\n        btn.setMinimumHeight(30)",
+        "tests/test_a_row_keeps_the_height_it_declared.py::"
+        "test_every_action_bar_button_declares_a_row_height",
+        "⭐⭐⭐ RN-549：`mark_compact_buttons()` 只认「max 比 QSS 下限还小」的按钮，"
+        "这颗只写了 `setMinimumHeight(30)` ⇒ 认不出，QSS 那条 54 留在它身上，"
+        "同排 36/38/**54**。⚠ 而这一排在批 63 之前是齐的（三颗都被顶到 54）—— "
+        "**一次「把大部分修好」的改动，会把「全都一样地不对」变成「参差不齐」**",
+    ),
+
+    # ======================================== 批 69：底栏不再喊 / 锚点条的层级
+    Revert(
+        "RN", "干净态的提交按钮又用品牌色喊回去了",
+        "theme_manager.py",
+        'QPushButton#primaryButton[fp_pending="false"] {{',
+        'QPushButton#primaryButton[fp_pending_off="false"] {{',
+        "tests/test_the_bottom_bar_stops_shouting.py::"
+        "test_the_quiet_state_actually_looks_different",
+        "⭐⭐⭐ RN-504：**一颗常驻的、高亮的提交按钮本身就在说「还有一件必须做的事没做」**，"
+        "而同一屏的芯片同时写着「已存下」。真分母只有 2 页（另 13 颗底栏主按钮是"
+        "「打开音频资源 / 在屏幕上试播」这类**动作**，没有「待提交」这回事）。"
+        "⚠ 这条断点打在**渲染结果**上：属性设对了而样式表被别的规则压过时，"
+        "像素一点不变而属性判据照样绿（RN-150 那一族）",
+    ),
+    Revert(
+        "RN", "页面不再声明「有没有待提交」",
+        "pages/hud_color_page.py",
+        "        self.action_bar.set_primary_pending(bool(self._dirty))",
+        "        pass  # 断点：不声明待提交状态",
+        "tests/test_the_bottom_bar_stops_shouting.py::"
+        "test_a_submit_button_only_shouts_when_there_is_something_to_submit",
+        "⚠⚠ 这条判据第一版**假绿**：它自己先调一次 `set_primary_pending(False)` "
+        "再断言属性 —— 那测的是那个方法，不是「页面有没有接线」，"
+        "破坏验证当场逮到（批 47 RN-513 那一条，而我是刚写完 RN-563 之后又犯的）。"
+        "⇒ 改成什么都不碰，只看页面加载完的自然状态",
+    ),
+    Revert(
+        "RN", "锚点条又把父级和它自己的子级混排在一行",
+        "widgets/anchor_bar.py",
+        "    sections = drop_container_sections(list(sections))",
+        "    sections = list(sections)",
+        "tests/test_the_bottom_bar_stops_shouting.py::"
+        "test_no_anchor_chip_is_an_ancestor_of_another",
+        "⭐⭐ RN-552：外审 `magnifier` **3/3** 报「父级『基础』与子级『倍率』『热键』"
+        "混排，层级错乱」，实测**逐字属实** —— 5 颗里 3 颗是「基础」的后代，"
+        "而「基础」离「倍率」只有 74px。⚠ 判据第一版找卡片只认 `title_label`，"
+        "而那 3 颗内层是 `QFrame#card` ⇒ **构成父子关系的那三颗根本没进分母**，"
+        "破坏验证当场判它假绿。⭐ 判据按记号划分母，不带那个记号的天生看不见",
+    ),
+    Revert(
+        "RN", "丢容器的方向反过来（变成「只留顶层」）",
+        "widgets/anchor_bar.py",
+        "        if not any(other is not target and _is_ancestor(target, other)",
+        "        if any(other is not target and _is_ancestor(target, other)",
+        "tests/test_the_bottom_bar_stops_shouting.py::"
+        "test_dropping_containers_keeps_the_leaves_not_the_parents",
+        "⭐ **去掉容器和只留顶层，方向正好相反**：`magnifier` 只扫顶层的话锚点只剩 2 个，"
+        "而「用户真正想直达的恰恰是那几个内层分区」（调用方自己的注释早就否过那条路）",
+    ),
+
+    # ======================================== 批 82：标记在控件身上（RN-151）
+    Revert(
+        "RN", "标记从控件文案退回旁边那句说明（实测买 0 票的那一个）",
+        "pages/screen_effects_page.py",
+        '            else "击杀触发屏幕边缘特效（总开关关着，现在不生效）")',
+        '            else "击杀触发屏幕边缘特效")',
+        "tests/test_the_bottom_bar_stops_shouting.py::"
+        "test_a_subordinate_checkbox_says_on_itself_that_it_is_not_in_effect",
+        "RN-151：勾选框画着勾却被禁用，而同屏芯片写「边缘特效 · 关闭」。"
+        "⭐⭐⭐ 两个候选的票数（地板页两轮纹丝不动）：**旁边那句说明点名那颗勾 ⇒ 会 6/6（买 0）**；"
+        "**标记进控件自己的文案 ⇒ 会 1/6**。外审逐字：「没耐心的玩家不会细读长说明，"
+        "视觉焦点仍在打勾的控件上」。⇒ **「在控件旁边说」和「在控件身上说」是两件不同的事。**"
+        "⚠ 本批第三次同形（565 / 183 / 151）：**我改的是说明那件事的话，"
+        "而承重的是那件事本身的那个控件。**",
+    ),
+
+    # ======================================== 批 82：提交按钮干净时不在场（RN-504）
+    Revert(
+        "RN", "干净态从「不在场」退回「在场但禁用」（实测买不到票的那一个）",
+        "widgets/page_action_bar.py",
+        '            btn.setVisible(value == "true")',
+        '            btn.setEnabled(value == "true")',
+        "tests/test_the_bottom_bar_stops_shouting.py::"
+        "test_a_submit_button_only_shouts_when_there_is_something_to_submit",
+        "RN-504：一颗常驻的提交按钮，在没有待提交内容时**本身就在说**"
+        "「还有一件必须做的事没做」，而同屏芯片同时写着「已存下」。"
+        "⭐⭐⭐ 批 82 三组 A/B（地板页三组纹丝不动）：改前 会 6/6 → **隐藏 不会 6/6** → "
+        "**禁用（置灰）会 6/6**。⇒ **「在场但不可点」和「不在场」在读者眼里完全不是一回事，"
+        "而那个差别就是全部的效果。** 正面证实了 RN-174 那条在册反向证据"
+        "（「置灰的『导出准心』极易被误认为是保存/应用按钮」）。"
+        "⭐ 断点特意反向改成**候选乙**而不是随便改坏：源码上两者只差一个词，"
+        "而实测一个买到 12/12、另一个买到 0 —— **这条断点守的正是那个词。**",
+    ),
+
+    # ======================================== 批 82：地板页的判定（RN-606）
+
+    # ======================================== 批 81：底栏不复述芯片（RN-183）
+    Revert(
+        "RN", "底栏又开始复述芯片的值（「当前状态：…」那句回来了）",
+        "pages/viewmodel_page.py",
+        '            "写进 CFG 之后下一局自动生效；当局要立刻见效，"',
+        '            f"当前状态：CFG{\'已同步\'} · 循环键 CAPSLOCK · 共 5 组预设。"  # noqa',
+        "tests/test_the_bottom_bar_stops_shouting.py::"
+        "test_the_bottom_bar_does_not_restate_what_the_chips_already_say",
+        "RN-183：改之前 `viewmodel` 底栏逐字是「当前状态：CFG已同步 · 循环键 CAPSLOCK · "
+        "自动切换关闭（V） · 共 5 组预设。」—— ⭐⭐⭐ **开头就是「当前状态：」，"
+        "而屏幕上方那一排芯片正是「当前状态」这个控件**；5 颗里 4 颗被逐值复述。"
+        "⇒ 底栏不是在补充，是在用纯文本重画一遍那一排。"
+        "⭐⭐ 它在源码里的形状是**同一个值被取了四次**：撤掉复述后 ruff 当场点出 "
+        "**9 个**只为「把控件自己的状态再念一遍」而做的取值。"
+        "⚠ 分工：芯片管当前状态，底栏管「怎么在游戏里生效」（一句任何状态下都为真的因果）",
+    ),
+
+    # ======================================== 批 81：判断题的形状（RN-599）
+    Revert(
+        "RN", "是非结构判定塌成「凡是带问号的都算」",
+        "scripts/gemini_review.py",
+        "    return any(rx.search(q) for rx in _YESNO_SHAPES)",
+        "    return bool(q.strip())",
+        "tests/test_a_judgment_question_can_be_answered.py::"
+        "test_the_shapes_that_burned_ten_minutes_are_rejected",
+        "RN-599：judgment 模板**强制第一行**是「判断」加 会/不会/说不准，而批 79 问的是"
+        "「你会**先点哪一颗按钮**」—— 选择题。⭐⭐⭐ 它不报错，而是跑出一个"
+        "**和限流一模一样**的失败（一发 300 秒超时 / 一发返回码 0 但空返回，白烧 10 分钟），"
+        "当时周限 79% 差点被判成「该换号了」。⇒ **空返回 / 超时 / 限流三者长得一模一样，"
+        "而只有一种是外部原因** —— 这条检查省下的不是 10 分钟，"
+        "是一次把内部缺陷误判成外部限额的机会。"
+        "⚠ 断点打在那一行 `any(...)` 上，不是打在正则表上："
+        "⭐ 表还在、判定塌了的时候，源码读起来完全正常（RN-442 同款）",
+    ),
+
+    # ======================================== 批 81：分桶与豁免（RN-604 / RN-603）
+
+    # ======================================== 批 81：登记册的格数（RN-601）
+    Revert(
+        "RN", "格数比较瞎了（42 行错位行全部无条件通过）",
+        "tests/test_renovation_registry_does_not_rot.py",
+        "        if len(c) != len(h)",
+        "        if False and len(c) != len(h)",
+        "tests/test_renovation_registry_does_not_rot.py::"
+        "test_the_cell_count_check_can_actually_see_a_broken_row",
+        "RN-601：普查 502 行**42 行（8.4%）的格数与它那张表的表头对不上** ⇒ "
+        "所有按表头取格的判据在这些行上读到的是**错位的内容**，而错位读出来的东西"
+        "**长得和正常内容一模一样**（RN-595 那 91 个假数正是这么来的）。"
+        "⚠ 同 RN-408：被测对象（登记册）在另一个仓，断点只能打在判据自己的承重逻辑上 —— "
+        "⭐ 而这要求正判与阳性对照**真的共用那一行比较**；"
+        "第一版两条判据各写各的，断点无处可打",
+    ),
+
+    # ======================================== 批 68：尺寸承诺 / 归宿格
+
+    # ======================================== 批 67：高度令牌的单位 / 芯片明细
+    Revert(
+        "RN", "高度令牌又被当成 QSS 的内容盒发出去",
+        "ui_design_system.py",
+        "    return max(0, total - 2 * padding - 2 * border)",
+        "    return total",
+        "tests/test_a_height_token_is_not_a_content_box.py::"
+        "test_a_widget_minimum_lands_on_its_token",
+        "⭐⭐⭐ RN-551 根因。QSS 的 `min-height` 量的是**内容盒**，而令牌说的是整个控件 ⇒ "
+        "36 发出去屏幕上是 54（高 50%）。全站实测：下限**正好落在令牌上**的从 "
+        "**4/342 变成 314/342**，`min > max` 的死信 **39 → 0**。"
+        "⚠ RN-442（宽 133）/ 547（高 161）都是它的表征，当时是在下游一颗颗清零",
+    ),
+    Revert(
+        "RN", "样式表又直接发裸令牌（不换算内容盒）",
+        "theme_manager.py",
+        "                min-height: {qss_box(input_spec.combobox_height, input_spec.combobox_padding_vertical, input_spec.combobox_border_width)}px;",
+        "                min-height: {input_spec.combobox_height}px;",
+        "tests/test_a_height_token_is_not_a_content_box.py::"
+        "test_no_rule_emits_a_raw_height_token_as_a_content_box",
+        "RN-551 的源码面。⭐ 这条判的是**写法**不是渲染结果 —— 渲染结果会被别的规则、"
+        "别的标记盖住，而「把令牌原样发出去」这个动作在源码里唯一且明确。"
+        "实测下拉框 103 颗，声明 34、屏幕上 50",
+    ),
+    Revert(
+        "RN", "下拉框又写回那句从没生效过的 setFixedHeight",
+        "pages/hud_color_page.py",
+        "        combo = QComboBox()\n        combo.setFixedWidth(130)\n",
+        "        combo = QComboBox()\n        combo.setFixedWidth(130)\n        combo.setFixedHeight(32)\n",
+        "tests/test_a_height_token_is_not_a_content_box.py::"
+        "test_no_declared_height_is_a_dead_letter",
+        "⭐ 这 4 行（`hud_color` ×2、`gui_widget` ×2）**从写下那天起就没生效过** ——"
+        "QSS 的下限 50 顶着，min > max 时 Qt 取 min。"
+        "⇒ 一句从没生效过的声明，留着就是留一句谎话，已删",
+    ),
+    Revert(
+        "RN", "芯片的通用解释又把具体明细压掉",
+        "pages/audio_status_badge.py",
+        "            if explain and detail and explain != detail:",
+        "            if False:",
+        "tests/test_every_status_chip_explains_itself.py::"
+        "test_an_explained_chip_still_shows_the_specifics",
+        "RN-044 后半。⭐ 一个 `or` 让通用解释永久压住明细：`audio_health` 四颗芯片里"
+        "**只有「音频」那一颗拿不到「是哪几项」**，而它正是会变红的那一颗。"
+        "⭐⭐ 它是 RN-232（批 60）修法的副作用 —— 同 RN-549 一个形状",
+    ),
+    Revert(
+        "RN", "搜索高亮的定时器又只认目标不认代次",
+        "gui_widget.py",
+        "        if gen is not None and gen != getattr(self, \"_search_hit_gen\", None):",
+        "        if False:",
+        "tests/test_search_jump_r13.py::"
+        "test_a_stale_highlight_timer_does_not_kill_the_next_search",
+        "⭐⭐⭐ RN-557：高亮走「强 → 弱 → 撤」三档定时器，而守卫只比**目标是不是同一个** —— "
+        "两次搜索**落在同一个控件上**时它形同虚设，上一次排的「撤销」到点会把这一次的高亮撤掉。"
+        "实测：两次搜索落在同一控件上时，第一次排的「撤销」会撤掉第二次的高亮。"
+        "⚠ 更正：`test_search_jump_r13.py` 那阵偶发红**不是它造成的**，是 RN-558 那处配置泄漏",
+    ),
+    Revert(
+        "RN", "紧凑档夹具又把 compact_mode 落到磁盘上",
+        "tests/test_a_row_keeps_the_height_it_declared.py",
+        "    block_config_persistence(verbose=False)",
+        "    pass  # 断点：不掐落盘了",
+        "tests/test_a_row_keeps_the_height_it_declared.py::"
+        "test_the_compact_fixture_blocks_persistence_before_it_assigns",
+        "⭐⭐⭐ RN-558：配置目录 `%TEMP%/cs2customizer_test_config` 是**固定名、跨轮次累积**的，"
+        "而 `--jobs N` 给每一路加了 `_wI` 后缀 ⇒ 漏进去的 `compact_mode=True` "
+        "**只毒害单跑，整跑看不见**。实测：`test_keyboard_focus_is_visible` 单跑只取到 4/8 类按钮、"
+        "`test_search_jump_r13` 4 跑 3 红且每次红的用例都不同 —— 我为此追了几个小时。"
+        "⭐ **一个缺陷只在「单跑」时现形，而门禁只看「整跑」。** RN-141/473/553 之后同形第四次。"
+        "⚠⚠ RN-563（批 68）：这条断点原先指着那条**行为探针**，而探针是个 subprocess、"
+        "源码里**自己另写了一句** `block_config_persistence` ⇒ 破坏夹具它纹丝不动地绿着，"
+        "**从批 67 起就是假绿**。⭐⭐⭐ 批 47 RN-513 逐字那一条：判据把被测逻辑在测试里"
+        "重写一遍，它测的就是自己的那一份 ⇒ 改指结构判据（AST 断言掐落盘早于赋值）",
+    ),
+Revert(
+        "RN", "总开关状态词又被收进搜索索引",
+        "widgets/master_switch_link.py",
+        '        self._state_label.setProperty("fp_index_skip", True)',
+        "        pass  # 断点：记号拿掉，当前值又会进索引",
+        "tests/test_the_search_index_does_not_ship_machine_state.py::"
+        "test_the_index_is_the_same_under_a_different_machine_config",
+        "⭐⭐⭐ RN-568：`core/search_index.json` **随包发布**，而它的内容取决于"
+        "跑生成器那台机器**开了几个功能** —— 状态词 17 页都有，通用词按文档频率丢"
+        "（阈值 4 页），我恰好开着 2 个 ⇒「已开启」低于阈值被收进去。"
+        "**开到第 4 个它就消失。** ⚠ 重的那半：`--check` 是**阻断级** CI 门，"
+        "它的红绿因此取决于跑它的人开了哪几个开关（裸跑绿、换配置目录当场红）",
+    ),
+    Revert(
+        "RN", "收割器不再看「别收我」那个记号",
+        "scripts/build_search_index.py",
+        '                if widget.property("fp_index_skip"):',
+        '                if widget.property("fp_index_skipp"):',
+        "tests/test_the_search_index_does_not_ship_machine_state.py::"
+        "test_the_harvester_consults_the_skip_marker_before_the_style_name_list",
+        "⭐⭐ 属性名打错一个字母是这条最真实的失效方式：`property()` 永远返回 None、"
+        "跳过从不发生，而「索引与磁盘一致」那条判据**照样绿**（索引是在同样打错的"
+        "代码下生成的）。⇒ 记号这件事要有自己的结构判据，不能只靠结果",
+    ),
+    Revert(
+        "RN", "热键卡有一行的控件落回别的列",
+        "pages/magnifier_page.py",
+        "        trigger_grid.addWidget(self.trigger_mode_combo, 2, 1, _LEFT)",
+        "        trigger_grid.addWidget(self.trigger_mode_combo, 2, 2, _LEFT)",
+        "tests/test_rows_in_one_card_start_at_one_left_edge.py::"
+        "test_every_row_in_a_card_starts_at_the_same_left_edge",
+        "⭐ RN-566：同一张卡里的行只要不共用一个布局列，就没有任何东西让它们对齐 —— "
+        "实测改前 693/679/679（热键卡）、116/132/132（倍率卡）。"
+        "⚠ 断点第一版打在「去掉某一格的 AlignLeft」上，判据没红 —— 查下来**不是判据弱，"
+        "是那个破坏点根本不构成缺陷**（11 处全拿掉几何逐字节不变）。"
+        "⭐⭐⭐ **一条断点如果打在一个不构成缺陷的改动上，它证明不了任何事**",
+    ),
+    Revert(
+        "RN", "对齐顺手把下拉拉宽",
+        "pages/magnifier_page.py",
+        "        self.primary_hotkey_combo.setMinimumWidth(_COMBO_MIN_W)",
+        "        self.primary_hotkey_combo.setMinimumWidth(200)",
+        "tests/test_rows_in_one_card_start_at_one_left_edge.py::"
+        "test_the_controls_keep_their_own_widths",
+        "⭐「左边缘全都一样」有一种很廉价的达成方式：把所有控件拉成同一个宽度 —— "
+        "那在对齐判据眼里是**满分通过**的。⇒ 配一条盯结果的绊线",
+    ),
+Revert(
+        "RN", "阻断档不再主动把音乐条折叠回去",
+        "scripts/_audit_music_bar.py",
+        "        _set_expanded(win, app, want)",
+        "        _set_expanded(win, app, want) if want else None",
+        "tests/test_the_audit_says_which_worst_case_it_pinned.py::"
+        "test_the_report_line_names_the_shape_it_pinned",
+        "⭐⭐⭐ RN-571：**钉一个档 = 把它推到那个状态，不是「碰巧它就是那样」。**"
+        "第一版只给展开档加了推手，阻断档仍旧「建出来就算数」——"
+        "同一进程里先跑过展开档，再 `pin(MODE_WORST_CASE)` 报的是**展开 127px**。"
+        "⚠ 这也解释了那个谜：同一条命令一次报 42px 一次报 128px，"
+        "**门的严格度一直随残留配置漂**，而报告行两次长得一模一样",
+    ),
+    Revert(
+        "RN", "展开档没真的展开（两档量到同一个高度）",
+        "scripts/_audit_music_bar.py",
+        "        want = (mode == MODE_EXPANDED)",
+        "        want = False",
+        "tests/test_the_audit_says_which_worst_case_it_pinned.py::"
+        "test_the_expanded_mode_really_is_taller",
+        "⭐ RN-571 的直接指纹：`pin` 当初少做的那一半，表现出来就是「两档一样高」。"
+        "实测折叠 42px / 展开 112~128px，差 **86px 可视区** ——"
+        "展开档下紧凑 **40 处**、完整 **4 处**纵向缺口，而阻断档一处都看不见",
+    ),
+    Revert(
+        "RN", "报告行退回笼统的「最坏那一档」",
+        "scripts/_audit_music_bar.py",
+        '    shape = "展开" if getattr(bar, "is_expanded", False) else "折叠"',
+        '    shape = "最坏"',
+        "tests/test_the_audit_says_which_worst_case_it_pinned.py::"
+        "test_the_report_line_names_the_shape_it_pinned",
+        "⭐⭐⭐ 这正是当初骗过我的那一行：它笼统地说「最坏那一档」，"
+        "而同一句话下面既可能是 42px 也可能是 128px ——"
+        "**读的人无从分辨，于是「审计跑在最坏档上」这句话没有任何东西在核**",
+    ),
+Revert(
+        "RN", "几个 Steam 账号读数不一致时挑了一份",
+        "core/cs2_video_mode.py",
+        "    if not modes or len(set(modes)) != 1:",
+        "    if not modes:",
+        "tests/test_the_display_mode_check_only_ever_adds_a_warning.py::"
+        "test_readings_that_disagree_are_read_as_unknown",
+        "RN-434 的第 ① 个未解问题：一台机器上实测有 **3 份** cs2_video.txt。"
+        "挑哪一份没有可靠依据 ⇒ **不挑**，不一致就当没读到。"
+        "⭐ 而「当没读到」在这里是安全的那一侧：它退回通用警告，不撤销任何东西",
+    ),
+    Revert(
+        "RN", "钉了档还是去扫盘",
+        "core/cs2_video_mode.py",
+        "    if pinned:",
+        "    if False:",
+        "tests/test_the_display_mode_check_only_ever_adds_a_warning.py::"
+        "test_a_pinned_reading_never_touches_the_disk",
+        "⭐⭐⭐ RN-571 刚教过的那一条：**钉一个档 = 把它推到那个状态，"
+        "不是「碰巧它就是那样」。**这份读数来自机器（同 RN-472 账号 / RN-146 体检），"
+        "钉不住就意味着同一份代码在两台机器上出的字不一样",
+    ),
+    Revert(
+        "RN", "显示模式映射反过来",
+        "core/cs2_video_mode.py",
+        '    if full == "1":',
+        '    if full == "0":',
+        "tests/test_the_display_mode_check_only_ever_adds_a_warning.py::"
+        "test_the_undocumented_mapping_is_written_down_and_only_here",
+        "RN-434 的第 ② 个未解问题：这个映射**没有文档**，而我手上两次读数"
+        "是两个不同的状态（2026-09-03 记 `1+0`，批 72 读到 `0+1`），"
+        "中间没有一次带标注的地面真值。⇒ 判据证不了它对，只能保证**改了有人知道**；"
+        "⭐ 真正兜底的是「映射只决定说得具体不具体，不决定要不要警告」",
+    ),
+    Revert(
+        "RN", "具体档把诊断放到动作前面",
+        "widgets/overlay_requirement.py",
+        '            f"⚠ 先去 CS2 把显示模式改成「无边框窗口化」，{thing}才画得到游戏画面上"',
+        '            f"⚠ 读到你现在正是「独占全屏」——先去把显示模式改成「无边框窗口化」，"',
+        "tests/test_the_display_mode_check_only_ever_adds_a_warning.py::"
+        "test_both_wordings_still_say_how_and_what_happens_otherwise",
+        "批 18 实测：同一句话把「现在可以调」提到前面，"
+        "「他知不知道该干什么」**从 57% 到 100%**。⭐ 我第一版就写岔了 —— "
+        "**加了一条新信息，很容易顺手把语序也换掉**，而语序才是那 43 个百分点",
+    ),
+    Revert(
+        "RN", "工装不再钉显示模式（截图的字随机器变）",
+        "scripts/_audit_neutralize.py",
+        '    os.environ.setdefault("CS2C_CS2_DISPLAY_MODE", "unknown")',
+        "    pass",
+        "tests/test_the_display_mode_check_only_ever_adds_a_warning.py::"
+        "test_the_toolchain_pins_this_reading",
+        "同族第三次：RN-472（账号 token 的网络返回时刻）、RN-146（体检线程扫完的早晚）、"
+        "本条（这台机器的 CS2 显示设置）。⭐ **凡是构造期去问机器状态的，"
+        "工装里都要有一格把它钉住** —— 否则同一份配置复跑，屏幕上的字会变，"
+        "而这些图的下一站是外审",
+    ),
+    Revert(
+        "RN", "三个热键下拉的下限又各写各的",
+        "pages/magnifier_page.py",
+        "        self.trigger_mode_combo.setMinimumWidth(_COMBO_MIN_W)",
+        "        self.trigger_mode_combo.setMinimumWidth(124)",
+        "tests/test_rows_in_one_card_start_at_one_left_edge.py::"
+        "test_that_one_width_really_has_one_source",
+        "RN-569：原状是 116 / 116 / 120，右缘差 4px。"
+        "⭐⭐⭐ 它只在批 70 **修好 RN-566 之后**才第一次被报出来 —— "
+        "左边缘拉齐之前那 4px 淹在 693/679/679 里看不见"
+        "（同 RN-011/150：**一条修法会让另一条既有缺陷第一次变得可见**）。"
+        "⚠ 守得住这条的是「同出一源」那条 AST 判据，不是像素判据："
+        "同一份代码原生档量到 120/120/120，offscreen 假度量下是 125/125/120",
+    ),
+    Revert(
+        "RN", "阻断档的页签级命中也被放进申报表",
+        "scripts/layout_overflow_audit.py",
+        '    return label.split("/", 1)[0] if expanded else None',
+        '    return label.split("/", 1)[0]',
+        "tests/test_the_audit_says_which_worst_case_it_pinned.py::"
+        "test_only_the_expanded_mode_ratchets_tab_level_hits",
+        "⚠⚠ 这是批 72 最危险的一处：展开档（申报档）和折叠档（阻断档）"
+        "**共用同一段命中归类代码**。放松一格，阻断档那 34 处页签级缺口"
+        "就会静默地变成「在册」——**门变松了，而报告行一个字都不会变**",
+    ),
+    Revert(
+        "RN", "展开档申报表被删掉一行",
+        "scripts/layout_overflow_audit.py",
+        '    ("magnifier", "clip"): (52,',
+        '    ("magnifier_已删", "clip"): (52,',
+        "tests/test_the_audit_says_which_worst_case_it_pinned.py::"
+        "test_no_page_falls_off_the_cliff_unannounced",
+        "⭐⭐⭐ **一张声明表只有在有人跑那一档时才是棘轮，否则它只是一段文档。**"
+        "只看表形状的那条判据在这里是**假绿**的（破坏验证当场逮住），"
+        "所以另加了一条真的去跑展开档的。"
+        "⚠ 而那条判据的参数**必须用审计的默认档**：我挑的 `dark/1.0` 一页都不命中，"
+        "`dark/1.25` 覆盖五页仍漏 `magnifier` —— "
+        "⭐ **一个我自己挑出来的参数档，会给出一个分母为空的绿**（同批 40）",
+    ),
+Revert(
+        "RN", "禁用态方向键又变回看不见",
+        "pages/magnifier_page.py",
+        "                color: {get_color('text_muted')};",
+        "                color: {get_color('text_disabled')};",
+        "tests/test_the_nudge_arrows_are_visible.py::"
+        "test_the_disabled_arrow_is_still_an_arrow",
+        "⭐⭐⭐ RN-573：那 8 颗方向键**有文字**（`<` `>` `^` `v`），"
+        "是对比度把它们抹掉了 —— `text_disabled` 对卡片底色实算 "
+        "**1.65:1（暗）/ 1.62:1（亮）**。外审 S3 两个视口各 3/3 全票报「空白方框」，"
+        "而我第一版探针查「有没有既无文字又无图标的按钮」，答案是**没有**，"
+        "差一步就把这 6 票判成假报。"
+        "⭐ **一个查「有没有内容」的探针，答不了「看不看得见」这个问题。**"
+        "⚠ 总开关默认关着 ⇒ 这就是新用户打开这一页的第一眼",
+    ),
+    Revert(
+        "RN", "启用态方向键退回紫色（2.88:1）",
+        "pages/magnifier_page.py",
+        "                color: {get_color('text_primary')};",
+        "                color: {get_color('accent_primary')};",
+        "tests/test_the_nudge_arrows_are_visible.py::"
+        "test_the_enabled_arrow_is_readable",
+        "RN-573：14px bold **不算 WCAG 的大字**，门槛是 4.5:1，而 `accent_primary` "
+        "对卡片底色只有 2.88:1（暗）/ 2.94:1（亮）。"
+        "⭐ 顺带丢掉紫色是有理由的：这几颗不是主行动，"
+        "**颜色该携带状态（能不能点），不该携带品牌** —— 同官网那条"
+        "「按钮按品牌着色而不按状态着色」",
+    ),
+    Revert(
+        "RN", "启用/禁用两态用同一个颜色",
+        "pages/magnifier_page.py",
+        "                background-color: transparent;\n"
+        "                color: {get_color('text_muted')};",
+        "                background-color: transparent;\n"
+        "                color: {get_color('text_primary')};",
+        "tests/test_the_nudge_arrows_are_visible.py::"
+        "test_disabled_still_looks_disabled",
+        "⭐ 反向绊线：把禁用态直接调成正文色，两条对比度判据都会**满分通过** —— "
+        "而那样一来「现在能不能点」就不再被画出来了。"
+        "⇒ 判据要求两态之间至少差 2 倍对比度（实测 12.43 : 4.24 ≈ 2.9 倍）。"
+        "⚠⚠ 批 73 改：这个断点**第一版只往 CSS 里插了一句 `/* 同色 */` 注释**，"
+        "颜色一个字节没改 —— 判据之所以变红，是它的正则 `\\s*\\n\\s*` 吃不下那段"
+        "注释文本、`re.search` 回 None、`.group(1)` 抛 AttributeError，"
+        "而真正那句 `enabled != disabled` **一次都没被执行到**。"
+        "⭐⭐⭐ **一个断点判红的理由，和它声称要造的缺陷，可以是两件事** —— "
+        "而在回退验证的报告上，这两种红长得一模一样。"
+        "⇒ 现在把禁用态的色号真的换成启用态那一个（`text_muted` → `text_primary`）",
+    ),
+Revert(
+        "RN", "方向键的 padding: 0 被拿掉（文字区回到负数）",
+        "pages/magnifier_page.py",
+        "                padding: 0;",
+        "                /* padding: 0; */",
+        "tests/test_the_nudge_arrows_are_visible.py::"
+        "test_every_arrow_has_room_for_its_glyph",
+        "⭐⭐⭐ RN-573 的**真成因**：全站 QSS 给 QPushButton 的左右内边距，"
+        "撞上这里 30px 的固定宽度 ⇒ 实测**文字可用区 -4px**（那一个字要 11px），"
+        "Qt 一个像素都不画，而边框和背景照常 —— 于是看起来就是一排空白方框。"
+        "⚠⚠ 我第一版认定是**对比度**（禁用 1.62:1 / 启用 2.88:1），"
+        "数是真的，改完配色重新出图却**逐字节没变**（md5 相同）。"
+        "⭐⭐⭐ **一个真实的测量，可以支持一个错误的成因** —— "
+        "只有「改完复跑再看一眼图」能分开这两件事。"
+        "⚠ 本断点第一版把它改成 `padding: 1px`，回退验证报**没逮住** —— "
+        "1px 之下可用区仍有 26px，字放得下，缺陷根本没被复现出来。"
+        "⭐ **断点的职责是把缺陷造回来，不是把那一行改一改**",
+    ),
+    Revert(
+        "RN", "那段 CSS 里的 padding 覆写没了（源码绊线）",
+        "pages/magnifier_page.py",
+        "                border-radius: 4px;\n                padding: 0;",
+        "                border-radius: 4px;",
+        "tests/test_the_nudge_arrows_are_visible.py::"
+        "test_the_style_keeps_its_padding_override",
+        "⭐ 单独一条源码绊线，是因为上面那条依赖**当下**的全站内边距值："
+        "哪天全站把 padding 调小到刚好放得下，那条会变绿，"
+        "而这几颗按钮仍处在「随时被别人的内边距挤没」的状态。"
+        "⚠ 而这条判据自己第一版是**假绿**的：它查 `\"padding: 0\" in body`，"
+        "**而方法的文档字符串里就写着这四个字** ⇒ 把 CSS 那一行删掉照样绿。"
+        "⭐ 同批 71：**一个词出现过，和它真的在起作用，是两件事**",
+    ),
+    Revert(
+        "RN", "窗口形状分母表又写回拼错的名字",
+        "tests/test_the_sandbox_does_not_remember_yesterday.py",
+        '_SHAPE_KEYS = ("compact_mode", "music_bar_expanded", "ui_expert_mode",',
+        '_SHAPE_KEYS = ("compact_mode", "music_bar_expanded", "expert_mode",',
+        "tests/test_the_sandbox_does_not_remember_yesterday.py::"
+        "test_every_shape_key_is_a_real_config_attribute",
+        "⭐⭐⭐ RN-572 的分母表第一版五个名字里有三个**根本不是 config 的属性**"
+        "（`expert_mode` / `font_scale` / `sidebar_collapsed`，真名是 "
+        "`ui_expert_mode` / `ui_font_scale`）—— 那三格永远匹配不到任何东西，"
+        "而扫描照常返回、判据照常绿。**一张分母表可以有一半是拼错的名字，"
+        "而它看起来和覆盖完整一模一样。**"
+        "⚠ 名字修对之后当场多出 4 个在册文件（5 → 9）—— "
+        "**表涨了不是因为事情变坏，是因为尺子原来短了一截**",
+    ),
+    Revert(
+        "RN", "基线采集那条路又不钉显示模式",
+        "scripts/renovation_baseline.py",
+        '    os.environ["CS2C_CS2_DISPLAY_MODE"] = "unknown"',
+        "    pass",
+        "tests/test_the_display_mode_check_only_ever_adds_a_warning.py::"
+        "test_the_toolchain_pins_this_reading",
+        "⭐⭐⭐ RN-434 的闸门装在 `enable_audit_mode()` 里，"
+        "而 `renovation_baseline.structure_of()` 的注释**明写它不能调那个函数** —— "
+        "于是基线这条路够不着闸门，而 structure.json 恰恰存着覆盖层前提那句文案。"
+        "**一个装在共用入口里的闸门，够不着刻意绕开那个入口的调用方**"
+        "（同族第三次：RN-472 账号、RN-146 体检，两次都在这里各钉了一行）",
+    ),
+    Revert(
+        "RN", "审计的展开档接线写反（真跑成折叠档）",
+        "scripts/layout_overflow_audit.py",
+        '    _mode = (_mbar.MODE_EXPANDED if getattr(args, "music_bar_expanded", False)',
+        '    _mode = (_mbar.MODE_WORST_CASE if getattr(args, "music_bar_expanded", False)',
+        "tests/test_the_audit_says_which_worst_case_it_pinned.py::"
+        "test_no_page_falls_off_the_cliff_unannounced",
+        "⭐⭐⭐ 这条断点守的是那条判据的**阳性对照**：接线一坏，审计就跑在折叠档，"
+        "六页一条都不命中 ⇒ 只做否定断言的判据全绿。"
+        "而**我写那条判据就是为了防「分母为空的绿」，它自己却是一个**。"
+        "⚠⚠ 补上的阳性对照第一版写成 `\"展开\" in out` —— "
+        "**折叠档那句报告行自己的散文里就有「展开」两个字**，接线改反照样绿。"
+        "⇒ 改成认「（展开，占 Npx）」这个槽位并判 N>100（折叠 42 / 展开 112~128）。"
+        "⭐ 同批 71 那条，**本批第三次**：一个词出现过，和它真的在起作用，是两件事",
+    ),
+    # ───────────────────────── 批 74 · D7 乙组一（526 / 527① / 528）
+    Revert(
+        "RN", "芯片退回读不出状态的「检查」",
+        "pages/audio_health_page.py",
+        '             "音频 · 正常" if audio_ok else f"音频 · 需检查 {audio_n} 项"),',
+        '             f"音频 · {\'正常\' if audio_ok else \'检查\'}"),',
+        "tests/test_the_health_chips_say_what_they_mean.py::"
+        "test_the_explanation_names_a_label_that_exists",
+        "⭐⭐⭐ RN-527①：「检查」两个字读不出是「正在检查」「检查通过」还是"
+        "「需要检查」，外审两轮各 3/3 判高。而**页面自己的解释里早写好了该显示什么** ——"
+        "`CHIP_EXPLAINS[\"音频\"]` 逐字引着「需检查 N」。"
+        "⇒ 这条断点守的正是那句解释与屏幕的一致性：**一句解释，"
+        "不许解释一个屏幕上不存在的标签**",
+    ),
+    Revert(
+        "RN", "快照空态又变回一片黑",
+        "pages/config_snapshot_page.py",
+        "        self.table.setVisible(has_any)",
+        "        self.table.setVisible(True)",
+        "tests/test_config_snapshot_empty_state.py::"
+        "test_the_empty_list_says_what_to_do",
+        "⭐ RN-526：一份快照都没有时那张表是**一大片全黑空表格**，"
+        "外审两个视口 6/6 判高，逐字「极易被误认为数据加载失败或软件卡死」。"
+        "⇒ 空时藏表、显一句点名那颗按钮的话（照 `audio_replay_page` 的先例）",
+    ),
+    Revert(
+        "RN", "底栏消息标签退回 AutoText（让 Qt 猜用户数据像不像 HTML）",
+        "widgets/page_action_bar.py",
+        "        self.message_label.setTextFormat(Qt.PlainText)\n        layout.addWidget(self.message_label, 1)",
+        "        layout.addWidget(self.message_label, 1)",
+        "tests/test_the_bottom_bar_stops_shouting.py::"
+        "test_the_message_label_does_not_guess_whether_user_text_is_html",
+        "⭐⭐ RN-589-A：这里原来什么格式都不设 ⇒ Qt 默认 `AutoText`，**猜**这串字像不像 HTML。"
+        "而全仓 45 处 `set_message` 里 **34 处传的不是字面量** —— 里面是预设名、"
+        "文件名这类用户自己起的字。实测（离屏量 sizeHint + 阳性对照）："
+        "`预设 <玩家自定义> 已应用` 安全，而 `已导入 A&lt;B.wav` **被当成富文本**、"
+        "屏幕上少三个字符。⭐⭐ **一个「大多数时候没事」的自动探测，"
+        "赌的是用户不会给文件起某个名字。**",
+    ),
+    Revert(
+        "RN", "排版审计的按钮判据退回「只看宽度」",
+        "scripts/layout_overflow_audit.py",
+        "        avail = content.height()\n        need = btn.fontMetrics().height()",
+        "        avail = content.height()\n        need = 0  # 拆掉纵向判定",
+        "tests/test_audit_coverage_r11.py::"
+        "test_layout_audit_checks_button_text_vertically",
+        "⭐⭐⭐ RN-591/592：这支审计的「按钮文案截断」**只查了宽度一个轴** ——"
+        "模块文档第一句逐字写着「按钮被钉死**宽度**时」。实测代价："
+        "`advanced` 那颗「查看将上报的内容」被压到 22px，16px 的字只画得出上半截，"
+        "外审整页图 3/3 报「完全无法辨认」，而**挤压审计**（分母是 `QLabel`+`wordWrap`，"
+        "25 颗按钮一颗不在）与**本审计的横向那条**都判绿。"
+        "⭐⭐ 补上纵向那半之后第一次跑就报 43 处 —— 全站按钮高度写死成 26/28/32/36 像素，"
+        "**字号放大时一个都不跟着变**（同 RN-548）。已登记为存量债（上限语义）",
+    ),
+    Revert(
+        "RN", "把那句从没生效过的 setFixedHeight(32) 放回去",
+        "pages/advanced_page.py",
+        "        view_btn.clicked.connect(self._show_usage_payload)",
+        "        view_btn.setFixedHeight(32)\n"
+        "        view_btn.clicked.connect(self._show_usage_payload)",
+        # ⚠⚠ 这里原来指着 `test_layout_audit_checks_button_text_vertically` ——
+        #   而**那条判据喂的是合成按钮、根本不看真页面** ⇒ 把这行放回去它照样绿。
+        #   ⭐⭐⭐ **断点打在了被测对象上，判据却盯着另一个对象 —— 汇总行上看不出区别。**
+        #   （回退验证逮的，批 76；同批 68「断点不许打在尺子上」的镜像。）
+        "tests/test_advanced_page_ui_polish.py::"
+        "test_the_view_payload_button_does_not_declare_a_height_below_the_qss_floor",
+        "⭐⭐⭐ RN-591：那一行**从写下那天起就没让按钮变成过 32** —— 32 比 QSS 给 "
+        "`secondaryButton` 的下限还矮 ⇒ `mark_compact_buttons()` 标 `fp_short` ⇒ "
+        "下限被摘成 `0px` ⇒ 控件 min 塌到 18（只剩 padding+border）⇒ 卡里竖向一紧就被"
+        "压到 22。**它唯一的作用是把这颗按钮从「和兄弟一样高」变成「可以被压扁」。**"
+        "⚠ 实测破坏后排版审计报「变坏(在册 2px) 可用高 4px 需 16px」rc=1",
+    ),
+    Revert(
+        "RN", "钉档判据不再自己制造最坏的起点",
+        "tests/test_the_audit_says_which_worst_case_it_pinned.py",
+        "    mbar.pin(win, app, mbar.MODE_EXPANDED)\n"
+        "    said_collapsed = mbar.pin(win, app, mbar.MODE_WORST_CASE)",
+        "    said_collapsed = mbar.pin(win, app, mbar.MODE_WORST_CASE)",
+        "tests/test_audit_coverage_r11.py::test_the_pin_judge_makes_its_own_worst_start",
+        "⭐⭐⭐ RN-598：拆掉这一行，那条判据就再也逮不住「阻断档不再主动把音乐条"
+        "折叠回去」—— 因为音乐条本来就折叠着，「推」和「不推」结果一样。"
+        "⭐ RN-571 那条教训（钉一个档 = 把它推到那个状态）**对判据自己同样成立**："
+        "一条判据能不能看见差别，取决于它跑之前世界是什么样。",
+    ),
+    Revert(
+        "RN", "导入向导不再跳过冲突（直接覆盖用户已有素材）",
+        "core/resource_import_wizard.py",
+        "        if exists and not overwrite_existing:",
+        "        if False:",
+        "tests/test_resource_import_wizard.py::"
+        "test_apply_resource_import_plan_skips_conflicts_by_default",
+        "⭐⭐⭐ 批 80：这三个用例**原先指着一份没人运行的代码** —— "
+        "`core/audio/audio_import_wizard.py` 的功能早已泛化搬家到 "
+        "`core/resource_import_wizard.py`（多一个 `domain` 参数，默认就是 `audio`），"
+        "而旧文件没删、单测还在跑，**于是那段死码看起来是活的**。"
+        "⭐ 一个只测试死代码的测试，永远绿，也永远什么都没保护。"
+        "⇒ 把用例搬到活的那份上：产品代码 **−248 行**，而这三件事第一次真的被测到。",
+    ),
+    Revert(
+        "RN", "导入向导的目标路径丢掉 spec 前缀（含 domain 那一层）",
+        "core/resource_import_wizard.py",
+        '            "target_rel_path": os.path.join(spec.target_rel_root, *tail),',
+        '            "target_rel_path": os.path.join(*tail),',
+        "tests/test_resource_import_wizard.py::"
+        "test_scan_resource_import_candidates_recognizes_supported_roots",
+        "⚠ 第一版断点打在 `\"domain\": domain` 上，**没咬住** —— 那只是报告字段，"
+        "真正拼路径的是 `spec.target_rel_root`。"
+        "⭐⭐ 「点名的那一行不是承重的那一行」（RN-442）本会话第二次，两次都犯在**断点**上。"
+        "⚠ 顺带：搬过来之后那个 dry-run 用例原先断言的是一个**不含 domain 层的旧路径**，"
+        "那个文件永远不存在 ⇒ 断言恒真、它从来没测过 dry-run。",
+    ),
+    Revert(
+        "RN", "第一步只换颜色不换位置（RN-450 那条裁定只做一半）",
+        "pages/audio_health_page.py",
+        "        self._actions_row.insertWidget(0, first)\n"
+        "        self._actions_row.insertWidget(1, other)\n",
+        "",
+        "tests/test_the_first_step_is_also_in_the_first_place.py::"
+        "test_when_something_is_broken_the_fix_button_comes_first",
+        "⭐⭐⭐ RN-597：`_sync_first_step()` 的文档字符串逐字写着「那一颗紫的必须是"
+        "当下的第一步」，而它做的只有颜色 —— 发现问题之后紫的是第二颗，"
+        "第一个位置上仍然是「立即体检」。"
+        "⭐ **同一条裁定做了一半；而做掉的那一半（颜色）正好是能被外审看见的那一半，"
+        "于是它看起来像做完了。**"
+        "A/B 判断题（两个视口各 3 发）：原样 **6/6「不会」** → 前移后 **6/6「会」**，"
+        "地板页 9/9 零位移；同轮否掉的候选「改名成『重新体检』」**6/6「不会」，改善为零**。",
+    ),
+    Revert(
+        "RN", "重排了按钮却不串焦点链（眼睛看到的和 Tab 走的不是一个顺序）",
+        "pages/audio_health_page.py",
+        "        self.setTabOrder(first, other)\n"
+        "        self.setTabOrder(other, self.open_btn)\n",
+        "",
+        "tests/test_the_first_step_is_also_in_the_first_place.py::"
+        "test_the_focus_chain_follows_what_the_eye_sees",
+        "⛔⛔ 焦点链走**构造顺序**，`insertWidget` 一个字都不改它（批 38 / RN-063）。"
+        "⭐⭐ 而这件事**在 A/B 那六张截图上一个像素都看不见** —— "
+        "屏幕上第一颗是「一键修复」，Tab 的第一站还是「立即体检」，"
+        "两张图长得一模一样。⇒ 票数管得着的事和判据管得着的事不是同一件。",
+    ),
+    Revert(
+        "RN", "切页不再把当前导航项滚进视口",
+        "gui_widget.py",
+        # ⚠⚠ 第一版断点打在 `scroll.ensureWidgetVisible(btn, 0, 24)` 上 ——
+        #   **回退验证当场判它假绿**：那一行不是承重的那一行，
+        #   `_nudge_nav_button_fully_into_view()` 是第二道，它自己会把按钮补滚进来。
+        #   ⭐⭐⭐ RN-442 那条「立案点名的那一行不是承重的那一行」的原样复发，
+        #     只是这次犯在**断点**上。⇒ 让整条链路 no-op —— 那才是缺陷本身。
+        '        scroll = getattr(self, "_sidebar_scroll", None)',
+        "        return  # 断点：切页不再滚侧栏",
+        "tests/test_you_can_tell_which_page_you_are_on.py::"
+        "test_in_expert_mode_the_sidebar_marks_the_page_you_are_on",
+        "⭐⭐⭐ RN-585 立案说「28 页里 23 页当前项露出 0%」，批 79 量下来"
+        "**专家模式 28/28 都高亮且露出 ≥96.7%** —— 三面全部不成立，"
+        "而立案那一屏是**工装造出来的**（普通模式强达专家页，真实用户到不了）。"
+        "⇒ 本条不落刀，判据钉的是**「它为什么不成立」**：这个断点造回来的，"
+        "正是立案当初以为正在发生的那件事。"
+        "⭐ 把「为什么不成立」钉住，否则哪天它真的坏了，立案那三面会一起变成真的。",
+    ),
+    Revert(
+        "RN", "「快速触发」退回「预览控制」后面（卡头在折线上、按钮在折线下）",
+        "pages/flash_page.py",
+        # ⚠ 第一版断点把 `quick_card` 改名 —— 那会让 `layout.addWidget(quick_card)`
+        #   抛 NameError，页面**根本建不出来**：那是崩，不是红，判据读不到任何东西。
+        #   ⭐ 断点的职责是**把缺陷造回来**，不是把那一行改一改（批 72 原话）。
+        #   ⇒ 改成把「预览控制」插到最前面：顺序精确地颠倒回去，其余一切照旧。
+        "        layout.addWidget(control_card)",
+        "        layout.insertWidget(0, control_card)",
+        "tests/test_flash_page_puts_the_one_tap_card_first.py::"
+        "test_the_quick_trigger_card_comes_before_the_preview_controls",
+        "⭐⭐⭐ RN-063：紧凑档 + 音乐条展开时视口只剩 ~380px —— 按原顺序，"
+        "「快速触发」的标题和说明在折线以上、四颗按钮在折线以下，"
+        "**读起来就是「这张卡是空的」**，比整张卡都在折线下更糟。"
+        "外审同一判断题：改前 **3/3 判「有卡片只看得到标题」**，改后 **0/3**，"
+        "而同页三个没碰过的页签**逐字节相同**（地板零位移）。"
+        "⛔ 焦点链走构造顺序（批 38）⇒ 必须真的移动那一段，不能只换 `addWidget`。",
+    ),
+    Revert(
+        "RN", "x1 录制器不再钉死配置目录（回到继承 pytest 那份累积配置）",
+        "scripts/x1_effects_snapshot.py",
+        'use_pristine_config_dir("cs2customizer_x1_effects", force=True)',
+        'use_pristine_config_dir("cs2customizer_x1_effects")',
+        "tests/test_x1_external_effects_are_frozen.py"
+        "::test_the_recording_ignores_whatever_config_it_inherits",
+        "RN-632（批 91 · E1）：这支录制器**只被 pytest 当子进程起**，于是原样继承 "
+        "`conftest` 那个固定名、**跨文件跨轮次累积**的 `cs2customizer_test_config`。"
+        "实测：裸环境录 **5/5 都是 3** 个常驻定时器，继承那份配置录 **5/5 都是 4** "
+        "（⚠ 第 4 个来自那个目录里**别的状态文件**：真实那份 356 键 `config.json` 整份喂进去录出来也是 3 —— 我一度写成 `music_show_player`，那是推断不是实测）。"
+        "而基线是在干净配置下冻的 ⇒ **基线和读数根本不在一个条件上**。"
+        "⭐⭐ 修法逐字写在 `use_pristine_config_dir` 自己的文档里（「那种进程必须"
+        "无条件钉死……失效时毫无声响」），而本调用点是 X 系列里唯一漏掉 `force` 的。"
+        "⭐⭐⭐ 这条红从批 88 就在，当时判成「这把尺子对 CPU 敏感」，依据是"
+        "「空载连跑 5 次全是 3」—— **但那 5 次跑的是录制器本身，而红的是 pytest "
+        "那条路径。两者被当成了同一件事。** "
+        "⚠ 断点钉在**行为判据**上而不是文本判据上：本批先写的文本版"
+        "（「子进程起 + 没 force ⇒ 红」）实测**误报率 50%**（`page_fingerprint` "
+        "是在调用侧摘环境变量的，同样正确），按 RN-156 撤掉了 —— "
+        "行为版只问那个被违反的性质：换一份配置，读数变不变",
+    ),
+    Revert(
+        "RN", "打包冒烟又把引导进程当成应用进程（onefile 的子进程被无视）",
+        "scripts/smoke_packaged.py",
+        # RN-645 之后认应用先看窗口；没窗口的兜底仍是「非助手子进程优先」—— 断点把兜底改成无视子进程
+        "    kids = [pid for pid, cmd in _child_processes(parent_pid) if FORK_HELPER_MARK not in cmd]\n"
+        "    return kids[0] if kids else parent_pid",
+        "    kids = []\n"
+        "    return kids[0] if kids else parent_pid",
+        "tests/test_the_packaged_smoke_follows_the_onefile_child.py"
+        "::test_it_resolves_to_the_child_not_the_launcher",
+        "RN-636（批 93 · E2）：PyInstaller onefile 先起引导进程再起同名子进程跑应用，"
+        "`Popen` 交回来的是引导进程的 pid。批 92 第一次在 onefile 产物上跑冒烟：五条产品判据全绿，"
+        "「优雅退出」两条红 —— WM_CLOSE 发给了没有窗口的引导进程；随后「强杀」只打印了一句，"
+        "**两个进程都还活着**，主窗留在用户桌面上、GSI 端口继续占着。"
+        "⭐⭐⭐ **一道门禁测的对象和它以为的对象不是同一个进程**（RN-097 同族）。"
+        "⇒ 起动后等子进程出现再当应用；杀完回头核对两个 pid，杀不掉就报真事故。"
+        "断点把「找子进程」短路成空列表 ⇒ 冒烟又追回引导进程",
+    ),
+    Revert(
+        "RN", "回退验证的善后又不看 HEAD 了（一份过期快照会把之后的改动全部还原掉）",
+        "scripts/revert_verify.py",
+        # ⚠ 断点打在本文件自己身上：锚点字面量要拆开写，否则这一行本身就是第二处命中。
+        "    if head_then " "!= head_now:",
+        "    if " "False:",
+        "tests/test_the_revert_snapshot_does_not_restore_after_a_commit.py"
+        "::test_a_snapshot_from_another_head_is_refused_and_touches_nothing",
+        "RN-637（批 93 · E2）：RN-093 的「改坏原文落盘、下次启动自动还原」只问"
+        "「现在和当时一不一样」，而这个问题在几小时后必然答「不一样」。批 93 实测：09:55 一次"
+        "回退验证被 App 重启砍断，快照留在盘上；之后提交了两批、改了十几个文件；23 点一次"
+        "`--stale-only` 启动时把 **130 个文件静默写回 09:55**，报告只有一行「已自动还原」——"
+        "已提交的判据、没提交的修法一起没了。⭐⭐⭐ **一条为了防事故写的善后，自己成了事故；"
+        "它和「成功的善后」在日志上长得一模一样。** ⇒ 快照记 HEAD 与时间；HEAD 变了 / 超 2 小时 /"
+        " 旧格式 ⇒ 拒绝还原、留下快照、rc=3 让人看。断点把 HEAD 判别短路 ⇒ 过期快照又被当成新鲜的",
+    ),
+    Revert(
+        "RN", "装饰性动效的总开关默认变成开",
+        "ui_motion.py",
+        "DEFAULT_ENABLED = False",
+        "DEFAULT_ENABLED = True",
+        "tests/test_decorative_motion_is_off_by_default.py"
+        "::test_nothing_decorative_gets_installed_when_the_switch_is_off",
+        "RN-639（视觉回调 · 第一步）：水波纹 / 流光 / 焦点下划线 / 滑块气泡 / 卡片闪边五样"
+        "各一个时长各一条曲线，用户读到的是「乱」。全部收进一个默认关的开关；"
+        "断点把默认翻成开 ⇒ 五个安装函数又开始往控件上挂东西",
+    ),
+    Revert(
+        "RN", "静态控件边框又变回 3:1 的亮线",
+        "theme_manager.py",
+        "        return c.border_control or cls._blend_hex(c.border_primary, 96, c.bg_card)",
+        "        return c.border_primary",
+        "tests/test_the_resting_border_is_soft_but_focus_stays_loud.py"
+        "::test_the_resting_border_is_softer_than_the_hover_border_in_every_theme",
+        "RN-640（视觉回调 · 第二步）：RN-545 把每个控件的静态边抬到 3:1，深色主题上 28 页"
+        "每个下拉框、每颗按钮一根亮线，用户原话「密密麻麻的边框」。静态边改走 border_control"
+        "（border_primary 以 96/255 叠在卡片底上），hover/focus 不动。断点把推导短路成 border_primary"
+        " ⇒ 静态边和 hover 边一样亮，判据量出来两者对比度相等",
+    ),
+    Revert(
+        "RN", "滑块的禁用态伪状态又写回子控件前面（本体被涂成 text_disabled）",
+        "theme_manager.py",
+        "            QSlider::handle:horizontal:disabled {{",
+        "            QSlider:disabled::handle:horizontal {{",
+        "tests/test_the_slider_body_is_not_painted.py"
+        "::test_an_enabled_slider_does_not_paint_its_own_body",
+        "RN-642（批 96）：`QSlider:disabled::handle` 在 QSS 文本上合法，Qt 却把它当成 QSlider 本体"
+        "且不看状态的规则 ⇒ 每根滑块整个矩形涂成 #404252，用户实机指着说「奇怪的背景色」。"
+        "判据渲染一根裸滑块看角点像素；断点把伪状态挪回子控件前面 ⇒ 角点又变成 text_disabled",
+    ),
+    Revert(
+        "RN", "打包冒烟又把只有启动画面的引导进程当成应用",
+        "scripts/smoke_packaged.py",
+        "    if not kids and real(parent_pid):",
+        "    if real(parent_pid) or windows.get(parent_pid):",
+        "tests/test_the_packaged_smoke_follows_the_onefile_child.py"
+        "::test_the_pure_choice_covers_the_three_shapes_seen_on_real_builds",
+        "RN-645（批 96）：onefile 引导进程 0.8s 就有一扇标题 \"tk\" 的启动画面，按「谁有窗口」认应用"
+        "会认回引导进程，WM_CLOSE 发给启动画面、真应用漏掉活着占端口。断点让父进程只要有窗口就当应用"
+        " ⇒ 纯判断那格「只有 tk 时还没法定」当场红",
+    ),
+    Revert(
+        "RN", "总开关关着的卡片左缘又长出灰色条",
+        "theme_manager.py",
+        "                border-left: 3px solid {c.bg_card};  /* RN-643：用户实机指着这根灰条说「白色条条去掉」 */",
+        "                border-left: 3px solid {c.text_tertiary};",
+        "tests/test_no_left_colour_bars_remain.py"
+        "::test_every_thick_left_border_is_the_card_colour[dark]",
+        "RN-643（批 96）：「左侧 3px 色条」这套语言 9 处整体退场（用户实机原话「白色条条去掉，"
+        "类似的很突兀很 AI 的都修」）。断点把 masterOff 卡那根灰条放回去 ⇒ 判据扫样式表当场数出 1 根",
+    ),
+    Revert(
+        "RN", "空库横幅又只数每把枪自己的目录",
+        "pages/sound_page_base.py",
+        "        return not any(option != disabled\n"
+        "                       for weapon in self._get_all_weapons()\n"
+        "                       for option in self._style_options_for(weapon))",
+        "        return not any(self._weapon_styles(weapon)\n"
+        "                       for weapon in self._get_all_weapons())",
+        "tests/test_the_empty_banner_counts_what_the_dropdown_counts.py"
+        "::test_a_global_style_is_a_style[kill_sound]",
+        "RN-641（批 97）：风格有两个来源（全局池 / 每把枪自己的目录），横幅只数后者 ⇒ 用户真实配置下"
+        "39 把枪全有得选、横幅却写「还没有任何可用风格」。断点把分母改回目录 ⇒ 「只有全局池」那格当场红",
+    ),
+    Revert(
+        "RN", "flash 的「效果」芯片又换回第三种词",
+        "pages/flash_page.py",
+        "f\"效果 · {'已开启' if enabled else '未开启'}\"",
+        "f\"效果 · {'已启用' if enabled else '未启用'}\"",
+        "tests/test_the_flash_page_speaks_two_words_for_two_things.py"
+        "::test_the_effect_chip_uses_the_switch_rows_own_word",
+        "RN-644（批 97）：同一张卡上开关行写「未开启」、芯片写「效果 · 未启用」、运行写「待启动」——"
+        "两件事四种说法。断点把芯片换回「已启用」⇒ 「芯片与开关行同一个词」那格当场红",
+    ),
+    Revert(
+        "RN", "特殊音效摘要又把「模块」说给用户听",
+        "pages/special_sound_page.py",
+        '            return " · 功能已开启"',
+        '            return " · 模块已启用"',
+        "tests/test_the_word_module_is_not_a_user_word.py"
+        "::test_the_banned_word_is_not_in_any_user_string",
+        "RN-638（批 97）：术语表（惯例 §5）⛔ 「模块」不再当用户可见词。断点把摘要那句换回去"
+        " ⇒ AST 扫会显示的常量当场数出 1 条",
+    ),
+    Revert(
+        "RN", "击杀音效的开关芯片又用回第三种词",
+        "pages/kill_sound_page.py",
+        "f\"开关 · {'已开启' if enabled else '未开启'}\"",
+        "f\"开关 · {'已启用' if enabled else '未启用'}\"",
+        "tests/test_the_switch_state_has_one_pair_of_words.py"
+        "::test_every_switch_state_line_uses_the_switch_rows_words",
+        "RN-647（批 98）：同一张卡上开关行写「已开启」、芯片写「开关 · 已启用」，八页同病。"
+        "断点把一页换回去 ⇒ 文本守卫当场点名那一行",
+    ),
+    Revert(
+        "RN", "没有文字的 extra 按钮又露出来",
+        "widgets/page_action_bar.py",
+        '        self.extra_btn.setVisible(bool(visible) and bool(str(text or "").strip()))',
+        "        self.extra_btn.setVisible(bool(visible))",
+        "tests/test_a_button_with_no_words_is_not_shown.py::test_configure_extra_hides_an_empty_button",
+        "RN-649（批 98）：special_sound「借了要还」把构造期抓到的空字符串原样还回去，底栏多出一颗"
+        "无字空白按钮（外审 S3 2/2）。断点撤掉「空文本就藏」⇒ 单元判据当场红",
+    ),
+    Revert(
+        "RN", "特殊音效的空库引导又按整页算",
+        "pages/special_sound_page.py",
+        "            empty=self._current_tab_is_empty(),   # RN-650：按页签算空",
+        "            empty=self._library_is_empty(),",
+        "tests/test_the_special_sound_guide_follows_the_tab.py"
+        "::test_the_real_shape_guides_on_the_grenade_tab_only",
+        "RN-650（批 98）：C4 / 血量有风格、投掷物六种全空时整页不算空 ⇒ 投掷物页签不指路"
+        "（外审 S4 2/2）。断点把分母改回整页 ⇒ 「真实形状只在投掷物页签引导」那格当场红",
+    ),
     # OSS_SYNC_APPEND_POINT
     # ======================================== 开源版专属：品牌 / 素材 / 文档
     # ⚠ 这三组上游没有，只存在于开源版：BRAND 验「旧品牌名回流时判据变不变红」，
@@ -6658,6 +8157,16 @@ def main() -> int:
     # ---- RN-093：先收拾上一轮没跑完留下的烂摊子 ----
     # ⚠ 必须在失效体检**之前**做：留在树上的改坏文件会让锚点变成"出现 0 次"，
     # 于是一条好端端的断点被报成"已失效"，误诊套误诊。
+    # ⛔ RN-637：快照不新鲜（中间提交过 / 太久了 / 旧格式）就**不动树、不删快照、大声退出**。
+    #   批 93 实测：一份 13 小时前被砍断的快照，把之后两批的改动静默写回去了 130 个文件。
+    stale = snapshot_is_stale()
+    if stale:
+        print("⛔ 盘上有一份上一轮回退验证留下的快照，但它不新鲜，我不敢用它还原：")
+        print(f"   {stale}")
+        print(f"   快照目录：{SNAPSHOT_DIR}")
+        print("   ⇒ 先 `git status` / `git diff` 看树上是不是真有改坏的内容；"
+              "确认没有就删掉那个目录再跑。这一步不替你做。")
+        return 3
     leftovers = restore_from_disk()
     if leftovers:
         print("⚠ 上一轮回退验证没跑完（多半是被 timeout / Ctrl-C 杀掉的），"

@@ -296,19 +296,20 @@ def test_a_real_button_is_still_drawn_as_a_closed_box(specimens):
 
 @pytest.mark.parametrize("level", [None, "info", "warning", "danger",
                                    "masterOff"])
-def test_the_chip_still_has_something_on_its_left(specimens, level):
-    """反面守卫：也不许把胶囊改成「什么都不画」。
+def test_the_chip_has_no_left_bar_either(specimens, level):
+    """⚖ RN-643（批 96，用户 2026-09-15 在场改判）：胶囊改成**纯文字**（RN-103 那轮的候选 C）。
 
-    ⭐ 左侧那条色条是它**还在说「这是一组状态项」**的唯一凭据；
-    全去掉的话一排短语会糊成一句话（候选 C 那一版的风险）。
-    ⚠ 外审四个候选 12/12 全答「分得开」，所以这一条不是靠票数立的，
-      是**给未来的自己留的下界**：别哪天顺手把这条也删了。
+    原来这一格守的是反面「左侧色条必须还在」（候选 B）。用户实机指着这一族色条说
+    「很突兀很 AI」；而 RN-103 那轮 B 与 C 只差 1 票（2/12 vs 3/12），在 RN-570
+    量出的 ±4/6 地板之内 —— 票数分不出 B 和 C，分得出的是用户。
+    ⇒ 现在守的是：左边**不许再画色条**（`left_rows` 落回文字本身的水平），
+    「一排状态会糊成一句话」的风险改由右侧 14px 间距 + 等级字色承担。
     """
     shape = specimens[("chip:masterOff" if level == "masterOff"
                        else f"chip:{level or 'base'}")]
-    assert shape["left_rows"] >= LEFT_BAR_ROWS, (
-        f"level={level!r} 的胶囊左边几乎什么都没画"
-        f"（只有 {shape['left_rows']:.0%} 的行有 ink）—— 一排状态会糊成一句话")
+    assert shape["left_rows"] < LEFT_BAR_ROWS, (
+        f"level={level!r} 的胶囊左边又画上了色条"
+        f"（{shape['left_rows']:.0%} 的行左缘有 ink）—— RN-643 改判为纯文字")
 
 
 # ------------------------------------------------------------------ 分母
@@ -429,16 +430,10 @@ def test_the_chip_stays_legible_in_every_theme(theme, qapp):
         #   各自都写了自己的 `border-left`，改坏**基础**那条时 `info` 照样是好的
         #   —— 破坏验证当场逮到这条空转。
         #   ⭐ **一条规则有几个特化分支，判据就得走几遍**（本文件第二次记这句）。
+        # RN-643：色条没了，「渲染出来的色条对比度」这一格随之作废；文字对比度照量。
         for level in (None, "info", "warning", "danger"):
             shape = _render_specimen(qapp, CHIP, level)
-            assert shape is not None and shape["bar"] is not None, (
-                f"{theme}/{level}：胶囊标本左边一个像素都没画出来")
-            bar = _contrast(_hexed(shape["bar"]), _hexed(shape["card"]))
-            assert bar >= AA_NON_TEXT, (
-                f"{theme}/level={level!r}：**渲染出来的**左侧色条 "
-                f"{_hexed(shape['bar'])} 对卡底 {_hexed(shape['card'])} "
-                f"只有 {bar:.2f}:1（下限 {AA_NON_TEXT}）"
-                " —— 去掉框之后它是胶囊唯一画出来的东西，看不见就等于没有")
+            assert shape is not None, f"{theme}/{level}：胶囊标本没抓到"
 
         c = tm.current_theme.colors
         card = c.bg_card

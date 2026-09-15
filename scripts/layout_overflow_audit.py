@@ -7,6 +7,9 @@
 
 1. **横向溢出**：QScrollArea 出现水平滚动(本应只纵向滚) = 破版信号。
 2. **按钮文案截断**：按钮被钉死宽度时布局"放得下"，只是文字被裁——横向判据抓不到。
+   ⭐⭐⭐ RN-591（批 76 补）：这一条从写下那天起**只想到了宽度这一个轴**。
+   纵向那一半（`_squashed_buttons`）是外审在一颗字被裁掉下半截的按钮上逮出来的，
+   而当时挤压审计（分母是 `QLabel`+`wordWrap`）和本模块的横向那条**都看不见它**。
 3. **纵向裁切**(UP-072，R8a 加)：内容装不下**且滚不动**。
 4. **状态徽章高度不齐**(RN-026)：某颗芯片文案太长换了行，整排肉眼可见地歪。
 5. **内层滚动区藏内容**(RN-177)：页面本身已经会滚，里面再套一层带高度上限的
@@ -314,6 +317,45 @@ def _elided_buttons(scope, skip=()):
     return out
 
 
+def _squashed_buttons(scope, skip=()):
+    """返回该范围内**文字纵向放不下**的按钮 [(文案, 可用高, 需要高), ...]。
+
+    ⭐⭐⭐ RN-591：这是 `_elided_buttons` 的**纵向双胞胎，而它一直不存在** ——
+    本模块开头那句「按钮被钉死**宽度**时布局放得下、只是文字被裁」，
+    从写下那天起就只想到了宽度这一个轴。
+
+    实测那一颗（`advanced` 的「查看将上报的内容」）：
+    调用点写 `setFixedHeight(32)` → 32 比 QSS 的 `secondaryButton` 下限还矮 ⇒
+    `mark_compact_buttons()` 标 `fp_short` ⇒ 那条下限被摘成 `0px` ⇒
+    控件 min 塌到 **18**（只剩 padding+border）⇒ 卡里竖向一紧就被压到 **22**，
+    16px 的字**下半截被裁掉**。外审整页图 3/3 报「完全无法辨认」，
+    而**挤压审计**（分母是 `QLabel`+`wordWrap`）与**本模块的横向那条**都看不见它。
+    ⭐⭐⭐ 那句 `setFixedHeight(32)` 唯一的作用，是把这颗按钮从
+    「和兄弟一样高」变成「可以被压扁」。
+
+    ⚠ 和横向那条同样的道理：**不用 `sizeHint().height() > height()`** ——
+    那会被 QSS 的 padding 带偏（全站 15 颗 `fp_short` 按钮会集体误报）。
+    只问 style 要文字实际可用区，再跟 `fontMetrics().height()` 比。
+    """
+    from PySide6.QtWidgets import QPushButton, QStyle, QStyleOptionButton
+
+    out = []
+    for btn in scope.findChildren(QPushButton):
+        if is_inside_any(btn, skip):
+            continue
+        text = btn.text().strip()
+        if not btn.isVisible() or not text or btn.height() <= 0:
+            continue
+        opt = QStyleOptionButton()
+        btn.initStyleOption(opt)
+        content = btn.style().subElementRect(QStyle.SE_PushButtonContents, opt, btn)
+        avail = content.height()
+        need = btn.fontMetrics().height()
+        if avail > 0 and need > avail + 1:   # 1px 容差，同横向那条
+            out.append((text, avail, need))
+    return out
+
+
 def _vertical_clip_of(scope, avail_h):
     """返回该范围「装不下且滚不动」的纵向缺口像素；没问题返回 None。
 
@@ -448,15 +490,18 @@ def _nested_scroll_hidden(scope, page, page_id, skip=()):
 #: ⚠ 它们要改的是产品版面（用户可感知），属 B 堆，得走裁定 + 外审，
 #: 不在「把审计修准」这一批的范围内。
 KNOWN_COMPACT_DEBT: dict[tuple[str, str], tuple[int, str]] = {
-    ("kill_sound", "clip"): (64, "紧凑档整页布局最小高超出可视区"),
-    ("kill_voice", "clip"): (64, "同上（同族同基类）"),
-    ("reload_sound", "clip"): (64, "同上（同族同基类）"),
-    ("switch_weapon", "clip"): (64, "同上（同族同基类）"),
-    # ⭐ 批 28（2026-08-30，magnifier 动刀）实测收紧：**82 → 48**。
-    #   那 34px 不是我去减的，是 RN-277 的修法顺手带下来的 ——
-    #   底栏撤掉两颗重复按钮之后，`PageActionBar` 的最小高从 71 掉到 34。
-    #   ⭐⭐ **一条布局债的一大半，是被一条「跟布局无关」的改动清掉的。**
-    ("magnifier", "clip"): (48, "全站最大页，紧凑档最缺高的一页（批 28 由 82 收紧到 48）"),
+    # ⭐⭐⭐ 2026-09-06 批 65（RN-548）：**这张表在紧凑档已经空了。**
+    #   原有五条（kill_sound / kill_voice / reload_sound / switch_weapon 各 64px、
+    #   magnifier 48px）全部不再命中，而且**说得出机制**：紧凑档以前只是把窗口
+    #   改小（可视区 750 → 462px），版面密度一档都没跟着变；现在
+    #   `ui_style_applier.apply_compact_density()` 给它一档自己的密度
+    #   （竖向间距/上下边距上限 8px，数住在 `ui_design_system.Density`）。
+    #   同一台机器、同一条命令，改动前后一次 A/B：五条 → 零条。
+    #   ⭐ 这正是 `_split_known` 里那个区分：「换台机器就不复现」只提醒不删，
+    #     **改了产品代码、说得出机制**的该删。**区别不在数上，在有没有因果。**
+    # ⚠ 顺带把批 62 那句话的结论改掉：那时写「10px 的代价太大，退回 6px」——
+    #   代价大是真的，但**贵的不是那 4px，是装它的容器早就没有余量了**。
+    #   腾出余量之后同一档 10px 实测 rc=0（`RN-045` 因此才结得掉）。
     # ⚠ ("magnifier", "overflow") 那一格**已删** —— 批 28 查实根因并修掉了：
     #   偏移卡那一行 8 颗方向键，代码写 `setFixedSize(QSize(30, 26))` 而实际渲染
     #   80×50（`_style_button` 只抬 min 不动 max ⇒ min > max ⇒ Qt 取 min），
@@ -466,6 +511,128 @@ KNOWN_COMPACT_DEBT: dict[tuple[str, str], tuple[int, str]] = {
     #     那种是「换台机器就不复现」，这次**改了产品代码、说得出机制**。
     #     ⇒ 前者只提醒不删，后者该删。**两者的区别不在数上，在有没有因果。**
 }
+
+
+#: ⭐⭐⭐ RN-196 / RN-571（2026-09-08 批 72）：**展开档的申报表。**
+#:
+#: 上面那张 `KNOWN_COMPACT_DEBT` 从批 65 起是空的 —— 而它空着**不是因为债还清了，
+#: 是因为尺子在量更轻的那一档**：音乐控制条折叠 42px、展开 112~128px，
+#: 审计一直跑在折叠档，两档差 **86px 可视区**。
+#:
+#: 展开档实测（本机）：紧凑 860×640 共 **40 处**（34 处页签级 + 6 处整页级）、
+#: 完整 1280×800 共 **4 处**。
+#:
+#: ⚖ **裁定：展开档是申报档，不是阻断档**（RN-571）。理由是两个状态性质不同 ——
+#: 控制条**建出来不可逆**（RN-195 只做「不建」不做「撤走」），而展开
+#: **一键可收回**：实测那一档下「收起播放栏」按钮就在窗口内（860×640 的 814,517）、
+#: 可见且启用。⇒ 内容一个像素都没变得不可达，变的是每一行被压掉 2~5px。
+#: ⛔ 而唯一的结构性修法（给整页套一层滚动区）会**嵌套**进页签里那层滚动区，
+#:    正好撞上第 5 条判据（RN-177：内层滚动区藏内容）——
+#:    那是拿「一键可回退的压扁」换「用户不知道要滚的隐藏」。
+#:
+#: ⭐ 但「不落刀」不等于「不记数」：**把数写下来才算裁定**。这张表就是那个数，
+#:    它只能变小（`_split_known` 判「变坏」为红，「不再命中」只提醒）。
+#:
+#: ⚠ 展开档按**页**对账，不按页签 —— 那 34 处页签级缺口全部来自同一个动作
+#: （展开控制条吃掉 86px），逐页签记 34 行只是把同一件事抄 34 遍。
+KNOWN_EXPANDED_DEBT_COMPACT: dict[tuple[str, str], tuple[int, str]] = {
+    ("gun_sound", "clip"): (29, "展开档吃掉 86px 可视区；页签级 29px 是这一页的最坏"),
+    ("kill_sound", "clip"): (78, "整页最小高 540 vs 可视 462；状态卡 166px 是最大的一块"),
+    ("kill_voice", "clip"): (79, "同 kill_sound，音效家族共用一份状态卡骨架"),
+    ("reload_sound", "clip"): (79, "同 kill_sound"),
+    ("switch_weapon", "clip"): (79, "同 kill_sound"),
+    ("magnifier", "clip"): (52, "整页无页签，靠一层滚动区；展开档下它的最小高顶穿可视区"),
+}
+
+#: 完整档 1280×800 的同一件事。只剩音效家族四页，且只差 10~11px。
+KNOWN_EXPANDED_DEBT_FULL: dict[tuple[str, str], tuple[int, str]] = {
+    ("kill_sound", "clip"): (10, "展开档可视 622px；差 10px"),
+    ("kill_voice", "clip"): (11, "同上"),
+    ("reload_sound", "clip"): (11, "同上"),
+    ("switch_weapon", "clip"): (11, "同上"),
+}
+
+
+#: RN-592（批 76 立）：按钮文字**纵向**放不下的存量债。键 = (页, 文案)，值 = (最坏差值, 说明)。
+#:
+#: ⭐⭐⭐ **这不是 20 个独立缺陷，是一个机制**：按钮高度写死成 26/28/32/36 像素，
+#: 而**字号缩放档下它们一个都不跟着变**（同 RN-548「紧凑档只是把窗口改小，
+#: 版面规格一个都没跟着变」）。基础档差 2px（1× 下几乎看不出），
+#: 放大档差 6~10px（`basic` 的「重置ID」肉眼可辨：「重」「置」的下横没了）。
+#:
+#: ⚠ 真正读不出字的那一颗（`advanced` 的「查看将上报的内容」，差 12px）已在批 76 修掉
+#: （RN-591：删掉那句从没生效过的 `setFixedHeight(32)`）。⭐ 但它**仍在这张表里** ——
+#: 修法把它从「坏」拉回了「和全站一样」，没有拉到「好」。
+#:
+#: ⛔ 本批不动 QSS 的按钮 padding：那是全站 342 个受管控件的爆炸半径（RN-551 那一族）。
+#: ⇒ 上限语义（同 `_split_known`）：**超过在册数或冒出新的键 ⇒ 红；不再命中 ⇒ 只提醒**。
+#: ⭐ 为什么「不再命中」不红：**一个按像素写死的棘轮是一台机器的事实** ——
+#: CI 的字体度量和这台机器不同，2026-08-22 那次公开仓 `e265ab1` 就是这么被判红的。
+KNOWN_SQUASHED_DEBT: dict[tuple[str, str], tuple[int, str]] = {
+    ("about", "三步上手引导"): (2, "字号放大档差 2px"),
+    ("about", "下载解决包"): (2, "字号放大档差 2px"),
+    ("about", "去 GitHub 点 Star"): (2, "字号放大档差 2px"),
+    ("about", "复制下载地址"): (2, "字号放大档差 2px"),
+    ("about", "复制仓库地址"): (2, "字号放大档差 2px"),
+    ("about", "复制群号"): (2, "字号放大档差 2px"),
+    ("about", "复制诊断信息"): (2, "字号放大档差 2px"),
+    ("about", "打开官网"): (2, "字号放大档差 2px"),
+    ("about", "立即检查更新"): (2, "字号放大档差 2px"),
+    ("advanced", "以管理员身份重启"): (2, "字号放大档差 2px"),
+    ("advanced", "刷新"): (6, "32px 高 + fp_short"),
+    ("advanced", "查看将上报的内容"): (2, "RN-591 修后从差 12px 降到这里，回到全站水位"),
+    ("advanced", "选择目录"): (2, "字号放大档差 2px"),
+    ("advanced", "预览一下"): (6, "32px 高 + fp_short"),
+    ("basic", "重置ID"): (10, "28px 高 + fp_short —— **本表最坏**，放大档肉眼可辨"),
+    ("crosshair", "导入准心"): (2, "字号放大档差 2px"),
+    ("crosshair", "导出准心"): (2, "字号放大档差 2px"),
+    ("crosshair", "测试"): (2, "字号放大档差 2px"),
+    ("crosshair", "自定义颜色…"): (6, "32px 高 + fp_short"),
+    ("death_sound", "刷新风格列表"): (2, "音效家族共用一份骨架，六页同形"),
+    ("flash", "重置设置"): (2, "字号放大档差 2px"),
+    ("gun_sound", "刷新风格列表"): (2, "同 death_sound"),
+    ("gun_sound", "应用到全部武器…"): (2, "字号放大档差 2px"),
+    #: ⚠⚠ RN-607（批 82）：**上下两条是同一颗按钮。**
+    #:   在册那一条是在**窄档**登记的 —— Qt 把文案省略成「…」；
+    #:   而 CI 那一步跑 `--width 1200`，同一颗按钮显示的是完整文案 ⇒
+    #:   它同时触发「在册的那条不再命中」（提醒）和「新增了一条」（判红），
+    #:   而它们是同一颗。⭐⭐⭐ **一个按「屏幕上显示成什么样」做的键，会随版面宽度变** ——
+    #:   而这张表的用途恰恰是「跨环境认出同一件事」。
+    #:   ⛔ 本批不改键的定义（要动 `_split_known` 与全部在册项，爆炸半径大于收益）；
+    #:   修法（键改成「页 + 控件 objectName」）随 RN-607 归后续批次。
+    ("gun_sound", "应用到全部武器"): (2, "同上一条，是同一颗按钮的未省略形态（RN-607）"),
+    ("kill_icon", "去拿一套图标包"): (2, "字号放大档差 2px"),
+    ("kill_icon", "打开素材工坊"): (4, "34px 高 + fp_short"),
+    ("kill_icon", "调整位置和大小 ⌄"): (4, "34px 高 + fp_short"),
+    ("kill_sound", "刷新风格列表"): (2, "同 death_sound"),
+    ("kill_voice", "刷新风格列表"): (2, "同 death_sound"),
+    ("magnifier", "全不选"): (4, "34px 高 + fp_short"),
+    ("magnifier", "全选"): (4, "34px 高 + fp_short"),
+    ("magnifier", "应用"): (4, "34px 高 + fp_short"),
+    ("magnifier", "测试"): (4, "34px 高 + fp_short"),
+    ("magnifier", "重置"): (4, "34px 高 + fp_short"),
+    ("music", "删除"): (2, "字号放大档差 2px"),
+    ("music", "刷新列表"): (2, "字号放大档差 2px"),
+    ("music", "新建"): (4, "34px 高 + fp_short"),
+    ("music", "重命名"): (4, "34px 高 + fp_short"),
+    ("reload_sound", "刷新风格列表"): (2, "同 death_sound"),
+    ("screen_effects", "预览击杀"): (2, "字号放大档差 2px"),
+    ("special_sound", "刷新风格列表"): (2, "同 death_sound"),
+    ("special_sound", "测试"): (2, "字号放大档差 2px"),
+    ("switch_weapon", "刷新风格列表"): (2, "同 death_sound"),
+    ("viewmodel", "启用自动切换"): (2, "字号放大档差 2px"),
+}
+
+
+def ratchet_label(label: str, expanded: bool) -> str | None:
+    """这一条命中该记到申报表的哪个键上；`None` = 不走申报表，直接判红。
+
+    ⭐ 阻断档只有**整页级**走棘轮（页签级一律红）；展开档**页签级也走**，
+    但折算到它所属的页 —— 见 `KNOWN_EXPANDED_DEBT_COMPACT` 最后那段。
+    """
+    if "/" not in label:
+        return label
+    return label.split("/", 1)[0] if expanded else None
 
 
 def _split_known(hits, kind, known=None):
@@ -558,6 +725,11 @@ def main():
     ap.add_argument("--include-unsafe", action="store_true",
                     help="连同 6 个构造即起热键/音频设备/子进程的页面一起测。"
                          "会真的占设备、真的弹全屏覆盖窗——即打扰前台。慎用。")
+    ap.add_argument("--music-bar-expanded", action="store_true",
+                    help="RN-571：把音乐控制条钉在**展开**态（112~128px）再量。"
+                         "⚠ 这一档实测有 40 处（紧凑）/ 4 处（完整）纵向缺口，"
+                         "**不是阻断档** —— 展开是可逆的用户选择，"
+                         "而阻断档量的是「控制条在」这个不可逆状态")
     ap.add_argument("--require-fonts", action="store_true",
                     help="字体库为空时直接失败(退出码 2)。CI 必开：无字体环境下"
                          "文字度量全失真，跑出来的绿是**假绿**，"
@@ -642,7 +814,11 @@ def main():
     # 所以按"没有控制条"来验收等于把大半用户的世界排除在门外。
     import _audit_music_bar as _mbar
 
-    print("   " + _mbar.pin(win, app, _mbar.MODE_WORST_CASE))
+    # RN-571：展开档是**可选**的，不是阻断档。理由（含实测的 40+4 处）在
+    # `_audit_music_bar.pin` 那段裁定里。⚠ 报告行会逐字说钉的是哪一档。
+    _mode = (_mbar.MODE_EXPANDED if getattr(args, "music_bar_expanded", False)
+             else _mbar.MODE_WORST_CASE)
+    print("   " + _mbar.pin(win, app, _mode))
 
     tm = get_theme_manager()
     page_ids = list(win._page_names.keys())
@@ -665,6 +841,7 @@ def main():
 
     problems = []
     elided = []
+    squashed = []          # RN-591：`elided` 的纵向双胞胎
     clipped = []
     uneven = []
     nested_hidden = []          # RN-177：内层滚动区藏住内容
@@ -700,6 +877,8 @@ def main():
                             clipped.append((theme, scale, label, short, avail_h))
                         for text, have, need in _elided_buttons(scope, skip):
                             elided.append((theme, scale, label, text, have, need))
+                        for text, have, need in _squashed_buttons(scope, skip):
+                            squashed.append((theme, scale, label, text, have, need))
                         for name, vp_h, hidden in _nested_scroll_hidden(
                                 scope, page, pid, skip):
                             nested_hidden.append((theme, scale, label, name, vp_h, hidden))
@@ -740,31 +919,55 @@ def main():
               f"测它们会打扰前台): {', '.join(skipped)}")
         print("   需要覆盖它们请加 --include-unsafe（会打扰前台，需在授权时段跑）")
     # RN-196：整页范围的存量债走声明式棘轮；页签范围与异常一律照常报。
+    # RN-571（批 72）：展开档整档走申报表，页签级折算到页（见 `ratchet_label`）。
+    expanded = bool(getattr(args, "music_bar_expanded", False))
     blocking_overflow = []
     page_overflow = []
+    # ⭐ 批 73：折算会把 `gun_sound/手枪` 压成 `gun_sound`，而**被压掉的正是
+    #   「到底是哪个页签」这条唯一能让人去复现的线索**。留一份原名，打印时带上。
+    folded_from: dict[str, set[str]] = {}
     for theme, scale, label, detail in problems:
-        if "/" not in label and isinstance(detail, int):
-            page_overflow.append((label, detail))
+        key = ratchet_label(label, expanded) if isinstance(detail, int) else None
+        if key is not None:
+            page_overflow.append((key, detail))
+            if key != label:
+                folded_from.setdefault(key, set()).add(label)
         else:
             blocking_overflow.append((theme, scale, label, detail))
     # RN-196：存量债只在紧凑档对账（那是它被量出来的那一档）。
-    debt = KNOWN_COMPACT_DEBT if args.compact else {}
+    # ⚠ 批 73：`debt_name` 不是装饰 —— 下面两条「请从 X 删掉」的提示行原来
+    #   **写死** `KNOWN_COMPACT_DEBT`，而展开档用的根本不是那张表
+    #   （而且那张表自批 65 起就是空的）⇒ 照着提示去删的人会扑空。
+    #   ⭐ **一句指路，指的必须是当下这一轮真正在用的那个东西。**
+    if expanded:
+        debt = (KNOWN_EXPANDED_DEBT_COMPACT if args.compact
+                else KNOWN_EXPANDED_DEBT_FULL)
+        debt_name = ("KNOWN_EXPANDED_DEBT_COMPACT" if args.compact
+                     else "KNOWN_EXPANDED_DEBT_FULL")
+    else:
+        debt = KNOWN_COMPACT_DEBT if args.compact else {}
+        debt_name = "KNOWN_COMPACT_DEBT" if args.compact else "（本档不对账）"
+
+    def _with_tabs(pid: str) -> str:
+        """把折算掉的页签名补回打印里。没折算过就只回页名。"""
+        tabs = sorted(folded_from.get(pid, ()))
+        return f"{pid}（页签 {'、'.join(tabs)}）" if tabs else pid
     of_fresh, of_worse, of_loose = _split_known(page_overflow, "overflow", debt)
 
     if blocking_overflow or of_fresh or of_worse:
         for theme, scale, label, detail in blocking_overflow:
             print(f"  溢出: [{theme} x{scale}] {label} -> {detail}")
         for pid, px in of_fresh:
-            print(f"  ✗ 溢出(新): [{pid}] 整页横向溢出 {px}px")
+            print(f"  ✗ 溢出(新): [{_with_tabs(pid)}] 横向溢出 {px}px")
         for pid, px, was in of_worse:
-            print(f"  ✗ 溢出(变坏): [{pid}] {was}px → {px}px")
+            print(f"  ✗ 溢出(变坏): [{_with_tabs(pid)}] {was}px → {px}px")
     else:
         print("  ✓ 无水平溢出（在册存量债除外，见下）")
     if of_loose:
         # ⚠ 提醒，**不判红** —— 见 `_split_known` 的说明：不命中既可能是修好了，
         # 也可能只是这台机器渲染得不一样，判据分不出这两者。
         print("  ! 这些在册的横向存量债在**这台机器上**不再命中，请人工确认是"
-              "「修好了」还是「环境不同」，前者请从 KNOWN_COMPACT_DEBT 删掉: "
+              f"「修好了」还是「环境不同」，前者请从 {debt_name} 删掉: "
               + ", ".join(pid for pid, _ in of_loose))
 
     # 按钮文案截断:横向溢出检测抓不到(按钮被钉死时布局"放得下",只是文字被裁)
@@ -781,15 +984,49 @@ def main():
     else:
         print("  ✓ 无按钮文案截断")
 
+    # RN-591/592：按钮文字**纵向**被裁 —— 上面那条只看宽度，这一类它结构上看不见
+    sq_fresh, sq_worse, sq_loose = [], [], []
+    if squashed:
+        seen = {}
+        for theme, scale, pid, text, have, need in squashed:
+            seen.setdefault((pid.split("/", 1)[0], text), []).append((have, need))
+        print(f"  {len(seen)} 处按钮文字纵向放不下(字会被裁掉一截):")
+        for key, hits in sorted(seen.items()):
+            pid, text = key
+            have, need = hits[0]
+            worst = max(n - h for h, n in hits)
+            known = KNOWN_SQUASHED_DEBT.get(key)
+            if known is None:
+                tag, dst = "✗ 新增", sq_fresh
+            elif worst > known[0]:
+                tag, dst = f"✗ 变坏(在册 {known[0]}px)", sq_worse
+            else:
+                tag, dst = "· 在册", None
+            if dst is not None:
+                dst.append(f"[{pid}]「{text}」差 {worst}px")
+            print(f"     {tag} [{pid}] 「{text}」 可用高 {have}px 需 {need}px (最坏差 {worst}px)")
+        sq_loose = [f"{p}/{t}" for (p, t) in KNOWN_SQUASHED_DEBT if (p, t) not in seen]
+    else:
+        print("  ✓ 无按钮文字纵向被裁")
+        sq_loose = [f"{p}/{t}" for p, t in KNOWN_SQUASHED_DEBT]
+    if sq_loose:
+        # ⚠ 只提醒不判红：像素棘轮是一台机器的事实（见 `_split_known` 那段）。
+        print(f"  ! 在册的纵向按钮债有 {len(sq_loose)} 条在这台机器上不再命中，"
+              "请人工确认是「修好了」还是「环境不同」: " + ", ".join(sq_loose[:6])
+              + (" …" if len(sq_loose) > 6 else ""))
+
     # UP-072: 纵向裁切且滚不动——横向判据完全看不见这一类
     # RN-196: 同上，整页范围的存量债走棘轮，页签范围照常报。
     blocking_clip = []
     page_clip = []
     clip_avail = {}
     for theme, scale, label, short, avail in clipped:
-        if "/" not in label:
-            page_clip.append((label, short))
-            clip_avail[label] = avail
+        key = ratchet_label(label, expanded)
+        if key is not None:
+            page_clip.append((key, short))
+            clip_avail[key] = avail
+            if key != label:
+                folded_from.setdefault(key, set()).add(label)
         else:
             blocking_clip.append((label, short, avail))
     cl_fresh, cl_worse, cl_loose = _split_known(page_clip, "clip", debt)
@@ -802,22 +1039,29 @@ def main():
         for label, hits in sorted(seen.items()):
             print(f"     [{label}] 最小高超出可视区 {max(s for s, _a in hits)}px"
                   f"(可视 {hits[0][1]}px)，命中 {len(hits)} 个主题×字号")
+        # ⚠ 批 73：原来这两行写死「**整页**最小高超出可视区」，而展开档下 `pid`
+        #   很可能是**某个页签**折算上来的 ⇒ 读的人拿着「整页」两个字去复现，
+        #   在整页上量不出那个数，会判成判据抽风。⭐ 折算掉的名字要补回来。
         for pid, px in cl_fresh:
-            print(f"     [{pid}] (新) 整页最小高超出可视区 {px}px"
+            print(f"     [{_with_tabs(pid)}] (新) 最小高超出可视区 {px}px"
                   f"(可视 {clip_avail.get(pid, '?')}px)")
         for pid, px, was in cl_worse:
-            print(f"     [{pid}] (变坏) {was}px → {px}px")
+            print(f"     [{_with_tabs(pid)}] (变坏) {was}px → {px}px")
     else:
         print("  ✓ 无纵向裁切（在册存量债除外，见下）")
     if cl_loose:
         # ⚠ 同上：提醒，不判红。CI 上这四页就是不复现的（字体度量不同）。
         print("  ! 这些在册的纵向存量债在**这台机器上**不再命中，请人工确认是"
-              "「修好了」还是「环境不同」，前者请从 KNOWN_COMPACT_DEBT 删掉: "
+              f"「修好了」还是「环境不同」，前者请从 {debt_name} 删掉: "
               + ", ".join(pid for pid, _ in cl_loose))
 
     if debt and (page_overflow or page_clip):
-        print(f"  ℹ 在册存量债 {len(debt)} 条（RN-196，紧凑档，"
-              f"待裁定后随各页动刀）: "
+        # ⭐ 这一行要逐字说清是**哪张表**：批 71 摔过的那一跤正是
+        #   「报告行笼统地说『最坏那一档』，读的人无从分辨钉的是 42 还是 128」。
+        which = ("展开档申报表（RN-571：申报档，非阻断档）" if expanded
+                 else "紧凑档存量债（RN-196）")
+        print(f"  ℹ 在册 {len(debt)} 条 —— {which}，"
+              f"待裁定后随各页动刀: "
               + "、".join(f"{pid}·{kind}{px}px"
                           for (pid, kind), (px, _w) in sorted(debt.items())))
 
@@ -863,7 +1107,7 @@ def main():
     # 那四条纵向债在 CI 的字体度量下根本不复现。像素级棘轮是一台机器的事实。
     return 1 if (blocking_overflow or of_fresh or of_worse
                  or blocking_clip or cl_fresh or cl_worse
-                 or elided or uneven or nested_hidden) else 0
+                 or elided or sq_fresh or sq_worse or uneven or nested_hidden) else 0
 
 
 if __name__ == "__main__":

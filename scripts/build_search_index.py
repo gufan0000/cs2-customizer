@@ -358,6 +358,11 @@ def harvest_runtime(include_unsafe: bool = False, verbose: bool = True):
                     continue
                 if not keep_raw(raw):
                     continue
+                # RN-568：控件自己说「别收我」，给**当前值**用。
+                # ⚠ 与下面那张 objectName 名单是两件事：那张按"样式类名"划，
+                # 而样式类名是为配色起的（见 `widgets/master_switch_link.py`）。
+                if widget.property("fp_index_skip"):
+                    continue
                 obj = widget.objectName()
                 if obj in ("titleLabel", "statusLabel", "pageTitle",
                            "pageSubtitle", "navButton"):

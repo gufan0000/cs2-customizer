@@ -145,8 +145,11 @@ def add_ripple_effect(widget, color=None):
         color: 涟漪颜色（可选）
     
     Returns:
-        RippleEffect实例
+        RippleEffect实例；总开关关着时返回 None、什么都不装（RN-639）
     """
+    from ui_motion import decorative_motion_enabled
+    if not decorative_motion_enabled():
+        return None
     # 创建涟漪效果
     ripple = RippleEffect(widget)
     ripple.setGeometry(widget.rect())

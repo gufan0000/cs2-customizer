@@ -1,0 +1,623 @@
+{
+  "audio_manager_instance": {
+    "init_keys": [
+      "_fade_seq",
+      "_gun_sound_channel_index",
+      "_lock",
+      "_max_sounds",
+      "_mixer_ready",
+      "_playback_lock",
+      "_sounds_view",
+      "_styles_scanned",
+      "_switch_weapon_channel_index",
+      "_timeline",
+      "_voices_view",
+      "_volume",
+      "audio_base_dir",
+      "awp_channel",
+      "c4_sound_channel",
+      "c4_sounds_dir",
+      "death_sound_channel",
+      "death_sounds_dir",
+      "grenade_sound_channel",
+      "grenade_sounds_dir",
+      "gun_sound_channels",
+      "gun_sounds_dir",
+      "health_warning_channel",
+      "health_warning_dir",
+      "kill_sound_channel",
+      "kill_sounds_dir",
+      "kill_voice_channel",
+      "kill_voices_dir",
+      "logger",
+      "reload_channel",
+      "reload_dir",
+      "reload_sounds_dir",
+      "round_sound_channel",
+      "round_sounds_dir",
+      "switch_weapon_channel",
+      "switch_weapon_channels",
+      "switch_weapons_dir",
+      "weapon_sounds_dir",
+      "weapon_voices_dir"
+    ],
+    "methods": [
+      "__init__",
+      "_admit_playback",
+      "_alias",
+      "_apply_loudness_normalization",
+      "_channel_state_key",
+      "_clear_fade_effect",
+      "_evict_lru_locked",
+      "_get_info",
+      "_init_mixer",
+      "_load_count_file",
+      "_load_first_available_generic_kill_sound",
+      "_load_first_available_generic_kill_voice",
+      "_load_range",
+      "_load_sound_by_key",
+      "_load_voice_by_key",
+      "_make_channel",
+      "_map_channel_to_sfx_type",
+      "_norm_style",
+      "_notify_error",
+      "_notify_loaded",
+      "_parse_round_args",
+      "_preload_budget_left",
+      "_record_timeline_event",
+      "_remove_keys",
+      "_resolve_play_volume",
+      "_resolve_style_value",
+      "_scan_audio_styles",
+      "_scan_sound_styles",
+      "_select_channel",
+      "_select_gun_sound_channel",
+      "_select_switch_weapon_channel",
+      "_store",
+      "_style_enabled",
+      "_warn_deprecated_once",
+      "all_sounds_loaded",
+      "cleanup",
+      "ensure_styles_scanned",
+      "get_all_sound_keys",
+      "get_loaded_count",
+      "get_loaded_sounds",
+      "get_sound_info",
+      "get_volume",
+      "is_loaded",
+      "load_all_enabled_sounds",
+      "load_c4_sound",
+      "load_death_sound",
+      "load_grenade_sound",
+      "load_gun_sound",
+      "load_health_warning_sound",
+      "load_kill_sound",
+      "load_kill_sound_default",
+      "load_kill_sound_for_weapon",
+      "load_kill_sound_generic",
+      "load_kill_voice",
+      "load_kill_voice_for_weapon",
+      "load_reload_sound",
+      "load_round_sound",
+      "load_sound",
+      "load_switch_weapon_sound",
+      "play_sound",
+      "play_sound_with_fade",
+      "play_voice",
+      "register_callback",
+      "scan_c4_sound_styles",
+      "scan_death_styles",
+      "scan_grenade_sound_styles",
+      "scan_gun_sound_styles",
+      "scan_health_warning_styles",
+      "scan_kill_sound_styles",
+      "scan_kill_voice_styles",
+      "scan_reload_styles",
+      "scan_round_sound_styles",
+      "scan_switch_weapon_styles",
+      "scan_weapon_kill_sound_styles",
+      "scan_weapon_kill_voice_styles",
+      "set_volume",
+      "sounds",
+      "stop_all",
+      "stop_all_sounds",
+      "stop_channel",
+      "stop_sound",
+      "unload_c4_sound",
+      "unload_death_sound",
+      "unload_grenade_sound",
+      "unload_gun_sound",
+      "unload_health_warning_sound",
+      "unload_kill_sound",
+      "unload_kill_sound_for_weapon",
+      "unload_kill_voice",
+      "unload_kill_voice_for_weapon",
+      "unload_reload_sound",
+      "unload_round_sound",
+      "unload_sound",
+      "unload_switch_weapon_sound",
+      "voices"
+    ],
+    "other_attrs": [
+      "c4_sound_styles",
+      "death_sound_styles",
+      "death_styles",
+      "grenade_sound_styles",
+      "gun_sound_styles",
+      "health_warning_styles",
+      "kill_sound_styles",
+      "kill_voice_styles",
+      "reload_styles",
+      "switch_weapon_styles",
+      "weapon_kill_sound_styles",
+      "weapon_kill_voice_styles"
+    ]
+  },
+  "contract": {
+    "core.audio.__init__": [],
+    "core.audio.audio_event_timeline": [
+      "AudioEvent",
+      "AudioEventTimeline",
+      "get_audio_event_timeline"
+    ],
+    "core.audio.audio_file_utils": [
+      "DEFAULT_AUDIO_EXTENSIONS",
+      "find_audio_by_stem",
+      "find_audio_by_tokens",
+      "find_first_audio_file",
+      "has_audio_files",
+      "is_audio_filename",
+      "list_style_dirs_with_audio",
+      "list_unique_audio_stems"
+    ],
+    "core.audio.audio_manager": [
+      "AudioInfo",
+      "AudioManager",
+      "get_audio_manager"
+    ],
+    "core.audio.audio_playback_policy": [
+      "PlaybackRequest",
+      "decide_channel_action",
+      "resolve_priority"
+    ],
+    "core.audio.audio_resource_health": [
+      "apply_conservative_audio_fix",
+      "check_gsi_cfg_match_stats",
+      "collect_audio_resource_health",
+      "format_audio_resource_health"
+    ],
+    "core.audio.audio_task_runner": [
+      "AudioTaskRunner",
+      "get_audio_task_runner",
+      "submit_import_refresh_task",
+      "submit_reload_audio_task"
+    ],
+    "core.audio.game_audio_ducker": [
+      "DEFAULT_GUN_SOUND_DUCK_RATIO",
+      "DEFAULT_GUN_SOUND_DUCK_RELEASE_MS",
+      "GameAudioDucker",
+      "_SessionAudioBackend",
+      "clamp_gun_sound_duck_ratio",
+      "clamp_gun_sound_duck_time_ms"
+    ],
+    "core.audio.runtime_audio": [
+      "get_legacy_audio_manager",
+      "get_runtime_audio_manager",
+      "peek_runtime_audio_manager"
+    ],
+    "core.audio.special_events": [
+      "SOUND_EVENTS",
+      "config_defaults",
+      "events_in_group",
+      "get_event",
+      "round_event_keys",
+      "sound_key",
+      "style_dir_parts",
+      "styles_attr"
+    ],
+    "core.audio.style_creator": [
+      "CATEGORY_TEMPLATES",
+      "MAX_NUMBERED_SLOTS",
+      "create_style",
+      "delete_style",
+      "list_style_files",
+      "rename_style",
+      "style_exists",
+      "validate_style_name"
+    ]
+  },
+  "contract_total": 50,
+  "external_use": {
+    "core.audio.__init__": {
+      "files": [],
+      "names": {}
+    },
+    "core.audio.audio_event_timeline": {
+      "files": [
+        "pages/audio_replay_page.py",
+        "tests/test_audio_event_timeline.py",
+        "tests/test_expert_audio_pages_catch_you_when_empty.py",
+        "tests/test_replay_filters_are_pickable.py",
+        "tests/test_tool_pages_ui_polish.py",
+        "tests/test_ui_replay_page_smoke.py"
+      ],
+      "names": {
+        "AudioEvent": 6,
+        "AudioEventTimeline": 1,
+        "get_audio_event_timeline": 5
+      }
+    },
+    "core.audio.audio_file_utils": {
+      "files": [
+        "core/resource_catalog.py",
+        "core/resource_health.py",
+        "dialogs/style_creator_dialog.py",
+        "gsi_handler_kills.py",
+        "pages/audio_import_wizard_page.py",
+        "pages/death_sound_page.py",
+        "pages/gun_sound_page.py",
+        "pages/kill_sound_page.py",
+        "pages/kill_voice_page.py",
+        "pages/reload_sound_page.py",
+        "pages/sound_page_base.py",
+        "pages/switch_weapon_page.py",
+        "tests/test_audio_file_utils.py",
+        "tests/test_special_sound_events.py"
+      ],
+      "names": {
+        "DEFAULT_AUDIO_EXTENSIONS": 12,
+        "find_audio_by_stem": 5,
+        "find_audio_by_tokens": 2,
+        "find_first_audio_file": 6,
+        "has_audio_files": 1,
+        "is_audio_filename": 1,
+        "list_style_dirs_with_audio": 4,
+        "list_unique_audio_stems": 2
+      }
+    },
+    "core.audio.audio_manager": {
+      "files": [
+        "audio.py",
+        "tests/test_audio_fade_channel_owner.py",
+        "tests/test_audio_forward_before_load.py",
+        "tests/test_audio_manager.py",
+        "tests/test_audio_preload_budget.py",
+        "tests/test_category_volume_and_norm.py",
+        "tests/test_gsi_edge_loss_fixes.py",
+        "tests/test_kill_sound_loss_fixes.py",
+        "tests/test_special_sound_events.py"
+      ],
+      "names": {
+        "AudioInfo": 1,
+        "AudioManager": 14,
+        "get_audio_manager": 5
+      }
+    },
+    "core.audio.audio_playback_policy": {
+      "files": [
+        "tests/test_audio_playback_policy.py",
+        "tests/test_gsi_edge_loss_fixes.py"
+      ],
+      "names": {
+        "PlaybackRequest": 2,
+        "decide_channel_action": 2,
+        "resolve_priority": 1
+      }
+    },
+    "core.audio.audio_resource_health": {
+      "files": [
+        "audio_health_check.py",
+        "core/resource_health.py",
+        "core/runtime/system_status_service.py",
+        "gui_widget.py",
+        "pages/audio_status_badge.py",
+        "tests/test_audio_resource_health.py"
+      ],
+      "names": {
+        "apply_conservative_audio_fix": 2,
+        "check_gsi_cfg_match_stats": 2,
+        "collect_audio_resource_health": 6,
+        "format_audio_resource_health": 2
+      }
+    },
+    "core.audio.audio_task_runner": {
+      "files": [
+        "gui_widget.py",
+        "pages/audio_import_wizard_page.py",
+        "pages/audio_task_panel_page.py",
+        "tests/test_audio_task_runner.py",
+        "tests/test_ui_audio_task_panel_smoke.py"
+      ],
+      "names": {
+        "AudioTaskRunner": 2,
+        "get_audio_task_runner": 1,
+        "submit_import_refresh_task": 1,
+        "submit_reload_audio_task": 1
+      }
+    },
+    "core.audio.game_audio_ducker": {
+      "files": [
+        "gsi_handler_sounds.py",
+        "tests/test_game_audio_ducker.py"
+      ],
+      "names": {
+        "DEFAULT_GUN_SOUND_DUCK_RATIO": 1,
+        "DEFAULT_GUN_SOUND_DUCK_RELEASE_MS": 1,
+        "GameAudioDucker": 2,
+        "_SessionAudioBackend": 1,
+        "clamp_gun_sound_duck_ratio": 1,
+        "clamp_gun_sound_duck_time_ms": 1
+      }
+    },
+    "core.audio.runtime_audio": {
+      "files": [
+        "audio.py",
+        "background_loader.py",
+        "dialogs/onboarding_dialog.py",
+        "gsi_handler_kills.py",
+        "gsi_handler_sounds.py",
+        "gsi_handler_special.py",
+        "gui_widget.py",
+        "pages/audio_replay_page.py",
+        "pages/death_sound_page.py",
+        "pages/gun_sound_page.py",
+        "pages/kill_sound_page.py",
+        "pages/kill_voice_page.py",
+        "pages/reload_sound_page.py",
+        "pages/special_sound_page.py",
+        "pages/switch_weapon_page.py",
+        "tests/test_apply_one_style_to_every_weapon.py",
+        "tests/test_audio_compat.py",
+        "tests/test_audio_resource_health.py",
+        "tests/test_runtime_audio.py"
+      ],
+      "names": {
+        "get_legacy_audio_manager": 2,
+        "get_runtime_audio_manager": 18,
+        "peek_runtime_audio_manager": 1
+      }
+    },
+    "core.audio.special_events": {
+      "files": [
+        "config.py",
+        "core/health_report_text.py",
+        "gsi_handler_special.py",
+        "pages/special_sound_page.py",
+        "tests/test_apply_one_style_to_every_weapon.py",
+        "tests/test_gun_special_sound_truth.py",
+        "tests/test_health_report_speaks_user_language.py",
+        "tests/test_special_sound_events.py",
+        "tests/test_tool_pages_ui_polish.py"
+      ],
+      "names": {
+        "SOUND_EVENTS": 6,
+        "config_defaults": 5,
+        "events_in_group": 7,
+        "get_event": 2,
+        "round_event_keys": 1,
+        "sound_key": 3,
+        "style_dir_parts": 1,
+        "styles_attr": 2
+      }
+    },
+    "core.audio.style_creator": {
+      "files": [
+        "dialogs/style_creator_dialog.py",
+        "dialogs/style_manager_dialog.py",
+        "pages/audio_import_wizard_page.py"
+      ],
+      "names": {
+        "CATEGORY_TEMPLATES": 2,
+        "MAX_NUMBERED_SLOTS": 1,
+        "create_style": 1,
+        "delete_style": 1,
+        "list_style_files": 1,
+        "rename_style": 1,
+        "style_exists": 1,
+        "validate_style_name": 1
+      }
+    }
+  },
+  "imported_but_no_contract": [],
+  "internal_only_modules": [],
+  "loc": {
+    "core.audio.__init__": 104,
+    "core.audio.audio_event_timeline": 113,
+    "core.audio.audio_file_utils": 232,
+    "core.audio.audio_manager": 1747,
+    "core.audio.audio_playback_policy": 152,
+    "core.audio.audio_resource_health": 407,
+    "core.audio.audio_task_runner": 191,
+    "core.audio.game_audio_ducker": 768,
+    "core.audio.runtime_audio": 45,
+    "core.audio.special_events": 209,
+    "core.audio.style_creator": 328
+  },
+  "reexport_only_modules": [],
+  "surface": {
+    "core.audio.__init__": {
+      "classes": [],
+      "constants": [
+        "_EXPORTS",
+        "__all__"
+      ],
+      "functions": [
+        "__dir__",
+        "__getattr__"
+      ]
+    },
+    "core.audio.audio_event_timeline": {
+      "classes": [
+        "AudioEvent",
+        "AudioEventTimeline"
+      ],
+      "constants": [
+        "_timeline_instance",
+        "_timeline_lock"
+      ],
+      "functions": [
+        "_match_filters",
+        "get_audio_event_timeline"
+      ]
+    },
+    "core.audio.audio_file_utils": {
+      "classes": [],
+      "constants": [
+        "DEFAULT_AUDIO_EXTENSIONS",
+        "_STYLE_CACHE_TTL",
+        "_style_dirs_cache"
+      ],
+      "functions": [
+        "find_audio_by_stem",
+        "find_audio_by_tokens",
+        "find_first_audio_file",
+        "has_audio_files",
+        "invalidate_style_dirs_cache",
+        "is_audio_filename",
+        "list_audio_files",
+        "list_audio_paths",
+        "list_style_dirs_with_audio",
+        "list_unique_audio_stems",
+        "normalize_extensions"
+      ]
+    },
+    "core.audio.audio_manager": {
+      "classes": [
+        "AudioInfo",
+        "AudioManager",
+        "_CompatMap",
+        "_NullChannel"
+      ],
+      "constants": [
+        "_audio_manager_instance",
+        "_instance_lock"
+      ],
+      "functions": [
+        "get_audio_manager"
+      ]
+    },
+    "core.audio.audio_playback_policy": {
+      "classes": [
+        "PlaybackDecision",
+        "PlaybackRequest"
+      ],
+      "constants": [
+        "PREEMPT_GROUPS",
+        "PRIORITY_PROFILE_KILL_PREEMPT_V1"
+      ],
+      "functions": [
+        "decide_channel_action",
+        "resolve_preempt_group",
+        "resolve_priority"
+      ]
+    },
+    "core.audio.audio_resource_health": {
+      "classes": [],
+      "constants": [
+        "KILL_LEVELS",
+        "REQUIRED_AUDIO_DIRS"
+      ],
+      "functions": [
+        "_collect_incomplete_kill_styles",
+        "_make_issue",
+        "_resolve_kill_style_dir",
+        "_set_config_ref_to_zero",
+        "_style_dir_has_audio",
+        "apply_conservative_audio_fix",
+        "check_gsi_cfg_match_stats",
+        "collect_audio_resource_health",
+        "format_audio_resource_health"
+      ]
+    },
+    "core.audio.audio_task_runner": {
+      "classes": [
+        "AudioTaskRunner",
+        "_Task"
+      ],
+      "constants": [
+        "_runner_instance",
+        "_runner_lock"
+      ],
+      "functions": [
+        "get_audio_task_runner",
+        "submit_import_refresh_task",
+        "submit_reload_audio_task"
+      ]
+    },
+    "core.audio.game_audio_ducker": {
+      "classes": [
+        "GameAudioDucker",
+        "_HotkeyAudioBackend",
+        "_SessionAudioBackend"
+      ],
+      "constants": [
+        "DEFAULT_GUN_SOUND_DUCK_ATTACK_MS",
+        "DEFAULT_GUN_SOUND_DUCK_RATIO",
+        "DEFAULT_GUN_SOUND_DUCK_RELEASE_MS",
+        "DEFAULT_TARGET_PROCESS_NAMES"
+      ],
+      "functions": [
+        "build_hotkey_ducker",
+        "clamp_gun_sound_duck_ratio",
+        "clamp_gun_sound_duck_time_ms"
+      ]
+    },
+    "core.audio.runtime_audio": {
+      "classes": [],
+      "constants": [
+        "_MANAGER_MODULE"
+      ],
+      "functions": [
+        "get_legacy_audio_manager",
+        "get_runtime_audio_manager",
+        "peek_runtime_audio_manager"
+      ]
+    },
+    "core.audio.special_events": {
+      "classes": [
+        "SoundEvent"
+      ],
+      "constants": [
+        "EVENTS_BY_ATTR",
+        "SOUND_EVENTS"
+      ],
+      "functions": [
+        "config_defaults",
+        "events_in_group",
+        "get_event",
+        "round_event_keys",
+        "sound_key",
+        "style_dir_parts",
+        "styles_attr"
+      ]
+    },
+    "core.audio.style_creator": {
+      "classes": [
+        "StyleCreateResult",
+        "StyleTemplate"
+      ],
+      "constants": [
+        "CATEGORY_TEMPLATES",
+        "MAX_NUMBERED_SLOTS",
+        "_ILLEGAL_CHARS",
+        "_MANAGEABLE_CATEGORIES",
+        "_RESERVED_NAMES"
+      ],
+      "functions": [
+        "_audio_root",
+        "_is_supported_audio",
+        "_update_style_refs",
+        "create_style",
+        "delete_style",
+        "list_style_files",
+        "rename_style",
+        "resolve_style_target_dir",
+        "style_exists",
+        "validate_style_name"
+      ]
+    }
+  },
+  "unreferenced_modules": [
+    "core.audio.__init__"
+  ]
+}

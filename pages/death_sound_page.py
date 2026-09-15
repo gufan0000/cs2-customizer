@@ -257,6 +257,10 @@ class DeathSoundPage(QWidget):
         self.selection_state_label = QLabel("")
         self.selection_state_label.setObjectName("hintLabel")
         self.selection_state_label.setWordWrap(True)
+        from widgets import community_library as _cl  # RN-197 出口接线
+
+        _cl.wire_stale_route(self.selection_state_label,
+                             lambda: self.COMMUNITY_CATEGORY_KEY)
         selection_layout.addWidget(self.selection_state_label)
 
         overview_card, overview_layout = SettingsCard.make(
@@ -536,7 +540,7 @@ class DeathSoundPage(QWidget):
                 f"风格 · {self._compact_text(current_style if style_enabled else '未选择')}",
             )
         badges = [
-            ("success" if enabled else "warn", f"开关 · {'已启用' if enabled else '未启用'}"),
+            ("success" if enabled else "warn", f"开关 · {'已开启' if enabled else '未开启'}"),
             style_badge,
             ("success" if available_count else "info", f"候选 · {available_count}"),
             # RN-035：分级收进 `resource_badge()` 一份 —— 七个音效页原先各抄一遍，
@@ -545,7 +549,7 @@ class DeathSoundPage(QWidget):
         ]
 
         detail_lines = [
-            f"总开关：{'已启用' if enabled else '已关闭'}",
+            f"总开关：{'已开启' if enabled else '未开启'}",
             f"当前风格：{current_style if style_enabled else self.DISABLED_STYLE_TEXT}",
             f"已扫描风格：{available_count}",
             "测试策略：按风格名匹配 death 目录中的同名音频文件",
@@ -589,9 +593,12 @@ class DeathSoundPage(QWidget):
             if stale_style:
                 # RN-033：这一行原先在失效时说的是「当前已选择"<那个已经没了的风格>"，
                 # 切换后可以直接点击测试确认实际听感」—— 把用户直接送进一个必然失败的动作。
+                from widgets import community_library as _cl  # RN-197
+
                 self.selection_state_label.setText(
                     f"原来选的“{self._compact_text(stale_style)}”已经不在了"
                     "（被改名或删除），上面显示成「不启用」，重新选一个即可。"
+                    + _cl.stale_style_route(self.COMMUNITY_CATEGORY_KEY)
                 )
             elif style_enabled:
                 self.selection_state_label.setText(

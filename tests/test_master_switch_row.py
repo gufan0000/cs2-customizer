@@ -85,6 +85,14 @@ EXPECTED_KEYS = {
     "music": "music_enabled",
     "utility": "utility_guide_enabled",
     "voice_output": "voice_output_enabled",
+    # ⭐⭐⭐ RN-538（批 58）：**这一行本该在 2026-08-31 就写下**。
+    #   RN-190（批 34）把 `fun_page` 那颗手搓 QCheckBox 换成了共用的
+    #   `make_master_switch_row`，而豁免它的那条 `HOSTS_IT_WITH_ITS_OWN_CONTROL`
+    #   逐字写着「用的不是共用的 MasterSwitchRow，是手搓 QCheckBox」——
+    #   **理由随 RN-190 结清而过期，豁免却没走**，于是这一页被挡在下面三条
+    #   parametrize 判据之外整整六天，而没有任何东西会报。
+    #   ⇒ 见 `test_the_escape_hatches_do_not_rot`：豁免表现在有双向断言。
+    "fun_afterlife": "fun_afterlife_enabled",
 }
 
 
@@ -312,10 +320,32 @@ def test_every_page_that_shows_master_state_offers_the_switch(
     （网站那轮实测：解释性文字放在困惑发生的位置之后 = 没放）。
     """
     page, row = _page_with_row(main_window, qapp, page_id)
-    card = getattr(page, "status_card", None)
-    assert card is not None, f"{page_id} 页没有 status_card"
-    assert card.isAncestorOf(row), (
-        f"{page_id} 页的总开关行不在状态卡里 —— 状态在一处、动作在另一处，等于没修")
+
+    #: ⭐⭐ RN-538（批 58）：原来这里查的是**属性名** `status_card`。
+    #:   `fun_afterlife` 进分母的第一天它就红了 —— 而实测那颗行**就在卡里、在第一屏**
+    #:   （`SettingsCard#card`，y=147，对照页 118）。⇒ 判据认的是词，不是事实（同 RN-524）。
+    #:   改成量**它要的那件事**：行在某张卡里，且那张卡在第一屏。
+    #:   ⚠ 这不是放宽：声明了 `status_card` 的页仍然要求行落在**那一张**里。
+    declared = getattr(page, "status_card", None)
+    if declared is not None:
+        assert declared.isAncestorOf(row), (
+            f"{page_id} 页声明了 status_card，而总开关行不在它里面 —— "
+            "状态在一处、动作在另一处，等于没修")
+
+    card = None
+    node = row.parentWidget()
+    while node is not None and node is not page:
+        if node.objectName() == "card" or type(node).__name__.endswith("Card"):
+            card = node
+            break
+        node = node.parentWidget()
+    assert card is not None, (
+        f"{page_id} 页的总开关行不在任何一张卡里 —— 它是散落在页面上的一行")
+
+    y = row.mapTo(page, row.rect().topLeft()).y()
+    assert y <= 400, (
+        f"{page_id} 页的总开关行在 y={y} —— 摆到页尾就等于没摆"
+        "（网站那轮实测：解释性内容放在困惑发生的位置之后 = 没放）")
 
 
 @pytest.mark.parametrize("page_id,key", sorted(EXPECTED_KEYS.items()))
@@ -514,9 +544,12 @@ def test_no_page_with_its_own_switch_still_sends_the_user_away():
     """
     offenders = []
     for page_id in sorted(EXPECTED_KEYS):
-        path = REPO / "pages" / f"{page_id}_page.py"
+        path = _page_source_file(page_id)
+        # ⚠ 拆成两句，不写 `A is not None and B`：空转扫描器只认单操作符的守卫，
+        #   一个 `and` 就让它看不见这道守卫（批 41 那条链式比较的同族）。
+        assert path is not None, f"{page_id} 推不出页面文件"
         assert path.exists(), (
-            f"{page_id} 推不出页面文件（{path.name} 不存在）—— "
+            f"{page_id} 推不出页面文件 —— "
             "页面 id 和文件名对不上时这一页会被静默跳过，判据对它就是瞎的")
         tree = ast.parse(path.read_text(encoding="utf-8"))
         skip = _docstring_nodes(tree)
@@ -653,16 +686,93 @@ NO_PAGE_OF_ITS_OWN = {
 
 #: 页面**已经**能就地拨这个开关，但用的不是共用的 `MasterSwitchRow`。
 #: ⚠ 这不是豁免"能不能拨"，是记下"它走的是第二条链路"这笔账。
-HOSTS_IT_WITH_ITS_OWN_CONTROL = {
-    "fun_afterlife":
-        "`fun_page.py` 有一张标题就叫「总开关」的卡，里面是手搓的 QCheckBox。"
-        "⚠ 它 `setattr(config, ...)` **自己写**，再自己调 preheat/shutdown —— "
-        "而首页那颗开关的 `_on_switch_changed` 也做同一串事。"
-        "⭐ 同一个开关两条链路，短的那条缺的是「同步首页那颗的显示」"
-        "（RN-155 在 kill_icon 上踩过一模一样的）。"
-        "⇒ 改成共用行要连带改 `FunPage(controller)` 的独立构造用法与它的判据，"
-        "那是这一页自己翻新时的活，记在 **RN-190**。",
-}
+#:
+#: ⭐⭐⭐ **2026-09-06 批 58（RN-538）：这张表空了，而它是被自己的双向断言清空的。**
+#:   唯一那条（`fun_afterlife`）的理由逐字写着「用的不是共用的 MasterSwitchRow，
+#:   是手搓 QCheckBox … 记在 RN-190」—— 而 **RN-190 在 2026-08-31 批 34 就结了**，
+#:   那一批做的正是「换成共用的 `make_master_switch_row`」。
+#:   ⇒ 理由在它引用的那笔账结清的那天就过期了，**而豁免本身没有任何东西看着**，
+#:     于是这一页被挡在三条 parametrize 判据之外六天。
+#:   ⭐ 现在由 `test_the_escape_hatches_do_not_rot` 双向盯着：
+#:     **一条豁免必须证明它现在仍然被需要**，不能只证明它当初有道理。
+HOSTS_IT_WITH_ITS_OWN_CONTROL: dict[str, str] = {}
+
+
+#: page_id → 它真正住在哪个文件。⚠ **别按 `<id>_page.py` 猜**：
+#: `fun_afterlife` 住在 `pages/fun_page.py`，而批 31 就记过「文件名不是 id」、
+#: 批 34 又栽了一次（那次的普查因此对这一页直接落空）。
+#: ⭐ 这里第三次现身，是 RN-538 把它加进分母之后**当场**被逮到的 ——
+#:   **拓宽分母之后第一个被抓到的违规者，往往是判据自己**（同批 47）。
+_PAGE_FILE_OVERRIDES = {"fun_afterlife": "fun_page.py"}
+
+
+def _page_source_file(page_id: str):
+    """页面 id → 源码文件。猜不出来就回 None，让调用方去报，别静默跳过。"""
+    override = _PAGE_FILE_OVERRIDES.get(page_id)
+    if override:
+        path = REPO / "pages" / override
+        return path if path.exists() else None
+    path = REPO / "pages" / f"{page_id}_page.py"
+    return path if path.exists() else None
+
+
+def test_the_page_file_map_does_not_rot():
+    """双向断言：`_PAGE_FILE_OVERRIDES` 里每一条都必须**仍然被需要**。
+
+    ⭐ 一条「例外」在默认规则重新适用之后就是噪音 ——
+      而它读起来仍然像一条有道理的例外。
+    """
+    for page_id, filename in _PAGE_FILE_OVERRIDES.items():
+        assert (REPO / "pages" / filename).exists(), (
+            f"{page_id} 的例外指向 pages/{filename}，而那个文件不在了")
+        assert not (REPO / "pages" / f"{page_id}_page.py").exists(), (
+            f"pages/{page_id}_page.py 现在存在了 —— 默认规则已经够用，"
+            f"把 {page_id} 从 `_PAGE_FILE_OVERRIDES` 里删掉")
+
+
+def test_the_escape_hatches_do_not_rot(main_window, qapp):
+    """⭐⭐⭐ **一条豁免必须证明它现在仍然被需要，不能只证明它当初有道理。**
+
+    RN-538 的由来：`HOSTS_IT_WITH_ITS_OWN_CONTROL` 里唯一那条
+    （`fun_afterlife`）说的是「它用的不是共用的 `MasterSwitchRow`，是手搓
+    QCheckBox … 记在 **RN-190**」。而 RN-190 **2026-08-31 批 34 就结了**，
+    那一批做的正好是「换成共用的 `make_master_switch_row`」。
+    ⇒ 理由在它引用的那笔账结清的那天过期，**豁免却没走**：
+      那一页被挡在三条 parametrize 判据之外六天，而没有任何东西会报。
+
+    ⭐ 这和登记册那张 `CITED_AS_PRECEDENT` 是同一件事的两次现身 ——
+      那张表有双向断言（「每一条都必须 ① 仍被点名 ② 仍未结」），已经顶出去过四条；
+      而这张表在**另一个文件里**，从来没有。
+      ⭐⭐ **一条规矩长出了守卫，不等于它的同族都长出了守卫。**
+
+    两个方向各查一次：
+    ① `HOSTS_IT_WITH_ITS_OWN_CONTROL` 里的页，**现在不许**已经装上共用行
+       （装上了就说明理由过期，该搬进 `EXPECTED_KEYS` 去吃那三条判据）；
+    ② `NO_PAGE_OF_ITS_OWN` 里的开关，**现在仍然**不许有属于它的页面。
+    """
+    home_ids = {sid for sid, _, _ in _home_switch_configs()}
+
+    expired = []
+    for page_id in HOSTS_IT_WITH_ITS_OWN_CONTROL:
+        main_window.ensure_page_loaded(page_id)
+        qapp.processEvents()
+        page = main_window.pages.get(page_id)
+        if page is not None and getattr(page, "master_switch_row", None) is not None:
+            expired.append(page_id)
+    assert not expired, (
+        f"这几页已经装上共用的 `MasterSwitchRow` 了，豁免却还留着：{expired}\n"
+        "⭐ 理由过期而豁免没走 —— 它们正被挡在三条 parametrize 判据之外。\n"
+        "⇒ 把它们搬进 `EXPECTED_KEYS`，并从这张表里删掉。")
+
+    stale = sorted(sid for sid in NO_PAGE_OF_ITS_OWN if sid not in home_ids)
+    assert not stale, (
+        f"这几颗开关已经不在首页上了，豁免却还留着：{stale}\n"
+        "⭐ 一条豁免的对象消失之后，它就不再是豁免，是噪音。")
+    has_page = sorted(sid for sid in NO_PAGE_OF_ITS_OWN
+                      if sid in main_window._page_names)
+    assert not has_page, (
+        f"这几颗开关现在**有**属于自己的页面了：{has_page}\n"
+        "⇒ `NO_PAGE_OF_ITS_OWN` 说的「没有属于它的功能页」已经不成立。")
 
 
 def _home_switch_configs() -> list[tuple[str, str, str]]:

@@ -292,7 +292,7 @@ class ScreenEffectsPage(QWidget):
         ]
 
         detail_text = (
-            f"总开关：{'已开启' if master_enabled else '已关闭'}\n"
+            f"总开关：{'已开启' if master_enabled else '未开启'}\n"
             f"边缘特效：{'已开启' if edge_enabled else '已关闭'}\n"
             f"当前预设：{self.preset_combo.currentText() if hasattr(self, 'preset_combo') else '未设置'}\n"
             f"演出模式：{self.play_mode_combo.currentText() if hasattr(self, 'play_mode_combo') else '未设置'}\n"
@@ -379,7 +379,15 @@ class ScreenEffectsPage(QWidget):
         edge_enabled = master_enabled and self.enable_edge_flash_checkbox.isChecked()
 
         if not master_enabled:
-            self.master_state_label.setText("总开关已关闭 —— 一拨就生效。")
+            # ⭐⭐⭐ RN-151（批 82）：原文是「总开关已关闭 —— 一拨就生效。」——
+            #   它说的是**总开关自己**的状态，而玩家的困惑在**下面那个勾**上：
+            #   勾选框画着勾（默认 True）却被禁用，读起来就是「这个功能开着」，
+            #   而同屏芯片写着「边缘特效 · 关闭」。⇒ 这句话要**点名那颗勾**。
+            # ⛔ 不许动 `setEnabled`：RN-421 实测「可调但不生效」判高 139→144 没降，
+            #   已改判接受禁用（RN-420：「这两页是对的，错的是那条规矩」）。
+            self.master_state_label.setText(
+                "总开关已关闭 —— 下面这些勾选**暂时都不生效**，"
+                "勾还留着，一拨总开关就全部恢复。")
             self.master_state_label.show()
             self.action_bar.set_message("总开关已关闭，当前页面设置不会生效。")
         elif not self.enable_edge_flash_checkbox.isChecked():
@@ -390,6 +398,18 @@ class ScreenEffectsPage(QWidget):
             self.master_state_label.hide()
             self.action_bar.set_message("本页修改自动保存。")
 
+        # ⭐⭐⭐ RN-151（批 82 定案）：**标记放进勾选框自己的文案。**
+        #   旁边那句说明买 **0 票**，标记进控件文案 **会 6/6 → 1/6**（档案同上）——
+        #   ⇒ **「在控件旁边说」和「在控件身上说」是两件不同的事。**
+        # ⛔ 不碰 `checkState`：`_save_config` 走 `isChecked()`，三态会写坏用户存的值。
+        self.enable_edge_flash_checkbox.setText(
+            "击杀触发屏幕边缘特效" if master_enabled
+            else "击杀触发屏幕边缘特效（总开关关着，现在不生效）")
+
+        # ⛔ **别把这一行改成「不禁用」。** RN-421（批 17）实测「可调但不生效」
+        #   判高 139→144 没降，已改判为**接受禁用**；RN-420 结论逐字
+        #   「这两页是对的，错的是那条规矩」—— 本页是全站唯一一开始就做对的。
+        # ⚠ 批 70 我差点删掉它，还量了个**分母错的**数替自己撑腰。经过见 `CS2 Customizer_翻新工程/档案/X_本机绿不等于CI绿.md`。
         self.enable_edge_flash_checkbox.setEnabled(master_enabled)
         self.preset_combo.setEnabled(edge_enabled)
         self.play_mode_combo.setEnabled(edge_enabled)
@@ -430,9 +450,14 @@ class ScreenEffectsPage(QWidget):
         时候，用户点预览连个提示都没有，只能得出"这按钮是坏的"这个结论。
         """
         if self.overlay_manager is None:
+            # ⭐ RN-528：这句话出现的时刻恰恰是**软件已经出问题**的时刻 ——
+            #   让那个页名自己可点，别让正在排障的人再去侧栏里找。`rich=True` 见 RN-589。
+            from widgets import page_route as _pr
+
+            target = _pr.page_route("advanced", _pr.page_label(self, "advanced"))
             self.action_bar.set_message(
                 "屏幕特效组件没能启动，预览不可用；重启软件仍不行的话，"
-                "请到「高级设置」里导出日志反馈。")
+                f"请到{target}里导出日志反馈。", rich=True)
             self.logger.warning("预览请求被跳过：overlay_manager 为 None")
             return
         try:

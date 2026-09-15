@@ -257,9 +257,18 @@ def test_the_only_way_out_does_not_change_with_the_master_switch(swept):
     「一颗按钮换了含义，门禁条件要跟着换」的第二次现身，
     只是施加者从 `player_ready` 换成了降权 QSS。
     """
+    # ⚠ 2026-09-06 批 62：这里原来比**精确相等**，而量的是渐变填充的众数 ——
+    #   `kill_icon` 的那颗实测 (132,66,245) vs (133,68,247)，差 1~2/255：
+    #   按钮高度差一个像素，众数就落到渐变的另一档上。
+    #   而它要防的那件事（被降权成灰蓝）是 (110,112,129) vs (133,68,247)，差一百多。
+   #   ⇒ 给一个远小于「降权」、又大于「渐变抖动」的容差。
+    #   ⭐ 同批 43：量像素就得说清**多大的差才算数**。
+    tol = 8
     bad = [
         f"{r['page']} · {r['text']!r}：总开关关 {r['off']} / 开 {r['on']}"
-        for r in swept if r["off"] != r["on"]
+        for r in swept
+        if r["off"] is None or r["on"] is None
+        or max(abs(a - b) for a, b in zip(r["off"], r["on"])) > tol
     ]
     assert not bad, (
         "下面这些页，空库时**唯一走得通**的那颗按钮被总开关改了样子 —— "

@@ -221,6 +221,36 @@ def test_every_tool_that_builds_pages_uses_the_shared_helper():
         "它们会建真实页面，配置目录必须是可复现的全新用户目录。")
 
 
+def _rejected_textual_rule_kept_as_a_note():
+    """⛔ RN-632（批 91）：这里**曾经**有一条文本判据，量完误报率之后撤掉了。
+
+    它的规则是「判据用 subprocess 起过、又调了 `use_pristine_config_dir`
+    却不带 `force` 的脚本一律红」。跑出来点名 6 个，逐个核实后：
+
+    - 4 个是**假的**（`bench_page_build` / `build_search_index` /
+      `layout_overflow_audit` / `tab_order_audit` 同时被测试 **in-process 导入**，
+      而默认的 `setdefault` 语义正是为它们存在的 —— 强行 force 会掀掉
+      测试自己的配置目录）；
+    - `page_fingerprint` 也是**假的**：它的调用方
+      （`test_renovation_fingerprints_do_not_rot`）在**调用侧**把
+      `CS2C_CONFIG_DIR` 摘掉了，而且还验证了真摘掉 —— 那是同样正确的修法；
+    - 只有 `x1_effects_snapshot` 是真的。
+
+    ⇒ 在「零 in-process」这两个候选里 **1 真 1 假，误报率 50%**。
+    按 RN-156 的规矩（**先量误报率，再决定要不要把一把尺子做成门禁**）不做门禁。
+
+    ⭐⭐⭐ 而它错的地方和今晚主缺陷一模一样：**一个条件写下去，
+    罩住的从来不止我心里想的那一个**（`release` 那个名字罩住了
+    `scripts/release/`）。我是在写完那条教训之后立刻又犯的。
+
+    ⇒ 换成**行为判据**，见 `test_x1_external_effects_are_frozen` 里那条
+    「拿被污染的配置目录录一遍，读数必须不变」——
+    它不关心用了哪种修法，直接断言那个被违反的性质。
+    """
+
+
+
+
 # ------------------------------------------------------------ ③ 端到端
 
 def test_a_tool_process_really_sees_a_brand_new_users_config():

@@ -245,7 +245,7 @@ def _registry_text() -> str:
     return (CAMPAIGN / "登记册.md").read_text(encoding="utf-8")
 
 
-def _open_entries_by_page(page_ids: set[str]) -> dict[str, list[str]]:
+def _open_entries_by_page(page_ids: set[str], text: str | None = None) -> dict[str, list[str]]:
     """每个页面 id 名下**未结**的 RN 条目。
 
     ⚠ **失效方向朝"别诬告"那边倒**：登记册的「档案」格写法很杂
@@ -255,9 +255,23 @@ def _open_entries_by_page(page_ids: set[str]) -> dict[str, list[str]]:
     **分不出类的值，失效方向必须朝安全那边倒**，而这里"安全"是不冤枉。
     """
     out: dict[str, list[str]] = {pid: [] for pid in page_ids}
-    for header, cells in _rows(_registry_text()):
+    for header, cells in _rows(_registry_text() if text is None else text):
         status = _cell(header, cells, "状态")
-        owner = _cell(header, cells, "档案")
+        # ⭐⭐⭐ 2026-09-06 批 59：分母从「档案」一格扩到「档案 + 位置」。
+        #   旧账逐页表的表头是 (RN, G级, 级别, **位置**, 一句话, 主题, 堆, 状态)——
+        #   它**没有「档案」这一格**，于是那 90 行在这条判据眼里全部无主。
+        #   实测：`basic` 名下 RN-104/232/235/236 都开着，而批 59 把它自己那几条
+        #   结掉之后，这条判据当场要去**诬告**它「挂着中间态却一条未结都没有」。
+        #   ⚠ 它自己的说明逐字写着「失效方向朝**别诬告**那边倒」——
+        #     所以这不是放宽，是把它修回它声称的方向。
+        #   ⭐ 同 RN-483/511/521/522/537 一族：**按某个列名划分母，
+        #     不带那个列名的表天生看不见**。批 41 给这张表补过「状态」列，
+        #     而「位置」≠「档案」，归属这一路一直漏着。
+        #   ⚠ 三张表，归属列三个名字：「档案」/「位置」/「涉及」。
+        #     少认一个，那张表的行就全部无主。
+        owner = (_cell(header, cells, "档案")
+                 or _cell(header, cells, "位置")
+                 or _cell(header, cells, "涉及"))
         if not status or not owner or not _is_open(status):
             continue
         for pid in page_ids:
@@ -350,15 +364,10 @@ def test_the_in_progress_check_catches_a_page_that_should_have_closed():
     `gamma` 是 `未开工`（零未结是因为还没人看过），`alpha` 是 `已关档`。
     """
     page_ids = {c[1] for h, c in _board_rows(_SYNTHETIC_BOARD) if h == PAGE_TABLE_SHAPE}
-    opens = {pid: [] for pid in page_ids}
-    for header, cells in _rows(_SYNTHETIC_REGISTRY):
-        status = _cell(header, cells, "状态")
-        owner = _cell(header, cells, "档案")
-        if not status or not owner or not _is_open(status):
-            continue
-        for pid in page_ids:
-            if re.search(r"(?<![A-Za-z_])" + re.escape(pid) + r"(?![A-Za-z_])", owner):
-                opens[pid].append(cells[0].strip("* "))
+    # ⭐⭐ 2026-09-06 批 59：这里原先**把 `_open_entries_by_page` 的逻辑重写了一遍** ——
+    #   于是它测的是自己那一份，改坏真函数它纹丝不动（同 RN-513）。
+    #   ⇒ 改成调真函数，喂它合成登记册。
+    opens = _open_entries_by_page(page_ids, _SYNTHETIC_REGISTRY)
     caught = sorted(
         c[1] for h, c in _board_rows(_SYNTHETIC_BOARD)
         if h == PAGE_TABLE_SHAPE
@@ -752,9 +761,28 @@ def _milestone_rows(text: str) -> list[list[str]]:
     return [c for h, c in _board_rows(text) if h == MILESTONE_TABLE_SHAPE]
 
 
-def _phase_items(text: str) -> dict[str, list[tuple[str, bool]]]:
-    """每一批名下的条目 → (名字, 关档了没有)。页面表和交叉链路表都算。"""
-    out: dict[str, list[tuple[str, bool]]] = {}
+def _item_state(status: str) -> str:
+    """一格状态 → 三态之一。
+
+    ⭐⭐⭐ **2026-09-05 批 57（RN-537）：这里以前只有两态**（`startswith(已关档)` 的真假）。
+    于是「有人正在做这一条」这件事**结构上无处安放** ——
+    实测后果：批 54~56 三批全在 P5 上（`basic` 走完 D0 首轮盘查、X1 冻了两张网），
+    而看板上 M6 写着「未开工」，**十六条判据全绿**。
+    ⭐ 机器的「未开工」= 关档数为 0；人的「未开工」= 没人动过。
+      两个意思**在做完第一批而还没关第一档的那一刻分叉**，而判据站在机器那一边。
+    ⚠ 认不出的词一律落「未开工」——方向朝**要查**那边倒（它会让 M 那一格更容易报红），
+      且词汇本身由 `test_the_page_status_vocabulary_does_not_rot` 兜着。
+    """
+    if status.startswith(STATUS_CLOSED):
+        return STATUS_CLOSED
+    if status.startswith(STATUS_IN_PROGRESS):
+        return "中间态"
+    return STATUS_NOT_STARTED
+
+
+def _phase_items(text: str) -> dict[str, list[tuple[str, str]]]:
+    """每一批名下的条目 → (名字, 三态)。页面表和交叉链路表都算。"""
+    out: dict[str, list[tuple[str, str]]] = {}
     for header, cells in _board_rows(text):
         if header == PAGE_TABLE_SHAPE:
             phase, name, status = _strip(cells[0]), _strip(cells[1]), _strip(cells[8])
@@ -762,17 +790,20 @@ def _phase_items(text: str) -> dict[str, list[tuple[str, bool]]]:
             phase, name, status = _strip(cells[0]), _strip(cells[1]), _strip(cells[4])
         else:
             continue
-        out.setdefault(phase, []).append((name, status.startswith(STATUS_CLOSED)))
+        out.setdefault(phase, []).append((name, _item_state(status)))
     return out
 
 
-def _derive_word(items: list[tuple[str, bool]]) -> str:
-    closed = [name for name, done in items if done]
-    if len(closed) == len(items):
+def _derive_word(items: list[tuple[str, str]]) -> str:
+    states = [state for _, state in items]
+    #: ⚠ 空列表仍然判「已完成」（`all([])` 为真）——这是**故意保留**的原状：
+    #:   守着它的是 `test_every_phase_the_board_claims_actually_has_items` 那道分母守卫，
+    #:   而那条判据的全部理由就是这一行。改这里会让那条判据失去对象。
+    if all(state == STATUS_CLOSED for state in states):
         return "已完成"
-    if not closed:
-        return "未开工"
-    return "进行中"
+    if any(state in (STATUS_CLOSED, "中间态") for state in states):
+        return "进行中"
+    return STATUS_NOT_STARTED
 
 
 def _leading_word(cell: str) -> str | None:
@@ -855,7 +886,7 @@ def test_the_milestone_word_is_recomputed_from_the_pages_not_typed_by_hand():
             continue
         want = _derive_word(items[MILESTONE_PHASE[name]])
         if word != want:
-            done = [n for n, ok in items[MILESTONE_PHASE[name]] if ok]
+            done = [n for n, st in items[MILESTONE_PHASE[name]] if st == STATUS_CLOSED]
             bad.append((name, f"板上写「{word}」，页面表现算是「{want}」",
                         f"{MILESTONE_PHASE[name]} 已关档 {len(done)}/"
                         f"{len(items[MILESTONE_PHASE[name]])}"))
@@ -904,7 +935,7 @@ def test_an_in_progress_milestone_lists_exactly_what_is_left():
             item for item in everything
             if re.search(r"(?<![A-Za-z0-9_])" + re.escape(item) + r"(?![A-Za-z0-9_])", tail)
         }
-        want = {n for n, done in rows if not done}
+        want = {n for n, state in rows if state != STATUS_CLOSED}
         if named != want:
             problems.append((
                 name,
@@ -920,10 +951,16 @@ def test_an_in_progress_milestone_lists_exactly_what_is_left():
 
 def test_the_milestone_checks_catch_both_ways_of_rotting():
     """⭐ 阳性对照：两条判据各造一份破法，都不碰真文件。"""
-    rows = [("alpha", True), ("beta", False)]
+    rows = [("alpha", STATUS_CLOSED), ("beta", STATUS_NOT_STARTED)]
     assert _derive_word(rows) == "进行中"
-    assert _derive_word([("alpha", True)]) == "已完成"
-    assert _derive_word([("alpha", False)]) == "未开工"
+    assert _derive_word([("alpha", STATUS_CLOSED)]) == "已完成"
+    assert _derive_word([("alpha", STATUS_NOT_STARTED)]) == "未开工"
+    #: ⭐⭐ 批 57（RN-537）新增的那一态：**一条都没关档，但有人在做**。
+    #:   这正是 M6 在批 54~56 的形状 —— 旧的两态逻辑在这里判「未开工」而判据全绿。
+    assert _derive_word([("alpha", "中间态"), ("beta", STATUS_NOT_STARTED)]) == "进行中"
+    assert _item_state("锁基线（批 55~56）") == "中间态"
+    assert _item_state("已关档（批 44）") == STATUS_CLOSED
+    assert _item_state("未开工（随 X1）") == STATUS_NOT_STARTED
     #: ① 词错了：明明做了一半，板上写「未开工」（M4 当时就是这个形状）
     assert _leading_word("未开工") != _derive_word(rows)
     #: ② 词对了但清单过期：beta 才是没关档的那个，格子里却写着 alpha
@@ -932,19 +969,51 @@ def test_the_milestone_checks_catch_both_ways_of_rotting():
         r"(?<![A-Za-z0-9_])" + n + r"(?![A-Za-z0-9_])", tail.split(REMAINDER_MARKER, 1)[1])}
     assert named == {"alpha"} and named != {"beta"}, "过期清单必须被逮住"
     #: ③ 「已完成」不需要清单 —— 别让它被误伤
-    assert _derive_word([("alpha", True)]) != "进行中"
+    assert _derive_word([("alpha", STATUS_CLOSED)]) != "进行中"
 
 
 def test_the_page_status_vocabulary_does_not_rot():
-    """双向断言：三类状态词都必须真的还在被用，否则清单变成古董。"""
-    used = [_strip(c[8]) for c in _page_rows(_require_board())]
-    assert any(s.startswith(STATUS_NOT_STARTED) for s in used), "没有一页是 未开工 了？"
-    assert any(s.startswith(STATUS_CLOSED) for s in used), "没有一页是 已关档 了？"
+    """双向断言：三类状态词都必须真的还在被用，否则清单变成古董。
+
+    ⭐⭐⭐ **2026-09-05 批 57（RN-537）：分母从「页面表」扩到「页面表 + 交叉链路表」。**
+    在此之前那 14 行 X 档案的状态格**没有任何判据管它写什么** —— 而
+    `_phase_items` 正是拿它算 M6 / M7 那个词。
+    ⇒ **一个被机器读的字段，却没有词汇守卫**：写「已关档了一半」会被读成关档、
+    写「已经在做」会被读成没开工，两种都不报。
+
+    ⚠ 而扩分母当场兑现了第二件事：`basic` 一改成「盘点」，
+    **「未开工」在页面表里就一个用户都没有了**（27 页关档 + basic 盘点）——
+    ⭐ 这个词并没有过期，只是**用它的那些行一直在另一张表里**，
+    而那张表不在分母里 ⇒ 双向断言会把它误判成古董，逼人去删一个还在用的词。
+    """
+    board = _require_board()
+    used = [_strip(c[8]) for c in _page_rows(board)]
+    used += [_strip(c[4]) for h, c in _board_rows(board) if h == LINK_TABLE_SHAPE]
+    #: 空转守卫：两张表加起来 28 页 + 14 条链路。
+    assert len(used) >= 40, (
+        f"只读到 {len(used)} 个状态格 —— 两张表加起来有 40 余行，解析器瞎了"
+    )
+    # ⚠⚠ **2026-09-14 批 92 放宽**：原来这里还断言「至少有一条未开工在被用」。
+    #   X14 是 28 页 + 14 链路里**最后一格**，它一关档，「未开工」在真实数据里
+    #   就零用户 —— 那是**工程走到了终点**，不是词过期（同批 60 对中间态的放宽：
+    #   「这个词还认不认得出」由下面的合成自检钉着，不需要真实数据里恰好有一条）。
+    #   ⛔ 上面 docstring 里那句「总有没开工的」在收官那一刻是假的 ——
+    #   一条判据把「工程永远做不完」当成了前提。
+    assert any(s.startswith(STATUS_CLOSED) for s in used), "没有一条是 已关档 了？"
+    # ⚠⚠ **2026-09-06 批 60 放宽**：这里原来还断言「至少有一条中间态在被用」。
+    #   而批 60 给 `basic` 和 X1 关档之后，全站**此刻一条中间态都没有** ——
+    #   那是**干净的批边界**，不是腐烂。判据把它判红，等于要求工程永远有半拉子活。
+    #   ⭐ 「这个词还认不认得出」和「此刻有没有人在用」是两件事：
+    #     前者由 `test_the_milestone_checks_catch_both_ways_of_rotting` 的
+    #     合成自检钉着（`_item_state("锁基线（批 55~56）") == "中间态"`），
+    #     不需要真实数据里恰好有一条。
+    #   ⇒ 双向断言只对「未开工 / 已关档」两个词做 —— 它们**必然**同时有用户
+    #     （28 页 + 14 链路里总有没开工的，也总有关了档的）。
     unknown = sorted({
         s[:12] for s in used
         if not s.startswith((STATUS_NOT_STARTED, STATUS_CLOSED) + STATUS_IN_PROGRESS)
     })
     assert not unknown, (
-        f"这些页状态开头不是已登记的词：{unknown}\n"
+        f"这些状态格开头不是已登记的词：{unknown}\n"
         "把机器要读的那个词放最前面，细节写在后面的括号里。"
     )

@@ -1,0 +1,293 @@
+{
+  "contract": {
+    "gsi_handler_flash": [
+      "GSIHandlerFlash"
+    ],
+    "gsi_handler_fun": [
+      "GSIHandlerFun"
+    ],
+    "gsi_handler_hud_color": [
+      "GSIHandlerHudColor"
+    ],
+    "gsi_handler_kills": [
+      "GSIHandlerKills",
+      "audio_manager"
+    ],
+    "gsi_handler_music": [
+      "GSIHandlerMusic",
+      "get_music_gsi_handler"
+    ],
+    "gsi_handler_sounds": [
+      "DEATH_SOUND_HOLD_DURATION",
+      "DEATH_SOUND_PEAK_MS",
+      "GSIHandlerSounds"
+    ],
+    "gsi_handler_special": [
+      "GSIHandlerSpecial"
+    ],
+    "gsi_handler_stats": [
+      "GSIHandlerStats"
+    ],
+    "gsi_handler_utility": [
+      "GSIHandlerUtility"
+    ],
+    "gsi_server": [
+      "GSIServer",
+      "get_active_port"
+    ]
+  },
+  "contract_total": 15,
+  "external_use": {
+    "gsi_handler_flash": {
+      "files": [
+        "main_widget.py",
+        "scripts/gsi_full_sim.py"
+      ],
+      "names": {
+        "GSIHandlerFlash": 2
+      }
+    },
+    "gsi_handler_fun": {
+      "files": [
+        "main_widget.py",
+        "tests/test_afterlife_controller.py",
+        "tests/test_gsi_handler_fun.py"
+      ],
+      "names": {
+        "GSIHandlerFun": 3
+      }
+    },
+    "gsi_handler_hud_color": {
+      "files": [
+        "main_widget.py",
+        "scripts/gsi_full_sim.py"
+      ],
+      "names": {
+        "GSIHandlerHudColor": 2
+      }
+    },
+    "gsi_handler_kills": {
+      "files": [
+        "main_widget.py",
+        "scripts/gsi_full_sim.py",
+        "tests/test_gsi_audio_handlers.py",
+        "tests/test_gsi_replay_pipeline.py",
+        "tests/test_kill_feedback_channels_are_independent.py",
+        "tests/test_kill_sound_loss_fixes.py",
+        "tests/test_kill_weapon_survives_a_quick_switch.py",
+        "tests/test_kills_tracking_evict.py",
+        "tests/test_melee_kill_config_actually_applies.py"
+      ],
+      "names": {
+        "GSIHandlerKills": 30,
+        "audio_manager": 1,
+        "time": 5
+      }
+    },
+    "gsi_handler_music": {
+      "files": [
+        "gui_widget.py",
+        "main_widget.py",
+        "scripts/gsi_full_sim.py",
+        "tests/test_gsi_edge_loss_fixes.py",
+        "tests/test_music_link_behavior.py"
+      ],
+      "names": {
+        "GSIHandlerMusic": 8,
+        "get_music_gsi_handler": 2
+      }
+    },
+    "gsi_handler_sounds": {
+      "files": [
+        "main_widget.py",
+        "scripts/gsi_full_sim.py",
+        "tests/test_gsi_audio_handlers.py",
+        "tests/test_gsi_replay_pipeline.py"
+      ],
+      "names": {
+        "Controller": 1,
+        "DEATH_SOUND_HOLD_DURATION": 1,
+        "DEATH_SOUND_PEAK_MS": 1,
+        "GSIHandlerSounds": 17,
+        "GUN_SOUND_PROFILES": 1
+      }
+    },
+    "gsi_handler_special": {
+      "files": [
+        "main_widget.py",
+        "scripts/gsi_full_sim.py",
+        "tests/test_gsi_audio_handlers.py",
+        "tests/test_gsi_edge_loss_fixes.py",
+        "tests/test_gsi_replay_pipeline.py",
+        "tests/test_special_sound_events.py"
+      ],
+      "names": {
+        "GSIHandlerSpecial": 11,
+        "threading": 2
+      }
+    },
+    "gsi_handler_stats": {
+      "files": [
+        "main_widget.py",
+        "scripts/gsi_full_sim.py"
+      ],
+      "names": {
+        "GSIHandlerStats": 2
+      }
+    },
+    "gsi_handler_utility": {
+      "files": [
+        "main_widget.py",
+        "pages/utility_page.py",
+        "scripts/gsi_full_sim.py"
+      ],
+      "names": {
+        "GSIHandlerUtility": 3
+      }
+    },
+    "gsi_server": {
+      "files": [
+        "main_widget.py",
+        "pages/about_page.py",
+        "tests/test_about_diagnostics_gsi.py"
+      ],
+      "names": {
+        "GSIServer": 2,
+        "get_active_port": 1
+      }
+    }
+  },
+  "imported_but_no_contract": [],
+  "internal_only_modules": [],
+  "loc": {
+    "gsi_handler_flash": 141,
+    "gsi_handler_fun": 161,
+    "gsi_handler_hud_color": 189,
+    "gsi_handler_kills": 1093,
+    "gsi_handler_music": 278,
+    "gsi_handler_sounds": 458,
+    "gsi_handler_special": 722,
+    "gsi_handler_stats": 147,
+    "gsi_handler_utility": 736,
+    "gsi_server": 235
+  },
+  "reexport_only_modules": [],
+  "surface": {
+    "gsi_handler_flash": {
+      "classes": [
+        "GSIHandlerFlash"
+      ],
+      "constants": [
+        "logger"
+      ],
+      "functions": []
+    },
+    "gsi_handler_fun": {
+      "classes": [
+        "GSIHandlerFun"
+      ],
+      "constants": [
+        "DEATH_COOLDOWN",
+        "logger"
+      ],
+      "functions": []
+    },
+    "gsi_handler_hud_color": {
+      "classes": [
+        "GSIHandlerHudColor"
+      ],
+      "constants": [],
+      "functions": []
+    },
+    "gsi_handler_kills": {
+      "classes": [
+        "GSIHandlerKills"
+      ],
+      "constants": [
+        "audio_manager"
+      ],
+      "functions": []
+    },
+    "gsi_handler_music": {
+      "classes": [
+        "GSIHandlerMusic"
+      ],
+      "constants": [
+        "_handler_instance",
+        "logger"
+      ],
+      "functions": [
+        "get_music_gsi_handler"
+      ]
+    },
+    "gsi_handler_sounds": {
+      "classes": [
+        "GSIHandlerSounds"
+      ],
+      "constants": [
+        "DEATH_SOUND_HOLD_DURATION",
+        "DEATH_SOUND_MAX_SUSTAIN_RATIO",
+        "DEATH_SOUND_MIN_SUSTAIN_RATIO",
+        "DEATH_SOUND_MUTE_ONLY_HOLD_DURATION",
+        "DEATH_SOUND_MUTE_ONLY_RELEASE_SCALE",
+        "DEATH_SOUND_PEAK_MS",
+        "DEATH_SOUND_RELEASE_SCALE",
+        "audio_manager"
+      ],
+      "functions": []
+    },
+    "gsi_handler_special": {
+      "classes": [
+        "GSIHandlerSpecial"
+      ],
+      "constants": [
+        "audio_manager"
+      ],
+      "functions": []
+    },
+    "gsi_handler_stats": {
+      "classes": [
+        "GSIHandlerStats"
+      ],
+      "constants": [
+        "logger"
+      ],
+      "functions": []
+    },
+    "gsi_handler_utility": {
+      "classes": [
+        "GSIHandlerUtility"
+      ],
+      "constants": [
+        "logger"
+      ],
+      "functions": []
+    },
+    "gsi_server": {
+      "classes": [
+        "GSIServer"
+      ],
+      "constants": [
+        "_PORT_CANDIDATE_RANGE",
+        "_active_port",
+        "_drop_stats_lock",
+        "_dropped_packets",
+        "_last_drop_report",
+        "_startup_error",
+        "data_queue",
+        "flask_app",
+        "logger"
+      ],
+      "functions": [
+        "_persist_port_change",
+        "_port_bindable",
+        "_record_drop",
+        "_select_port",
+        "game_state_update",
+        "get_active_port",
+        "run_flask"
+      ]
+    }
+  },
+  "unreferenced_modules": []
+}

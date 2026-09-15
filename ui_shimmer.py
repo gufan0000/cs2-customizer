@@ -145,8 +145,11 @@ def add_shimmer_effect(widget, duration=2000, delay=0, loop=False, trigger_on_sh
         trigger_on_show: 是否在显示时自动触发
     
     Returns:
-        ShimmerEffect实例
+        ShimmerEffect实例；总开关关着时返回 None、什么都不装（RN-639）
     """
+    from ui_motion import decorative_motion_enabled
+    if not decorative_motion_enabled():
+        return None
     # 创建微光效果
     shimmer = ShimmerEffect(widget)
     shimmer.setGeometry(widget.rect())
@@ -185,7 +188,9 @@ def add_shimmer_on_hover(widget, duration=1500):
         ShimmerEffect实例
     """
     shimmer = add_shimmer_effect(widget, duration, trigger_on_show=False)
-    
+    if shimmer is None:          # 总开关关着（RN-639）
+        return None
+
     # 在hover时触发
     original_enter = widget.enterEvent
     

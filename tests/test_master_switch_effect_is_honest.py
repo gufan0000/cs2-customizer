@@ -62,6 +62,50 @@ from widgets.page_action_bar import PageActionBar      # noqa: E402
 # 只会改那一份，而这一份**永远绿着**（同 RN-198 那条「抄了修好之前的版本」）。
 from test_master_switch_row import EXPECTED_KEYS       # noqa: E402
 
+#: 有就地总开关、但**没有全站底栏 / 没有状态胶囊组**的页 —— 这两条判据对它们没有对象。
+#: ⚠ 这不是豁免「该不该有」，是记下「今天它没有，而那是**有人裁定过的**」。
+#:
+#: ⭐⭐ RN-540（批 58）：`fun_afterlife` 是被 RN-538 拓宽分母时撞出来的。
+#:   底栏那一条**批 34 有过明确裁定**（RN-464）：「⛔ 底部操作栏有意不加 ——
+#:   批 31 刚证明底栏常常只是把卡内那颗再放一遍，而这一页的三颗按钮是分步的，
+#:   加一条空底栏是为家具而家具」。⇒ 判据不该假设每一页都有底栏。
+#:   状态胶囊组那一条则是**真缺口**，已立 RN-540，归批 59（它改像素）。
+#: ⛔ 由 `test_the_furniture_exemptions_do_not_rot` 双向盯着：
+#:   哪天这一页长出了底栏/胶囊组，这张表必须当场变红 —— **这正是 RN-538 的教训**。
+NO_SITEWIDE_FURNITURE = {
+    # ⚠ 批 59 已补上胶囊组标题（RN-540）⇒ 只剩底栏这一条，
+    #   而那一条是**批 34 裁定过的「有意不加」**（RN-464），不是缺口。
+    "fun_afterlife": ("action_bar",),
+}
+
+
+def _pages_with(furniture: str) -> list[str]:
+    """有某件家具的页 —— 判据的分母只该含它们。"""
+    return sorted(
+        pid for pid in EXPECTED_KEYS
+        if furniture not in NO_SITEWIDE_FURNITURE.get(pid, ())
+    )
+
+
+def test_the_furniture_exemptions_do_not_rot(main_window, qapp):
+    """⭐⭐⭐ 双向断言：`NO_SITEWIDE_FURNITURE` 里的每一条都必须**仍然为真**。
+
+    ⚠ 这条判据是批 58 学来的：同一批里，`test_master_switch_row.py` 那张
+    **没有**双向断言的豁免表（`HOSTS_IT_WITH_ITS_OWN_CONTROL`）烂了六天没人知道
+    （RN-538），而登记册那张**有**双向断言的表当天就把过期条目顶了出去。
+    ⇒ **写下一条豁免的同时就写下它的死期。**
+    """
+    stale = []
+    for page_id, missing in NO_SITEWIDE_FURNITURE.items():
+        page = _open(main_window, qapp, page_id)
+        if "action_bar" in missing and getattr(page, "action_bar", None) is not None:
+            stale.append(f"{page_id} 已经有底栏了")
+        if "status_strip_title" in missing and eff.status_strip_title(page) is not None:
+            stale.append(f"{page_id} 已经有状态胶囊组标题了")
+    assert not stale, (
+        "这几条豁免的理由已经不成立了，而豁免还留着：\n  " + "\n  ".join(stale)
+        + "\n⇒ 从 `NO_SITEWIDE_FURNITURE` 里删掉，让它去吃那两条判据。")
+
 #: 有**静态预览面**的页 —— 只有它们能做第③件事。
 #: 其余的页不是"漏了"，是**没有可说后果的东西**（screen_effects 的「预览」是
 #: 底栏两颗按钮，是一个动作而不是一块常驻画面）。
@@ -1132,7 +1176,7 @@ REFRESH_ENTRIES = ("_sync_action_bar", "_refresh_dirty_ui", "_update_action_bar"
                    "_refresh_style_overview")
 
 
-@pytest.mark.parametrize("page_id", sorted(EXPECTED_KEYS))
+@pytest.mark.parametrize("page_id", _pages_with("action_bar"))
 def test_the_receipt_survives_the_page_refreshing_itself(main_window, qapp, page_id):
     """⭐⭐ **一条守卫的输入如果能被一次常规操作顺手改写，那条守卫就不是守卫。**
 
@@ -1199,7 +1243,7 @@ def test_the_receipt_survives_the_page_refreshing_itself(main_window, qapp, page
         "不许直接对 `message_label` 写字。")
 
 
-@pytest.mark.parametrize("page_id", sorted(EXPECTED_KEYS))
+@pytest.mark.parametrize("page_id", _pages_with("status_strip_title"))
 def test_the_status_strip_is_titled_by_what_it_actually_lists(
         main_window, qapp, page_id):
     """⚖ **RN-428：那条胶囊的标题叫「当前状态」，而它列的是配置。**

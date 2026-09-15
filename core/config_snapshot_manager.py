@@ -7,12 +7,14 @@ import hashlib
 import json
 import os
 import shutil
-import time
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from typing import List
 
 from config import config, get_config_dir, get_config_path
+#: 退避重试（RN-613，批 84 搬到 `io_validation`，全仓共用一份）。
+#: 为什么需要它、那 8% 是怎么量的、为什么这个文件曾经自带一份 —— 全在那边的模块注释里。
+from core.io_validation import replace_with_retry as _replace_with_retry
 
 
 SNAPSHOT_DIR = "config_snapshots"
@@ -83,37 +85,6 @@ def _load_index() -> List[dict]:
     except Exception:
         pass
     return []
-
-
-#: `os.replace` 在 Windows 上的重试节奏（秒）。总计约 0.26s。
-#:
-#: **为什么需要重试**：Windows 的替换不是无条件成功的——只要有别的进程正拿着
-#: 源文件或目标文件的句柄（Defender 实时扫描、Windows Search 建索引、网盘同步
-#: 客户端都会短暂持有刚写完的文件），`os.replace` 就抛
-#: `PermissionError: [WinError 5] 拒绝访问`。这不是"文件被占用"的常态，
-#: 而是**几十毫秒级的窗口**：实测快照判据在同一台机器上跑 25 遍会红 2 遍（8%），
-#: 失败点全是这一句 replace。
-#:
-#: 落到用户身上是这样：他点「恢复设置」，产品先给他建一份"后悔药"快照，
-#: 写索引时正好撞上 Defender ——**这一份快照就丢了**，而它恰恰是恢复操作
-#: 唯一的退路。同一条重试在 `build_tools/make_installer_assets.py` 里早就有了
-#: （`_replace_with_retry`），只是当时没想到这里也需要。
-_REPLACE_RETRY_DELAYS = (0.02, 0.04, 0.08, 0.12)
-
-
-def _replace_with_retry(src: str, dst: str) -> None:
-    """`os.replace(src, dst)`，撞上 Windows 的瞬时占用就退避重试。
-
-    最后一次**不吞异常**：重试是为了穿过几十毫秒的扫描窗口，
-    不是为了把"真的没权限写"这种问题藏起来。
-    """
-    for delay in _REPLACE_RETRY_DELAYS:
-        try:
-            os.replace(src, dst)
-            return
-        except PermissionError:
-            time.sleep(delay)
-    os.replace(src, dst)
 
 
 def _save_index(entries: List[dict]) -> None:

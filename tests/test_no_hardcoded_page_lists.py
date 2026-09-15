@@ -78,7 +78,12 @@ def _tracked_python_files() -> list[Path]:
     try:
         files = _ls("*.py") + _ls("--others", "--exclude-standard", "*.py")
         if files:
-            return [REPO / line for line in dict.fromkeys(files)]
+            # ⛔ RN-164：**`git ls-files` 列的是索引，不是磁盘。** 开源同步管道会把
+            #   删除**写进工作区但不入索引**，于是这里会拿到一个磁盘上已经没有的文件，
+            #   打开即 `FileNotFoundError` —— ⭐ 而那种红看起来和「产品坏了」一模一样。
+            #   ⇒ 过滤成「磁盘上真有」的那些。判据 `test_a_tracked_file_list_is_filtered_to_disk`。
+            return [p for p in (REPO / line for line in dict.fromkeys(files))
+                    if p.exists()]
     except Exception:
         pass
     pytest.skip("拿不到 git 文件清单，跳过（不静默放行：宁可跳过也不假绿）")

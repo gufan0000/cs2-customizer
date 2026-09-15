@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+from core.io_validation import replace_with_retry
 
 
 DEFAULT_SYNC_TRIGGER_KEY = "SCROLLLOCK"
@@ -59,7 +60,7 @@ def write_magnifier_runtime_cfg(
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write("// CS2 Customizer magnifier runtime sensitivity\n")
             f.write(f"sensitivity {format_sensitivity_value(target_sensitivity)}\n")
-        os.replace(tmp_path, runtime_cfg_path)
+        replace_with_retry(tmp_path, runtime_cfg_path)
     except Exception:
         try:
             os.remove(tmp_path)

@@ -104,9 +104,8 @@ class AudioHealthPage(QWidget):
         )
 
         actions = QHBoxLayout()
-        # ⭐ 批 46：底栏那颗变身式主按钮撤掉之后，这一屏一颗主按钮都不剩，
-        #   外审当场报「按钮平级、无视觉重心」。⇒ 把**第一步**升为主按钮，
-        #   且**恒定不变**（不像底栏那颗随状态换词）。这一页的第一步是「立即体检」：副标题自己写着「先体检，再决定是否执行保守修复」。
+        # ⭐ 批 46：这一屏没了视觉重心 ⇒ 把**第一步**升为主按钮。⚠ 批 79 更正：
+        #   原写「恒定不变」「第一步是立即体检」，**现在颜色和位置都跟着结果走**（RN-597）。
         self.check_btn = QPushButton("立即体检")
         # RN-508：「保守」是内部说法。外审 5/6 报「不知道会动什么文件、不敢点」。
         #   ⇒ 按钮上直接写它的安全性质（它只建缺的目录、清失效引用，不删素材）。
@@ -125,6 +124,8 @@ class AudioHealthPage(QWidget):
         actions.addWidget(self.open_btn)
         actions.addWidget(self.export_btn)
         actions.addStretch()
+        #: ⛔ RN-597：`_sync_first_step()` 要按体检结果重排前两颗，得握住这一排。
+        self._actions_row = actions
         actions_layout.addLayout(actions)
         layout.addWidget(actions_card)
 
@@ -182,9 +183,12 @@ class AudioHealthPage(QWidget):
         if overall_ok:
             action_message = "当前状态：资源健康 · 音频和视觉目录都正常，需要留档就导出报告。"
         else:
+            # ⛔⛔ RN-527②：原文「**建议先看报告**，确认后再点…」和下面 `_sync_first_step()`
+            #   那句「紫的必须是当下的第一步」互相拆台。⇒ 不动视觉，改文字重心（叙事见档案）。
+            # ⛔ RN-077：这句不许提位置（批 77 写成过「下方报告」，批 78 被运行时判据逮到；叙事见档案）。
             action_message = (
-                f"当前状态：发现 {issue_count} 项问题 · 建议先看报告，"
-                f"确认后再点「{self.fix_btn.text()}」。"
+                f"当前状态：发现 {issue_count} 项问题 · 「{self.fix_btn.text()}」"
+                f"只建缺的目录、不删素材；想先核对就看「体检报告」。"
             )
         self.action_bar.set_message(action_message)
 
@@ -195,11 +199,21 @@ class AudioHealthPage(QWidget):
         发现问题 ⇒ 第一步是修它。
         ⚠ 这两个都是**安全动作**（保守修复只补不删），所以在它们之间换
           不触碰 RN-506 那条线（安全 ↔ 破坏性）。
+
+        ⛔⛔ RN-597（批 79）：**这个方法原来只换颜色，不换位置**。A/B 判断题
+        原样 6/6「不会」→ 前移后 6/6「会」；改名那个候选 0 分。不触 RN-506
+        （那条线防的是一颗按钮换身份，这里两颗的文字与行为始终不变）。叙事见档案。
         """
         from page_theme_helper import style_as_primary_button, style_as_secondary_button
 
         first, other = ((self.check_btn, self.fix_btn) if overall_ok
                         else (self.fix_btn, self.check_btn))
+        self._actions_row.insertWidget(0, first)
+        self._actions_row.insertWidget(1, other)
+        # ⛔⛔ **焦点链走构造顺序，`insertWidget` 一个字都不改它**（批 38 / RN-063）；
+        #   而这件事在 A/B 那六张图上一个像素都看不见。
+        self.setTabOrder(first, other)
+        self.setTabOrder(other, self.open_btn)
         style_as_primary_button(first)
         style_as_secondary_button(other)
         for btn in (first, other):
@@ -215,22 +229,40 @@ class AudioHealthPage(QWidget):
         overall_ok = bool(summary.get("ok", False))
         audio_ok = bool(audio_summary.get("ok", overall_ok))
         visual_ok = bool(visual_summary.get("ok", overall_ok))
-        issue_count = int(summary.get("missing_directories", 0) or 0)
-        issue_count += int(summary.get("invalid_config_refs", 0) or 0)
-        issue_count += int(summary.get("empty_style_dirs", 0) or 0)
 
+        def _side(prefix: str) -> int:
+            """这一侧有几项对不上。⭐ `summary` 本来就分侧记着，不用再自己算。"""
+            return sum(int(summary.get(f"{prefix}_{k}", 0) or 0) for k in
+                       ("missing_directories", "invalid_config_refs",
+                        "empty_style_dirs"))
+
+        audio_n, visual_n = _side("audio"), _side("visual")
+        issue_count = audio_n + visual_n
+
+        # ⭐⭐⭐ RN-527①：原来这两颗写的是「音频 · 检查」——**读不出**它是
+        #   「正在检查」「检查通过」还是「需要检查」，而它俩同色时更分不开。
+        # ⚠⚠ 而本页自己的解释（`audio_status_badge.CHIP_EXPLAINS["音频"]`）
+        #   逐字写着「**「需检查 N」**是指有 N 项对不上」——
+        #   ⭐⭐⭐ **一句解释，解释的是一个屏幕上根本不存在的标签。**
+        #   那句话把本来该显示的措辞替我写好了，只是没人把它接上去。
+        # ⚠ 顺带撤掉原来第四颗「项目 · N 项」：分侧有了数之后它是同一个数的和，
+        #   不携带任何新信息 —— 同 RN-049（「别处说了，它就只是噪音」），
+        #   也是官网那条「同一个数字出现两次会被读成两笔」。
         badges = [
-            ("positive" if overall_ok else "warning", f"体检 · {'健康' if overall_ok else '发现问题'}"),
-            ("positive" if audio_ok else "warning", f"音频 · {'正常' if audio_ok else '检查'}"),
-            ("positive" if visual_ok else "warning", f"视觉 · {'正常' if visual_ok else '检查'}"),
-            ("positive" if issue_count == 0 else "warning", f"项目 · {issue_count} 项"),
+            ("positive" if overall_ok else "warning",
+             f"体检 · {'健康' if overall_ok else '发现问题'}"),
+            ("positive" if audio_ok else "warning",
+             "音频 · 正常" if audio_ok else f"音频 · 需检查 {audio_n} 项"),
+            ("positive" if visual_ok else "warning",
+             "视觉 · 正常" if visual_ok else f"视觉 · 需检查 {visual_n} 项"),
         ]
 
+        # ⚠ RN-527①：芯片改口之后这一句要跟着改 —— 同一屏上说同一件事的两处，
+        #   改了一处另一处留在原地，正是 RN-508 记过的那个形状（本页已犯过一次）。
         compact_summary = (
             f"状态 · {'健康' if overall_ok else '发现问题'}"
-            f" · 音频{'正常' if audio_ok else '待检查'}"
-            f" · 视觉{'正常' if visual_ok else '待检查'}"
-            f" · {issue_count}项"
+            f" · 音频{'正常' if audio_ok else f'需检查 {audio_n} 项'}"
+            f" · 视觉{'正常' if visual_ok else f'需检查 {visual_n} 项'}"
         )
         detail_text = (
             f"资源体检结果：音频{'正常' if audio_ok else '需要关注'}，"

@@ -209,6 +209,10 @@ def install_help_panel(header_layout, parent_layout, help_text, insert_after_ind
             idx = 1  # fallback: 插在第二个位置
 
     parent_layout.insertWidget(idx, panel)
+    # ⚠ RN-547（批 63）：这儿**曾经**加过一次 `mark_compact_buttons(panel)` ——
+    #   实测是死代码：`gui_widget._load_page` 那个「推迟一拍」的钩子已经覆盖到
+    #   帮助面板（它就在页面里），删掉之后高度 min>max 仍是 0。
+    #   ⭐ 破坏验证连着判它假绿 —— 那不是判据不灵，是**那段代码不承重**（批 44）。
     return btn, panel
 
 

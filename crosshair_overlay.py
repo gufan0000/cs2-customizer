@@ -65,8 +65,6 @@ DEFAULT_COLOR = (0, 255, 0)
 #: `tests/test_crosshair_style_catalog_r9a.py` 会盯着两边不许漂移。
 USER_STYLES = ("crosshair", "dot", "circle", "t_shape", "custom")
 
-#: 渲染器内部样式：不出现在 UI 上，由击杀联动驱动（R8b-C 接入）
-INTERNAL_STYLES = ("x_mark", "shatter")
 
 #: 空闲动画，顺序与 `pages/crosshair_page.py` 的下拉框一一对应
 IDLE_ANIMATIONS = (

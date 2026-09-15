@@ -125,10 +125,20 @@ def test_the_page_really_has_the_things_this_file_talks_about(main_window, qapp)
     assert all(isinstance(b, QCheckBox) for b in boxes.values())
 
     texts = {b.text().strip() for b in _visible_buttons(page)}
-    for need in ("全选", "全不选", "应用"):
+    # ⚠ 批 84 第二刀（RN-444）：「应用」**已从这张卡上撤掉**，所以不再要求它在场。
+    #   撤它的依据是改完复跑的票数：外审 6/6 把它点成矛盾本身
+    #   （底栏说「自动保存」而它还在说「这里有个动作」）。
+    #   ⭐ 而它守的那件事（偏移改完真的落盘）没有丢，换成了行为断言 —— 见下面那条。
+    for need in ("全选", "全不选"):
         assert need in texts, (
-            f"武器卡/偏移卡里找不到「{need}」按钮 —— "
-            "反向守卫（第 3、4 组）会因此变成空转")
+            f"武器卡里找不到「{need}」按钮 —— 反向守卫（第 3、4 组）会因此变成空转")
+    assert "应用" not in texts, (
+        "偏移卡上又出现「应用」按钮了。\n"
+        "⭐⭐⭐ RN-444（批 84 第二刀）撤掉它是**拿票数换的**：同一个判断题，"
+        "第一刀之前 6/6「有（要点）」，第一刀之后（按钮还在）6/6「**看不出来**」，"
+        "而地板页两轮都是 6/6「没有」——它没有变成「没有」，"
+        "只是从「确定要点」变成了「说不准」，而那份含糊就是这颗按钮留下的。\n"
+        "⇒ 要加回来，先回答：底栏说「不用点任何按钮」时，它在说什么？")
 
 
 def test_every_weapon_starts_checked_so_the_worst_label_is_the_default_one(
@@ -205,7 +215,11 @@ def test_magnifier_leaves_the_loudest_slot_empty(main_window, qapp):
 @pytest.mark.parametrize("text,slot_hint", [
     ("全选", "武器卡表头 —— 它紧贴着那 54 个复选框，在那儿点看得见自己改了什么"),
     ("全不选", "同上；把它从底栏撤走**不等于**把这个动作删掉"),
-    ("应用", "偏移卡 —— X/Y 两个输入框旁边，这一页唯一真需要点一下的按钮"),
+    # ⚠ 批 84 第二刀（RN-444）：「应用」那一格搬到了下面
+    #   `test_the_offset_still_lands_even_though_its_button_is_gone`。
+    #   ⭐⭐⭐ 这条守的从来不是**那颗按钮**，是**那个动作还在不在**；
+    #     而动作现在由 `editingFinished` 承担 ⇒ 断言得跟着动作走，不跟着控件走。
+    #     （留着按钮那一版，外审 6/6 把它点成矛盾本身。）
 ])
 def test_the_action_itself_survives_in_the_card(main_window, qapp, text, slot_hint):
     page = _open_page(main_window, qapp)
@@ -215,6 +229,42 @@ def test_the_action_itself_survives_in_the_card(main_window, qapp, text, slot_hi
         f"它应该还在：{slot_hint}")
     for b in found:
         assert b.isEnabled(), f"「{text}」还在，但不可点了"
+
+
+def test_the_offset_still_lands_even_though_its_button_is_gone(main_window, qapp):
+    """⭐⭐⭐ 撤掉「应用」之后，**那个动作必须还在** —— 这条接的是上面那一格。
+
+    批 24 给「应用」写反向守卫时，护的名义是「把按钮撤走不等于把动作删掉」；
+    批 84 第二刀把按钮本身撤了，于是那条守卫**只剩一个不存在的控件可看**。
+    ⇒ 断言跟着动作走：在输入框里填一个新偏移、只发 `editingFinished`、
+      **不点任何按钮**，然后去配置里把它读回来。
+
+    ⚠ 这不是「按钮在不在」的换皮：它比原来那条严 —— 原来只证明按钮可点，
+    现在证明**改完真的落到了配置里**。
+    """
+    page = _open_page(main_window, qapp)
+    cfg = page.config
+    was = getattr(cfg, "magnifier_enabled", None)
+    try:
+        cfg.magnifier_enabled = True          # `_apply_offset` 开头就拦总开关
+        page.x_offset_input.setText("13")
+        page.x_offset_input.editingFinished.emit()
+        qapp.processEvents()
+        zoom = page.zoom_settings.get(str(page.zoom_factor), {})
+        assert zoom.get("x_offset") == 13, (
+            f"填了偏移、只发 editingFinished，配置里却是 {zoom}。\n"
+            "⇒ RN-444 那条例外又回来了：偏移得点一下才算数，"
+            "而这一页的底栏正说着「改动会自动保存，不用点任何按钮」。")
+        saved = getattr(cfg, "magnifier", None)
+        assert isinstance(saved, dict) and \
+            saved.get("zoom_settings", {}).get(str(page.zoom_factor), {}).get(
+                "x_offset") == 13, (
+            "页面内部记下了，但没有写进 config.magnifier —— 换个页面回来就丢了。")
+    finally:
+        page.x_offset_input.setText("0")
+        page.x_offset_input.editingFinished.emit()
+        if was is not None:
+            cfg.magnifier_enabled = was
 
 
 def test_bulk_toggle_still_changes_every_checkbox(main_window, qapp):
@@ -265,22 +315,28 @@ def test_the_bar_message_tells_the_truth_about_what_needs_clicking(
     message = bar.message_label.text()
     assert message.strip(), "底栏一句话都没有 —— 撤掉按钮之后它是唯一的解释了"
 
-    # ① 无条件：它必须回答「我到底要不要点什么」。
-    #    ⚠ 这一页 `SAVES_AUTOMATICALLY = False`，共用回执**不替它说存不存**
-    #    （批 24 定的分工）⇒ 这句话是唯一还在回答这个问题的东西。
+    # ① 无条件：整条底栏必须回答「我到底要不要点什么」。
+    #    ⚠⚠ 批 84（RN-444）改了**由谁来回答**，没有改「必须有人回答」：
+    #    这一页以前是 `SAVES_AUTOMATICALLY = False`，共用回执不替它说存不存，
+    #    所以这句话得自己说；例外消灭之后它是 `True`，**共用回执自己就说了**，
+    #    这句话再说一遍就是同一行里说两次（实测第一版正是如此）。
+    #    ⇒ 断言一个字没放松，只是**不再规定由谁说** ——
+    #      实测共用回执就落在同一个 `message_label` 里，所以这里照旧读它。
+    #    ⭐⭐⭐ 判据钉的应该是**那个问题有没有人答**，不是**哪一个控件来答**。
     assert ("存下" in message or "自动保存" in message), (
-        "底栏那句话没有说改动存不存 —— 而底栏两颗按钮都撤了，"
-        "这一页 `SAVES_AUTOMATICALLY = False` 时共用回执也不替它说。\n"
-        f"现在这句是：{message}")
-    assert "应用" in message, (
-        "底栏那句话没有点出唯一那个例外（偏移的 X / Y 要点「应用」）——"
-        "只说「改完就存下了」在这一页是**半句真话**。\n"
+        "底栏没有一处说改动存不存 —— 而底栏两颗按钮都撤了，"
+        "这是玩家唯一能看到的答案。\n"
         f"现在这句是：{message}")
 
-    # ② 有条件：说了的每一件事都必须是真的。
-    if "应用" in message:
-        assert [b for b in _visible_buttons(page) if b.text().strip() == "应用"], (
-            f"底栏说了「应用」，但这一页上没有可见的「应用」按钮：\n{message}")
+    # ② ⛔ 反向：例外已经消灭了，就**不许**再点名那颗「应用」。
+    #    ⭐ 点名它等于把「这里有个必须点的东西」重新说了一遍，
+    #      而 RN-444 的修法恰恰是让那件事不再成立。
+    assert "应用" not in message, (
+        "底栏那句话又在点名「应用」了 —— 而 RN-444（批 84）之后偏移的 X / Y "
+        "接的是 `editingFinished`，不点也已经落盘。\n"
+        "⇒ 要么是有人把那条例外装回去了（那该先改 `SAVES_AUTOMATICALLY`），"
+        "要么是这句话在说一件不再为真的事。\n"
+        f"现在这句是：{message}")
 
     if "存下" in message or "自动保存" in message:
         src = (ROOT / "pages" / "magnifier_page.py").read_text(encoding="utf-8")

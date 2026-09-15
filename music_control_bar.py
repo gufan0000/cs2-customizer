@@ -25,7 +25,6 @@ from ui_animations import get_animation_manager
 
 DEFAULT_TRACK_TITLE = "未播放"
 UNKNOWN_TITLE = "未知标题"
-UNKNOWN_ARTIST = "未知艺术家"
 MINI_TRACK_PREFIX = "\u266a"
 PLAY_STATE_IDLE = "idle"
 PLAY_STATE_PAUSED = "paused"

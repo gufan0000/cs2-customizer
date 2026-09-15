@@ -10,6 +10,7 @@ from core.hud.rule_compiler import get_cfg_paths, get_initial_runtime_color, wri
 from core.hud.rule_model import HUD_COLORS, has_runtime_enabled_rules
 from core.hud.runtime_engine import RuntimeHudEngine
 from core.utils.logger import get_logger
+from core.io_validation import replace_with_retry
 
 
 class GSIHandlerHudColor:
@@ -174,7 +175,7 @@ class GSIHandlerHudColor:
             try:
                 with os.fdopen(fd, "w", encoding="utf-8") as f:
                     f.write(f"cl_hud_color {color_value}\n")
-                os.replace(tmp_path, cfg_path)
+                replace_with_retry(tmp_path, cfg_path)
             except Exception:
                 try:
                     os.remove(tmp_path)

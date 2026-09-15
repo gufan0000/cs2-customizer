@@ -52,6 +52,8 @@ SUMMARY_RE = re.compile(r"^回退验证：(\d+)/(\d+) 条判据")
 #: 基线不绿时它根本不打汇总行，而是打这个 —— 要单独认出来，否则会误报成「片死了」
 BASELINE_BAD = "❌ 基线就不绿"
 STALE_RE = re.compile(r"^⚠ (\d+)/(\d+) 条断点已失效")
+#: 失效名单在上面那行之后，逐条以 `   - ` 开头（见 revert_verify.py 的失效体检）。
+STALE_NAME_RE = re.compile(r"^   - (.+)$")
 MISSED_RE = re.compile(r"^\[\d+/\d+\] ❌ (.+)$")
 
 
@@ -83,6 +85,7 @@ def make_worktree(dst: Path) -> None:
     # 让 `worktree add` 正常检出 HEAD（43 MB，几秒），再把工作树的改动覆盖上去。
     subprocess.run(["git", "worktree", "add", "--detach", str(dst), "HEAD"],
                    cwd=str(ROOT), check=True, capture_output=True)
+    removed = []
     for rel in _dirty_files():
         src, dest = ROOT / rel, dst / rel
         if src.exists():
@@ -90,6 +93,16 @@ def make_worktree(dst: Path) -> None:
             shutil.copy2(src, dest)
         elif dest.exists():
             dest.unlink()
+            removed.append(rel)
+    # ⛔⛔ **副本的索引也要跟着删** —— 批 80 实测：工作树里 `git rm` 掉一个文件
+    #   但还没提交时，副本是 `worktree add HEAD`（索引里**有**那个文件），
+    #   上面那行 unlink 只动了工作树 ⇒ **索引说文件在、盘上没有**。
+    #   于是任何走 `git ls-files` 取清单再 `read_text()` 的判据当场抛
+    #   未被捕获的 `FileNotFoundError`，报出来是「基线就不绿」——
+    #   ⭐⭐⭐ **读起来像判据坏了，实际是这份副本自己不自洽。**
+    if removed:
+        subprocess.run(["git", "rm", "--cached", "-q", "--"] + removed,
+                       cwd=str(dst), capture_output=True)
 
 
 #: ⭐⭐⭐ 批 47 实测：**一份「只是把仓库复制过去」的副本，不是一个等价的环境。**
@@ -145,6 +158,8 @@ def run_shard(i: int, n: int, only: str, tree: Path) -> dict:
 
     caught = total = None
     stale = 0
+    stale_names: list[str] = []
+    in_stale_block = False
     missed, baseline_bad = [], False
     for ln in text.splitlines():
         m = SUMMARY_RE.match(ln)
@@ -153,13 +168,24 @@ def run_shard(i: int, n: int, only: str, tree: Path) -> dict:
         s = STALE_RE.match(ln)
         if s:
             stale = int(s.group(1))
+            in_stale_block = True
+            continue
+        if in_stale_block:
+            # ⭐ 名单要**带回汇总行**：上一版只打了个数字加一句「各片日志里有名单」，
+            #   而那正是让批 74 那条失效断点在两轮里都没人去看的原因。
+            nm = STALE_NAME_RE.match(ln)
+            if nm:
+                stale_names.append(f"第 {i} 片：{nm.group(1)}")
+            else:
+                in_stale_block = False
         mi = MISSED_RE.match(ln)
         if mi:
             missed.append(mi.group(1))
         if BASELINE_BAD in ln:
             baseline_bad = True
     return dict(i=i, rc=r.returncode, caught=caught, total=total, stale=stale,
-                missed=missed, baseline_bad=baseline_bad, log=str(log))
+                stale_names=stale_names, missed=missed,
+                baseline_bad=baseline_bad, log=str(log))
 
 
 def main() -> int:
@@ -173,6 +199,23 @@ def main() -> int:
     shutil.rmtree(LOG_DIR, ignore_errors=True)
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     base = Path(tempfile.gettempdir()) / "cs2customizer_rv_trees"
+    # ⛔ 同一时刻只许跑一份。⚠ 2026-09-06 批 61 实测：第一份还在跑，
+    #   又起了第二份 —— 两份共用这个目录，第二份开头这句 rmtree
+    #   **把第一份正在用的副本删了**。于是第一份的分片开始报
+    #   「基线就不绿」，第二份报 `git worktree add … exit 128`。
+    #   ⭐⭐ **两个错误都完全不像它们真正的原因**：一个像判据坏了，
+    #     一个像 git 坏了 —— 而真正的原因是「有两份在跑」。
+    # ⚠ 批 62 修：这里原来查 `any(base.iterdir())` —— 而脚本自己会把兄弟目录
+    #   复制到 `base` 旁边**并且从不删**，于是第一次跑完之后它永远非空，
+    #   下一次一律被误拦。⭐ **守卫看的东西，和它要守的那件事不是同一个。**
+    #   要守的是「有没有另一份在跑」⇒ 看**工作树副本** `t1`…`tN` 在不在。
+    leftovers = sorted(p.name for p in base.glob("t*") if p.is_dir())
+    if leftovers:
+        print(f"❌ {base} 里还留着工作树副本 {leftovers} —— 说明**已经有一份回退验证在跑**（或上一份被砍断了）。\n"
+              f"   同时跑两份会互删副本。确认没有别的在跑之后，收拾残留：\n"
+              f"     git worktree prune  &&  rm -rf {base}")
+        announce("revert_verify", 1)
+        return 1
     shutil.rmtree(base, ignore_errors=True)
 
     t0 = time.time()
@@ -220,17 +263,28 @@ def main() -> int:
     caught = sum(r["caught"] or 0 for r in results)
     total = sum(r["total"] or 0 for r in results)
     stale = sum(r["stale"] for r in results)
+    all_stale_names = [s for r in results for s in r.get("stale_names", [])]
     all_missed = [m for r in results for m in r["missed"]]
     print(f"回退验证（{n} 片并行）：{caught}/{total} 条判据成功逮住它要防的缺陷"
           f"，耗时 {time.time() - t0:.0f}s")
-    if stale:
-        print(f"⚠ 失效断点合计 {stale} 条（各片日志里有名单）")
+    # ⛔⛔ 2026-09-10 批 74：**失效断点从「⚠」升格为「❌」。**
+    #   起因是批 74 我自己改了一句文案（RN-528 把页名换成可点链接），
+    #   守着那句话的断点锚点当场落空、**静默停跑**，而汇总行照样打
+    #   「✅ 97/97」—— 两轮回退验证都是绿的，名单只躺在分片日志里。
+    #   ⭐⭐⭐ **一条失效的断点，和一条守得好好的断点，在汇总行上一模一样；
+    #     而失效的那一条正是「以为有人看着、其实没人看着」的定义。**
+    #   ⇒ 它现在计入 rc。⚠ 失效**不是**「判据坏了」，是「断点指错了地方」——
+    #     修法一律是把锚点改到现在的代码上，⛔ 不许靠删断点让它变绿。
+    for s in all_stale_names:
+        print(f"❌ 断点已失效（空转，谁都没在看）：{s}")
+    if stale and not all_stale_names:
+        print(f"❌ 失效断点合计 {stale} 条，但没解析到名单 —— 去看分片日志")
     for m in all_missed:
         print(f"❌ 没逮住：{m}")
     for i in missing:
         print(f"❌ 第 {i}/{n} 片没有汇总行 —— 它没跑完，结论未知，按失败处理")
 
-    rc = 1 if (missing or all_missed) else 0
+    rc = 1 if (missing or all_missed or stale) else 0
     announce("revert_verify", rc)
     return rc
 

@@ -33,19 +33,10 @@ RN-409 的证据格里留着一句警告：「批 10 已证过**文案救不了�
 
 **动作在前，后果在后。**
 
-## ⛔ 这一批**不做检测**
+## ⚖ 检测：批 72 补上（RN-434），但**只许加强，不许撤销**
 
-`setting.fullscreen` / `setting.nowindowborder` 两个键确实躺在
-Steam `userdata/<id>/730/local/cfg/cs2_video.txt` 里（已实测读到），
-按理能判出玩家现在是不是独占全屏。**但本批不做**，三个未解问题：
-
-1. 一台机器上实测有 **3 份**（3 个 Steam 账号）—— 选哪一份没有可靠依据；
-2. 「fullscreen=1 且 nowindowborder=0 即独占全屏」这个映射是**我推的**，没有文档；
-3. 读不到的时候该说什么？一个「检测不到就沉默」的提示等于没有。
-
-⭐ 而误报的代价是不对称的：**一个会误报的检测，比没有检测更糟 ——
-它会让那句本来正确的话变得不可信。** ⇒ 另立 RN-434，先把确定的那一半做掉。
-（同 RN-254 的裁定：**文案不许替代码编一个借口；我没有真相就不写。**）
+读到独占全屏 ⇒ 话说得更具体；其余一切（含读不到、几个账号读数不一致）
+⇒ 原样输出下面那句通用提示。理由与实测见 `core/cs2_video_mode.py`。
 """
 from __future__ import annotations
 
@@ -58,8 +49,22 @@ OVERLAY_HINT_OBJECT_NAME = "overlayRequirementHint"
 REQUIRED_WORDS = ("无边框窗口", "独占全屏")
 
 
-def overlay_requirement_text(thing: str) -> str:
-    """`thing` = 这一页配的、会画到游戏画面上的那个东西（「准心」「击杀图标」…）。"""
+def overlay_requirement_text(thing: str, *, exclusive_now: bool = False) -> str:
+    """`thing` = 这一页配的、会画到游戏画面上的那个东西（「准心」「击杀图标」…）。
+
+    `exclusive_now` 只有在**确证**玩家此刻就在独占全屏时才为真（RN-434）。
+    ⛔ 它只影响措辞的具体程度，**两档都必须把「怎么做」和「否则会怎样」说全** ——
+    `REQUIRED_WORDS` 对两档一视同仁。
+    """
+    if exclusive_now:
+        # ⚠ **动作仍然在前**：第一版写成「读到你现在是独占全屏 —— 先去改…」，
+        #   诊断跑到了动作前面，判据当场逮住（批 18 实测：同一句话把
+        #   「现在可以调」提到前面，「他知不知道该干什么」57% → 100%）。
+        #   ⭐ 加了一条新信息，很容易顺手把语序也换掉。
+        return (
+            f"⚠ 先去 CS2 把显示模式改成「无边框窗口化」，{thing}才画得到游戏画面上"
+            f"——读到你现在正是「独占全屏」，它会把{thing}整个盖住，什么都不会显示。"
+        )
     return (
         f"⚠ 先去 CS2 把显示模式选成「无边框窗口化」，{thing}才画得到游戏画面上"
         f"——独占全屏会把它整个盖住，什么都不会显示。"
@@ -73,7 +78,10 @@ def make_overlay_requirement_label(thing: str) -> QLabel:
     （网站那两轮 6 发都说「藏在底部小字里」；`screen_effects` 这条前提
     至今只写在折叠的帮助面板里，等于没写）。
     """
-    label = QLabel(overlay_requirement_text(thing))
+    from core.cs2_video_mode import overlay_is_invisible_now
+
+    label = QLabel(overlay_requirement_text(
+        thing, exclusive_now=overlay_is_invisible_now()))
     label.setObjectName(OVERLAY_HINT_OBJECT_NAME)
     label.setWordWrap(True)
     return label

@@ -7,7 +7,6 @@
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QWidget, QLabel, QPushButton, QGroupBox, QFrame
-from theme_manager import get_theme_manager
 
 
 def apply_page_theme(widget: QWidget):
@@ -63,33 +62,6 @@ def _set_default_object_name(widget: QWidget):
         widget.setObjectName("separator")
 
 
-def clear_widget_styles(widget: QWidget, recursive=True):
-    """
-    清除控件的所有硬编码样式
-    
-    Args:
-        widget: 要清除样式的控件
-        recursive: 是否递归清除子控件的样式
-    """
-    widget.setStyleSheet("")
-    
-    if recursive:
-        for child in widget.findChildren(QWidget):
-            child.setStyleSheet("")
-
-
-def register_theme_change_listener(page_widget: QWidget, callback):
-    """
-    为页面注册主题变化监听器
-    
-    Args:
-        page_widget: 页面控件
-        callback: 主题变化时的回调函数
-    """
-    theme_manager = get_theme_manager()
-    theme_manager.register_theme_changed_callback(callback)
-
-
 # ========== 常用控件样式辅助函数 ==========
 
 def style_as_card(widget: QWidget):
@@ -101,17 +73,6 @@ def style_as_card(widget: QWidget):
     """
     widget.setObjectName("card")
     widget.setStyleSheet("")  # 清除硬编码样式，使用全局主题
-
-
-def style_as_section_title(label: QLabel):
-    """
-    将标签样式设为章节标题
-    
-    Args:
-        label: 要设置的标签
-    """
-    label.setObjectName("sectionTitle")
-    label.setStyleSheet("")  # 清除硬编码样式
 
 
 def style_as_primary_button(button: QPushButton):
@@ -203,27 +164,3 @@ def init_themed_page(page_widget: QWidget):
     page_widget.style().unpolish(page_widget)
     page_widget.style().polish(page_widget)
     page_widget.update()
-
-
-def refresh_page_theme(page_widget: QWidget):
-    """
-    刷新页面主题（主题切换后调用）
-    
-    Args:
-        page_widget: 页面根控件
-    """
-    # 清除所有硬编码样式
-    apply_page_theme(page_widget)
-    
-    # 强制刷新样式
-    page_widget.style().unpolish(page_widget)
-    page_widget.style().polish(page_widget)
-    
-    # 递归刷新所有子控件
-    for child in page_widget.findChildren(QWidget):
-        child.style().unpolish(child)
-        child.style().polish(child)
-    
-    page_widget.update()
-
-

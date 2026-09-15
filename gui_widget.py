@@ -54,6 +54,7 @@ class NavGroupWidget(QWidget):
         # 组头：可点击的标题栏
         self.header = QPushButton()
         self.header.setObjectName("navGroupHeader")
+        self.header.setFocusPolicy(Qt.TabFocus)   # RN-640：同 navButton，点选不留焦点环
         self.header.setCursor(Qt.PointingHandCursor)
         self.header.setCheckable(False)
         self.header.clicked.connect(self.toggle)
@@ -187,6 +188,10 @@ class MainWindow(QMainWindow):
         self._loaded_pages = set()  # 已加载的页面ID
         self._pages_need_theme_refresh = set()  # 需要主题刷新的页面ID
         self._search_hit_target = None  # R4/UP-024: 当前被搜索高亮的控件
+        #: 每次搜索跳转 +1。⭐ RN-557：高亮的三档定时器原来只认「目标是不是同一个」——
+        #: 而两次搜索**落在同一个控件上**时那句守卫就形同虚设，上一次排的「撤销」
+        #: 到点会把这一次的高亮撤掉。定时器改成认代次，谁排的谁负责。
+        self._search_hit_gen = 0
         self._is_closing = False  # 关闭流程标记，防止延迟任务继续触发副作用
         # 构造即起热键/线程/子进程/设备的页，不适合启动阶段静默预加载。
         # 取模块级 DEVICE_OWNING_PAGES（唯一真相源），拷一份免得实例改动串味。
@@ -507,10 +512,18 @@ class MainWindow(QMainWindow):
             if status.level == "error" and status.last_error:
                 runtime_summary = f"系统状态异常：{status.last_error}。"
             elif not audio_ok:
+                # ⭐⭐ RN-531（批 59）：原先只报数不说去哪 ——
+                #   外审 6 发以上反复是同一句「开屏即告警却无一键修复入口，
+                #   玩家会误以为软件损坏」。⚠ 而这一页上**确实有**能修它的按钮
+                #   （载入音频 / 自定义目录），只是那句告警从不提它们。
+                #   ⭐ 缺的不是一颗按钮，是**把告警和那颗按钮连起来的一句话**。
+                #   ⛔ 不指向「资源体检」页：它是专家页，普通模式下没有入口（RN-134）。
+                fix_hint = "点下面的「载入音频」补齐，或用「自定义目录」指到你自己的音频文件夹。"
                 if audio_issue_count:
-                    runtime_summary = f"音频资源需要检查，当前发现 {audio_issue_count} 项异常。"
+                    runtime_summary = (
+                        f"音频资源需要检查，当前发现 {audio_issue_count} 项异常 —— {fix_hint}")
                 else:
-                    runtime_summary = "音频资源需要检查，建议先运行体检。"
+                    runtime_summary = f"音频资源需要检查 —— {fix_hint}"
             elif config_dirty:
                 runtime_summary = "检测到未保存的配置修改，确认无误后记得保存。"
             elif gsi_running:
@@ -586,12 +599,16 @@ class MainWindow(QMainWindow):
         status_badge_bar = getattr(self, "basic_status_badge_label", None)
         if status_badge_bar is not None:
             badges = []
+            # ⭐⭐ RN-532（批 59）：顺序原先是「主题 / 界面 / 账号 / GSI / 音频 / 配置」——
+            #   **外观偏好排在最前**，把 GSI 与音频这两条真正决定「能不能用」的挤到后面
+            #   （外审 3 发）。⇒ 改成先说能不能用，再说长什么样。
+            #   ⚠ 这一排是**从左往右读**的，第一格拿走的是最多的注意力。
             for attr_name in (
-                "basic_theme_badge",
-                "basic_mode_badge",
                 "basic_gsi_badge",
                 "basic_audio_badge",
                 "basic_config_badge",
+                "basic_theme_badge",
+                "basic_mode_badge",
             ):
                 label = getattr(self, attr_name, None)
                 if label is None:
@@ -764,10 +781,15 @@ class MainWindow(QMainWindow):
         btn.setObjectName("navButton")
         btn.setCheckable(True)
         btn.setMinimumHeight(36)
+        btn.setFocusPolicy(Qt.TabFocus)   # RN-640：点选不留焦点环，Tab 上去才有（RN-546 只要键盘可见）
         icon = get_page_icon(page_id, role="secondary", size=16)
         if not icon.isNull():
             btn.setIcon(icon)
             btn.setIconSize(QSize(16, 16))
+        # ⭐ RN-025：把 page_id 挂在按钮上。在此之前，「这颗按钮通向哪一页」
+        #   只有 `nav_buttons` / `_frequent_buttons` 两张反查表知道，
+        #   而「常用」组的按钮只在后一张里 ⇒ 任何走前一张的代码都看不见它。
+        btn.setProperty("fp_page_id", page_id)
         btn.clicked.connect(lambda checked, pid=page_id: self.show_page(pid))
         return btn
 
@@ -1021,14 +1043,20 @@ class MainWindow(QMainWindow):
         compact_header_layout.addWidget(self.settings_search_box)
 
         # 窗口模式切换按钮（两种模式都显示）
-        self._mode_toggle_btn = QPushButton("⇔")
+        # ⭐⭐ RN-541（批 60）：它原来只有一个「⇔」图标。
+        #   外审在 4 张图上共 **5 发**报「无法识别其具体功能用途」——
+        #   ⚠ 而它**是有 tooltip 的**（「切换紧凑/完整模式」）。
+        #   ⭐⭐⭐ **一个只靠悬停才说话的控件，在任何一张静态截图上都是哑的** ——
+        #     而用户第一眼看到的也正是那一张「截图」。
+        #   ⇒ 把话写到按钮上，并且说**点下去会怎样**（不是说它现在是什么）。
+        self._mode_toggle_btn = QPushButton("⇔ 紧凑")
         # 与侧栏底部那个「紧凑模式 «」**不能共用 objectName**：那是宽文字按钮，
         # 这是方形图标按钮，两者的盒模型约束正好相反（见 _icon_button_qss）。
         self._mode_toggle_btn.setObjectName("modeToggleIconButton")
         # 40 而不是 38：QSS 里的 min/max-width 是**内容盒**（38），外面还有 1px 边框。
         # 写 38 的话 QSS 算出的最小值 40 会顶掉 setFixedSize 的最大值 38
         # （Qt 在 min > max 时取 min），又回到形变那条老路。
-        self._mode_toggle_btn.setFixedSize(40, 40)
+        self._mode_toggle_btn.setMinimumHeight(40)
         self._mode_toggle_btn.setCursor(Qt.PointingHandCursor)
         self._mode_toggle_btn.setToolTip("切换紧凑/完整模式")
         self._mode_toggle_btn.clicked.connect(self._toggle_compact_mode)
@@ -1206,7 +1234,13 @@ class MainWindow(QMainWindow):
         ]
 
         self.nav_buttons = {}
+        #: ⚠ **只装静态分组**，不含「常用」（它是 `insertWidget(0)` 插进布局的）。
+        #:   要「侧栏里真实的分组顺序」请用 `_nav_groups_in_view()`（RN-025）。
         self.nav_groups = []
+        #: 侧栏那个纵向布局本身 —— `_nav_groups_in_view()` 从它现算顺序。
+        #: ⭐ 存的是**那个真东西的句柄**，不是第二份清单（同 `_sync_master_switch_rows`
+        #:   刻意不建注册表的理由：第二份状态就要维护生命周期）。
+        self._nav_layout = nav_layout
         self._page_to_group = {}  # page_id -> NavGroupWidget 映射
         self._page_names = {}  # page_id -> 显示名称
         for group_title, items in nav_groups:
@@ -1338,6 +1372,16 @@ class MainWindow(QMainWindow):
         self._harmonize_page_chrome(self.pages["basic"])
         self.content_stack.addWidget(self.pages["basic"])
         self._loaded_pages.add("basic")
+        # RN-442：basic 是唯一不走 `_load_page` 的页（内联同步构建），
+        # 那个钩子照不到它 —— 实测 125 颗清到只剩这一页的「重置ID」。
+        try:
+            from PySide6.QtCore import QTimer as _QTimer
+            from ui_style_applier import apply_compact_density, mark_compact_buttons
+            _QTimer.singleShot(
+                0, lambda p=self.pages["basic"]: mark_compact_buttons(p))
+            apply_compact_density(self.pages["basic"], self._compact_mode)
+        except Exception:
+            self.logger.debug("[RN-442] 紧凑按钮标记失败(basic)", exc_info=True)
         # 用与 _load_page 相同的日志格式:basic 是启动关键路径上唯一同步构建的页
         # (落在 [启动相位] 主窗构建 那 1.9~5.0s 里),原先没这行,ui_perf_probe 的
         # 建页耗时排行会整条漏掉它——而它恰恰是最该优化的那一页。
@@ -1456,6 +1500,20 @@ class MainWindow(QMainWindow):
             self.content_stack.addWidget(page)
             self.pages[page_id] = page
             self._loaded_pages.add(page_id)
+            # ⭐ RN-442（批 62）：页面建完了，调用点的 setFixedWidth 都已经跑过，
+            #   这时才看得出「谁把宽度限死到比规范还窄」。一个动作一个入口。
+            # ⚠ 推迟一拍：页面刚 addWidget，样式表的 min-width/min-height
+            #   还没 polish 上去，这时打标记会被随后的 polish 覆盖回去。
+            try:
+                from PySide6.QtCore import QTimer as _QTimer
+                from ui_style_applier import apply_compact_density, mark_compact_buttons
+                _QTimer.singleShot(0, lambda p=page: mark_compact_buttons(p))
+                # ⭐ RN-548（批 65）：密度这一档**不用推迟** —— 样式表管不着
+                #   layout 的 spacing/margins，没有「随后一次 polish 会盖回去」
+                #   这件事（那正是 RN-547 里按钮标记非推迟不可的原因）。
+                apply_compact_density(page, self._compact_mode)
+            except Exception:
+                self.logger.debug("[RN-442] 紧凑按钮标记失败", exc_info=True)
 
             # 应用统一样式（为组件设置objectName以匹配QSS选择器）
             try:
@@ -2042,6 +2100,20 @@ class MainWindow(QMainWindow):
         switches_card = self._create_card("功能开关")
         switches_layout = switches_card.layout()
 
+        # ⭐⭐⭐ RN-235（批 60 认错重开）：这 17 个功能名**本来就是可点的**
+        #   （`_create_home_switch_label` 给有对应页的做成 `ClickableLabel`，
+        #   点了直接切过去）—— 而屏幕上**没有任何东西说它可点**，
+        #   那件事只写在 tooltip 里。
+        #   ⚠ 我批 60 一度把这条判成「实测后不成立」，依据是各功能页上那句
+        #     「这一颗和首页那颗是同一个」—— ⭐⭐ **而那句话在别的页上，
+        #     不在这一页上**。外审同一轮 3 发独立报「密集平铺 17 个开关却无法
+        #     点击深入配置，与左侧菜单割裂」，把我这个错判顶了回来。
+        #   ⭐ 同 RN-541：**只靠悬停才说话的能力，在屏幕上等于不存在。**
+        switches_hint = QLabel("这里是每个功能的总开关。点功能名可以进到那一页，调素材和细节。")
+        switches_hint.setObjectName("hintLabel")
+        switches_hint.setWordWrap(True)
+        switches_layout.addWidget(switches_hint)
+
         # 创建网格布局来实现自适应多列
         from PySide6.QtWidgets import QGridLayout
         from ui_toggle_switch import ToggleSwitch
@@ -2075,6 +2147,12 @@ class MainWindow(QMainWindow):
             ("spectator", "观战静音", "spectator_mode_mute"),
         ]
 
+        # ⭐ RN-530 复跑补刀：标签统一到同一个宽度，让三列的开关重新纵向对齐。
+        #   ⚠ 改完复跑外审 **6/6 发**报「开关参差错位」—— 那是把弹簧挪到开关后面
+        #     换来的代价（标签字数 2~6 不等，开关就跟着长短跑）。
+        #   ⇒ 统一宽度之后两件事都成立：开关仍紧跟**自己的**标签（最远也就一个字距），
+        #     而列与列之间隔着弹簧 + 列距，远得一眼能分开。
+        switch_labels = []
         for index, (switch_id, text, config_key) in enumerate(switch_configs):
             # 每个开关：标签 + 弹簧 + ToggleSwitch
             row_widget = QWidget()
@@ -2083,8 +2161,8 @@ class MainWindow(QMainWindow):
             row_layout.setSpacing(6)
 
             label = self._create_home_switch_label(switch_id, text)
+            switch_labels.append(label)
             row_layout.addWidget(label)
-            row_layout.addStretch()
 
             toggle = ToggleSwitch(checked=getattr(self.config, config_key, False))
             toggle.toggled.connect(
@@ -2095,6 +2173,14 @@ class MainWindow(QMainWindow):
             toggle.toggled.connect(lambda checked, lbl=label: self._update_switch_label_color(lbl, checked))
             self._update_switch_label_color(label, toggle.isChecked())
             row_layout.addWidget(toggle)
+            # ⭐⭐ RN-530（S2）：弹簧原先在**标签和开关之间** ⇒ 三列网格里每颗开关
+            #   被推到离自己的标签 217px（完整档）/ 190px（紧凑档）远的地方，
+            #   而右边那一列的标签只有 **18px**：17 颗里 11 颗如此。
+            #   站在「击杀语音」四个字前面往左看，18px 外那颗开关其实是「击杀音效」的。
+            #   ⚠ 光调列间距**不可能**翻转 —— 差距是 12 倍，列距要拉到 >217px。
+            #   ⇒ 弹簧挪到开关**后面**：标签和它自己的开关贴在一起（6px），
+            #     下一列的标签隔着弹簧 + 列距，远得一眼能分开。
+            row_layout.addStretch()
 
             row = index // 3
             col = index % 3
@@ -2107,6 +2193,11 @@ class MainWindow(QMainWindow):
             # RN-079 要让 `flash` 页自己开总开关，所以必须先有一条回写通路，
             # 见 `sync_feature_switch()`。同时记下 config_key → switch_id 的反查。
             self._switch_id_by_config_key[config_key] = switch_id
+
+        if switch_labels:
+            uniform = max(lb.sizeHint().width() for lb in switch_labels)
+            for lb in switch_labels:
+                lb.setMinimumWidth(uniform)
 
         switches_layout.addLayout(grid_layout)
         scroll_layout.addWidget(switches_card)
@@ -2171,7 +2262,13 @@ class MainWindow(QMainWindow):
         player_layout.addLayout(player_inner)
 
         # 玩家信息提示行
-        player_hint = QLabel("ID 用于本地配置识别，重置后将清除当前关联设置。")
+        # ⭐ 批 60 外审 3 发（中/低）：「显示『ID · 未记录』却只给一颗『重置ID』，
+        #   缺乏录入入口，玩家困惑是否必须先绑定 Steam 才能用」。
+        #   ⚠ 实情是它**不用手填** —— 进过一次游戏、GSI 联动读到就自动记上。
+        #   ⭐ 缺的不是入口，是**一句说清它会自己来的话**。
+        player_hint = QLabel(
+            "进过一次游戏后会自动记上（靠 GSI 联动读到），不用手填。"
+            "ID 只用于本地配置识别；重置会清除当前关联的设置。")
         player_hint.setObjectName("hintLabel")
         player_hint.setWordWrap(True)
         player_layout.addWidget(player_hint)
@@ -2194,7 +2291,6 @@ class MainWindow(QMainWindow):
         mode_select_row.addWidget(mode_label)
 
         self.mode_combo = QComboBox()
-        self.mode_combo.setFixedHeight(30)
         self.mode_combo.addItems(["1. 官匹竞技", "2. aim rush", "3. 死斗模式"])
         self.mode_combo.setCurrentText(self.config.mode)
         self.mode_combo.currentTextChanged.connect(self._on_mode_changed)
@@ -2207,7 +2303,6 @@ class MainWindow(QMainWindow):
         ui_mode_label.setFixedWidth(36)
         ui_mode_row.addWidget(ui_mode_label)
         self.ui_mode_combo = QComboBox()
-        self.ui_mode_combo.setFixedHeight(30)
         self.ui_mode_combo.addItem("普通模式", False)
         self.ui_mode_combo.addItem("专家模式", True)
         current_expert = bool(getattr(self.config, "ui_expert_mode", False))
@@ -2315,7 +2410,14 @@ class MainWindow(QMainWindow):
 
     def _create_home_switch_label(self, switch_id, text):
         target_page = MainWindow._get_home_switch_target_page(switch_id)
-        label = ClickableLabel(text) if target_page else QLabel(text)
+        # ⭐⭐⭐ RN-235 复跑补刀（批 60）：光在卡片上写一句「点功能名可以进那一页」不够 ——
+        #   外审复跑 **5 发**独立说「功能名本身毫无链接或箭头等交互线索，
+        #   不读说明的玩家只会把它当成纯标签」。
+        #   ⚠ 它原来的可点信号只有两样：**悬停变手型**和 **tooltip** ——
+        #     两样在静态画面上都不存在（同 RN-541）。
+        #   ⇒ 给它一个**静态就看得见**的记号。有对应页的才带，没有的不带 ——
+        #     记号本身就是「这个能点、那个不能」的分界。
+        label = (ClickableLabel(f"{text} ›") if target_page else QLabel(text))
         label.setFont(QFont("Microsoft YaHei", 11))
 
         if target_page and isinstance(label, ClickableLabel):
@@ -2389,17 +2491,37 @@ class MainWindow(QMainWindow):
         layout.setSpacing(spacing)
 
     def _home_player_label_text(self, player_id=None):
+        """⭐⭐ RN-403（批 59）：原文是「当前玩家ID: 未记录」，紧凑档里被
+        **中间省略**成「当前玩…未记录」—— 一句话里最要紧的两个词中间那截没了。
+
+        两条一起改：
+        ① 文案缩短。这张卡的标题已经是「玩家信息」，前缀「当前玩家ID:」是同一件事
+           说第二遍（RN-183 族）⇒ 只留「ID · <值>」。
+        ② 省略方向从 `ElideMiddle` 改成 `ElideRight`（见 `_refresh_home_player_label`）——
+           真要切，切掉的该是一长串数字的尾巴，不是「未记录」这三个字。
+        ⚠ 判据不能问「装得下吗」：省略**已经发生**了，所以量宽度永远答「装得下」。
+        """
         value = str(player_id or "").strip() or "未记录"
-        return f"当前玩家ID: {value}"
+        return f"ID · {value}"
 
     def _refresh_home_player_label(self):
         if not hasattr(self, "player_label") or self.player_label is None:
             return
 
         full_text = self._home_player_label_text(getattr(self.config, "player_steamid", ""))
+        # ⭐⭐ RN-403 补刀（批 59，基线 diff 逮到）：只改省略方向还不够 ——
+        #   窄容器里 `ElideRight` 会把**值**整个丢掉（实测基线里只剩「ID…」），
+        #   而原来的中间省略至少留住了「未记录」。⇒ 给它一条不许被压过的下限：
+        #   至少要装得下「未记录」这一档。长 steamid 仍可从右边截（全文在 tooltip）。
+        floor = self.player_label.fontMetrics().horizontalAdvance(
+            self._home_player_label_text("未记录")) + 6
+        if self.player_label.minimumWidth() < floor:
+            self.player_label.setMinimumWidth(floor)
         width = max(0, self.player_label.width() - 6)
         if width > 0:
-            display_text = self.player_label.fontMetrics().elidedText(full_text, Qt.ElideMiddle, width)
+                # ⭐ RN-403：从右边切。中间省略会吃掉一句话里最要紧的那一截。
+            display_text = self.player_label.fontMetrics().elidedText(
+                full_text, Qt.ElideRight, width)
         else:
             display_text = full_text
 
@@ -2407,7 +2529,10 @@ class MainWindow(QMainWindow):
         self.player_label.setToolTip(full_text)
 
     def _flash_card_border(self, widget):
-        """设置变更时，所在卡片左边框闪烁 accent 色"""
+        """设置变更时，所在卡片左边框闪烁 accent 色；总开关关着时不闪（RN-639）"""
+        from ui_motion import decorative_motion_enabled
+        if not decorative_motion_enabled():
+            return   # ⚠ 要在碰 self 之前返回：判据拿 self=None 调它
         # 向上查找最近的 card QFrame
         card = widget
         while card and not (isinstance(card, QFrame) and card.objectName() == "card"):
@@ -2526,6 +2651,18 @@ class MainWindow(QMainWindow):
         # 切换到页面
         if page_id in self.pages:
             new_widget = self.pages[page_id]
+            # ⭐ RN-547（批 63）：**标记要落在最后一次 polish 之后。**
+            #   懒建的控件（帮助面板等）在 `_load_page` 那一刻还没被样式表
+            #   polish 过，标记会被随后的 min-height 覆盖回去；切页这一刻它
+            #   一定已经 polish 过了。只扫这一页，不扫整窗（切页是被计时的路径）。
+            try:
+                from ui_style_applier import apply_compact_density, mark_compact_buttons
+                mark_compact_buttons(new_widget)
+                # RN-548：帮助面板这类**懒建**的控件是在建页之后才出现的，
+                # 它们身上的 layout 在 `_load_page` 那一刻还不存在。
+                apply_compact_density(new_widget, self._compact_mode)
+            except Exception:  # noqa: BLE001
+                self.logger.debug("[RN-547] 紧凑标记失败(切页)", exc_info=True)
 
             # 离开守卫已在本方法开头执行过（UP-029：必须早于骨架屏），这里不再重复问一次
             # ——重复问会让用户在同一次切页里看到两个确认框。
@@ -2565,8 +2702,9 @@ class MainWindow(QMainWindow):
 
             # 同步浮层按钮选中状态
             if hasattr(self, '_overlay_buttons') and self._overlay_buttons:
-                for btn_id, btn in self._overlay_buttons.items():
-                    btn.setChecked(btn_id == page_id)
+                for btn_id, btns in self._overlay_buttons.items():
+                    for btn in btns:
+                        btn.setChecked(btn_id == page_id)
 
             # 自动展开对应分组
             if page_id in self._page_to_group:
@@ -2844,8 +2982,9 @@ class MainWindow(QMainWindow):
         self._ensure_nav_button_visible(current_page_id)
 
         if hasattr(self, '_overlay_buttons') and self._overlay_buttons:
-            for btn_id, btn in self._overlay_buttons.items():
-                btn.setChecked(btn_id == current_page_id)
+            for btn_id, btns in self._overlay_buttons.items():
+                for btn in btns:
+                    btn.setChecked(btn_id == current_page_id)
 
         if hasattr(self, '_compact_title') and current_page_id in self._page_names:
             self._compact_title.setText(self._page_names[current_page_id])
@@ -2862,12 +3001,19 @@ class MainWindow(QMainWindow):
 
     def _apply_compact_mode(self, compact, animate=False):
         """应用紧凑或完整模式"""
+        # ⭐ RN-548（批 65）：紧凑档不只是窗口小一圈，**版面密度也要跟着收**。
+        #   收和还都走同一个入口，否则拨回完整档会留下一套收过的间距。
+        try:
+            from ui_style_applier import apply_compact_density
+            apply_compact_density(self, bool(compact))
+        except Exception:  # noqa: BLE001
+            self.logger.debug("[RN-548] 紧凑密度切换失败", exc_info=True)
         if compact:
             # 紧凑模式：隐藏侧边栏，显示全局顶栏和汉堡入口
             self.sidebar.setVisible(False)
             self._compact_header.setVisible(True)
             self._hamburger_btn.setVisible(True)
-            self._mode_toggle_btn.setText("⇔")
+            self._mode_toggle_btn.setText("⇔ 完整")
             self._mode_toggle_btn.setToolTip("切换到完整模式")
             self.setMinimumSize(860, 640)
             if animate:
@@ -2879,6 +3025,7 @@ class MainWindow(QMainWindow):
             self.sidebar.setVisible(True)
             self._compact_header.setVisible(True)
             self._hamburger_btn.setVisible(False)
+            self._mode_toggle_btn.setText("⇔ 紧凑")
             self._mode_toggle_btn.setToolTip("切换到紧凑模式")
             self.setMinimumSize(1200, 800)
             if animate:
@@ -2956,7 +3103,10 @@ class MainWindow(QMainWindow):
 
             # 为每个导航按钮创建镜像按钮
             self._overlay_buttons = {}
-            for group_widget in self.nav_groups:
+            # ⭐⭐ RN-539（批 59）：原先遍历 `self.nav_groups` —— 那张表**不含「常用」**
+            #   （它是 `insertWidget(0)` 插进侧栏布局的）⇒ 紧凑档下用户最常去的那几页
+            #   **在抽屉里根本没有**。这是 RN-025 的同根第二处。
+            for group_widget in self._nav_groups_in_view():
                 # 分组标题
                 group_header = QLabel(group_widget._title)
                 group_header.setObjectName("overlayGroupHeader")
@@ -2964,28 +3114,34 @@ class MainWindow(QMainWindow):
                 group_header.setContentsMargins(10, 8, 0, 2)
                 overlay_nav_layout.addWidget(group_header)
 
-                # 按顺序遍历该分组下的页面
-                for page_id in self._page_names:
-                    if self._page_to_group.get(page_id) is not group_widget:
+                # 按顺序遍历该分组下的页面（问组自己要，别问反查表 ——
+                # 常用组的按钮不在 `_page_to_group` 里，那正是 RN-025/539 的病根）
+                for page_id in self._pages_of_group(group_widget):
+                    if page_id not in self.nav_buttons:
                         continue
                     overlay_btn = QPushButton(f"    {self._page_names[page_id]}")
                     overlay_btn.setObjectName("navButton")
                     overlay_btn.setCheckable(True)
                     overlay_btn.setMinimumHeight(36)
+                    overlay_btn.setFocusPolicy(Qt.TabFocus)   # RN-640，同上
                     overlay_btn.setChecked(self.nav_buttons[page_id].isChecked())
                     overlay_btn.clicked.connect(
                         lambda checked, pid=page_id: self.show_page(pid)
                     )
                     overlay_nav_layout.addWidget(overlay_btn)
-                    self._overlay_buttons[page_id] = overlay_btn
+                    # ⚠ 一个 page_id 可能有**两颗**镜像按钮（常用组一颗、它自己的组一颗）——
+                    #   侧栏本来就是这样，抽屉照抄才可预测。存字典会**只留最后一颗**，
+                    #   于是前一颗永远同步不到选中态。
+                    self._overlay_buttons.setdefault(page_id, []).append(overlay_btn)
 
             overlay_nav_layout.addStretch()
             overlay_scroll.setWidget(overlay_nav)
             overlay_layout.addWidget(overlay_scroll)
 
         # 同步选中状态
-        for page_id, btn in self._overlay_buttons.items():
-            btn.setChecked(self.nav_buttons[page_id].isChecked())
+        for page_id, btns in self._overlay_buttons.items():
+            for btn in btns:
+                btn.setChecked(self.nav_buttons[page_id].isChecked())
 
         self._sidebar_overlay.setGeometry(0, 0, 240, central.height())
         self._sidebar_overlay.raise_()
@@ -3352,12 +3508,13 @@ class MainWindow(QMainWindow):
     
     def _update_player_id_display(self):
         """更新玩家ID显示"""
-        current_text = self.player_label.toolTip() or self.player_label.text()
-        current_id = current_text.replace("当前玩家ID: ", "")
-        
-        # 如果配置中的ID与显示不同，则更新
+        # ⚠ RN-403（批 59）：这里原先**从显示文案里反解 ID**
+        #   （`text.replace("当前玩家ID: ", "")`）—— 于是改一句文案就会把它弄坏，
+        #   而弄坏的样子是「ID 永远刷不新」，屏幕上看不出来。
+        #   ⭐ 显示是配置的投影，不是它的存储；要比就跟**配置**比。
         config_id = self.config.player_steamid if self.config.player_steamid else "未记录"
-        if current_id != config_id:
+        if self._home_player_label_text(self.config.player_steamid) != (
+                self.player_label.toolTip() or ""):
             self._refresh_home_player_label()
             self.logger.info(f"更新玩家ID显示: {config_id}")
     
@@ -3428,6 +3585,15 @@ class MainWindow(QMainWindow):
             self._applied_stylesheet = stylesheet
             # 正常主题：应用样式表
             self.setStyleSheet(stylesheet)
+            # ⭐ RN-442（批 62）：样式表刚落地，`min-width` 这一刻才生效 ——
+            #   在这之前问 `minimumWidth()` 拿到的是 0，看不出「调用点把宽度
+            #   限得比规范还窄」。⇒ 紧凑标记要在这之后再跑一遍整窗。
+            #   （`_load_page` 那处照样留着：它管的是**样式表落地之后**才建的页。）
+            try:
+                from ui_style_applier import mark_compact_buttons
+                mark_compact_buttons(self)
+            except Exception:
+                self.logger.debug("[RN-442] 紧凑按钮标记失败(整窗)", exc_info=True)
             self.logger.info(f"已应用主题: {self.theme_manager.current_theme.name}")
             self.logger.info(f"样式表总长度: {len(stylesheet)} 字符")
     
@@ -3770,7 +3936,10 @@ class MainWindow(QMainWindow):
         # 应用聚焦时 Ctrl+N 会双触发(切组+播放音板)——审计中实测发现的冲突。
         # ⚠ 上限原先写死 4，正好等于当时的分组数;RN-108 加了「开始」组之后
         # 最后一组就悄悄没了快捷键。改成按实际分组数发，只受 Alt+1..9 这九个键限制。
-        for idx in range(min(9, len(self.nav_groups))):
+        # ⚠ 分母是**侧栏里真实的分组数**（含「常用」），不是 `nav_groups`（RN-025）：
+        #   用后者时最后一组永远拿不到快捷键，而那件事在没有使用数据的机器上
+        #   （比如 CI 和干净安装）**复现不出来** —— 同 RN-516。
+        for idx in range(min(9, len(self._nav_groups_in_view()))):
             sc = QShortcut(QKeySequence(f"Alt+{idx + 1}"), self)
             sc.activated.connect(lambda i=idx: self._goto_nav_group(i))
             self._app_shortcuts.append(sc)
@@ -3783,13 +3952,69 @@ class MainWindow(QMainWindow):
         sc_esc.activated.connect(self._on_escape_pressed)
         self._app_shortcuts.append(sc_esc)
 
+    def _nav_groups_in_view(self):
+        """侧栏里**真实的分组顺序**，含「常用」。
+
+        ⭐⭐ RN-025：`self.nav_groups` 只装静态分组，而「常用」是
+        `nav_layout.insertWidget(0, ...)` 插在**视觉最上面**的、从不进那张表 ⇒
+        每一处遍历 `nav_groups` 的代码都漏了它：`Alt+1` 跳到屏幕上的**第二**组，
+        最后一组则根本没有快捷键（因为只发了 `len(nav_groups)` 个）。
+
+        ⇒ 顺序**从布局现算**，不存第二份清单：布局就是那个真源，
+        别人往里插一组，这里立刻看得见（同 `_sync_master_switch_rows`
+        刻意不建注册表的理由）。
+        """
+        layout = getattr(self, "_nav_layout", None)
+        if layout is None:
+            return list(getattr(self, "nav_groups", []))
+        groups = []
+        for i in range(layout.count()):
+            item = layout.itemAt(i)
+            widget = item.widget() if item is not None else None
+            if isinstance(widget, NavGroupWidget):
+                groups.append(widget)
+        return groups or list(getattr(self, "nav_groups", []))
+
+    @staticmethod
+    def _pages_of_group(group):
+        """一个分组里的页面，按它在侧栏里的实际顺序。
+
+        ⭐ 问按钮自己（`fp_page_id`），不问 `_page_to_group` ——
+        「常用」组的按钮从不进那张反查表（RN-025 / RN-539 的共同病根）。
+        """
+        layout = getattr(group, "content_layout", None)
+        if layout is None:
+            return []
+        pages = []
+        for i in range(layout.count()):
+            item = layout.itemAt(i)
+            widget = item.widget() if item is not None else None
+            if widget is None:
+                continue
+            page_id = widget.property("fp_page_id")
+            if page_id:
+                pages.append(page_id)
+        return pages
+
+    @classmethod
+    def _first_page_of_group(cls, group):
+        """一个分组里的第一页。⭐ 只有一份实现（`_pages_of_group`），不抄第二遍。"""
+        pages = cls._pages_of_group(group)
+        return pages[0] if pages else None
+
     def _goto_nav_group(self, group_index):
         try:
-            group = self.nav_groups[group_index]
+            groups = self._nav_groups_in_view()
+            group = groups[group_index]
             group.set_expanded(True)
-            for page_id, g in self._page_to_group.items():
+            page_id = self._first_page_of_group(group)
+            if page_id:
+                self.show_page(page_id)
+                return
+            # 兜底：老路（按钮没带 fp_page_id 时）
+            for pid, g in self._page_to_group.items():
                 if g is group:
-                    self.show_page(page_id)
+                    self.show_page(pid)
                     return
         except Exception:
             self.logger.exception(f"快捷键切分组失败: {group_index}")
@@ -4085,8 +4310,14 @@ class MainWindow(QMainWindow):
             # 底层 C++ 对象已析构（页面被销毁/重建）——高亮本就无处可撤，忽略
             pass
 
-    def _step_search_highlight(self, target, state):
-        """搜索高亮的一步：state ∈ {"true"(强), "fade"(弱), None(撤)}。"""
+    def _step_search_highlight(self, target, state, gen=None):
+        """搜索高亮的一步：state ∈ {"true"(强), "fade"(弱), None(撤)}。
+
+        ⭐ RN-557：`gen` 是排这一步时的搜索代次。只比目标不够 ——
+        两次搜索落在同一个控件上时，上一次的「撤销」会把这一次的高亮撤掉。
+        """
+        if gen is not None and gen != getattr(self, "_search_hit_gen", None):
+            return  # 这一步是上一次搜索排的，已经过期
         if target is not getattr(self, "_search_hit_target", None):
             return  # 已被更新的一次搜索接管，这一步作废
         if state is None:
@@ -4205,9 +4436,11 @@ class MainWindow(QMainWindow):
             target.setAttribute(Qt.WA_StyledBackground, True)
         except Exception:
             pass
-        self._step_search_highlight(target, "true")
-        QTimer.singleShot(1200, lambda t=target: self._step_search_highlight(t, "fade"))
-        QTimer.singleShot(1600, lambda t=target: self._step_search_highlight(t, None))
+        self._search_hit_gen = getattr(self, "_search_hit_gen", 0) + 1
+        gen = self._search_hit_gen
+        self._step_search_highlight(target, "true", gen)
+        QTimer.singleShot(1200, lambda t=target, g=gen: self._step_search_highlight(t, "fade", g))
+        QTimer.singleShot(1600, lambda t=target, g=gen: self._step_search_highlight(t, None, g))
 
     # ---------------- 系统集成：托盘 / 关闭策略 / 窗口几何（对标主流） ----------------
 
@@ -4448,7 +4681,11 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
             try:
-                self.config.save_config_now()
+                # ⭐⭐⭐ RN-624：这里**不能**用 `save_config_now()`。
+                #   RN-622 之后它失败时是「排一个 1 秒后的 daemon Timer」，
+                #   而下一行就是 `os._exit(0)` —— 那一刀连 atexit 都不跑，
+                #   排好的重试连同线程一起蒸发。⇒ 换成在本线程里把重试做完的那一版。
+                self.config.save_config_on_exit()
             except Exception:
                 pass
             _os._exit(0)
@@ -4488,7 +4725,9 @@ class MainWindow(QMainWindow):
             ("清理效果管理器", lambda: self.effects_manager.cleanup() if hasattr(self, 'effects_manager') else None),
             ("清理页面过渡", lambda: self.page_transition.cleanup()
                 if getattr(self, 'page_transition', None) else None),
-            ("落盘配置", lambda: self.config.save_config_now()),
+            # RN-624: 退出路径上写盘失败要**当场**重试，不许排定时器 ——
+            # 排了也等不到（看门狗的 os._exit 不跑 atexit）。预算见 config._EXIT_SAVE_*。
+            ("落盘配置", lambda: self.config.save_config_on_exit()),
             # UP-016: 页面频次统计改为去抖落盘,退出时兜底 flush 一次,
             # 否则最后几次切页的统计会丢(影响下次启动的「常用」分组与预载顺序)。
             ("落盘页面统计", self._flush_page_usage),

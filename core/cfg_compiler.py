@@ -20,6 +20,7 @@ from core.hud.rule_compiler import (
 )
 from core.magnifier_sensitivity import DEFAULT_SYNC_TRIGGER_KEY
 from core.utils.logger import get_logger
+from core.io_validation import replace_with_retry
 
 logger = get_logger("CfgCompiler")
 
@@ -243,7 +244,7 @@ def write_cs2customizer_cfg(config_obj) -> List[str]:
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(content)
-        os.replace(tmp_path, cfg_path)
+        replace_with_retry(tmp_path, cfg_path)
         logger.info(f"cs2customizer.cfg 已写入: {cfg_path}")
     except Exception:
         try:

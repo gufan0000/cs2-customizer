@@ -151,8 +151,8 @@ class FlashPage(QWidget):
         if status_text.startswith("预览失败") or status_text.startswith("打开文件夹失败"):
             return "异常", "danger"
         if running:
-            return "已就绪", "success"
-        return "待启动", "warn"
+            return "已启动", "success"
+        return "未启动", "warn"
 
     def _set_preview_status(self, text):
         if hasattr(self, "preview_status_label"):
@@ -304,10 +304,10 @@ class FlashPage(QWidget):
             running = getattr(getattr(self, "process_manager", None), "is_running", False)
             enabled = bool(getattr(config, "flash_enabled", False))
             if not running:
-                self.action_bar.configure_primary("启动", self._enable_and_start, visible=True)
+                self.action_bar.configure_primary("启动监听", self._enable_and_start, visible=True)
                 self.action_bar.primary_btn.setEnabled(enabled)
                 self.action_bar.primary_btn.setToolTip(
-                    "" if enabled else "总开关还没打开——打开之后这里才能启动后台监听")
+                    "" if enabled else "先打开总开关，再点这里启动后台监听")
             else:
                 self.action_bar.configure_primary("前往效果预览", self._open_preview_tab, visible=True)
                 self.action_bar.primary_btn.setEnabled(True)
@@ -338,7 +338,8 @@ class FlashPage(QWidget):
         preview_text = str(getattr(getattr(self, "preview_status_label", None), "text", lambda: "就绪")()).strip() or "就绪"
 
         badges = [
-            ("success" if enabled else "warn", f"效果 · {'已启用' if enabled else '未启用'}"),
+            # RN-644：和上面那颗开关用同一对词（`master_switch_link.STATE_*_TEXT`）。
+            ("success" if enabled else "warn", f"效果 · {'已开启' if enabled else '未开启'}"),
             ("info", f"样式 · {self._compact_text(style_text)}"),
             ("info" if media_text == "纯背景" else "success", f"媒体 · {self._compact_text(media_text, '纯背景', 8)}"),
             ("info", f"页面 · {self._compact_text(current_tab, '未分组', 8)}"),
@@ -362,7 +363,7 @@ class FlashPage(QWidget):
         process_running = bool(getattr(getattr(self, "process_manager", None), "is_running", False))
 
         detail_lines = [
-            f"总开关：{'已启用' if enabled else '已关闭'}",
+            f"总开关：{'已开启' if enabled else '未开启'}",
             f"当前页面：{current_tab}",
             f"背景：{bg_color_text} {opacity}% · 淡入{'开' if fade_in else '关'} / 淡出{'开' if fade_out else '关'}",
             f"闪光样式：{style_text}",
@@ -371,7 +372,7 @@ class FlashPage(QWidget):
             f"音频：{'已启用' if audio_enabled else '未启用'} · {self._current_audio_style_text()} · 轮换 {audio_rotation} · 音量 {audio_volume}%",
             f"音频自动停止：{'已启用' if audio_auto_stop else '未启用'}",
             f"预览：强度 {preview_intensity}% · 持续 {duration} 秒 · 状态 {preview_text}",
-            f"进程状态：{'已运行' if process_running else '未运行'}",
+            f"监听：{'已启动' if process_running else '未启动'}",
         ]
 
         summary_text = "\n".join(detail_lines)
@@ -1037,6 +1038,26 @@ class FlashPage(QWidget):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(10)
 
+        # ⛔ RN-063：矮的这张必须排在「预览控制」之前（判据 `test_flash_page_puts_the_one_tap_card_first`）。
+        #   ⛔ 只换 `addWidget` 顺序不算 —— 焦点链走构造顺序（批 38）。叙事见档案。
+        quick_card, quick_layout = SettingsCard.make(
+            "快速触发",
+            # ⛔ RN-077：这句不许提位置 —— 版面一动它就变成假话（本批正是一例）。
+            "点一下就按这个强度放一次，不用先调滑块。",
+        )
+        button_grid = QGridLayout()
+        button_grid.setHorizontalSpacing(8)
+        button_grid.setVerticalSpacing(8)
+        for intensity in [25, 50, 75, 100]:
+            btn = QPushButton(f"{intensity}%预览")
+            btn.setMinimumHeight(40)
+            btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            btn.clicked.connect(lambda checked, i=intensity: self._quick_preview(i))
+            button_grid.addWidget(btn, 0, [25, 50, 75, 100].index(intensity))
+        quick_layout.addLayout(button_grid)
+        quick_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+        layout.addWidget(quick_card)
+
         control_card, control_layout = SettingsCard.make(
             "预览控制",
             "不用进游戏也能试：定好强度和时长，直接放一次看效果。",
@@ -1083,22 +1104,6 @@ class FlashPage(QWidget):
         control_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
         layout.addWidget(control_card)
 
-        quick_card, quick_layout = SettingsCard.make(
-            "快速触发",
-            "点一下就按这个强度放一次，不必先调上面的滑块。",
-        )
-        button_grid = QGridLayout()
-        button_grid.setHorizontalSpacing(8)
-        button_grid.setVerticalSpacing(8)
-        for intensity in [25, 50, 75, 100]:
-            btn = QPushButton(f"{intensity}%预览")
-            btn.setMinimumHeight(40)
-            btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            btn.clicked.connect(lambda checked, i=intensity: self._quick_preview(i))
-            button_grid.addWidget(btn, 0, [25, 50, 75, 100].index(intensity))
-        quick_layout.addLayout(button_grid)
-        quick_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
-        layout.addWidget(quick_card)
 
         layout.addStretch()
 

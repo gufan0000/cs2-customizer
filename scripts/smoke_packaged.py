@@ -67,8 +67,22 @@ $found = @()
   return $true
 }, [IntPtr]::Zero) | Out-Null
 foreach ($w in $found) { Write-Output ("WINDOW`t{0}`t{1}" -f $w.H, $w.T) }
-foreach ($w in $found) { [WClose]::PostMessage($w.H, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null }
+if (__POST__ -eq 1) { foreach ($w in $found) { [WClose]::PostMessage($w.H, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null } }
 """
+
+
+def _visible_windows(pid: int) -> list:
+    """只列不关：这个 pid 名下有几个可见顶层窗口（RN-645 用它认「谁才是应用」）。"""
+    script = _CLOSE_PS.replace("__PID__", str(pid)).replace("__POST__", "0")
+    try:
+        out = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", script],
+            capture_output=True, text=True, errors="replace", timeout=60,
+        ).stdout
+    except Exception:
+        return []
+    return [ln.split("\t")[2] for ln in out.splitlines()
+            if ln.startswith("WINDOW\t") and len(ln.split("\t")) >= 3]
 
 
 def _prepare_env(work: Path) -> dict:
@@ -100,7 +114,7 @@ def _prepare_env(work: Path) -> dict:
 
 
 def _close_windows(pid: int) -> list:
-    script = _CLOSE_PS.replace("__PID__", str(pid))
+    script = _CLOSE_PS.replace("__PID__", str(pid)).replace("__POST__", "1")
     try:
         out = subprocess.run(
             ["powershell", "-NoProfile", "-Command", script],
@@ -111,6 +125,111 @@ def _close_windows(pid: int) -> list:
         return []
     return [ln.split("\t")[2] for ln in out.splitlines()
             if ln.startswith("WINDOW\t") and len(ln.split("\t")) >= 3]
+
+
+def _children_of(pid: int) -> list[int]:
+    out = subprocess.run(
+        ["powershell", "-NoProfile", "-Command",
+         f"(Get-CimInstance Win32_Process -Filter 'ParentProcessId={pid}' "
+         "| Select-Object -ExpandProperty ProcessId) -join ','"],
+        capture_output=True, text=True, errors="replace", timeout=60,
+    ).stdout
+    return [int(x) for x in out.strip().split(",") if x.strip().isdigit()]
+
+
+#: RN-645：应用自己会再起子进程（`multiprocessing` 的 fork 助手带这个开关），它们不是应用。
+FORK_HELPER_MARK = "--multiprocessing-fork"
+
+
+def _child_processes(pid: int) -> list[tuple[int, str]]:
+    """(子进程 pid, 命令行) —— 命令行是分辨「引导→应用」和「应用→助手」的唯一依据。"""
+    out = subprocess.run(
+        ["powershell", "-NoProfile", "-Command",
+         f"Get-CimInstance Win32_Process -Filter 'ParentProcessId={pid}' "
+         "| ForEach-Object { \"$($_.ProcessId)`t$($_.CommandLine)\" }"],
+        capture_output=True, text=True, errors="replace", timeout=60,
+    ).stdout
+    rows = []
+    for ln in out.splitlines():
+        head, _, cmd = ln.partition("\t")
+        if head.strip().isdigit():
+            rows.append((int(head), cmd or ""))
+    return rows
+
+
+def _resolve_app_pid(parent_pid: int, wait_seconds: float = 20.0) -> int:
+    """⭐⭐⭐ RN-636（批 93）：**onefile 产物的主窗不在我起的那个进程里。**
+
+    PyInstaller onefile 先起一个引导进程（解包），再起一个**同名子进程**跑真正的
+    应用；`Popen` 交回来的 pid 是引导进程的。批 92 实测：拿它去 EnumWindows
+    ⇒ 「无可见顶层窗口」，WM_CLOSE 发给了空气；随后 `proc.kill()` 只打印了一句
+    「强杀」，**两个进程都还活着**，主窗留在用户桌面上、GSI 端口继续占着。
+    ⇒ 起动后等子进程出现（onefile 解包要几秒），拿**子进程**当应用；
+      等不到（onedir 没有子进程）就用原 pid。
+
+    ⭐⭐ RN-645（批 96）：**「第一个子进程」不是应用的充分条件。** 批 96 实测 onedir 产物：
+    应用自己起了一个 `--multiprocessing-fork` 助手，上面那条把它当成了应用 ⇒ 「无可见顶层窗口」，
+    WM_CLOSE 又发给了空气 —— 和 RN-636 同一个症状、相反的方向（那次是父，这次是子）。
+    ⇒ 认应用只认一件事：**谁名下有可见顶层窗口**；候选 = 父 + 非助手子进程，等窗口出现为止；
+      都等不到才退回「第一个非助手子进程 / 父」。
+    """
+    deadline = time.perf_counter() + wait_seconds
+    while time.perf_counter() < deadline:
+        kids = [pid for pid, cmd in _child_processes(parent_pid) if FORK_HELPER_MARK not in cmd]
+        windows = {pid: _visible_windows(pid) for pid in kids + [parent_pid]}
+        chosen = _choose_app_pid(parent_pid, kids, windows)
+        if chosen is not None:
+            return chosen
+        time.sleep(0.5)
+    kids = [pid for pid, cmd in _child_processes(parent_pid) if FORK_HELPER_MARK not in cmd]
+    return kids[0] if kids else parent_pid
+
+
+#: PyInstaller onefile 的启动画面是一个 Tk 窗口，标题就叫 "tk"，住在**引导进程**名下。
+#: 批 96 实测：按「谁有可见窗口」认应用，0.8s 时引导进程已经有这扇窗 ⇒ 把引导进程当成了应用。
+SPLASH_TITLES = {"tk"}
+
+
+def _choose_app_pid(parent_pid: int, kids: list[int], windows: dict) -> int | None:
+    """纯判断，不碰进程：谁是应用。返回 None = 还没法定（再等）。
+
+    规则：① 子进程（非 fork 助手）名下有**非启动画面**的可见窗口 ⇒ 它；
+          ② 没有子进程、而父进程有非启动画面的可见窗口 ⇒ 父（onedir 的形状）；
+          ③ 其余 ⇒ 还没法定。⚠ 有子进程但都还没窗口时**不许**退回父 —— 那正是 RN-636 的错法。
+    """
+    def real(pid):
+        return [w for w in windows.get(pid, []) if w.strip().lower() not in SPLASH_TITLES]
+    for pid in kids:
+        if real(pid):
+            return pid
+    if not kids and real(parent_pid):
+        return parent_pid
+    return None
+
+
+def _descendants(pid: int) -> list[int]:
+    """整棵子树（子、孙…）。RN-645：善后按树核对，不按两个 pid。"""
+    out, todo = [], [pid]
+    while todo:
+        cur = todo.pop()
+        kids = _children_of(cur)
+        out.extend(kids)
+        todo.extend(kids)
+    return out
+
+
+def _still_alive(pids: list[int]) -> list[int]:
+    """⛔ 杀完必须回头看一眼 —— 批 91 那三次「静音的清理」的教训。"""
+    if not pids:
+        return []
+    ids = ",".join(str(p) for p in pids)
+    out = subprocess.run(
+        ["powershell", "-NoProfile", "-Command",
+         f"(Get-Process -Id {ids} -ErrorAction SilentlyContinue "
+         "| Select-Object -ExpandProperty Id) -join ','"],
+        capture_output=True, text=True, errors="replace", timeout=60,
+    ).stdout
+    return [int(x) for x in out.strip().split(",") if x.strip().isdigit()]
 
 
 def _port_busy(port: int) -> bool:
@@ -162,9 +281,14 @@ def main() -> int:
                  and c.parent.name.lower() != "installer"
                  and "安装包" not in c.name
                  and (c.parent / "_internal").is_dir()]
+        # RN-645：onefile 产物直接躺在 release/ 根下（`release/CS2 Customizer 2.2.4.exe`），
+        # 原来的挑选只看 onedir 的形状，于是刚打出来的 onefile 永远轮不到、跑的是一个月前的 onedir。
+        cands += [c for c in ROOT.glob("release/*.exe")
+                  if "unins" not in c.name.lower() and "安装包" not in c.name]
+        cands.sort(key=lambda p: p.stat().st_mtime, reverse=True)
         if not cands:
-            print("!! 找不到打包产物（onedir：release/<名字>/<名字>.exe 且同级有 _internal）")
-            print("   请先跑 build_tools/build_release.py --mode onedir")
+            print("!! 找不到打包产物（onedir：release/<名字>/<名字>.exe 且同级有 _internal；或 onefile：release/*.exe）")
+            print("   请先跑 build_tools/build_release.py --mode onefile")
             return 1
         exe = cands[0]
         print(f"[自动挑选] {exe}")
@@ -191,6 +315,8 @@ def main() -> int:
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
     print(f"已启动 pid={proc.pid}")
+    app_pid = _resolve_app_pid(proc.pid)
+    print(f"  应用进程 pid={app_pid}" + ("（onefile 子进程）" if app_pid != proc.pid else "（同一进程）"))
 
     gsi_seen = False
     deadline = time.perf_counter() + args.seconds
@@ -207,7 +333,11 @@ def main() -> int:
     exit_ok = False
     if alive:
         print(f"\n[{time.perf_counter() - t0:5.1f}s] 发送 WM_CLOSE …")
-        titles = _close_windows(proc.pid)
+        # RN-645：善后要核对的是**整棵树**（引导 + 应用 + 应用自己起的助手），在它们都还活着时先记下来 ——
+        # 引导进程一死，孙进程会被 Windows 改挂到别处，事后再找就找不到了（批 96 实测：一个漏掉的应用
+        # 实例占着 3000 端口活了 5 分钟，下一轮冒烟的应用一看「已有实例」就退出，两条判据因此假绿）。
+        tree = sorted({proc.pid, app_pid} | set(_descendants(proc.pid)))
+        titles = _close_windows(app_pid)
         print(f"  命中窗口: {titles or '（无可见顶层窗口）'}")
         try:
             proc.wait(timeout=60)
@@ -216,7 +346,23 @@ def main() -> int:
         except subprocess.TimeoutExpired:
             print("  !! 60s 内没退出，强杀")
             proc.kill()
-            proc.wait(timeout=30)
+            try:
+                proc.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                pass
+        # ⛔ 无论走哪条路，回头核对：引导进程和应用进程一个都不许留在用户机器上。
+        leftovers = _still_alive(sorted({proc.pid, app_pid} | set(tree)))
+        if leftovers:
+            print(f"  !! 还活着：{leftovers} ⇒ Stop-Process -Force")
+            subprocess.run(["powershell", "-NoProfile", "-Command",
+                            "Stop-Process -Force -ErrorAction SilentlyContinue -Id "
+                            + ",".join(str(p) for p in leftovers)],
+                           capture_output=True, timeout=60)
+            time.sleep(1.0)
+            leftovers = _still_alive(leftovers)
+            if leftovers:
+                print(f"  !!! 杀不掉：{leftovers} —— 这是真事故，不是日志问题")
+                exit_ok = False
 
     time.sleep(1.5)
     log = _read_log(log_dir)

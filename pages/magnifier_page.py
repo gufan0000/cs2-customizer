@@ -26,6 +26,7 @@ from core.utils.format_utils import format_percent
 from ctypes import windll, c_float, c_int, create_unicode_buffer
 from pages.audio_status_badge import create_badge_label, render_badges
 from theme_manager import get_color, get_theme_manager
+
 from ctypes.wintypes import BOOL
 from ui_help_panel import install_help_panel, PAGE_HELP_TEXTS
 from ui_style_applier import keep_inline_style
@@ -81,11 +82,13 @@ class _StatusTrackingLabel(QLabel):
 
 class MagnifierPage(QWidget):
     """开镜放大页面"""
-    #: RN-175 / 批 24：**这一页不是自动保存的。** 倍率与偏移要点一下「应用」才写下去。
-    #: ⚠ 底栏那条共用回执默认说「改动已自动保存，不用点任何按钮」——
-    #:   而这一页同一行右边就摆着那颗必须点的按钮。实测 15 页里 2 页如此。
-    #: ⭐ 共用件省的是重复，不是判断。
-    SAVES_AUTOMATICALLY = False
+    #: RN-444 / 批 84：**这一页现在是自动保存的**（批 24~83 曾是 `False` ——
+    #: 偏移的 X / Y 要点一下「应用」才写下去，而同页其余全部即时保存，
+    #: 外审 5 发判「保存逻辑割裂」）。⭐ 修法是**消灭那个例外**，不是改那句说明；
+    #: 叙事在 `CS2 Customizer_翻新工程/档案/X3_配置层.md` §3。
+    #: ⚠ 「应用」按钮留着（现在只是「立刻看一眼」）。判据不靠名单放它过去，
+    #: 靠**当场证明「这一页没有任何一个输入框是例外」**。
+    SAVES_AUTOMATICALLY = True
 
 
     # P2.1: 热键注册中心里的功能域标识
@@ -255,8 +258,9 @@ class MagnifierPage(QWidget):
         # ⚠ 外审从没说「我会误点它」，它每次都读对了字。
         #   ⭐ **「这颗按钮指着反方向」是实测；「用户会误点」是推论，别混着写。**
         #
-        # ⇒ 这一页没有该由底栏承担的动作：改动即时保存，偏移的 X / Y 有它自己
-        #   那张卡上的「应用」，就在两个输入框旁边。主按钮位空着（同 crosshair
+        # ⇒ 这一页没有该由底栏承担的动作：改动即时保存 —— ⚠ 批 84（RN-444）起
+        #   **偏移的 X / Y 也在内**，那张卡上的「应用」只剩「立刻看一眼」的用途。
+        #   主按钮位空着（同 crosshair
         #   批 10：那一轮外审的判词是「一颗灰着的、紫色的、蹲在右下角的按钮，
         #   形状本身就在说『这里有个保存动作』」——而这一页同样没有保存动作）。
         # ⚠ 全选 / 全不选**没有被删**：它们本来就在武器卡的表头上，紧贴那 54 个
@@ -267,11 +271,19 @@ class MagnifierPage(QWidget):
         self.action_bar.configure_secondary("", None, visible=False)
 
         action_message = (
-            # ⚠ 本页 `SAVES_AUTOMATICALLY = False`（批 24），所以共用回执**不会**
-            # 替它说存不存。撤掉底栏按钮之后，这句话是唯一还在回答
-            # 「我到底要不要点什么」的东西 —— 它必须说准。
-            "改完就存下了；只有「偏移校准」里的 X / Y 要点那张卡上的"
-            f"「{self.offset_apply_btn.text()}」才算数。"
+            # ⚠ 批 24~83 这里还写着「只有「偏移校准」里的 X / Y 要点那张卡上的
+            #   「应用」才算数」。那句话**是真的** —— 而它描述的那条规则本身才是缺陷
+            #   （RN-444：一页里两套保存规则，外审 5 发判「保存逻辑割裂」）。
+            #   ⭐⭐⭐ 批 84 修的是**那件事**（给 X / Y 补 `editingFinished`），不是那句话。
+            # ⛔ 例外消灭之后，这里**不许再自己说一遍「改完就存下了」**。
+            #   ⭐⭐⭐ 我第一版正是这么写的，而**两条既有判据当场逮住**：
+            #   `SAVES_AUTOMATICALLY = True` 之后共用回执**自己**就会说
+            #   「改动会自动保存，不用点任何按钮」，我再写一句，整行就成了
+            #   「改动会自动保存，不用点任何按钮…改完就存下了，不用点任何按钮」。
+            # ⇒ ⭐⭐ 例外没了之后，这句话该做的**不是换一种说法，而是不再说** ——
+            #   只留状态，存不存交回共用件。
+            #   这是批 24 那条教训的另一面：共用件省的是重复，不是判断；
+            #   **而判断一旦不再需要，就该把话还给共用件。**
             f"当前：倍率 {self.zoom_factor:.1f}x · 偏移 {self._current_offset_text()}"
             # ⚠ RN-407 家族（批 18）：这里数的是**勾选了几把武器**，不是
             # 「几件事正在跑」。写「已启用 12/18 项」时，如果总开关关着，
@@ -308,7 +320,7 @@ class MagnifierPage(QWidget):
             status_text = self.status_label.text().strip() or "就绪"
 
         badges = [
-            ("success" if enabled else "warn", f"开关 · {'已启用' if enabled else '已禁用'}"),
+            ("success" if enabled else "warn", f"开关 · {'已开启' if enabled else '未开启'}"),
             ("info", f"倍率 · {self.zoom_factor:.1f}x"),
             ("info", f"触发 · {mode_text}"),
             ("info", f"分类 · {self._compact_text(self._current_tab_text(), '未分组', 8)}"),
@@ -331,7 +343,7 @@ class MagnifierPage(QWidget):
         )
 
         detail_lines = [
-            f"总开关：{'已启用' if enabled else '已禁用'}",
+            f"总开关：{'已开启' if enabled else '未开启'}",
             f"当前状态：{status_text}",
             f"当前武器：{current_weapon_text}",
             f"当前分类：{self._current_tab_text()}",
@@ -470,7 +482,9 @@ class MagnifierPage(QWidget):
         """
         try:
             from PySide6.QtCore import QPoint
-            from PySide6.QtWidgets import QPushButton, QScrollArea
+            from PySide6.QtWidgets import QScrollArea
+
+            from widgets.anchor_bar import install_anchor_chips
 
             scroll = self.findChild(QScrollArea)
             if scroll is None:
@@ -512,29 +526,17 @@ class MagnifierPage(QWidget):
                 "偏移校准": "偏移",
                 "武器开镜范围": "武器范围",
             }
-            seen = set()
+            seen, picked = set(), []
             for title, card in sections:
                 short = SHORT.get(title, title[:4])
                 if short in seen:
                     continue
                 seen.add(short)
-                chip = QPushButton(short)
-                # 与 R5 高级设置页同一套：anchorChip 有自己的 QSS，
-                # 不复用 secondaryButton（那会吃到 min-width:80，白占宽还提前换行）。
-                chip.setObjectName("anchorChip")
-                chip.setFixedHeight(26)
-                chip.setCursor(Qt.PointingHandCursor)
-                chip.setToolTip(f"跳到「{title}」")
-                # 不用 ensureWidgetVisible：它只做「最小滚动使其可见」，
-                # 对本页这种高卡片会滚到把**底部**露出来——实测点第一个锚点
-                # 反而向下滚了 83px，与「跳到这一节」的语义相反。
-                # 锚点要的是把该节顶到上方，所以直接算目标位置。
-                chip.clicked.connect(
-                    lambda _=False, c=card: scroll.verticalScrollBar().setValue(
-                        max(0, c.mapTo(body, QPoint(0, 0)).y() - 12)
-                    )
-                )
-                self._anchor_bar.addWidget(chip)
+                picked.append((title, short, card))
+            # ⭐ 芯片样式/跳法/当前位置由共用件出（批 66）。**那个「不用
+            #   ensureWidgetVisible」的理由现在写在共用件里** —— 写在这里的时候
+            #   `advanced` 看不见它，于是它一直用着已经被证明错的那个跳法。
+            install_anchor_chips(self._anchor_bar, scroll, picked)
         except Exception:
             # 锚点条是锦上添花，坏了不能连累整页——但要留下痕迹，
             # 否则表现为"锚点条整个不出现"而无人知道为什么（高级页踩过）。
@@ -604,31 +606,10 @@ class MagnifierPage(QWidget):
             "调放大倍率，并让鼠标灵敏度跟着一起变，放大后手感才不会发飘。",
         )
 
-        zoom_layout = QHBoxLayout()
-        zoom_layout.setSpacing(8)
-        # UP-031: 下面几个下拉原本 setFixedWidth 写死。QSS 给 QComboBox 留了
-        # padding + 下拉箭头(arrow_width + 8 + padding-right 8)，扣掉之后
-        # 90px 的框实际只剩约 28px 文本区、116px 只剩约 54px ——
-        # 默认字号档下「4.0」「Mouse4」就已经被省略号截断了。
-        # 改为 AdjustToContents + 保留原值当下限：宽度只会变宽不会变窄，
-        # 既不破坏原有排版，也不会再裁掉文字。
-        zoom_layout.addWidget(QLabel("放大倍率:"))
-        self.zoom_combo = QComboBox()
-        self.zoom_combo.addItems(["1.5", "2.0", "2.5", "3.0", "3.5", "4.0", "4.5", "5.0"])
-        self.zoom_combo.setCurrentText("2.0")
-        self.zoom_combo.currentTextChanged.connect(self._on_zoom_changed)
-        self.zoom_combo.setMinimumWidth(90)
-        self.zoom_combo.setSizeAdjustPolicy(QComboBox.AdjustToContents)
-        self.zoom_combo.setFixedHeight(34)
-        zoom_layout.addWidget(self.zoom_combo)
-        zoom_layout.addStretch()
-        sensitivity_layout.addLayout(zoom_layout)
-
-        self.sensitivity_sync_checkbox = QCheckBox("启用开镜灵敏度联动")
-        self.sensitivity_sync_checkbox.setToolTip("放大激活时切到开镜灵敏度，关闭时立即恢复基础灵敏度")
-        self.sensitivity_sync_checkbox.stateChanged.connect(self._on_sensitivity_sync_changed)
-        sensitivity_layout.addWidget(self.sensitivity_sync_checkbox)
-
+        # RN-566（批 70）：原来是三段并排各算各的标签宽 ⇒ 放大倍率那行的下拉在 116、
+        # 两行灵敏度的输入框在 132（差 16px）。⇒ 并成**同一个 QGridLayout**，
+        # 列宽由 Qt 取最宽那个 —— **对齐是布局算的，不是我算的**。
+        # ⛔ 别改回「量一遍再 setMinimumWidth」：那条路我走过并废了，理由见 `CS2 Customizer_翻新工程/档案/X_本机绿不等于CI绿.md`。
         sensitivity_inputs_layout = QGridLayout()
         sensitivity_inputs_layout.setHorizontalSpacing(10)
         sensitivity_inputs_layout.setVerticalSpacing(8)
@@ -636,7 +617,31 @@ class MagnifierPage(QWidget):
         sensitivity_inputs_layout.setColumnStretch(1, 0)
         sensitivity_inputs_layout.setColumnStretch(2, 1)
 
-        sensitivity_inputs_layout.addWidget(QLabel("基础灵敏度:"), 0, 0)
+        # UP-031: 下面几个下拉原本 setFixedWidth 写死。QSS 给 QComboBox 留了
+        # padding + 下拉箭头(arrow_width + 8 + padding-right 8)，扣掉之后
+        # 90px 的框实际只剩约 28px 文本区、116px 只剩约 54px ——
+        # 默认字号档下「4.0」「Mouse4」就已经被省略号截断了。
+        # 改为 AdjustToContents + 保留原值当下限：宽度只会变宽不会变窄，
+        # 既不破坏原有排版，也不会再裁掉文字。
+        sensitivity_inputs_layout.addWidget(QLabel("放大倍率:"), 0, 0)
+        self.zoom_combo = QComboBox()
+        self.zoom_combo.addItems(["1.5", "2.0", "2.5", "3.0", "3.5", "4.0", "4.5", "5.0"])
+        self.zoom_combo.setCurrentText("2.0")
+        self.zoom_combo.currentTextChanged.connect(self._on_zoom_changed)
+        self.zoom_combo.setMinimumWidth(90)
+        self.zoom_combo.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+        self.zoom_combo.setFixedHeight(34)
+        sensitivity_inputs_layout.addWidget(self.zoom_combo, 0, 1)
+
+        # 勾选框整行跨过三列 —— 它不是「标签 + 控件」那种行，没有第 0 列的东西。
+        # ⚠ 顺序不动：放大倍率 → 勾选框 → 两行灵敏度，与改前逐字一致
+        #   （构造顺序也一致 ⇒ 焦点链不变，`tab_order_audit` 可核）。
+        self.sensitivity_sync_checkbox = QCheckBox("启用开镜灵敏度联动")
+        self.sensitivity_sync_checkbox.setToolTip("放大激活时切到开镜灵敏度，关闭时立即恢复基础灵敏度")
+        self.sensitivity_sync_checkbox.stateChanged.connect(self._on_sensitivity_sync_changed)
+        sensitivity_inputs_layout.addWidget(self.sensitivity_sync_checkbox, 1, 0, 1, 3)
+
+        sensitivity_inputs_layout.addWidget(QLabel("基础灵敏度:"), 2, 0)
         self.base_sensitivity_input = QLineEdit()
         self.base_sensitivity_input.setFixedWidth(108)
         self.base_sensitivity_input.setFixedHeight(34)
@@ -644,9 +649,9 @@ class MagnifierPage(QWidget):
         self.base_sensitivity_input.setPlaceholderText("1.00")
         self.base_sensitivity_input.setValidator(QDoubleValidator(0.01, 20.0, 4, self))
         self.base_sensitivity_input.editingFinished.connect(self._on_sensitivity_values_changed)
-        sensitivity_inputs_layout.addWidget(self.base_sensitivity_input, 0, 1)
+        sensitivity_inputs_layout.addWidget(self.base_sensitivity_input, 2, 1)
 
-        sensitivity_inputs_layout.addWidget(QLabel("联动倍率:"), 1, 0)
+        sensitivity_inputs_layout.addWidget(QLabel("联动倍率:"), 3, 0)
         self.sensitivity_multiplier_input = QLineEdit()
         self.sensitivity_multiplier_input.setFixedWidth(108)
         self.sensitivity_multiplier_input.setFixedHeight(34)
@@ -654,15 +659,16 @@ class MagnifierPage(QWidget):
         self.sensitivity_multiplier_input.setPlaceholderText("0.82")
         self.sensitivity_multiplier_input.setValidator(QDoubleValidator(0.05, 5.0, 4, self))
         self.sensitivity_multiplier_input.editingFinished.connect(self._on_sensitivity_values_changed)
-        sensitivity_inputs_layout.addWidget(self.sensitivity_multiplier_input, 1, 1)
+        sensitivity_inputs_layout.addWidget(self.sensitivity_multiplier_input, 3, 1)
         sensitivity_inputs_layout.addWidget(
             # ⚠ RN-143（批 28）：原文 22 字，在紧凑档只分到 198px 而需要 322px，
             # 于是折成 6 行 —— 而它旁边**空着 230px**。
             # ⭐ 折行不是「放不下」，是「我说我能折行」（RN-121 的机制）：
             #   折行的 QLabel 在横排里把自己的宽度报小，布局就照那个窄宽给它。
             # 这一格是 2×1 跨行的说明位，压到一行放得下的长度即可。
+            # ⚠ RN-566：并入放大倍率与勾选框之后，它跟的是**下面那两行**，起点从 0 挪到 2。
             QLabel("联动关着也能先把数值填好。"),
-            0,
+            2,
             2,
             2,
             1,
@@ -696,78 +702,84 @@ class MagnifierPage(QWidget):
             "主武器和手枪各自指定放大热键，并选长按还是单击切换。",
         )
 
-        primary_layout = QHBoxLayout()
-        primary_layout.setSpacing(8)
-        primary_layout.addWidget(QLabel("主武器热键:"))
+        # RN-566：四行原本是四个独立的 QHBoxLayout ⇒ 标签按各自字数撑开 ⇒
+        # 控件左边缘 693 / 679 / 679 各不相同。并成一个 QGridLayout，第 0 列取最宽。
+        # 每一格给 `Qt.AlignLeft | Qt.AlignVCenter` 只是**写明意图**。
+        # ⚠⚠ 实测：把这 11 处 `_LEFT` 全拿掉，几何**逐字节不变** ——
+        #   我第一版在这里写的「不给就会被滑块撑开」是**编的**，破坏验证证伪了它。见 `CS2 Customizer_翻新工程/档案/X_本机绿不等于CI绿.md`。
+        trigger_grid = QGridLayout()
+        trigger_grid.setHorizontalSpacing(8)
+        trigger_grid.setVerticalSpacing(8)
+        trigger_grid.setColumnStretch(0, 0)
+        trigger_grid.setColumnStretch(1, 0)
+        trigger_grid.setColumnStretch(2, 0)
+        trigger_grid.setColumnStretch(3, 1)
+        _LEFT = Qt.AlignLeft | Qt.AlignVCenter
+        # RN-569：这三个下拉原来各写各的下限（116 / 116 / 120），于是右缘差 4px。
+        # ⭐ 它只在批 70 之后才被报出来 —— RN-566 把左边缘拉齐之后，
+        #   那 4px 的右缘差第一次变得**可见**（同 RN-011/150：一条修法会让
+        #   另一条既有缺陷第一次露头）。⇒ 三处共用一个数，别再各写各的。
+        # ⚠ 外审那一发说的是「拉伸占满整行」，实测是 4px —— 现象真、程度假，
+        #   第四次印证「不整齐可信、哪个维度/多少可信度低」。
+        _COMBO_MIN_W = 120
+
+        trigger_grid.addWidget(QLabel("主武器热键:"), 0, 0, _LEFT)
         self.primary_hotkey_combo = QComboBox()
         self.primary_hotkey_combo.addItems(["右键", "F2", "F3", "F4", "F5", "Z", "X", "中键", "Mouse3", "Mouse4"])
         self.primary_hotkey_combo.setCurrentText("右键")
         self.primary_hotkey_combo.currentTextChanged.connect(self._on_hotkey_changed)
-        self.primary_hotkey_combo.setMinimumWidth(116)
+        self.primary_hotkey_combo.setMinimumWidth(_COMBO_MIN_W)
         self.primary_hotkey_combo.setSizeAdjustPolicy(QComboBox.AdjustToContents)
         self.primary_hotkey_combo.setFixedHeight(34)
-        primary_layout.addWidget(self.primary_hotkey_combo)
-        
+        trigger_grid.addWidget(self.primary_hotkey_combo, 0, 1, _LEFT)
+
         primary_test_btn = QPushButton("测试")
         primary_test_btn.setObjectName("secondaryButton")
         primary_test_btn.setFixedWidth(86)
         primary_test_btn.setFixedHeight(34)
         primary_test_btn.clicked.connect(self._test_primary_hotkey)
-        primary_layout.addWidget(primary_test_btn)
-        primary_layout.addStretch()
-        trigger_layout.addLayout(primary_layout)
-        
-        secondary_layout = QHBoxLayout()
-        secondary_layout.setSpacing(8)
-        secondary_layout.addWidget(QLabel("手枪热键:"))
+        trigger_grid.addWidget(primary_test_btn, 0, 2, _LEFT)
+
+        trigger_grid.addWidget(QLabel("手枪热键:"), 1, 0, _LEFT)
         self.secondary_hotkey_combo = QComboBox()
         self.secondary_hotkey_combo.addItems(["右键", "F2", "F3", "F4", "F5", "Z", "X", "2", "中键", "Mouse3", "Mouse4"])
         self.secondary_hotkey_combo.setCurrentText("右键")
         self.secondary_hotkey_combo.currentTextChanged.connect(self._on_hotkey_changed)
-        self.secondary_hotkey_combo.setMinimumWidth(116)
+        self.secondary_hotkey_combo.setMinimumWidth(_COMBO_MIN_W)
         self.secondary_hotkey_combo.setSizeAdjustPolicy(QComboBox.AdjustToContents)
         self.secondary_hotkey_combo.setFixedHeight(34)
-        secondary_layout.addWidget(self.secondary_hotkey_combo)
-        
+        trigger_grid.addWidget(self.secondary_hotkey_combo, 1, 1, _LEFT)
+
         secondary_test_btn = QPushButton("测试")
         secondary_test_btn.setObjectName("secondaryButton")
         secondary_test_btn.setFixedWidth(86)
         secondary_test_btn.setFixedHeight(34)
         secondary_test_btn.clicked.connect(self._test_secondary_hotkey)
-        secondary_layout.addWidget(secondary_test_btn)
-        secondary_layout.addStretch()
-        trigger_layout.addLayout(secondary_layout)
+        trigger_grid.addWidget(secondary_test_btn, 1, 2, _LEFT)
 
-        trigger_mode_layout = QHBoxLayout()
-        trigger_mode_layout.setSpacing(8)
-        trigger_mode_layout.addWidget(QLabel("触发方式:"))
+        trigger_grid.addWidget(QLabel("触发方式:"), 2, 0, _LEFT)
         self.trigger_mode_combo = QComboBox()
         self.trigger_mode_combo.addItems(["长按触发", "单击切换"])
         self.trigger_mode_combo.setCurrentText(self.trigger_mode)
         self.trigger_mode_combo.currentTextChanged.connect(self._on_trigger_mode_changed)
-        self.trigger_mode_combo.setMinimumWidth(120)
+        self.trigger_mode_combo.setMinimumWidth(_COMBO_MIN_W)
         self.trigger_mode_combo.setSizeAdjustPolicy(QComboBox.AdjustToContents)
         self.trigger_mode_combo.setFixedHeight(34)
-        trigger_mode_layout.addWidget(self.trigger_mode_combo)
-        trigger_mode_layout.addStretch()
-        trigger_layout.addLayout(trigger_mode_layout)
+        trigger_grid.addWidget(self.trigger_mode_combo, 2, 1, _LEFT)
 
-        debounce_layout = QHBoxLayout()
-        debounce_layout.setSpacing(8)
-        debounce_layout.addWidget(QLabel("防抖延迟(ms):"))
+        trigger_grid.addWidget(QLabel("防抖延迟(ms):"), 3, 0, _LEFT)
         self.debounce_slider = QSlider(Qt.Horizontal)
         self.debounce_slider.setMinimum(50)
         self.debounce_slider.setMaximum(500)
         self.debounce_slider.setValue(150)
         self.debounce_slider.setFixedWidth(180)
         self.debounce_slider.valueChanged.connect(self._on_debounce_changed)
-        debounce_layout.addWidget(self.debounce_slider)
-        
+        trigger_grid.addWidget(self.debounce_slider, 3, 1, _LEFT)
+
         self.debounce_label = QLabel("150ms")
         self.debounce_label.setFixedWidth(50)
-        debounce_layout.addWidget(self.debounce_label)
-        debounce_layout.addStretch()
-        trigger_layout.addLayout(debounce_layout)
+        trigger_grid.addWidget(self.debounce_label, 3, 2, _LEFT)
+        trigger_layout.addLayout(trigger_grid)
 
         self.trigger_summary_label = QLabel("")
         self.trigger_summary_label.setObjectName("hintLabel")
@@ -793,7 +805,11 @@ class MagnifierPage(QWidget):
         self.x_offset_input.setFixedHeight(34)
         self.x_offset_input.setText("0")
         self.x_offset_input.setValidator(QIntValidator(-1000, 1000))
-        self.x_offset_input.returnPressed.connect(self._apply_offset)
+        # RN-444（批 84）：`editingFinished` 而不是 `returnPressed` —— 它在**回车**
+        # 和**焦点离开**两种情况下都发，所以「填完就走」也算数。
+        # ⭐ 这正是 `base_sensitivity_input` 一直以来的写法（答案在同一个文件里）。
+        # ⚠ 不要两个都连：回车会让两个信号都发，`_apply_offset` 跑两遍。
+        self.x_offset_input.editingFinished.connect(self._apply_offset)
         offset_input_layout.addWidget(self.x_offset_input)
         
         offset_input_layout.addWidget(QLabel("Y:"))
@@ -802,18 +818,18 @@ class MagnifierPage(QWidget):
         self.y_offset_input.setFixedHeight(34)
         self.y_offset_input.setText("0")
         self.y_offset_input.setValidator(QIntValidator(-1000, 1000))
-        self.y_offset_input.returnPressed.connect(self._apply_offset)
+        self.y_offset_input.editingFinished.connect(self._apply_offset)  # 同上（RN-444）
         offset_input_layout.addWidget(self.y_offset_input)
         
-        # RN-519：底栏那句话要点名它，所以名字只能有一份 —— 挂到 self 上给那句话读。
-        self.offset_apply_btn = QPushButton("应用")
-        apply_btn = self.offset_apply_btn
-        apply_btn.setObjectName("secondaryButton")
-        apply_btn.setFixedWidth(86)
-        apply_btn.setFixedHeight(34)
-        apply_btn.clicked.connect(self._apply_offset)
-        offset_input_layout.addWidget(apply_btn)
-        
+        # ⛔⛔ 这里原来有一颗「应用」按钮。**批 84 第二刀撤了它，依据是改完复跑的票数，
+        #   不是我的判断** —— 第一刀我特意留着它（「它只是『立刻看一眼』的快捷方式」），
+        #   而同一个判断题给出的是：改前 6/6「有」→ 第一刀 6/6「**看不出来**」→
+        #   撤掉之后 6/6「没有」，地板页三轮都是 6/6「没有」。
+        #   6 发同一条理由：底栏说「自动保存」而这儿摆着「应用」，两边信号互相矛盾。
+        # ⭐⭐⭐ **一个已经不做事的控件，比没有这个控件更糟** —— 它不再改变任何东西，
+        #   却还在宣称「这里有个动作」。叙事见 `CS2 Customizer_翻新工程/档案/X3_配置层.md` §3。
+        # ⚠ 动作没被删：`_apply_offset` 还在，由两个输入框的 `editingFinished` 调；
+        #   「改完真的落盘」由判据当场验，不靠这颗按钮作证。
         reset_btn = QPushButton("重置")
         reset_btn.setObjectName("secondaryButton")
         reset_btn.setFixedWidth(86)
@@ -1073,6 +1089,16 @@ class MagnifierPage(QWidget):
             f"（{format_sensitivity_value(base_sensitivity)} × {format_sensitivity_value(multiplier)}）"
             f"{preview_suffix}"
         )
+        # ⚠⚠ RN-446（批 83 实测，**记在这里是为了挡住下一个人走同一条路**）：
+        #   我在这里加过一刀「联动关着就收起换算结果与那句长说明」，
+        #   依据是批 82 刚量到的「不在场比在场但降级有效得多」（RN-504）。
+        #   ⭐⭐⭐ **而这一次那条依据不适用，因为前提不同**：
+        #   RN-504 那颗按钮**在说一件假话**（「还有一步没做」），而这里这个换算结果
+        #   **说的是真话**，它自己就带着「· 联动开启后生效」。
+        #   实测（同题面 6 发 + 地板页）：「你会不会以为联动现在已经在生效了？」
+        #   **改前改后都是 不会 6/6** —— 那个误解今天不存在。
+        #   而藏掉它会**砍掉「先填后开」那条路自己的反馈**（填了数看不到结果），
+        #   而那条路是立案逐字要保住的。⇒ 已撤回。
 
     def _get_sensitivity_cfg_signature(self):
         payload = {
@@ -2152,15 +2178,21 @@ class MagnifierPage(QWidget):
 
     
     def _get_arrow_button_style(self):
-        """获取箭头按钮样式"""
+        """获取箭头按钮样式。
+
+        ⭐⭐⭐ RN-573：`padding: 0` 和这两个颜色都**不许随手改** ——
+        没有它们时这 8 颗键渲染出来是一排空白方框（文字可用区 -4px，字要 11px）。
+        两条弯路与实算全在 `tests/test_the_nudge_arrows_are_visible.py`。
+        """
         return f"""
             QPushButton {{
                 background-color: {get_color('bg_tertiary')};
                 border: 1px solid {get_color('border_primary')};
                 border-radius: 4px;
+                padding: 0;
                 font-size: 14px;
                 font-weight: bold;
-                color: {get_color('accent_primary')};
+                color: {get_color('text_primary')};
             }}
             QPushButton:hover {{
                 background-color: {get_color('bg_elevated')};
@@ -2169,28 +2201,28 @@ class MagnifierPage(QWidget):
             QPushButton:pressed {{
                 background-color: {get_color('accent_primary')};
                 color: white;
+            }}
+            /* ⭐⭐⭐ RN-435（批 64）：这几颗自带样式表 + `fp_keep_style`，
+               于是**从全站 `:focus` / `:disabled` 规则里摘了出去** ——
+               实测聚焦像素差 0、禁用像素差 0（同 RN-546 / RN-453 / 批 23）。
+               ⭐ 一个自带样式表的控件，等于把自己从「所有还没写的」全站规则里摘出去。 */
+            QPushButton:focus {{
+                border: 2px solid {get_color('border_focus')};
+            }}
+            QPushButton:disabled {{
+                background-color: transparent;
+                color: {get_color('text_muted')};
+                border-color: {get_color('border_secondary')};
             }}
         """
     
     def _apply_theme_styles(self):
-        """应用主题样式到箭头按钮"""
-        arrow_btn_style = f"""
-            QPushButton {{
-                background-color: {get_color('bg_tertiary')};
-                border: 1px solid {get_color('border_primary')};
-                border-radius: 4px;
-                font-size: 14px;
-                font-weight: bold;
-                color: {get_color('accent_primary')};
-            }}
-            QPushButton:hover {{
-                background-color: {get_color('bg_elevated')};
-                border-color: {get_color('accent_hover')};
-            }}
-            QPushButton:pressed {{
-                background-color: {get_color('accent_primary')};
-                color: white;
-            }}
+        """应用主题样式到箭头按钮。
+
+        ⚠ RN-435（批 64）：这里原来把 `_get_arrow_button_style()` 那 20 行
+        **一字不差地又写了一遍** —— 两份同一件事，改一处另一处不动。
+        ⭐ 一处出、一处用。
         """
+        arrow_btn_style = self._get_arrow_button_style()
         for btn in self._arrow_buttons:
             btn.setStyleSheet(arrow_btn_style)

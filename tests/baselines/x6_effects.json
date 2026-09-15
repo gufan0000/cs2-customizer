@@ -1,0 +1,184 @@
+{
+  "_说明": "import 期的外部效应。每个模块一个全新子进程，谁都不沾谁的 sys.modules。",
+  "import 成功": 10,
+  "import 期写过盘的模块": [
+    "gsi_handler_flash",
+    "gsi_handler_fun",
+    "gsi_handler_hud_color",
+    "gsi_handler_kills",
+    "gsi_handler_music",
+    "gsi_handler_sounds",
+    "gsi_handler_special",
+    "gsi_handler_stats",
+    "gsi_handler_utility",
+    "gsi_server"
+  ],
+  "import 期起过子进程的模块": [],
+  "import 期起过定时器的模块": [],
+  "import 期起过线程的模块": [],
+  "只在首次引导发生的写盘": {
+    "gsi_handler_flash": [
+      "config.json.tmp"
+    ],
+    "gsi_handler_fun": [
+      "config.json.tmp"
+    ],
+    "gsi_handler_hud_color": [
+      "config.json.tmp"
+    ],
+    "gsi_handler_kills": [
+      "config.json.tmp"
+    ],
+    "gsi_handler_music": [
+      "config.json.tmp"
+    ],
+    "gsi_handler_sounds": [
+      "config.json.tmp"
+    ],
+    "gsi_handler_special": [
+      "config.json.tmp"
+    ],
+    "gsi_handler_utility": [
+      "config.json.tmp"
+    ]
+  },
+  "模块数": 10,
+  "逐模块": [
+    {
+      "import 失败": "",
+      "import 完还活着的线程": [],
+      "写盘文件名": [
+        "cs2customizer_20260913.log"
+      ],
+      "模块": "gsi_handler_flash",
+      "起子进程": [],
+      "起定时器": [],
+      "起线程": [],
+      "首次引导才写的文件": [
+        "config.json.tmp"
+      ]
+    },
+    {
+      "import 失败": "",
+      "import 完还活着的线程": [],
+      "写盘文件名": [
+        "cs2customizer_20260913.log"
+      ],
+      "模块": "gsi_handler_fun",
+      "起子进程": [],
+      "起定时器": [],
+      "起线程": [],
+      "首次引导才写的文件": [
+        "config.json.tmp"
+      ]
+    },
+    {
+      "import 失败": "",
+      "import 完还活着的线程": [],
+      "写盘文件名": [
+        "cs2customizer_20260913.log"
+      ],
+      "模块": "gsi_handler_hud_color",
+      "起子进程": [],
+      "起定时器": [],
+      "起线程": [],
+      "首次引导才写的文件": [
+        "config.json.tmp"
+      ]
+    },
+    {
+      "import 失败": "",
+      "import 完还活着的线程": [],
+      "写盘文件名": [
+        "cs2customizer_20260913.log"
+      ],
+      "模块": "gsi_handler_kills",
+      "起子进程": [],
+      "起定时器": [],
+      "起线程": [],
+      "首次引导才写的文件": [
+        "config.json.tmp"
+      ]
+    },
+    {
+      "import 失败": "",
+      "import 完还活着的线程": [],
+      "写盘文件名": [
+        "cs2customizer_20260913.log"
+      ],
+      "模块": "gsi_handler_music",
+      "起子进程": [],
+      "起定时器": [],
+      "起线程": [],
+      "首次引导才写的文件": [
+        "config.json.tmp"
+      ]
+    },
+    {
+      "import 失败": "",
+      "import 完还活着的线程": [],
+      "写盘文件名": [
+        "cs2customizer_20260913.log"
+      ],
+      "模块": "gsi_handler_sounds",
+      "起子进程": [],
+      "起定时器": [],
+      "起线程": [],
+      "首次引导才写的文件": [
+        "config.json.tmp"
+      ]
+    },
+    {
+      "import 失败": "",
+      "import 完还活着的线程": [],
+      "写盘文件名": [
+        "cs2customizer_20260913.log"
+      ],
+      "模块": "gsi_handler_special",
+      "起子进程": [],
+      "起定时器": [],
+      "起线程": [],
+      "首次引导才写的文件": [
+        "config.json.tmp"
+      ]
+    },
+    {
+      "import 失败": "",
+      "import 完还活着的线程": [],
+      "写盘文件名": [
+        "cs2customizer_20260913.log"
+      ],
+      "模块": "gsi_handler_stats",
+      "起子进程": [],
+      "起定时器": [],
+      "起线程": [],
+      "首次引导才写的文件": []
+    },
+    {
+      "import 失败": "",
+      "import 完还活着的线程": [],
+      "写盘文件名": [
+        "cs2customizer_20260913.log"
+      ],
+      "模块": "gsi_handler_utility",
+      "起子进程": [],
+      "起定时器": [],
+      "起线程": [],
+      "首次引导才写的文件": [
+        "config.json.tmp"
+      ]
+    },
+    {
+      "import 失败": "",
+      "import 完还活着的线程": [],
+      "写盘文件名": [
+        "cs2customizer_20260913.log"
+      ],
+      "模块": "gsi_server",
+      "起子进程": [],
+      "起定时器": [],
+      "起线程": [],
+      "首次引导才写的文件": []
+    }
+  ]
+}

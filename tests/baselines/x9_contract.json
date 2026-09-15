@@ -1,0 +1,201 @@
+{
+  "contract": {
+    "build_search_index": [
+      "EXIT_DRIFT",
+      "EXIT_ENV",
+      "EXIT_OK",
+      "EnvironmentUnavailable",
+      "TEARDOWN_TIMEOUT_SEC",
+      "_ast_ctor_name",
+      "_emit",
+      "_teardown_guarded",
+      "dumps",
+      "harvest_static",
+      "main",
+      "merge",
+      "normalize",
+      "teardown"
+    ],
+    "core.settings_search": [
+      "MAX_ITEMS_PER_PAGE",
+      "MAX_QUERY_VARIANTS",
+      "SEARCH_INDEX",
+      "SYNONYM_GROUPS",
+      "SYNONYM_PENALTY",
+      "_cover_len",
+      "_cover_score",
+      "_query_variants",
+      "_score_text",
+      "item_index_available",
+      "pinyin_aliases",
+      "search",
+      "search_detailed",
+      "search_items",
+      "search_pages",
+      "text_matches"
+    ]
+  },
+  "contract_total": 30,
+  "external_use": {
+    "build_search_index": {
+      "files": [
+        "tests/test_search_index_check_exit_code.py",
+        "tests/test_search_index_sync_r13.py",
+        "tests/test_search_r14.py"
+      ],
+      "names": {
+        "EXIT_DRIFT": 1,
+        "EXIT_ENV": 1,
+        "EXIT_OK": 1,
+        "EnvironmentUnavailable": 1,
+        "TEARDOWN_TIMEOUT_SEC": 1,
+        "__doc__": 1,
+        "_ast_ctor_name": 1,
+        "_emit": 3,
+        "_teardown_guarded": 3,
+        "dumps": 2,
+        "harvest_static": 1,
+        "main": 2,
+        "merge": 1,
+        "normalize": 2,
+        "os": 5,
+        "teardown": 1
+      }
+    },
+    "core.settings_search": {
+      "files": [
+        "gui_widget.py",
+        "tests/test_search_index_sync_r13.py",
+        "tests/test_search_jump_r13.py",
+        "tests/test_search_r14.py",
+        "tests/test_search_recall_corpus_r14.py",
+        "tests/test_search_sticky_r14.py",
+        "tests/test_settings_search_pinyin.py",
+        "tests/test_settings_search_r13.py"
+      ],
+      "names": {
+        "MAX_ITEMS_PER_PAGE": 1,
+        "MAX_QUERY_VARIANTS": 1,
+        "SEARCH_INDEX": 4,
+        "SYNONYM_GROUPS": 1,
+        "SYNONYM_PENALTY": 1,
+        "_cover_len": 1,
+        "_cover_score": 1,
+        "_query_variants": 1,
+        "_score_text": 1,
+        "item_index_available": 2,
+        "pinyin_aliases": 1,
+        "search": 3,
+        "search_detailed": 7,
+        "search_items": 1,
+        "search_pages": 1,
+        "text_matches": 5
+      }
+    }
+  },
+  "imported_but_no_contract": [],
+  "internal_only_modules": [],
+  "loc": {
+    "build_search_index": 736,
+    "core.settings_search": 902
+  },
+  "reexport_only_modules": [],
+  "surface": {
+    "build_search_index": {
+      "classes": [
+        "EnvironmentUnavailable"
+      ],
+      "constants": [
+        "BLACKLIST",
+        "EXIT_DRIFT",
+        "EXIT_ENV",
+        "EXIT_OK",
+        "MAX_PAGES_PER_TEXT",
+        "OUT_PATH",
+        "ROOT",
+        "TEARDOWN_TIMEOUT_SEC",
+        "_AST_FIRST_ARG_ONLY",
+        "_AST_KIND",
+        "_AST_WANTED",
+        "_CJK",
+        "_KIND_RANK",
+        "_LEAD_SYMBOL",
+        "_SENTENCE",
+        "_SRC_RANK",
+        "_STATUS_COMPOSITE",
+        "_STATUS_LABELED",
+        "_VALUE_ONLY",
+        "_WORD",
+        "_tmp"
+      ],
+      "functions": [
+        "_ast_ctor_name",
+        "_emit",
+        "_flush_streams",
+        "_hard_exit",
+        "_page_id_from_module",
+        "_teardown_guarded",
+        "build",
+        "cross_check",
+        "dumps",
+        "harvest_runtime",
+        "harvest_static",
+        "keep_raw",
+        "main",
+        "merge",
+        "normalize",
+        "report",
+        "teardown"
+      ]
+    },
+    "core.settings_search": {
+      "classes": [],
+      "constants": [
+        "MAX_ITEMS_PER_PAGE",
+        "MAX_QUERY_VARIANTS",
+        "MAX_RESULTS",
+        "PRIMARY_OWNER",
+        "SEARCH_INDEX",
+        "SYNONYM_GROUPS",
+        "SYNONYM_PENALTY",
+        "_COVER_MIN_FRAGMENT",
+        "_COVER_MIN_QUERY",
+        "_COVER_MIN_RATIO",
+        "_ITEM_FIELDS"
+      ],
+      "functions": [
+        "_ascii_fuzzy_hit",
+        "_cover_len",
+        "_cover_score",
+        "_cover_spans",
+        "_fuzzy_budget",
+        "_grams",
+        "_index_path",
+        "_is_ascii_query",
+        "_levenshtein_bounded",
+        "_load_item_index",
+        "_long_enough",
+        "_owner_weight",
+        "_page_score_of",
+        "_pinyin_engine",
+        "_query_variants",
+        "_score_text",
+        "_score_text_one",
+        "_score_token",
+        "_score_token_one",
+        "_span_union_len",
+        "_synonym_map",
+        "_tokenize",
+        "item_index_available",
+        "page_name_of",
+        "pinyin_aliases",
+        "search",
+        "search_detailed",
+        "search_items",
+        "search_pages",
+        "text_matches"
+      ]
+    }
+  },
+  "unreferenced_modules": []
+}

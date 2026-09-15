@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from typing import Dict, List, Optional, Tuple
 
 MAX_IMPORT_JSON_BYTES = 2 * 1024 * 1024        # 配置类 JSON 上限 2MB
@@ -30,6 +31,42 @@ _NON_AUDIO_MAGICS: Tuple[bytes, ...] = (
     b"<htm",
     b"#!",            # 脚本 shebang
 )
+
+
+#: `os.replace` 在 Windows 上的重试节奏（秒）。总计约 0.26s。
+#:
+#: **为什么需要重试**：Windows 的替换不是无条件成功的 —— 只要有别的进程正拿着
+#: 源文件或目标文件的句柄（Defender 实时扫描、Windows Search 建索引、网盘同步
+#: 客户端都会短暂持有刚写完的文件），`os.replace` 就抛
+#: `PermissionError: [WinError 5] 拒绝访问`。这不是「文件被占用」的常态，
+#: 而是**几十毫秒级的窗口**：实测快照判据在同一台机器上跑 25 遍会红 2 遍（8%）。
+#:
+#: ⭐⭐⭐ **这段话此前被写下过两次，而两次都只修好了当时手上的那一处。**
+#: 第一处是 `build_tools/make_installer_assets.py`（打包时写图标）；
+#: 第二处是 `core/config_snapshot_manager.py`（写快照索引），它的注释里
+#: 逐字写着「同一条重试在 make_installer_assets.py 里早就有了，
+#: **只是当时没想到这里也需要**」——
+#: 而第三处、也是最要紧的那一处 **`config.py` 的 `_do_save_config`**，
+#: 一直是裸的 `os.replace`，撞上就把改动**静默丢掉**（`except` 里只记一行日志、
+#: 删掉临时文件、不重试也不上报）。⇒ 批 84（RN-613）搬到这里，三处共用一份。
+#: ⭐⭐ 那句「没想到这里也需要」正是这条缺陷的形状：
+#:   **一条按站点逐个修的规律，永远还差下一个站点。**
+_REPLACE_RETRY_DELAYS = (0.02, 0.04, 0.08, 0.12)
+
+
+def replace_with_retry(src: str, dst: str) -> None:
+    """`os.replace(src, dst)`，撞上 Windows 的瞬时占用就退避重试。
+
+    最后一次**不吞异常**：重试是为了穿过几十毫秒的扫描窗口，
+    不是为了把「真的没权限写」这种问题藏起来。
+    """
+    for delay in _REPLACE_RETRY_DELAYS:
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            time.sleep(delay)
+    os.replace(src, dst)
 
 
 def load_json_checked(path: str, max_bytes: int = MAX_IMPORT_JSON_BYTES) -> Dict:

@@ -139,6 +139,12 @@ KNOWN_DUPLICATE_PRIMARIES: dict[str, tuple[str, int]] = {}
 #:     ⭐ 同 `magnifier` / `utility`：**不给它随便提一颗当主按钮**。
 #:       这一页第一屏上真正的「第一步」是「内置精选 · 一键应用」，
 #:       而它是卡内按钮、就在它作用的下拉框旁边（批 31 规则②）。
+#: ⚠⚠ RN-504（批 82）曾让我往这张表里加过 `hud_color` / `viewmodel` —— **那是治标，已撤。**
+#:   它们那颗提交按钮只是**在没有待提交内容时隐身**，页面的设计里它一直在。
+#:   ⭐⭐⭐ 真正该改的是**分母**：上面的收集器现在把「声明过自己是提交型、
+#:   此刻隐身」的那一颗也算进来（`fp_pending` 非 None）。
+#:   ⇒ 加名单是把「判据看不见它了」记成「这一页没有它」——
+#:   **而那两件事在这张表上长得一模一样。**
 KNOWN_NO_PRIMARY = {"magnifier", "preset_center", "utility"}
 
 #: 产品注册的 28 个页面 id → 它的实现文件名（2026-08-30 批 31 加）。
@@ -197,6 +203,15 @@ EXPECTED_PAGE_IDS = {
 TIMING_DEPENDENT_PAGES = {"audio_health"}
 
 
+def _is_pending_hidden(btn) -> bool:
+    """这颗按钮是不是「提交型、此刻没有待提交所以隐身」那一种？（RN-504）
+
+    ⭐ 只认**声明过自己是提交型**的（`fp_pending` 非 None）——
+    普通的隐藏按钮（功能没开、页签没切到）不该被拉回分母。
+    """
+    return btn.property("fp_pending") is not None
+
+
 @pytest.fixture(scope="module")
 def sitewide_primaries(qapp, tmp_path_factory):
     """建一次窗、走一遍 28 页，收每页可见的主按钮文案。
@@ -246,10 +261,17 @@ def sitewide_primaries(qapp, tmp_path_factory):
             page = win.pages.get(page_id)
             if page is None:
                 continue
+            # ⚠⚠ RN-504（批 82）：`hud_color` / `viewmodel` 那颗提交按钮
+            #   **在没有待提交内容时会隐身**（票数：隐藏 不会 12/12 / 置灰 会 12/12）。
+            #   ⭐⭐⭐ 这条判据守的是**页面的设计**（同屏两颗一模一样的主按钮），
+            #   不是「此刻这一屏长什么样」⇒ 分母必须含**配置了但此刻隐身**的那一颗，
+            #   否则那两页在默认态直接退出分母。
+            #   ⚠ 这是 RN-593「加宽分母」的**反向**：**收窄分母不会有任何东西报。**
             found[page_id] = [
                 b.text().strip()
                 for b in page.findChildren(QAbstractButton)
-                if b.objectName() == PRIMARY_OBJECT_NAME and b.isVisibleTo(page)
+                if b.objectName() == PRIMARY_OBJECT_NAME
+                and (b.isVisibleTo(page) or _is_pending_hidden(b))
             ]
         yield found
     finally:

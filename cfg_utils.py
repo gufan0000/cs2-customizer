@@ -67,13 +67,6 @@ def build_cfg_content(port: int = None) -> str:
 # 兼容旧引用：默认端口版本（动态内容请用 build_cfg_content()）
 CFG_CONTENT = CFG_TEMPLATE.format(port=3000)
 
-# cs2customizer.cfg 文件内容（静音覆盖已改为运行时 Ducking）
-CS2C_CFG_CONTENT = """
-// CS2 Customizer CFG配置文件
-
-echo "CS2 Customizer CFG配置文件已加载"
-"""
-
 def get_steam_path_windows():
     if winreg is None:
         return None

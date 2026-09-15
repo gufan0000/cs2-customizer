@@ -188,6 +188,95 @@ def test_the_bottom_bar_says_how_it_takes_effect_in_game():
     )
 
 
+def _config_fingerprint(cfg) -> str:
+    """配置对象当下的样子。⚠ 用 `repr` 而不是逐键比 —— 嵌套字典改在内部时，
+    逐键比会因为拿到的是**同一个对象**而看不见变化（X2 那次探针就这么骗过我一回）。"""
+    return repr(sorted((k, repr(v)) for k, v in vars(cfg).items()
+                       if not k.startswith("_")))
+
+
+def _a_different_acceptable_text(edit, current: str) -> str | None:
+    """给这个输入框造一个**和现在不同、而校验器认的**文本。
+
+    ⚠ 不能随便塞字符串：带 `QIntValidator` 的框塞 `"x"` 会被拒，
+    `editingFinished` 根本不会发 —— ⭐ **探针发不出信号和「这一页不落盘」
+    在结果上长得一模一样**，而前者是探针坏了。
+    """
+    v = edit.validator()
+    for cand in ("7", "13", "-3", "1.5", "2.0", "probe"):
+        if cand == current:
+            continue
+        if v is None:
+            return cand
+        state, _, _ = v.validate(cand, 0)
+        if state == type(state).Acceptable:
+            return cand
+    return None
+
+
+def _inputs_that_do_not_persist(page) -> list[str] | None:
+    """这一页的**每一个**输入框，改一下、不点任何按钮，配置都会变吗？
+
+    返回不落盘的那些（空列表 = 全都落盘 = 这一页真的没有例外）；
+    `None` = 这一页量不了（没有总开关 / 没有可测的输入框），**不给例外**。
+
+    ⭐⭐⭐ 这里要的是「**全部**」而不是「**任意一个**」，而这一条是拿一次
+    失败的破坏验证换来的：第一版写的是「找到一个落盘的就算这一页自动保存」，
+    于是它在 `base_sensitivity_input` 上当场取到证据就返回了 ——
+    **而那个框从来就不是 RN-444 说的那个框**（它一开始就接着 `editingFinished`）。
+    实测：把偏移 X / Y 改回 `returnPressed`（= 把缺陷装回去），判据**照样 12 条全绿**。
+    ⇒ ⭐⭐⭐ **「这一页有没有一个控件会落盘」和「这一页有没有哪个控件不落盘」，
+    是两个不同的问题，而前者永远答得比后者好看。**
+    RN-444 讲的正是**一页里两套规则**，所以分母只能是「这一页所有的输入框」。
+
+    ⚠ 必须先把总开关打开：`magnifier._apply_offset` 开头就是
+    `if not self.config.magnifier_enabled: return` ⇒ 功能关着时什么都证不出来，
+    而「证不出来」和「真的不落盘」在返回值上长得一模一样。开关由探针自己开、自己还原。
+    """
+    from PySide6.QtWidgets import QLineEdit
+
+    row = getattr(page, "master_switch_row", None)
+    cfg = getattr(page, "config", None)
+    key = getattr(row, "config_key", None) if row is not None else None
+    if cfg is None or not key:
+        return None
+
+    was = getattr(cfg, key, None)
+    tested, stale = 0, []
+    try:
+        setattr(cfg, key, True)
+        for edit in page.findChildren(QLineEdit):
+            if not edit.isEnabled() or edit.isReadOnly():
+                continue
+            before = edit.text()
+            probe = _a_different_acceptable_text(edit, before)
+            if probe is None:
+                continue
+            tested += 1
+            snap = _config_fingerprint(cfg)
+            edit.setText(probe)
+            edit.editingFinished.emit()
+            if _config_fingerprint(cfg) == snap:
+                stale.append(edit.objectName() or next(
+                    (n for n in dir(page) if getattr(page, n, None) is edit), "?"))
+            edit.setText(before)          # ⚠ 探针不许留下痕迹
+            edit.editingFinished.emit()
+    except Exception:  # noqa: BLE001 —— 量不了就是量不了，不给白名单
+        return None
+    finally:
+        try:
+            setattr(cfg, key, was)
+        except Exception:  # noqa: BLE001
+            pass
+    return stale if tested else None
+
+
+def _offset_input_persists(page) -> bool:
+    """⑥ 要的那个布尔：**这一页没有任何一个输入框是例外**才算数。"""
+    stale = _inputs_that_do_not_persist(page)
+    return stale == []
+
+
 def _edit_persists_without_pressing(page, button_text: str) -> bool:
     """这一页改一个控件，**不点任何按钮**，配置就变了吗？
 
@@ -195,9 +284,19 @@ def _edit_persists_without_pressing(page, button_text: str) -> bool:
     ⭐ 这不是白名单：它每次都真的改一下、真的读一遍配置。
       哪天这一页改成「要点了才生效」，这里立刻证不出来，判据自动开始报它。
 
-    ⚠ 只对**有 per-weapon 风格下拉**的页成立（它们有 `_on_weapon_style_changed`
-      这条既有落盘路径可以拿来验）；别的页一律返回 False = 不给例外。
+    ⚠⚠ **批 84（RN-444）补了第二种形状，而补的理由值得写下来**：
+    这支探针原来只会用**一种**控件问这个问题（per-weapon 风格下拉）。
+    ⭐⭐⭐ 于是它的文档写的是「改一个控件」，实际问的是「改那一个控件」——
+    而 `magnifier` 的提交点在**偏移输入框**上，探针够不着 ⇒ 那一页
+    即使真的改成了「改一下就落盘」，探针也证不出来，判据照样报它说假话。
+    ⚠ 这和同一批修的 RN-612（那个钩子把「`-` 后面跟什么」写成一张枚举表）
+      **是同一个形状**：⭐ **枚举式的判据永远少一格**，而少的那一格
+      恰好是这次要验的那一格。
+    ⇒ 现在两种形状都认，每一种都必须**真的改一下、真的读一遍配置**；
+      两种都取不到证据才返回 False。⛔ 仍然不给名单白名单。
     """
+    if _offset_input_persists(page):
+        return True
     changer = getattr(page, "_on_weapon_style_changed", None)
     reader = getattr(page, "_configured_style", None)
     weapons = getattr(page, "_get_all_weapons", None)
@@ -266,8 +365,13 @@ def test_no_page_says_no_button_needed_while_showing_a_button(main_window, qapp)
         if page is None or getattr(page, "master_switch_row", None) is None:
             continue
         checked.append(page_id)
+        # ⚠⚠ RN-504（批 82）：提交按钮在没有待提交内容时**会隐身** ⇒
+        #   只看「当下可见」的话，`hud_color` 在默认态就退出了分母，
+        #   而这条判据守的恰恰是**这一页的设计**（底栏说「不用点任何按钮」
+        #   却摆着一颗提交按钮）。⭐ 收窄分母不会有任何东西报。
         buttons = [b.text().strip() for b in page.findChildren(QPushButton)
-                   if b.isVisibleTo(page) and b.text()
+                   if (b.isVisibleTo(page) or b.property("fp_pending") is not None)
+                   and b.text()
                    and any(w in b.text() for w in commit_words)]
         # ⚠⚠ 批 50：这几个词认的是**字面**，不是事实。「应用到全部武器」
         #   含「应用」二字，但它是**动作**不是提交 —— 不点它，你逐个改的
@@ -281,6 +385,37 @@ def test_no_page_says_no_button_needed_while_showing_a_button(main_window, qapp)
             bad.append(f"{page_id}：摆着 {buttons} 却仍用「自动保存」那套回执")
     assert len(checked) >= 12, f"只量到 {checked} —— 分母塌了（实测应有 15 页）"
     assert not bad, "\n  ".join(["这些页的底栏回执在说假话："] + bad)
+
+
+def test_the_offset_probe_actually_collects_evidence(main_window, qapp):
+    """⑦ ⭐⭐⭐ 阳性对照：⑥ 的那支探针**真的在 `magnifier` 上取到了证据**。
+
+    ⚠⚠ 这条不是多余的。⑥ 只在「取到证据」时把按钮踢出分母，
+    而探针恒返回 `False` 时 ⑥ 一样绿 —— 那一页只是**没被判成说假话**而已。
+    ⭐⭐⭐ **一支永远证不出东西的探针，和一支证明了没有例外的探针，
+    在判据报告上长得一模一样。**
+
+    ⚠ 这不是假设：批 84 我写完探针，判据 11 条全绿，而单独一问
+    `_offset_input_persists(magnifier)` 返回的是 **False**。
+    （那一次的根因在**我的夹具**里 —— `magnifier_page` 顶上是
+    `from config import config`，`save_settings` 写的是那个模块级单例，
+    而我给页面注了一个新的 `Config()`。⭐ **当工具和我打架时，
+    第一个该怀疑的是我**（RN-564 同款）。但它证明了 ⑥ 绿得起来而探针是死的。）
+    """
+    main_window.ensure_page_loaded("magnifier")
+    main_window.show_page("magnifier", animated=False, force=True)
+    qapp.processEvents()
+    page = main_window.pages.get("magnifier")
+    assert page is not None, "`magnifier` 页没建起来 —— ⑥ 的分母里根本没有它"
+    stale = _inputs_that_do_not_persist(page)
+    assert stale is not None, (
+        "探针在 `magnifier` 上**一个输入框都没量到** —— 它是死的，而 ⑥ 照样会绿。")
+    assert stale == [], (
+        f"这些输入框改完不落盘：{stale}\n"
+        "⇒ RN-444 那条「一页里两套保存规则」又回来了："
+        "底栏说「改完就存下了，不用点任何按钮」，而这几个框不点按钮就丢。\n"
+        "⚠ 别只看 ⑥ —— 只要这一页还有**另一个**会落盘的框，⑥ 就绿得下去。"
+    )
 
 
 def test_the_success_dialog_is_not_the_only_place_that_says_it():

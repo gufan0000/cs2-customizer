@@ -139,7 +139,11 @@ def install_slider_bubble(slider, format_func=None):
     """
     为 QSlider 安装数值气泡。
     format_func: 可选，接收 int 返回 str，自定义显示格式。
+    总开关关着时什么都不装（RN-639）。
     """
+    from ui_motion import decorative_motion_enabled
+    if not decorative_motion_enabled():
+        return
     if hasattr(slider, '_bubble_installed'):
         return
     slider._bubble_installed = True

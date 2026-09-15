@@ -278,3 +278,42 @@ def test_search_box_width_is_elastic(win):
     box = win.settings_search_box
     assert box.minimumWidth() < box.maximumWidth()
     assert box.maximumWidth() < 16777215, "没有设上限等于没约束"
+
+
+def test_a_stale_highlight_timer_does_not_kill_the_next_search(win, app):
+    """RN-557（批 67）：上一次搜索排的「撤销」，不许把这一次的高亮撤掉。
+
+    ⭐⭐⭐ 高亮走「强 1200ms→ 弱 400ms → 撤」三档定时器，而那三档原来只认
+    **目标是不是同一个**。两次搜索**落在同一个控件上**时，那句守卫形同虚设：
+    第一次排的「撤销」到点，看见目标确实还是它，就把**第二次**的高亮撤了。
+    ⇒ 定时器改成认**代次**（`_search_hit_gen`），谁排的谁负责。
+
+    ⚠ 这条判据**不复现那场竞速**（那种判据在本机时绿时红，等于没有）——
+    它直接把「上一次那一步」原样再调一次，考的是那个守卫的算式。
+    实测：这条机制修好之后，`test_search_jump_r13.py` 的偶发红从 3/4 降到 2/6，
+    ⭐ **还没归零**，剩下那一半是另一个机制（页面懒建之后行还没排完），记在 RN-557 名下。
+    """
+    from PySide6.QtWidgets import QLabel
+
+    target = QLabel("搜索高亮的替身")
+    win._clear_search_highlight()
+
+    # 第一次搜索：把目标设成 target，并记下它那一代的代次
+    win._search_hit_gen = getattr(win, "_search_hit_gen", 0) + 1
+    stale_gen = win._search_hit_gen
+    win._search_hit_target = target
+
+    # 第二次搜索落在**同一个控件**上：代次前进
+    win._search_hit_gen += 1
+    win._search_hit_target = target
+
+    # 第一次那一步现在到点了 —— 它必须作废
+    win._step_search_highlight(target, None, stale_gen)
+    assert win._search_hit_target is target, (
+        "上一次搜索排的「撤销」把这一次的高亮撤掉了 —— "
+        "两次搜索落在同一个控件上时，只比目标的那句守卫是形同虚设的。")
+
+    # 阳性对照：本代排的那一步照样管用，否则这条判据在一个恒真的答案上空转
+    win._step_search_highlight(target, None, win._search_hit_gen)
+    assert win._search_hit_target is None, (
+        "本代排的「撤销」都不生效了 —— 那是把守卫写成了永远作废，等于没有高亮的寿命")

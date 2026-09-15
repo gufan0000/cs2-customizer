@@ -63,7 +63,10 @@ def _corpus() -> list[Path]:
     ):
         res = subprocess.run(args, cwd=ROOT, capture_output=True)
         out += [x for x in res.stdout.decode("utf-8").split("\0") if x]
-    return [ROOT / x for x in out]
+    # ⛔ RN-164：`git ls-files` 列的是**索引**，不是磁盘 —— 开源同步管道把删除
+    #   写进工作区却不入索引，这里就会拿到一个已经不存在的文件，打开即
+    #   `FileNotFoundError`。⭐ 而那种红看起来和「产品坏了」一模一样。
+    return [p for p in (ROOT / x for x in out) if p.exists()]
 
 
 def find_dead_private_methods() -> list[tuple[str, str, str, int]]:

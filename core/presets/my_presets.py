@@ -28,6 +28,7 @@ from typing import Dict, List
 from core.utils.logger import get_logger
 
 from .preset_center import SUPPORTED_TYPES, apply_bundle, export_bundle, validate_bundle
+from core.io_validation import replace_with_retry
 
 __all__ = [
     "MyPreset",
@@ -137,7 +138,7 @@ def _write(preset_id: str, name: str, bundle: Dict[str, object], created_at: str
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as fp:
         json.dump(payload, fp, ensure_ascii=False, indent=2)
-    os.replace(tmp, path)
+    replace_with_retry(tmp, path)
     return MyPreset(
         preset_id=preset_id, name=name,
         types=[str(i.get("type", "")) for i in bundle.get("items", []) or []],

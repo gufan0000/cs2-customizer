@@ -1,0 +1,70 @@
+{
+  "_说明": "import 期的外部效应。每个模块一个全新子进程，谁都不沾谁的 sys.modules。",
+  "import 成功": 4,
+  "import 期写过盘的模块": [
+    "core.resource_health",
+    "resource_manager"
+  ],
+  "import 期起过子进程的模块": [],
+  "import 期起过定时器的模块": [],
+  "import 期起过线程的模块": [],
+  "只在首次引导发生的写盘": {
+    "core.resource_health": [
+      "config.json.tmp"
+    ],
+    "resource_manager": [
+      "config.json.tmp"
+    ]
+  },
+  "模块数": 4,
+  "逐模块": [
+    {
+      "import 失败": "",
+      "import 完还活着的线程": [],
+      "写盘文件名": [],
+      "模块": "core.resource_catalog",
+      "起子进程": [],
+      "起定时器": [],
+      "起线程": [],
+      "首次引导才写的文件": []
+    },
+    {
+      "import 失败": "",
+      "import 完还活着的线程": [],
+      "写盘文件名": [
+        "cs2customizer_20260913.log"
+      ],
+      "模块": "core.resource_health",
+      "起子进程": [],
+      "起定时器": [],
+      "起线程": [],
+      "首次引导才写的文件": [
+        "config.json.tmp"
+      ]
+    },
+    {
+      "import 失败": "",
+      "import 完还活着的线程": [],
+      "写盘文件名": [],
+      "模块": "core.resource_import_wizard",
+      "起子进程": [],
+      "起定时器": [],
+      "起线程": [],
+      "首次引导才写的文件": []
+    },
+    {
+      "import 失败": "",
+      "import 完还活着的线程": [],
+      "写盘文件名": [
+        "cs2customizer_20260913.log"
+      ],
+      "模块": "resource_manager",
+      "起子进程": [],
+      "起定时器": [],
+      "起线程": [],
+      "首次引导才写的文件": [
+        "config.json.tmp"
+      ]
+    }
+  ]
+}

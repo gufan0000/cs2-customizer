@@ -372,17 +372,14 @@ class AudioReplayPage(QWidget):
         return filters
 
     def _navigate_to_page(self, page_id: str):
-        """跳到能产生音频事件的地方（经主窗口导航，同 `audio_task_panel`）。"""
-        win = self.window()
-        try:
-            ensure = getattr(win, "ensure_page_loaded", None)
-            if callable(ensure):
-                ensure(page_id)
-            nav = getattr(win, "show_page", None)
-            if callable(nav):
-                nav(page_id)
-        except Exception:
-            pass
+        """跳到能产生音频事件的地方。
+
+        ⚠ 批 74（RN-528）：实现收进 `widgets/page_route.goto_page` 一份 ——
+        这一段和 `audio_task_panel_page` 里那份原来**逐字相同**。
+        """
+        from widgets.page_route import goto_page
+
+        goto_page(self, page_id)
 
     def _sync_first_step(self, has_events: bool):
         """⭐ 那一颗紫的必须是**当下的第一步**（批 44 RN-450 的裁定）。"""

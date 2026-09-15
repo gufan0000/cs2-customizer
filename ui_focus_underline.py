@@ -85,7 +85,10 @@ class FocusUnderline(QWidget):
 
 
 def install_focus_underline(widget):
-    """为输入框安装焦点下划线效果"""
+    """为输入框安装焦点下划线效果；总开关关着时什么都不装（RN-639）"""
+    from ui_motion import decorative_motion_enabled
+    if not decorative_motion_enabled():
+        return
     if hasattr(widget, '_focus_underline_installed'):
         return
     widget._focus_underline_installed = True

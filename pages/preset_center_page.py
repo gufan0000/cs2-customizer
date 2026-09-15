@@ -667,12 +667,20 @@ class PresetCenterPage(MyPresetsMixin, QWidget):
         #   三条应用通路（内置精选 / 我的预设 / 按地图）**全都是 `mode="merge"`**，
         #   只动这份预设覆盖到的那些键，别的一个不碰。
         # ⭐ 批 36 那条第二次现身：**这一批最贵的一句话，是我自己补上去的那半句**。
+        # ⭐⭐⭐ RN-588：批 74 把这条登记成「QMessageBox 的正文」——**和本页那条
+        #   真·QMessageBox 的理由互换了位置**。这里就是底栏，真该接（详见 RN-588 档案）。
         auto_snapshot = bool(getattr(_cfg, "config_snapshot_auto_before_risky_ops", True))
+        if auto_snapshot:
+            from widgets import page_route as _pr
+
+            target = _pr.page_route("config_snapshot",
+                                    _pr.page_label(self, "config_snapshot"))
+            tail = f"；动手前会自动存一份快照，可以在{target}页回滚。"
+        else:
+            tail = "。你把「危险操作前自动快照」关掉了，这一次改过去就回不来了。"
         self.action_bar.set_message(
-            "应用一套预设，会立刻改掉这套预设覆盖到的那几类设置，别的不动" +
-            ("；动手前会自动存一份快照，可以在「软件设置快照」页回滚。"
-             if auto_snapshot else
-             "。你把「危险操作前自动快照」关掉了，这一次改过去就回不来了。"))
+            "应用一套预设，会立刻改掉这套预设覆盖到的那几类设置，别的不动" + tail,
+            rich=auto_snapshot)
 
     # ---------------- RN-478：一个动作一颗按钮，两种文件都吃 ----------------
 
@@ -812,7 +820,7 @@ class PresetCenterPage(MyPresetsMixin, QWidget):
         except KeyError:
             return
         reply = QMessageBox.question(
-            self, "应用精选包?",
+            self, "应用精选预设?",
             f"将应用「{self.starter_combo.currentText()}」(merge 模式,应用前自动备份)。",
             QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes,
         )

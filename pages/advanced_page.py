@@ -415,8 +415,9 @@ class AdvancedPage(QWidget):
     def _build_anchor_chips(self):
         """扫描页内 SettingsCard 标题,生成一行跳转 chips(点击滚动定位)。"""
         try:
-            from PySide6.QtWidgets import QPushButton, QScrollArea
+            from PySide6.QtWidgets import QScrollArea
 
+            from widgets.anchor_bar import install_anchor_chips
             from widgets.settings_card import SettingsCard
 
             scroll = self.findChild(QScrollArea)
@@ -427,40 +428,31 @@ class AdvancedPage(QWidget):
                 if getattr(c, "title_label", None) is not None
                 and c.isVisibleTo(self)
             ]
-            seen = set()
+            SHORT = {
+                "CS2 配置目录": "目录",
+                "内部调试": "调试",
+                "界面主题": "外观",
+                "更新公告": "公告",
+                "系统集成": "系统",
+                "游戏内提示(OSD)": "OSD",
+                "匿名使用统计": "统计",
+                "运行权限": "权限",
+                "全局热键总览": "热键",
+                "配置文件管理": "配置",
+            }
+            seen, sections = set(), []
             for card in cards:
                 title = card.title_label.text().strip()
-                # 章节名压缩到 4 字内,chips 一行放得下
-                short = {
-                    "CS2 配置目录": "目录",
-                    "内部调试": "调试",
-                    "界面主题": "外观",
-                    "更新公告": "公告",
-                    "系统集成": "系统",
-                    "游戏内提示(OSD)": "OSD",
-                    "匿名使用统计": "统计",
-                    "运行权限": "权限",
-                    "全局热键总览": "热键",
-                    "配置文件管理": "配置",
-                }.get(title, title[:4])
+                short = SHORT.get(title, title[:4])   # 章节名压缩到 4 字内，一行放得下
                 if not title or short in seen:
                     continue
                 seen.add(short)
-                chip = QPushButton(short)
-                # UP-017: 原来复用 secondaryButton,连带吃到 QSS 的 min-width:80。
-                # 锚点 chip 只有 2~4 个汉字,80px 是纯浪费,而且会让换行提前发生。
-                # 给它自己的 objectName + QSS(见 theme_manager 的 anchorChip)。
-                chip.setObjectName("anchorChip")
-                chip.setFixedHeight(26)
-                chip.setCursor(Qt.PointingHandCursor)
-                chip.setToolTip(f"跳到「{title}」")
-                chip.clicked.connect(
-                    lambda _=False, c=card: scroll.ensureWidgetVisible(c, 0, 16)
-                )
-                self._anchor_bar.addWidget(chip)
-            # 注意:FlowLayout 没有 addStretch —— 它本来就是左对齐 + 自动换行,
-            # 不需要尾部弹簧。原先那句 addStretch() 在这里会抛 AttributeError,
-            # 被外层 except 吞掉后表现为"锚点条整个不出现"。
+                sections.append((title, short, card))
+            # ⭐ 芯片样式/跳法/当前位置由共用件出（批 66）。原来这里用
+            #   `ensureWidgetVisible`，而 `magnifier` 的注释早就写下那是错的跳法：
+            #   实测从页面底部点第一颗「目录」停在 197 而不是 0。
+            # 注意:FlowLayout 没有 addStretch —— 它本来就是左对齐 + 自动换行。
+            install_anchor_chips(self._anchor_bar, scroll, sections)
         except Exception:
             self.logger.exception("锚点导航生成失败(不影响页面)")
 
@@ -541,7 +533,7 @@ class AdvancedPage(QWidget):
 
         view_btn = QPushButton("查看将上报的内容")
         style_as_secondary_button(view_btn)
-        view_btn.setFixedHeight(32)
+        # ⛔ RN-591：不许再写 `setFixedHeight` —— 比 QSS 下限矮的声明会被 `fp_short` 摘掉地板（见档案）
         view_btn.clicked.connect(self._show_usage_payload)
         row.addWidget(view_btn)
         section_layout.addLayout(row)

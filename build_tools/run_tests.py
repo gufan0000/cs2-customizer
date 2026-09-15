@@ -87,6 +87,43 @@ SERIAL_TAIL = [
     "test_utility_display_nonblocking_r11.py",  # 构造不许阻塞 >1s
     "test_idle_watcher.py",                   # seconds_since_input() < 1.0
     "test_jank_monitor.py",                   # before <= _t0 <= after
+    # ⚠⚠ RN-608（批 82）：这一条**不是怕抢 CPU，是怕抢同一个目录**。
+    #   审计沙箱 `%TEMP%/cs2customizer_audit_game_sandbox` 是一个**固定路径**
+    #   （那条判据自己的文档第 20 行逐字写着，当初正是为了「可复现」才选的固定），
+    #   而它的做法是「自己造一份 stale 产物 → 调沙箱化 → 断言被清掉」。
+    #   6 路并行时另一路的清理会抢先把它造的 stale 清掉，或在它断言前又写一份。
+    #   实测：并行全量 1 红 → 单跑 22/22 绿 → 再跑一次并行全量 284/284 绿。
+    #   ⭐⭐⭐ **间歇红的门禁比一直红更贵**：一直红会被修，
+    #   间歇红会被当成「再跑一次就好了」—— 而下一个**真红**也会被这么对待。
+    "test_the_sandbox_does_not_remember_yesterday.py",
+    # RN-624（批 87）：`test_the_exit_retry_budget_is_bounded_and_it_says_so`
+    #   量的是「退出时同步重试有没有超预算」—— 预算只有 3 × (0.2 + 1.0) 秒，
+    #   而它跑的是真的 `os.replace` 失败 + `time.sleep`。6 路抢 CPU 时这个阈值会假红。
+    "test_a_write_at_exit_is_not_scheduled_into_a_future_that_never_comes.py",
+    # ⚠⚠ 批 87：它**原地不动地**在这一批第一次撞上 300s 超时，而单跑只要 77s。
+    #   它把 `ci.yml` 里那几道门的命令行原样取出来跑（RN-567），全是子进程 ——
+    #   RN-525 那条「拿子进程互相比、要和另外 5 路 pytest 抢 CPU」的同一类。
+    #   ⭐⭐⭐ 触发它的不是它自己：**本批新增两个判据文件（288 → 290），
+    #   把它推过了那条线。** 一个新判据的成本不只是它自己那几秒。
+    # RN-627（批 88）：D4 四层的 import 期效应是**真的起 19 个子进程各 import 两遍**
+    #   录出来的（静态扫不行 —— X1 那份的文档写着「名字一样不等于是那件事」）。
+    #   单跑 16s，而它和 6 路 pytest 抢的是同一批进程槽 ⇒ RN-525 同类。
+    # ⚠⚠ 批 88：它**原地不动地**在这一批第一次红 ——「常驻定时器 3 → 4」。
+    #   空载连跑 5 次全是 3（`H:/tmp/b88_x1_timer_variance.py`），并行全量里才出现 4：
+    #   它在子进程里建一整个 MainWindow，只给 5 轮 `processEvents` 的窗口数定时器，
+    #   机器一忙就多数到一个。⇒ 产品没变，**是这把尺子对 CPU 敏感**（RN-518 一族）。
+    #   ⭐⭐⭐ 连续两批同一个形状（上一批是 `..._walks_every_blocking_door` 超时）：
+    #   **一个新判据的成本不只是它自己那几秒 —— 它还把别的判据往悬崖边推一格。**
+    "test_x1_external_effects_are_frozen.py",
+    # ⭐⭐⭐ RN-633（批 91）：这两个**一直**在拿墙钟当判据，只是形状不同 ——
+    #   时钟藏在轮询 helper 里（`_wait_until(timeout=12.0)` / `_wait_routed(timeout=3.0)`），
+    #   阈值是**参数**而不是 `<` 断言，于是上面那条「谁新写墙钟断言谁自动进分母」的
+    #   守卫**看不见它们**。而 `test_a_failed_config_write...` 在批 90/91 的并行全量里
+    #   真的连着红，单跑必绿。⇒ 识别器已加宽（`_deadline_wait_test_files`，实测 0 误报）。
+    "test_a_failed_config_write_is_retried_not_dropped.py",
+    "test_voice_local_monitor_device.py",
+    # RN-628（批 89）：D5 四层的 import 期效应要起 **72 个子进程**（36 个模块各两遍），
+    #   外加一份真的走一遍 cfg 编译的产物快照。单跑 31s，同 RN-525 一类。
 ]
 
 
@@ -152,6 +189,10 @@ def main() -> int:
     fails: list[tuple[str, str]] = []
     total_cases = 0
     timed_out: list[str] = []
+    #: 每个文件的墙钟（见 `run_one` 的文档）。dict 赋值在 CPython 下是原子的，
+    #: 而且每个键只被它自己那条线程写一次 ⇒ 不需要另配一把锁。
+    elapsed: dict[str, float] = {}
+    phase_secs: dict[str, float] = {}
     print_lock = threading.Lock()
 
     # jobs==1 时不换 TEMP、不并行 —— 与批 47 之前逐字节同行为。
@@ -162,8 +203,18 @@ def main() -> int:
             slots.put(i)
 
     def run_one(tf: Path) -> tuple[Path, str, str, int, list[str], list[str]]:
-        """跑一个测试文件。返回 (文件, 结局, 摘要, 用例数, 明细尾, stderr 尾)。"""
+        """跑一个测试文件。返回 (文件, 结局, 摘要, 用例数, 明细尾, stderr 尾)。
+
+        ⭐⭐⭐ RN-629（批 91）：**这支工装以前只打一个总秒数。**
+        于是「全量从 ~500s 涨到 ~2000s」这件事，连续三晚都只能靠猜 ——
+        我先归因给「别的桌面程序抢 CPU」，量了空载才发现只有 6%，解释不了 4 倍。
+        ⭐ **一个说得通的原因，和一个验过的原因，不是一回事** ——
+          而分辨这两者需要的不是更用力地想，是一把量得到「哪里慢」的尺子。
+        ⇒ 每个文件的墙钟记在 `elapsed[]` 里，汇总行后面打**最慢的 15 个**
+          以及**并行段 / 串行尾巴各自的墙钟**。这只是打印，不改任何结论。
+        """
         slot = slots.get() if slots is not None else None
+        t_file = time.time()
         try:
             try:
                 r = subprocess.run(
@@ -185,6 +236,9 @@ def main() -> int:
                 # ⇒ 超时现在记成**一条红**，剩下的文件照跑完。
                 return (tf, "timeout", "超时（>300s）—— 判据本身没跑完，结论未知", 0, [], [])
         finally:
+            # ⭐ 记在 `finally` 里而不是两个 return 前面：超时那条也是一次读数，
+            #   而「哪个文件吃掉 300 秒」恰恰是最该被记下来的那一个。
+            elapsed[tf.name] = time.time() - t_file
             if slots is not None:
                 slots.put(slot)
 
@@ -234,15 +288,19 @@ def main() -> int:
         parallel = [t for t in tests if t.name not in SERIAL_TAIL]
         # ⭐ 用 as_completed 而不是 pool.map：map 按提交顺序交付，
         # 而队首那个恰恰是最慢的（LPT），会让整整 84 秒一行输出都没有。
+        t_par = time.time()
         with futures.ThreadPoolExecutor(max_workers=jobs) as pool:
             pending = [pool.submit(run_one, tf) for tf in _order(parallel)]
             for fut in futures.as_completed(pending):
                 report(fut.result())
+        phase_secs["并行段"] = time.time() - t_par
         # 池子已经排空（`with` 退出时 join 过了）⇒ 下面这些独占这台机器。
         if tail:
+            t_tail = time.time()
             print(f"--- 串行尾巴（{len(tail)} 个文件量的是墙钟，不许和别人抢 CPU）", flush=True)
             for tf in tail:
                 report(run_one(tf))
+            phase_secs["串行尾巴"] = time.time() - t_tail
 
     print("=" * 70)
     print(f"文件 {len(tests)}: OK {ok} / FAIL {len(fails)} | 用例通过 {total_cases} "
@@ -252,6 +310,20 @@ def main() -> int:
     if timed_out:
         print(f"  ⚠ 其中 {len(timed_out)} 个是**超时**（结论未知，不是判为不通过）："
               f"{'、'.join(sorted(timed_out))}")
+
+    # ⭐⭐⭐ 时间账（RN-629）。只打印，不参与退出码 —— 它是给人看的尺子，不是门。
+    if phase_secs:
+        print("--- 分段墙钟：" + "、".join(
+            f"{k} {v:.0f}s" for k, v in phase_secs.items()))
+        tail_secs = phase_secs.get("串行尾巴", 0.0)
+        total = sum(phase_secs.values()) or 1.0
+        print(f"    ⚠ 串行尾巴占全场 {tail_secs / total * 100:.0f}%"
+              f"（{len(SERIAL_TAIL)} 个文件，**它不随 --jobs 变快**）")
+    if elapsed:
+        top = sorted(elapsed.items(), key=lambda kv: -kv[1])[:15]
+        print(f"--- 最慢的 {len(top)} 个文件（★ = 在串行尾巴里）：")
+        for name, sec in top:
+            print(f"    {sec:7.1f}s  {'★' if name in SERIAL_TAIL else ' '} {name}")
     return 1 if fails else 0
 
 

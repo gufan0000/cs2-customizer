@@ -18,6 +18,7 @@ import time
 from typing import Dict, List
 
 from config import get_app_data_dir
+from core.io_validation import replace_with_retry
 
 # 这些页不进「常用」:basic 是首页本就置顶;about 无复访价值
 EXCLUDED_PAGES = {"basic", "about"}
@@ -109,7 +110,7 @@ def _write_to_disk(data: Dict[str, Dict]) -> None:
     try:
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=1)
-        os.replace(tmp, path)
+        replace_with_retry(tmp, path)
     except Exception:
         try:
             os.remove(tmp)

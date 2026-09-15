@@ -69,7 +69,24 @@ ROOT = Path(__file__).resolve().parents[1]
 #:   那个 `Expanding` 的文件名标签本来就只剩 43px，一挤就变成 41px / 需 42px ⇒ 折行。
 #:   ⭐⭐ **改「警报级别」不许付出像素** ⇒ 同名不同属性，只换填充色。
 #: 完整实测在 `tests/test_the_slider_says_one_thing_and_shows_another.py`。
-GENERATE_STYLESHEET_MAX_LINES = 1610
+# ⚠ 2026-09-06 批 62：1610 → **1611**，只加 1 行，理由写在这儿。
+#   RN-442 需要一条新变体 `QPushButton#…[fp_compact="true"] { min-width: 0 }`
+#   （规范下限和调用点 `setFixedWidth` 打架，Qt 取 min ⇒ 实测 133 颗按钮
+#   比调用点声明的宽 6~46px）。本批先把能省的都省了：五段叙事并进代码行、
+#   一段批 60 的叙事压成一句（**叙事只在档案写一遍** —— 见
+#   `CS2 Customizer_翻新工程/档案/X2_主题与设计系统.md`），净增就只剩这一行。
+#   ⛔ 不为了腾地方删别的批次留下的设计理由 —— 那是「删过期的话之前先问它
+#     是不是某件事唯一的记录」那条。
+# ⚠ 2026-09-06 批 63：1611 → **1612**，还是只加 1 行。
+#   RN-546（**S2**）要给 8 类按钮补可见焦点环（WCAG 2.4.7），八个选择器
+#   并成一行写。⛔ 同上：不为了腾地方删别的批次留下的设计理由。
+# ⚠ 2026-09-06 批 66：1612 → **1638**，+26。这一批加的全是**新选择器块**，
+#   并不进任何既有块，所以省不掉：`anchorChip` 的高度声明 3 行（RN-547 残余）、
+#   `anchorChip:checked` 7 行（RN-431，当前在哪一段）、`anchorLead` 7 行（RN-443，
+#   前导词 —— magnifier 改前 6/6 把这排读成「切换到另一个页面」）、
+#   `settingsSearchBox` 6 行（RN-550）+ 注释与空行 3。
+#   叙事已按规矩压进档案（`档案/X2_主题与设计系统.md`），代码里只留「为什么是这个数」。
+GENERATE_STYLESHEET_MAX_LINES = 1638
 
 
 def test_generate_stylesheet_does_not_grow():

@@ -107,6 +107,13 @@ def enable_audit_mode() -> None:
     # ⭐ 与 RN-472 同形（构造期起的异步活儿），修法也同形：不禁掉它（禁了就拍不到
     #   报告那一段），而是让这一次**同步跑完**，拍到的永远是结果态。
     os.environ["CS2C_SYNC_HEALTH_SCAN"] = "1"
+    # RN-434：**显示模式那道**。覆盖层前提那句话现在会去读 Steam 里的
+    # `cs2_video.txt`（`core/cs2_video_mode`），于是同一份配置在两台机器上
+    # 出的字不一样 —— 与 RN-472 / RN-146 同族（构造期去问机器状态）。
+    # ⭐ 钉成 `unknown` = 通用那一档，也就是**没有检测时的那句话**。
+    # ⚠ 要审「读到独占全屏」那一档，显式设成 `exclusive` 再跑；
+    #   ⛔ 别靠"这台机器碰巧是哪档" —— 那正是 RN-571 摔的那一跤。
+    os.environ.setdefault("CS2C_CS2_DISPLAY_MODE", "unknown")
     # ⚠ 游戏目录那条出口**不在这里**，走 `scripts/_audit_sandbox.py`（UP-090）。
     # 我一度想在这儿加一个 `CS2C_NO_GAME_DIR_WRITES` 禁写闸门，是错的：
     # 那会让 `csgo_dir` 留空 ⇒ 页面走「未配置 CS2 目录」分支 ⇒ 文案和布局都变，

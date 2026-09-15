@@ -76,6 +76,13 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
 
 REPO = Path(__file__).resolve().parent.parent
 
+#: 这个检出是**闭源全量**还是**开源功能子集**。
+#: ⭐ 按**能力**判，不按版本号或路径名判 —— `build_tools/oss_sync/` 是闭源版独有的
+#:   （同 `scripts/revert_verify.py` 的 `subset_build`）。
+#: ⛔ 这一格存在的全部理由（RN-495）：「子集里改了名」和「主仓里删没了」
+#:   **症状一模一样**，只能靠这个分档把它们分开。
+_IS_FULL_BUILD = (REPO / "build_tools" / "oss_sync").exists()
+
 #: 批 31 动完刀之后的**存量债**：页 → 那一页还剩几个「底栏与卡内绑同一个方法」的动作。
 #: ⚠ 值是**方法名的元组**，不是个数 —— 个数会在改名时静默对上。
 #:
@@ -254,6 +261,18 @@ def test_removing_the_copy_did_not_remove_the_action():
             #   `_open_repository`）。⭐ **照闭源版的方法名写死，在子集仓里
             #   不是「更严」，是「错」**（第 N 次）。
             #   ⇒ 方法整个不在这个 build 里 ⇒ 样本不可比，跳过（RN-140）。
+            #
+            # ⛔⛔ RN-495（批 90 落地）：**但这条宽容分支原来也把「主仓里删没了」
+            #   一起放过去了** —— 而那正是这支反面守卫要防的那件事（撤副本撤过头）。
+            #   ⭐⭐⭐ 两种情况的**症状完全相同**（源码里找不到那个 `def`），
+            #   分它们的只能是**能力**，不是症状：闭源全量里有 `build_tools/oss_sync`，
+            #   子集里没有（同 `revert_verify` 的 `subset_build` 判法）。
+            #   ⇒ 全量里「方法不见了」= 缺陷；子集里 = 不可比。
+            if _IS_FULL_BUILD:
+                missing.append(
+                    f"{page_id}.{method} 在源码里整个不见了 —— "
+                    f"它本该留在{'底栏' if where == 'bar' else '卡内'}。"
+                    "⭐ 这不是「子集改了名」（这个检出是闭源全量），是动作被删掉了。")
             continue
         checked += 1
         bar, card = _scan(page_id)
@@ -267,8 +286,11 @@ def test_removing_the_copy_did_not_remove_the_action():
         "有动作被整个删掉了（撤副本撤过头）：\n  " + "\n  ".join(missing))
     # ⭐ 上面两个 `continue` 各自都有正当理由，但**两个加起来可以把这条判据跳空** ——
     #   而跳空的判据和通过的判据长得一模一样。完整产品 8 条、开源子集 4 条。
-    assert checked >= 4, (
-        f"只核了 {checked}/{len(SURVIVING_ENTRANCES)} 个入口 —— "
+    # ⭐⭐ RN-495（批 90）：分母下限**按 build 分档**。写死 4 的那一版在闭源全量里
+    #   等于「删掉一半入口也照样绿」—— 而 4 那个数本来是给子集用的。
+    least = len(SURVIVING_ENTRANCES) if _IS_FULL_BUILD else 4
+    assert checked >= least, (
+        f"只核了 {checked}/{len(SURVIVING_ENTRANCES)} 个入口（本档要求 ≥{least}）—— "
         "跳过的太多了，这条反面守卫已经形同虚设。")
 
 

@@ -180,7 +180,7 @@ def test_checkbox_check_icon_has_ink(app):
 
 # ---------------------------------------------------------------- 盒模型冲突
 
-def _assert_no_box_conflict(widget, label):
+def _assert_no_box_conflict(widget, label, *, square=True):
     """`setFixedSize()` 只压得住**最大**尺寸，QSS 的 `min-height` 会把最小尺寸
     顶上去，而 **Qt 在 min > max 时取 min** —— 帮助按钮就是这么从 24×24
     变成 24×42 的灰胶囊的。判据直接盯这个冲突本身。"""
@@ -189,8 +189,9 @@ def _assert_no_box_conflict(widget, label):
         f"{label}: 最小宽 {mn.width()} > 最大宽 {mx.width()}，Qt 会取最小值 → 形变")
     assert mn.height() <= mx.height(), (
         f"{label}: 最小高 {mn.height()} > 最大高 {mx.height()}，Qt 会取最小值 → 形变")
-    assert widget.width() == widget.height(), (
-        f"{label}: {widget.width()}x{widget.height()} 不是正方形，圆角会画成胶囊")
+    if square:
+        assert widget.width() == widget.height(), (
+            f"{label}: {widget.width()}x{widget.height()} 不是正方形，圆角会画成胶囊")
 
 
 def test_help_button_box_model_is_consistent(app):
@@ -218,11 +219,18 @@ def test_mode_toggle_button_box_model_is_consistent(app):
     previous = app.styleSheet()
     app.setStyleSheet(get_theme_manager().get_stylesheet())
     try:
-        btn = QPushButton("⇔")
+        # ⭐⭐ 2026-09-06 批 60：这里原来 `QPushButton("⇔")` + `setFixedSize(40, 40)`
+        #   —— 那是**产品当时的写法被抄了一份进来**，而 RN-541 之后产品
+        #   已经改成「带文字、宽度放开、只钉高度」。
+        #   ⇒ 判据继续测自己那一份，就会在产品改对之后**反过来判红**
+        #     （实测：QSS 的 padding 把 min-width 顶到 60，撞上抄来的 max 40）。
+        #   ⭐ 同 RN-513：**判据把被测的形态在自己这儿重写一遍，测的就是自己那一份。**
+        btn = QPushButton("⇔ 紧凑")
         btn.setObjectName("modeToggleIconButton")
-        btn.setFixedSize(40, 40)
+        btn.setMinimumHeight(40)
         btn.ensurePolished()
-        _assert_no_box_conflict(btn, "模式切换按钮")
+        # ⚠ 它不再是正方形 —— 带了文字就不该是。圆角画成胶囊这条只对纯图标按钮成立。
+        _assert_no_box_conflict(btn, "模式切换按钮", square=False)
     finally:
         app.setStyleSheet(previous)
 
@@ -322,24 +330,38 @@ def test_nav_button_nudge_does_not_trust_a_not_yet_laid_out_height(app):
         scroll = win._sidebar_scroll
         viewport = scroll.viewport()
         bar = scroll.verticalScrollBar()
-        page_id = list(win._page_names.keys())[-1]
-        btn = win.nav_buttons.get(page_id)
-        assert btn is not None and btn.isVisible(), "拿不到导航按钮，判据在空转"
+        # ⭐⭐⭐ RN-556（批 67）：这里原来写死「拿**最后一项**、然后一路往下滚」，
+        # 靠的是「最后一项恰好跨在视口边缘上」——**一个碰运气的前提**。
+        # RN-551 把全站控件矮了 16~18px，侧栏跟着变短，最后一项滚到底之后
+        # 底边正好落在 677 = 视口高 ⇒ 空转守卫当场判红，报的却像是一次退步。
+        # ⭐⭐⭐ **一条判据的阳性对照，可能正是缺陷本身；缺陷修好那天，对照就没了。**
+        #   （本批同一形状第三次：`w >= 110` 是缺陷的量级、`_CONTENT_H` 是缺陷时的高度）
+        # ⇒ 不再碰运气：**解出**让某颗按钮跨在视口边缘上的那个滚动值。
+        #   `want` 落在 [0, maximum] 之内就说明这个局面造得出来。
+        content = scroll.widget()
+        chosen = None
+        for pid in reversed(list(win._page_names.keys())):
+            cand = win.nav_buttons.get(pid)
+            if cand is None or not cand.isVisible():
+                continue
+            want = cand.mapTo(content, QPoint(0, 0)).y() - (viewport.height() - 24)
+            if 0 <= want <= bar.maximum():
+                chosen = (pid, cand, want)
+                break
+        assert chosen is not None, (
+            "侧栏里挑不出一颗能被滚到视口边缘上的导航项 —— 判据在空转。"
+            f"（可滚范围 0~{bar.maximum()}，视口高 {viewport.height()}）")
+        page_id, btn, want = chosen
 
         win.show_page(page_id, animated=False)
         for _ in range(2):
             app.processEvents()
 
-        # 造出 runner 上的局面：把按钮顶到"只有左上角在视口里"，且高度尚未定
         hint_h = btn.sizeHint().height()
         assert hint_h > 0, "sizeHint 高度为 0，判据自身失效"
-        bar.setValue(0)
+        # 造出 runner 上的局面：按钮顶边距视口底 24px（正是 CI 上那个 y），且高度尚未定
+        bar.setValue(btn.mapTo(content, QPoint(0, 0)).y() - (viewport.height() - 24))
         app.processEvents()
-        # 把滚动值调到"按钮顶边距视口底 24px"——正是 CI 上那个 y
-        while (btn.mapTo(viewport, QPoint(0, 0)).y() > viewport.height() - 24
-               and bar.value() < bar.maximum()):
-            bar.setValue(bar.value() + 10)
-            app.processEvents()
         # 造"布局还没给它定高"的状态。
         # ⚠ 试过两种更直白的写法，都不行，别再走回头路：
         #   · `btn.resize(w, 0)` —— 导航按钮有 QSS 最小高度，会被夹回 42；

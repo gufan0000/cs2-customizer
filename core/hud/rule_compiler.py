@@ -14,6 +14,7 @@ from core.hud.rule_model import (
     is_valid_hud_color,
     normalize_hud_rules,
 )
+from core.io_validation import replace_with_retry
 
 
 HUD_RULES_BEGIN = "// -- HUD Rules Begin (CS2 Customizer) --"
@@ -138,7 +139,7 @@ def write_runtime_cfg(runtime_cfg_path, color):
                 f.write(f"cl_hud_color {color}\n")
             else:
                 f.write("// no hud override\n")
-        os.replace(tmp_path, runtime_cfg_path)
+        replace_with_retry(tmp_path, runtime_cfg_path)
     except Exception:
         try:
             os.remove(tmp_path)

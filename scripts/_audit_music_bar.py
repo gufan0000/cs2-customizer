@@ -46,8 +46,9 @@
 """
 from __future__ import annotations
 
-MODE_WORST_CASE = "on"        # 强制建出来：审计要量用户可能遇到的最坏那一档
+MODE_WORST_CASE = "on"        # 强制建出来（折叠态）：阻断级审计跑这一档
 MODE_PRISTINE = "auto"        # 不干预：全新配置下产品自己的决定（= 不建）
+MODE_EXPANDED = "expanded"    # 建出来**并展开**：RN-571，见下面那段裁定
 
 _ATTR_MODE = "_audit_music_bar_mode"
 _ATTR_EXPECTED = "_audit_music_bar_expected"
@@ -57,26 +58,96 @@ def _present(win) -> bool:
     return getattr(win, "music_control_bar", None) is not None
 
 
+def _config():
+    """拿产品的 config 单例。拿不到就静默跳过 —— 这条工装不该把审计带崩。"""
+    try:
+        from config import config
+        return config
+    except Exception:
+        return None
+
+
+def _set_expanded(win, app, want: bool) -> None:
+    """把控制条**推到**展开或折叠（RN-571）。
+
+    ⚠ 不能只写 `config.music_bar_expanded = …` 就完事：控件在 `__init__`
+    里已经读过一次那个值，只有**后建**的才跟着走。所以两头都要做 ——
+    先改配置（给「后建」的那条路），再直接推控件（给「已经建好」的那条路）。
+
+    ⭐ 两个方向都要推。只推「展开」的话，一个先前被展开过的控制条
+    在阻断档上会**原样留着**，而阻断档要的是折叠 —— 那就是「钉了个寂寞」。
+    """
+    bar = getattr(win, "music_control_bar", None)
+    if bar is None or bool(getattr(bar, "is_expanded", False)) == want:
+        return
+    toggle = getattr(bar, "_apply_bar_mode", None)
+    if callable(toggle):
+        bar.is_expanded = want
+        toggle(want)
+        sync = getattr(bar, "_sync_bar_heights", None)
+        if callable(sync):
+            sync()
+        app.processEvents()
+        app.processEvents()
+
+
 def pin(win, app, mode: str) -> str:
     """钉住这一轮的档位，返回一句给报告打印的话。"""
-    if mode not in (MODE_WORST_CASE, MODE_PRISTINE):
+    if mode not in (MODE_WORST_CASE, MODE_PRISTINE, MODE_EXPANDED):
         raise ValueError(f"未知的音乐控制条档位: {mode!r}")
 
-    if mode == MODE_WORST_CASE:
+    # ⚠⚠⚠ RN-571（2026-09-08 批 71）：**「最坏」有两个自由度，这里以前只钉了一个。**
+    #
+    # ① 控制条在不在 —— 原来只钉了这个；
+    # ② 它是**展开**还是**折叠** —— `MusicControlBar.is_expanded` 读
+    #    `config.music_bar_expanded`（默认 **False** ⇒ 42px 折叠；展开 112~128px）。
+    #    两档差 **86px 可视区**，而报告行一直笼统地说「最坏那一档」。
+    # ⭐⭐⭐ **一条规矩被写下来、还配了工装，而工装只实现了那条规矩的一半 ——
+    #   报告行照样宣称它实现了全部。**⇒ 报告行现在**逐字说明钉的是哪一档**。
+    #
+    # ⚖ **裁定（批 71）：阻断级审计仍跑「在 + 折叠」，展开档改成显式可选。**
+    #   两个状态性质不同：控制条建出来是**不可逆**的（RN-195：只做「不建」不做
+    #   「撤走」，放过一次音乐就永远在），而展开是**一键可收回**的。
+    #   把一个可逆状态当强制基线，代价是实测出来的这个数 ——
+    #   **紧凑档 40 处、完整档 4 处**纵向缺口要立刻进棘轮表当豁免。
+    #   ⭐ 把数写下来，这才算裁定而不是绕开：那 44 处是**真的**，
+    #     只是它们归 RN-571 单独排期，不在本批塞进一张 44 行的豁免表。
+    if mode in (MODE_WORST_CASE, MODE_EXPANDED):
         create = getattr(win, "_create_music_control_bar", None)
         if callable(create):
             create()
             app.processEvents()
             app.processEvents()
+    # ⚠⚠ **钉一个档 = 把它推到那个状态，不是「碰巧它就是那样」。**
+    # 第一版我只给展开档加了推手，阻断档仍旧「建出来就算数」——
+    # 判据当场逮到：同一进程里先跑过展开档，再 `pin(MODE_WORST_CASE)`
+    # 报的是**展开、127px**。⭐⭐⭐ 这正是本条缺陷本身的形状：
+    # **声称钉住一个档，实际只做了一半** —— 我在修它的那一版里又犯了一次。
+    # ⇒ 这也解释了先前那个谜：同一条命令一次报 42px 一次报 128px，
+    #   **门的严格度一直随残留配置漂**，而报告行两次长得一样。
+    if mode in (MODE_WORST_CASE, MODE_EXPANDED):
+        want = (mode == MODE_EXPANDED)
+        config = _config()
+        if config is not None:
+            config.music_bar_expanded = want
+        _set_expanded(win, app, want)
 
     setattr(win, _ATTR_MODE, mode)
     setattr(win, _ATTR_EXPECTED, _present(win))
 
     bar = getattr(win, "music_control_bar", None)
     height = bar.height() if bar is not None else 0
+    # ⭐ RN-571：**把钉的是哪一档逐字说出来。** 以前只说「最坏那一档」，
+    #   而同一句话下面既可能是 42px 也可能是 128px —— 读的人无从分辨。
+    shape = "展开" if getattr(bar, "is_expanded", False) else "折叠"
+    if mode == MODE_EXPANDED:
+        return (f"音乐控制条：**建出来并展开**（{shape}，占 {height}px）—— "
+                f"这一档量的是「用户把它展开之后」的世界（RN-571，非阻断档）")
     if mode == MODE_WORST_CASE:
-        return (f"音乐控制条：**强制建出来**（占 {height}px）—— 审计量的是"
-                f"用户可能遇到的最坏那一档（放过一次音乐就永远是这一档）")
+        return (f"音乐控制条：**强制建出来**（{shape}，占 {height}px）—— "
+                f"阻断档量的是「控制条在」这个**不可逆**的状态"
+                f"（放过一次音乐就永远是这一档）；"
+                f"「展开」是可逆的，归 `MODE_EXPANDED`（RN-571）")
     return ("音乐控制条：**按全新配置的样子**（没放过音乐 ⇒ 不建，RN-195）—— "
             "基线要的是可复现，不是最坏")
 

@@ -131,6 +131,10 @@ def structure_of(pages: list[str], expert: bool = False) -> dict:
     # ⚠ 这一行**不能**换成 `enable_audit_mode()`：那个会连热键与账号会话一起中和，
     #   一次改三件事，而本函数的注释（见上）明说采基线时不做那类中和。
     os.environ["CS2C_SYNC_HEALTH_SCAN"] = "1"
+    # RN-434：显示模式那道也要在这里单独钉 —— 闸门装在 `enable_audit_mode()` 里
+    # 够不着本函数（上面明写不能调它），而 structure.json 存着那句文案。
+    # ⭐ **一个装在共用入口里的闸门，够不着刻意绕开那个入口的调用方**（同族第三次）。
+    os.environ["CS2C_CS2_DISPLAY_MODE"] = "unknown"
     from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
     from _audit_sandbox import sandbox_external_writes
@@ -159,11 +163,19 @@ def structure_of(pages: list[str], expert: bool = False) -> dict:
     win.setMinimumSize(1200, 800)
     win.resize(1200, 800)
     app.processEvents()
+    import _audit_neutralize
+
     if list(pages) == ["all"]:
-        import _audit_neutralize
         pages = [p for p in win._page_names
                  if p not in _audit_neutralize.unsafe_pages()]
-        _audit_neutralize.apply(config, pages)
+    # ⭐⭐⭐ RN-554 第二层（批 67）：中和原来只在 `all` 那个分支里做 ——
+    # 于是 `--capture all` **不只是「所有页」的简写，它还悄悄换了一套配置**，
+    # 而判据验基线走的是单页列表（`_structure_via_subprocess([page_id])`）、不中和。
+    # ⇒ 取基线和验基线建出来的**根本不是同一页**：实测 `voice_output` 的
+    #   `hintLabel` 一边写「PTT：v · 未启用」（基线，中和过）、一边写「已启用」（判据）。
+    # ⭐ **一个开关如果同时改了「做多少」和「怎么做」，那两件事迟早会分家。**
+    # ⇒ 中和无条件做，两条路建出同一页；它只关设备副作用，不改版面。
+    _audit_neutralize.apply(config, pages)
 
     out = {}
     try:
@@ -220,6 +232,22 @@ def _structure_via_subprocess(pages: list[str], expert: bool = False) -> dict:
 
 
 def capture(pages: list[str], accept: bool) -> int:
+    print("① 结构投影（进 CI，字体无关）")
+    struct = _structure_via_subprocess(pages)
+
+    # ⭐⭐⭐ RN-554（批 67）：`all` 的展开发生在**子进程里**，`main()` 这一侧
+    # 拿到的一直是字面量 `["all"]`。三个后果，一次全撞上：
+    #   ① 建出一个字面量叫 `all` 的假页目录；
+    #   ② RN-419 那条「只有全量重锁才许改写 `_env.json`」的守卫按**页名**划分母，
+    #      而 `all` 不是页名 ⇒ 它把一次**全量重锁**判成「只锁了 1 页、还差 28 页」，
+    #      于是**恰恰在唯一该放行的那一档拒绝改写签名**；
+    #   ③ 实测代价（批 67）：本机 DPR 从 1.5 掉到 1.25，28 页指纹全在 1.25 下重取，
+    #      而签名还写着 1.5 —— 那份签名从此在说谎，而它正是可比性守卫唯一的依据。
+    # ⭐ **一条按记号划分母的守卫，看不见「全部」这个记号。**
+    # ⇒ 用子进程真正走过的那些页名当作 `pages`，展开之后再做一切判断。
+    if list(pages) == ["all"]:
+        pages = sorted(struct)
+
     _refuse_device_pages(pages)
     for pid in pages:
         d = BASELINE_DIR / pid
@@ -229,8 +257,6 @@ def capture(pages: list[str], accept: bool) -> int:
             return 1
         d.mkdir(parents=True, exist_ok=True)
 
-    print("① 结构投影（进 CI，字体无关）")
-    struct = _structure_via_subprocess(pages)
     for pid, items in struct.items():
         (BASELINE_DIR / pid / "structure.json").write_text(
             json.dumps(items, ensure_ascii=False, indent=1), encoding="utf-8")

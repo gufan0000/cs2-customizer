@@ -287,38 +287,57 @@ def test_the_known_debt_ratchet_bites_in_all_three_directions():
     ⭐⭐ **像素级棘轮是一台机器的事实**；「不再命中」既可能是修好了、也可能只是
     这台机器渲染得不一样，判据分不出这两者，分不出就不该拿它去红。
     所以这条判据仍然验第三向**被识别出来**，红不红由 `main()` 决定。
+
+    ⚠⚠ 2026-09-06 批 65 改了夹具：这几条原来拿**在册表自己**当输入，第一句还写着
+    「在册表被清空了？下面几条就成了空转」—— 而 RN-548 当天真的把它清空了
+    （紧凑档拿到自己的一档版面密度，五条债一次归零）。
+    ⭐⭐⭐ **一条拿「还有欠账」当前提的判据，会在欠账还清的那一天失效** ——
+    而它失效的方式不是变红，是变成一条永远绿的空转。
+    ⇒ 机制归机制、账目归账目：这里改用**合成的在册表**验三向，
+      真表空不空由 `test_every_known_debt_has_a_written_reason` 和审计报告管。
     """
     import layout_overflow_audit as audit
 
-    known = dict(audit.KNOWN_COMPACT_DEBT)
-    assert ("kill_sound", "clip") in known, "在册表被清空了？下面几条就成了空转"
+    # 合成夹具：形状与真表一致（键 = (页, 类别)，值 = (像素, 理由)），但不依赖它有没有内容
+    known = {
+        ("kill_sound", "clip"): (64, "夹具"),
+        ("magnifier", "clip"): (48, "夹具"),
+    }
+    hits = [(pid, px) for (pid, kind), (px, _w) in known.items() if kind == "clip"]
+
+    # ⭐ 阴性对照：这把尺子必须**看得见**真表 —— 不传 known 时用的是真表，
+    #   而真表现在是空的，于是同一批命中应当全部算「新增」。
+    #   （这一条同时钉住「真表已空」这个事实，空转了就红。）
+    fresh_real, _w, _l = audit._split_known(hits, "clip")
+    assert sorted(fresh_real) == sorted(hits), (
+        f"不传 known 时应当落到真表上，而真表 2026-09-06 起为空 ⇒ 全算新增；"
+        f"实得 {fresh_real}。真表现有 {len(audit.KNOWN_COMPACT_DEBT)} 条")
 
     # ① 完全照在册的数命中 → 三样都空
-    hits = [(pid, px) for (pid, kind), (px, _w) in known.items() if kind == "clip"]
-    fresh, worse, loose = audit._split_known(hits, "clip")
+    fresh, worse, loose = audit._split_known(hits, "clip", known)
     assert (fresh, worse, loose) == ([], [], []), (fresh, worse, loose)
 
     # ② 一页不在册 → 算新增
-    fresh, worse, loose = audit._split_known(hits + [("advanced", 30)], "clip")
+    fresh, worse, loose = audit._split_known(hits + [("advanced", 30)], "clip", known)
     assert fresh == [("advanced", 30)] and not worse and not loose
 
     # ③ 在册的那页变坏（超过 2px 容差）→ 算变坏
     worse_hits = [(pid, px + 3) if pid == "kill_sound" else (pid, px)
                   for pid, px in hits]
-    fresh, worse, loose = audit._split_known(worse_hits, "clip")
+    fresh, worse, loose = audit._split_known(worse_hits, "clip", known)
     assert not fresh and worse and worse[0][0] == "kill_sound"
 
     # ③b 2px 以内不算（取整/滚动条钢化的抖动）
     jitter = [(pid, px + 2) if pid == "kill_sound" else (pid, px) for pid, px in hits]
-    assert audit._split_known(jitter, "clip") == ([], [], [])
+    assert audit._split_known(jitter, "clip", known) == ([], [], [])
 
     # ④ 在册的那页不再命中 → 提醒收紧
     fewer = [(pid, px) for pid, px in hits if pid != "kill_sound"]
-    fresh, worse, loose = audit._split_known(fewer, "clip")
+    fresh, worse, loose = audit._split_known(fewer, "clip", known)
     assert not fresh and not worse and [p for p, _ in loose] == ["kill_sound"]
 
     # ⑤ 类别要分开：clip 的在册数不许免掉 overflow
-    fresh, _worse, _loose = audit._split_known([("kill_sound", 64)], "overflow")
+    fresh, _worse, _loose = audit._split_known([("kill_sound", 64)], "overflow", known)
     assert fresh == [("kill_sound", 64)], "clip 的在册记录漏到了 overflow 上"
 
 

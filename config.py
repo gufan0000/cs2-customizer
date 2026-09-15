@@ -6,6 +6,7 @@ import os
 import shutil
 import sys
 import threading
+import time
 from core.hud.rule_model import (
     get_default_hud_rules,
     has_runtime_enabled_rules,
@@ -14,6 +15,7 @@ from core.hud.rule_model import (
     normalize_runtime_refresh_key,
     normalize_sync_mode,
 )
+from core.io_validation import replace_with_retry
 from core.gun_sound_profiles import (
     GUN_SOUND_PROFILE_LIST,
     is_gun_sound_master_enabled,
@@ -30,6 +32,17 @@ VERSION = "2.2.4"
 # 迁移的变化"时 +1，并在 CONFIG_MIGRATIONS 注册对应迁移函数。
 # 旧配置文件读入后会从其记录的版本逐级迁移到 CONFIG_SCHEMA_VERSION。
 CONFIG_SCHEMA_VERSION = 2
+
+#: RN-622：退避（`replace_with_retry`，5 次约 267 ms）用尽后还肯「过一会儿再来」几次。
+#: ⚠ 两档管的不是一件事：退避管杀毒扫描那几十毫秒，这一档管「别的线程抓着 config.json」。
+_SAVE_RETRIES_ON_FAILURE = 3
+_SAVE_RETRY_DELAY_S = 1.0
+
+#: RN-624（批 87）：退出路径专用的**同步**重试档。上面那一档排定时器，
+#: 而看门狗的 `os._exit(0)` 连 atexit 都不跑 ⇒ 排了也等不到。叙事见档案 X5。
+#: ⛔ 预算必须小（看门狗要保证关得掉）：3 次 × 0.2s + 每次内部退避 ~267ms ≈ 最坏 1.4s。
+_EXIT_SAVE_ATTEMPTS = 3
+_EXIT_SAVE_DELAY_S = 0.2
 
 # 迁移函数表：{from_version: callable(config_obj, raw_config_dict)}。
 # 例：未来 v1->v2 把某字段语义改了，就写 def _migrate_1_to_2(cfg, raw): ...
@@ -217,6 +230,12 @@ class Config:
         # 防抖保存定时器
         self._save_timer = None
         self._save_lock = threading.Lock()
+        #: RN-622：退避仍失败时还剩几次「过一会儿再来」；写成功即还原。
+        #: ⛔ 不许拿掉上限 —— 磁盘真坏时它会变成一条永不停的定时器链。
+        self._save_retries_left = _SAVE_RETRIES_ON_FAILURE
+        #: RN-624：退出路径上把重试改成同步的那一档。置位后 `_do_save_config`
+        #: 失败时**不再排定时器** —— 排了也等不到，见常量处的注释。
+        self._exiting = False
         self._load_error = None  # 配置加载错误信息
         self._atexit_registered = False  # A3: atexit 注册保护（避免重复注册）
 
@@ -771,8 +790,10 @@ class Config:
                         pass
                     self._save_timer = None
             if has_pending:
-                # 释放锁后再调用 _do_save_config（它内部会重新加锁）
-                self._do_save_config()
+                # 释放锁后再落盘（内部会重新加锁）。
+                # ⭐ RN-624：这里走同步重试版 —— 解释器正在收尾，
+                #   `_do_save_config` 失败时再排一个 daemon Timer 是排给一个不存在的未来的。
+                self.save_config_on_exit()
         except Exception:
             # 退出钩子里严禁抛异常，否则影响 Python 解释器清理
             pass
@@ -1026,6 +1047,26 @@ class Config:
     def hud_color_enabled(self, value):
         self.hud_rules_enabled = bool(value)
 
+    def _load_plain(self, data, *keys):
+        """把一批「键名 == 属性名、读进来直接赋值」的配置项一次读完。
+
+        ⭐ 它与逐条写 `self.X = data.get("X", self.X)` **逐字等价**：
+        `.get(k, 默认)` 在键存在时返回存下来的值（哪怕它是 `None`），
+        键不存在时返回默认，也就是「不动」。
+
+        ⛔ **只给没有任何校验/归一化/迁移的那些用**。要钳位、要认旧格式、
+        要按别的字段推断的，照旧一条一条写在原位 —— 这个函数不是通用入口。
+        ⚠ 批 85（X3 关档）折叠了 26 段 / 167 条；折叠工具
+        `scripts/x3_collapse_plain_loads.py` 只认这一种形状，且**键名与属性名必须同名**
+        （批 84 盘点实测：188 条机械读里不同名的是 0 条）。
+        ⭐⭐ 折叠**按段进行、段与段的先后一个字都没动** —— `load_config` 里机械读
+        和非机械逻辑是交错的，而其中一些非机械逻辑会读刚赋过的属性：
+        **顺序变了之后，行为还一不一样，没有任何东西会告诉我。**
+        """
+        for key in keys:
+            if key in data:
+                setattr(self, key, data[key])
+
     def load_config(self):
         """从新位置加载配置"""
         config_path = get_config_path()
@@ -1035,69 +1076,36 @@ class Config:
                 config_data = json.load(f)
 
                 # 基础设置
-                self.kill_sound_enabled = config_data.get("kill_sound_enabled", self.kill_sound_enabled)
-                self.kill_voice_enabled = config_data.get("kill_voice_enabled", self.kill_voice_enabled)
-                self.cfg_check_enabled = config_data.get("cfg_check_enabled", self.cfg_check_enabled)
-                self.mode = config_data.get("mode", self.mode)
-                self.csgo_dir = config_data.get("csgo_dir", self.csgo_dir)
-                self.kill_icon_enabled = config_data.get("kill_icon_enabled", self.kill_icon_enabled)
-                self.debug_mode = config_data.get("debug_mode", self.debug_mode)
+                self._load_plain(config_data,
+                                 "kill_sound_enabled", "kill_voice_enabled", "cfg_check_enabled", "mode", "csgo_dir", "kill_icon_enabled",
+                                 "debug_mode")
                 
                 # 额外功能开关
                 self.gun_sound_enabled = config_data.get("gun_sound_enabled", self.gun_sound_enabled)
                 
                 # 枪声相关设置
-                self.awp_enabled = config_data.get("awp_enabled", self.awp_enabled)
-                self.awp_style = config_data.get("awp_style", self.awp_style)
-                self.deagle_enabled = config_data.get("deagle_enabled", self.deagle_enabled)
-                self.deagle_style = config_data.get("deagle_style", self.deagle_style)
-                self.usp_enabled = config_data.get("usp_enabled", self.usp_enabled)
-                self.usp_style = config_data.get("usp_style", self.usp_style)
+                self._load_plain(config_data,
+                                 "awp_enabled", "awp_style", "deagle_enabled", "deagle_style", "usp_enabled", "usp_style")
                 
                 # 击杀图标设置
-                self.kill_icon_style = config_data.get("kill_icon_style", self.kill_icon_style)
-                self.kill_icon_offset_x = config_data.get("kill_icon_offset_x", self.kill_icon_offset_x)
-                self.kill_icon_offset_y = config_data.get("kill_icon_offset_y", self.kill_icon_offset_y)
-                self.kill_icon_scale = config_data.get("kill_icon_scale", self.kill_icon_scale)
-                self.kill_icon_base_width = config_data.get("kill_icon_base_width", self.kill_icon_base_width)
-                self.kill_icon_base_height = config_data.get("kill_icon_base_height", self.kill_icon_base_height)
-                self.kill_icon_fade_enabled = config_data.get("kill_icon_fade_enabled", self.kill_icon_fade_enabled)
-                self.kill_icon_headshot_enabled = config_data.get("kill_icon_headshot_enabled", self.kill_icon_headshot_enabled)
+                self._load_plain(config_data,
+                                 "kill_icon_style", "kill_icon_offset_x", "kill_icon_offset_y", "kill_icon_scale", "kill_icon_base_width", "kill_icon_base_height",
+                                 "kill_icon_fade_enabled", "kill_icon_headshot_enabled")
 
                 # 击杀图标FPS设置
-                self.kill_icon_fps_1 = config_data.get("kill_icon_fps_1", self.kill_icon_fps_1)
-                self.kill_icon_fps_2 = config_data.get("kill_icon_fps_2", self.kill_icon_fps_2)
-                self.kill_icon_fps_3 = config_data.get("kill_icon_fps_3", self.kill_icon_fps_3)
-                self.kill_icon_fps_4 = config_data.get("kill_icon_fps_4", self.kill_icon_fps_4)
-                self.kill_icon_fps_5 = config_data.get("kill_icon_fps_5", self.kill_icon_fps_5)
+                self._load_plain(config_data,
+                                 "kill_icon_fps_1", "kill_icon_fps_2", "kill_icon_fps_3", "kill_icon_fps_4", "kill_icon_fps_5")
 
                 # 新增武器配置
-                self.revolver_enabled = config_data.get("revolver_enabled", self.revolver_enabled)
-                self.revolver_style = config_data.get("revolver_style", self.revolver_style)
-                self.ssg08_enabled = config_data.get("ssg08_enabled", self.ssg08_enabled)
-                self.ssg08_style = config_data.get("ssg08_style", self.ssg08_style)
-                self.scar20_enabled = config_data.get("scar20_enabled", self.scar20_enabled)
-                self.scar20_style = config_data.get("scar20_style", self.scar20_style)
-                self.g3sg1_enabled = config_data.get("g3sg1_enabled", self.g3sg1_enabled)
-                self.g3sg1_style = config_data.get("g3sg1_style", self.g3sg1_style)
-                self.nova_enabled = config_data.get("nova_enabled", self.nova_enabled)
-                self.nova_style = config_data.get("nova_style", self.nova_style)
-                self.mag7_enabled = config_data.get("mag7_enabled", self.mag7_enabled)
-                self.mag7_style = config_data.get("mag7_style", self.mag7_style)
-                self.sawedoff_enabled = config_data.get("sawedoff_enabled", self.sawedoff_enabled)
-                self.sawedoff_style = config_data.get("sawedoff_style", self.sawedoff_style)
+                self._load_plain(config_data,
+                                 "revolver_enabled", "revolver_style", "ssg08_enabled", "ssg08_style", "scar20_enabled", "scar20_style",
+                                 "g3sg1_enabled", "g3sg1_style", "nova_enabled", "nova_style", "mag7_enabled", "mag7_style",
+                                 "sawedoff_enabled", "sawedoff_style")
                 
                 # 枪声静音时长设置
-                self.awp_mute_duration = config_data.get("awp_mute_duration", self.awp_mute_duration)
-                self.deagle_mute_duration = config_data.get("deagle_mute_duration", self.deagle_mute_duration)
-                self.usp_mute_duration = config_data.get("usp_mute_duration", self.usp_mute_duration)
-                self.revolver_mute_duration = config_data.get("revolver_mute_duration", self.revolver_mute_duration)
-                self.ssg08_mute_duration = config_data.get("ssg08_mute_duration", self.ssg08_mute_duration)
-                self.scar20_mute_duration = config_data.get("scar20_mute_duration", self.scar20_mute_duration)
-                self.g3sg1_mute_duration = config_data.get("g3sg1_mute_duration", self.g3sg1_mute_duration)
-                self.nova_mute_duration = config_data.get("nova_mute_duration", self.nova_mute_duration)
-                self.mag7_mute_duration = config_data.get("mag7_mute_duration", self.mag7_mute_duration)
-                self.sawedoff_mute_duration = config_data.get("sawedoff_mute_duration", self.sawedoff_mute_duration)
+                self._load_plain(config_data,
+                                 "awp_mute_duration", "deagle_mute_duration", "usp_mute_duration", "revolver_mute_duration", "ssg08_mute_duration", "scar20_mute_duration",
+                                 "g3sg1_mute_duration", "nova_mute_duration", "mag7_mute_duration", "sawedoff_mute_duration")
                 for profile in GUN_SOUND_PROFILE_LIST:
                     setattr(
                         self,
@@ -1129,18 +1137,8 @@ class Config:
                             ),
                         ),
                     )
-                self.gun_sound_ducking_enabled = config_data.get("gun_sound_ducking_enabled", self.gun_sound_ducking_enabled)
-                self.gun_sound_duck_ratio = config_data.get("gun_sound_duck_ratio", self.gun_sound_duck_ratio)
-                self.gun_sound_duck_attack_ms = config_data.get("gun_sound_duck_attack_ms", self.gun_sound_duck_attack_ms)
-                self.gun_sound_duck_release_ms = config_data.get("gun_sound_duck_release_ms", self.gun_sound_duck_release_ms)
-                self.gun_sound_duck_fallback_hotkey_mode = config_data.get(
-                    "gun_sound_duck_fallback_hotkey_mode",
-                    self.gun_sound_duck_fallback_hotkey_mode,
-                )
-                self.gun_sound_duck_target_processes = config_data.get(
-                    "gun_sound_duck_target_processes",
-                    self.gun_sound_duck_target_processes,
-                )
+                self._load_plain(config_data,
+                                 "gun_sound_ducking_enabled", "gun_sound_duck_ratio", "gun_sound_duck_attack_ms", "gun_sound_duck_release_ms", "gun_sound_duck_fallback_hotkey_mode", "gun_sound_duck_target_processes")
                 
                 # 死亡音效设置
                 self.death_sound_enabled = config_data.get("death_sound_enabled", self.death_sound_enabled)
@@ -1153,10 +1151,8 @@ class Config:
                 # `mode in allowed` 会退化成子串匹配或抛错，宁可回落默认值
                 if isinstance(loaded_modes, list):
                     self.fun_afterlife_modes = [str(m) for m in loaded_modes if str(m).strip()]
-                self.fun_afterlife_platform = config_data.get("fun_afterlife_platform", self.fun_afterlife_platform)
-                self.fun_afterlife_url = config_data.get("fun_afterlife_url", self.fun_afterlife_url)
-                self.fun_afterlife_mobile_ua = config_data.get("fun_afterlife_mobile_ua", self.fun_afterlife_mobile_ua)
-                self.fun_afterlife_side = config_data.get("fun_afterlife_side", self.fun_afterlife_side)
+                self._load_plain(config_data,
+                                 "fun_afterlife_platform", "fun_afterlife_url", "fun_afterlife_mobile_ua", "fun_afterlife_side")
                 self.fun_afterlife_height_ratio = normalize_ranged_float(
                     config_data.get("fun_afterlife_height_ratio", self.fun_afterlife_height_ratio), 0.3, 1.0, 0.82
                 )
@@ -1204,9 +1200,8 @@ class Config:
                 self.round_sound_volume = config_data.get("round_sound_volume", self.round_sound_volume)
 
                 # 血量警告设置
-                self.health_warning_enabled = config_data.get("health_warning_enabled", self.health_warning_enabled)
-                self.health_warning_threshold = config_data.get("health_warning_threshold", self.health_warning_threshold)
-                self.health_warning_cooldown = config_data.get("health_warning_cooldown", self.health_warning_cooldown)
+                self._load_plain(config_data,
+                                 "health_warning_enabled", "health_warning_threshold", "health_warning_cooldown")
                 
                 # 切枪音效设置
                 self.switch_weapon_sound_enabled = config_data.get("switch_weapon_sound_enabled", self.switch_weapon_sound_enabled)
@@ -1243,10 +1238,8 @@ class Config:
                     pass
 
                 # 窗口大小设置
-                self.window_width = config_data.get("window_width", self.window_width)
-                self.window_height = config_data.get("window_height", self.window_height)
-                self.use_saved_size = config_data.get("use_saved_size", self.use_saved_size)
-                self.compact_mode = config_data.get("compact_mode", self.compact_mode)
+                self._load_plain(config_data,
+                                 "window_width", "window_height", "use_saved_size", "compact_mode")
                 from ui_design_system import normalize_font_scale
                 self.ui_font_scale = normalize_font_scale(config_data.get("ui_font_scale", self.ui_font_scale))
                 self.debug_file_log = bool(config_data.get("debug_file_log", self.debug_file_log))
@@ -1306,51 +1299,27 @@ class Config:
                         self.ui_theme = "dark"
                 
                 # 准心设置
-                self.crosshair_enabled = config_data.get("crosshair_enabled", self.crosshair_enabled)
-                self.crosshair_size = config_data.get("crosshair_size", self.crosshair_size)
-                self.crosshair_thickness = config_data.get("crosshair_thickness", self.crosshair_thickness)
-                self.crosshair_color = config_data.get("crosshair_color", self.crosshair_color)
-                self.crosshair_style = config_data.get("crosshair_style", self.crosshair_style)
-                self.crosshair_custom_data = config_data.get("crosshair_custom_data", self.crosshair_custom_data)
-                self.crosshair_animation = config_data.get("crosshair_animation", self.crosshair_animation)
-                self.crosshair_kill_effect = config_data.get("crosshair_kill_effect", self.crosshair_kill_effect)
-                self.crosshair_gap = config_data.get("crosshair_gap", self.crosshair_gap)
-                self.crosshair_outline = config_data.get("crosshair_outline", self.crosshair_outline)
-                self.crosshair_dot = config_data.get("crosshair_dot", self.crosshair_dot)
-                self.crosshair_alpha = config_data.get("crosshair_alpha", self.crosshair_alpha)
-                self.crosshair_color_custom = config_data.get("crosshair_color_custom", self.crosshair_color_custom)
-                self.crosshair_reset_enabled = config_data.get("crosshair_reset_enabled", self.crosshair_reset_enabled)
-                self.crosshair_reset_attack_key = config_data.get("crosshair_reset_attack_key", self.crosshair_reset_attack_key)
-                self.crosshair_reset_secondary_enabled = config_data.get("crosshair_reset_secondary_enabled", self.crosshair_reset_secondary_enabled)
-                self.crosshair_reset_secondary_key = config_data.get("crosshair_reset_secondary_key", self.crosshair_reset_secondary_key)
-                self.crosshair_renderer = config_data.get("crosshair_renderer", self.crosshair_renderer)
+                self._load_plain(config_data,
+                                 "crosshair_enabled", "crosshair_size", "crosshair_thickness", "crosshair_color", "crosshair_style", "crosshair_custom_data",
+                                 "crosshair_animation", "crosshair_kill_effect", "crosshair_gap", "crosshair_outline", "crosshair_dot", "crosshair_alpha",
+                                 "crosshair_color_custom", "crosshair_reset_enabled", "crosshair_reset_attack_key", "crosshair_reset_secondary_enabled", "crosshair_reset_secondary_key", "crosshair_renderer")
                 
                 # 闪光效果设置
-                self.flash_enabled = config_data.get("flash_enabled", self.flash_enabled)
-                self.flash_bg_color = config_data.get("flash_bg_color", self.flash_bg_color)
-                self.flash_max_opacity = config_data.get("flash_max_opacity", self.flash_max_opacity)
-                self.flash_image_style = config_data.get("flash_image_style", self.flash_image_style)
-                self.flash_image_opacity = config_data.get("flash_image_opacity", self.flash_image_opacity)
-                self.flash_image_position = config_data.get("flash_image_position", self.flash_image_position)
-                self.flash_image_size = config_data.get("flash_image_size", self.flash_image_size)
+                self._load_plain(config_data,
+                                 "flash_enabled", "flash_bg_color", "flash_max_opacity", "flash_image_style", "flash_image_opacity", "flash_image_position",
+                                 "flash_image_size")
                 
                 # 闪光样式设置
-                self.flash_style = config_data.get("flash_style", self.flash_style)
-                self.flash_style_params = config_data.get("flash_style_params", self.flash_style_params)
-                self.flash_fade_in_enabled = config_data.get("flash_fade_in_enabled", self.flash_fade_in_enabled)
-                self.flash_fade_out_enabled = config_data.get("flash_fade_out_enabled", self.flash_fade_out_enabled)
+                self._load_plain(config_data,
+                                 "flash_style", "flash_style_params", "flash_fade_in_enabled", "flash_fade_out_enabled")
                 
                 # 闪光图片轮换设置
                 self.flash_image_rotation = config_data.get("flash_image_rotation", self.flash_image_rotation)
                 self.flash_current_image_index = config_data.get("flash_current_image_index", self.flash_current_image_index)
                 
                 # 闪光音频设置
-                self.flash_audio_enabled = config_data.get("flash_audio_enabled", self.flash_audio_enabled)
-                self.flash_audio_style = config_data.get("flash_audio_style", self.flash_audio_style)
-                self.flash_audio_rotation = config_data.get("flash_audio_rotation", self.flash_audio_rotation)
-                self.flash_audio_volume = config_data.get("flash_audio_volume", self.flash_audio_volume)
-                self.flash_current_audio_index = config_data.get("flash_current_audio_index", self.flash_current_audio_index)
-                self.flash_audio_auto_stop = config_data.get("flash_audio_auto_stop", self.flash_audio_auto_stop)
+                self._load_plain(config_data,
+                                 "flash_audio_enabled", "flash_audio_style", "flash_audio_rotation", "flash_audio_volume", "flash_current_audio_index", "flash_audio_auto_stop")
                 
                 # 持枪视角设置
                 self.viewmodel_cycle_key = config_data.get("viewmodel_cycle_key", self.viewmodel_cycle_key)
@@ -1358,35 +1327,35 @@ class Config:
                     self.viewmodel_presets = config_data["viewmodel_presets"]
                 
                 # 自动切换设置
-                self.viewmodel_auto_switch_enabled = config_data.get("viewmodel_auto_switch_enabled", self.viewmodel_auto_switch_enabled)
-                self.viewmodel_auto_switch_key = config_data.get("viewmodel_auto_switch_key", self.viewmodel_auto_switch_key)
-                self.viewmodel_auto_switch_interval = config_data.get("viewmodel_auto_switch_interval", self.viewmodel_auto_switch_interval)
+                self._load_plain(config_data,
+                                 "viewmodel_auto_switch_enabled", "viewmodel_auto_switch_key", "viewmodel_auto_switch_interval")
 
                 # HUD颜色设置
-                self.hud_color_enabled = config_data.get("hud_color_enabled", self.hud_color_enabled)
-                self.hud_color_mode = config_data.get("hud_color_mode", self.hud_color_mode)
-                self.hud_color_static = config_data.get("hud_color_static", self.hud_color_static)
-                self.hud_color_refresh_key = config_data.get("hud_color_refresh_key", self.hud_color_refresh_key)
+                self._load_plain(config_data,
+                                 "hud_color_enabled", "hud_color_mode", "hud_color_static", "hud_color_refresh_key")
                 if "hud_color_dynamic_map" in config_data and isinstance(config_data["hud_color_dynamic_map"], dict):
                     saved_map = config_data["hud_color_dynamic_map"]
                     for key, val in saved_map.items():
+                        # ⭐⭐⭐ RN-615（批 85）：这两条分支原来对「陌生的键算不算数」
+                        #   给出**相反**的答案 —— `dict` 那支守着 `key in ...`，
+                        #   而**兼容 V1 旧格式的 `int` 那支不守**。
+                        #   ⚠ 而不守的那一支，正是**老配置文件会走的那一支**。
+                        #   实测：往配置里塞 `{"__x3__": 1}`，它被物化成一个正经条目
+                        #   `{'color': 1, 'effect': 'solid', 'alt_color': -1}` 并原样写回盘，
+                        #   此后界面上没有任何地方能清掉它。
+                        if key not in self.hud_color_dynamic_map:
+                            continue
                         if isinstance(val, int):
                             # 兼容V1旧格式：int → dict
                             self.hud_color_dynamic_map[key] = {"color": val, "effect": "solid", "alt_color": -1}
-                        elif isinstance(val, dict) and key in self.hud_color_dynamic_map:
+                        elif isinstance(val, dict):
                             self.hud_color_dynamic_map[key].update(val)
-                self.hud_color_low_health_threshold = config_data.get("hud_color_low_health_threshold", self.hud_color_low_health_threshold)
-                self.hud_color_kill_duration = config_data.get("hud_color_kill_duration", self.hud_color_kill_duration)
-                self.hud_color_death_duration = config_data.get("hud_color_death_duration", self.hud_color_death_duration)
-                self.hud_color_multi_kill_duration = config_data.get("hud_color_multi_kill_duration", self.hud_color_multi_kill_duration)
-                self.hud_color_headshot_duration = config_data.get("hud_color_headshot_duration", self.hud_color_headshot_duration)
+                self._load_plain(config_data,
+                                 "hud_color_low_health_threshold", "hud_color_kill_duration", "hud_color_death_duration", "hud_color_multi_kill_duration", "hud_color_headshot_duration")
 
                 # HUD统一规则引擎配置
-                self.hud_rules_version = config_data.get("hud_rules_version", self.hud_rules_version)
-                self.hud_rules_enabled = config_data.get("hud_rules_enabled", self.hud_rules_enabled)
-                self.hud_rules_profile = config_data.get("hud_rules_profile", self.hud_rules_profile)
-                self.hud_runtime_sync_mode = config_data.get("hud_runtime_sync_mode", self.hud_runtime_sync_mode)
-                self.hud_runtime_refresh_key = config_data.get("hud_runtime_refresh_key", self.hud_runtime_refresh_key)
+                self._load_plain(config_data,
+                                 "hud_rules_version", "hud_rules_enabled", "hud_rules_profile", "hud_runtime_sync_mode", "hud_runtime_refresh_key")
                 if isinstance(config_data.get("hud_rules"), dict):
                     self.hud_rules = config_data.get("hud_rules")
                 if isinstance(config_data.get("hud_keymap_enabled"), dict):
@@ -1395,13 +1364,9 @@ class Config:
                         self.hud_keymap_enabled[k] = bool(config_data["hud_keymap_enabled"].get(k, self.hud_keymap_enabled[k]))
 
                 # 屏幕特效设置
-                self.screen_effects_enabled = config_data.get("screen_effects_enabled", self.screen_effects_enabled)
-                self.screen_edge_flash_enabled = config_data.get("screen_edge_flash_enabled", self.screen_edge_flash_enabled)
-                self.screen_edge_flash_color = config_data.get("screen_edge_flash_color", self.screen_edge_flash_color)
-                self.screen_edge_flash_intensity = config_data.get("screen_edge_flash_intensity", self.screen_edge_flash_intensity)
-                self.screen_edge_flash_thickness = config_data.get("screen_edge_flash_thickness", self.screen_edge_flash_thickness)
-                self.screen_edge_flash_duration_ms = config_data.get("screen_edge_flash_duration_ms", self.screen_edge_flash_duration_ms)
-                self.screen_edge_flash_headshot_boost = config_data.get("screen_edge_flash_headshot_boost", self.screen_edge_flash_headshot_boost)
+                self._load_plain(config_data,
+                                 "screen_effects_enabled", "screen_edge_flash_enabled", "screen_edge_flash_color", "screen_edge_flash_intensity", "screen_edge_flash_thickness", "screen_edge_flash_duration_ms",
+                                 "screen_edge_flash_headshot_boost")
                 if "screen_effects_preset" in config_data:
                     self.screen_effects_preset = normalize_screen_effect_preset(
                         config_data.get("screen_effects_preset"),
@@ -1452,69 +1417,50 @@ class Config:
                                 self.weapon_reload_sounds[weapon] = style
                 
                 # 音乐播放器设置
-                self.music_enabled = config_data.get("music_enabled", self.music_enabled)
-                self.music_show_player = config_data.get("music_show_player", self.music_show_player)
-                self.music_volume = config_data.get("music_volume", self.music_volume)
-                self.music_play_mode = config_data.get("music_play_mode", self.music_play_mode)
+                self._load_plain(config_data,
+                                 "music_enabled", "music_show_player", "music_volume", "music_play_mode")
                 
                 # 游戏联动设置
                 # ⚠ RN-454（批 33）：`music_game_link_enabled` 已撤（总开关的纯 AND 项）。
                 #   它的旧值只在 `_migrate_1_to_2` 里被读一次，用来保住老用户的原意。
-                self.music_death_action = config_data.get("music_death_action", self.music_death_action)
-                self.music_death_volume_custom = config_data.get("music_death_volume_custom", self.music_death_volume_custom)
-                self.music_death_volume = config_data.get("music_death_volume", self.music_death_volume)
-                self.music_revive_action = config_data.get("music_revive_action", self.music_revive_action)
-                self.music_revive_volume = config_data.get("music_revive_volume", self.music_revive_volume)
-                self.music_fade_enabled = config_data.get("music_fade_enabled", self.music_fade_enabled)
-                self.music_fade_in_duration = config_data.get("music_fade_in_duration", self.music_fade_in_duration)
-                self.music_fade_out_duration = config_data.get("music_fade_out_duration", self.music_fade_out_duration)
+                self._load_plain(config_data,
+                                 "music_death_action", "music_death_volume_custom", "music_death_volume", "music_revive_action", "music_revive_volume", "music_fade_enabled",
+                                 "music_fade_in_duration", "music_fade_out_duration")
                 
                 # 播放列表
-                self.music_current_playlist = config_data.get("music_current_playlist", self.music_current_playlist)
-                self.music_playlists = config_data.get("music_playlists", self.music_playlists)
-                self.music_current_index = config_data.get("music_current_index", self.music_current_index)
-                self.music_current_position = config_data.get("music_current_position", self.music_current_position)
-                self.music_is_playing = config_data.get("music_is_playing", self.music_is_playing)
-                self.music_bar_expanded = config_data.get("music_bar_expanded", self.music_bar_expanded)
-                self.music_cache_enabled = config_data.get("music_cache_enabled", self.music_cache_enabled)
-                self.music_default_song_added = config_data.get("music_default_song_added", self.music_default_song_added)
+                self._load_plain(config_data,
+                                 "music_current_playlist", "music_playlists", "music_current_index", "music_current_position", "music_is_playing", "music_bar_expanded",
+                                 "music_cache_enabled", "music_default_song_added")
                 
                 # 道具瞄点设置
-                self.utility_guide_enabled = config_data.get("utility_guide_enabled", self.utility_guide_enabled)
-                self.utility_guide_hotkey = config_data.get("utility_guide_hotkey", self.utility_guide_hotkey)
-                self.utility_guide_mode = config_data.get("utility_guide_mode", self.utility_guide_mode)
-                self.utility_guide_opacity = config_data.get("utility_guide_opacity", self.utility_guide_opacity)
-                self.utility_guide_scale = config_data.get("utility_guide_scale", self.utility_guide_scale)
-                self.utility_guide_position_x = config_data.get("utility_guide_position_x", self.utility_guide_position_x)
-                self.utility_guide_position_y = config_data.get("utility_guide_position_y", self.utility_guide_position_y)
-                self.utility_guide_menu_opacity = config_data.get("utility_guide_menu_opacity", self.utility_guide_menu_opacity)
-                self.utility_guide_display_duration = config_data.get("utility_guide_display_duration", self.utility_guide_display_duration)
+                self._load_plain(config_data,
+                                 "utility_guide_enabled", "utility_guide_hotkey", "utility_guide_mode", "utility_guide_opacity", "utility_guide_scale", "utility_guide_position_x",
+                                 "utility_guide_position_y", "utility_guide_menu_opacity", "utility_guide_display_duration")
                 
                 # 道具瞄点排序设置
-                self.utility_sort_mode = config_data.get("utility_sort_mode", self.utility_sort_mode)
-                self.utility_decay_days = config_data.get("utility_decay_days", self.utility_decay_days)
-                self.utility_min_usage = config_data.get("utility_min_usage", self.utility_min_usage)
+                self._load_plain(config_data,
+                                 "utility_sort_mode", "utility_decay_days", "utility_min_usage")
                 
                 # 语音输出设置（新增）
-                self.voice_output_enabled = config_data.get("voice_output_enabled", self.voice_output_enabled)
-                self.voice_output_volume = config_data.get("voice_output_volume", self.voice_output_volume)
-                self.voice_output_mode = config_data.get("voice_output_mode", self.voice_output_mode)
-                self.voice_output_also_local = config_data.get("voice_output_also_local", self.voice_output_also_local)
-                self.voice_output_slots = config_data.get("voice_output_slots", self.voice_output_slots)
-                self.voice_output_stop_key = config_data.get("voice_output_stop_key", self.voice_output_stop_key)  # 加载中断快捷键
+                self._load_plain(config_data,
+                                 "voice_output_enabled", "voice_output_volume", "voice_output_mode", "voice_output_also_local", "voice_output_slots", "voice_output_stop_key")
 
                 # --- START: 修改部分 ---
-                self.voice_output_ptt_enabled = config_data.get("voice_output_ptt_enabled", self.voice_output_ptt_enabled)
-                self.voice_output_ptt_key = config_data.get("voice_output_ptt_key", self.voice_output_ptt_key)
-                self.voice_output_ptt_delay = config_data.get("voice_output_ptt_delay", self.voice_output_ptt_delay)
+                self._load_plain(config_data,
+                                 "voice_output_ptt_enabled", "voice_output_ptt_key", "voice_output_ptt_delay")
                 self.voice_output_microphone = str(config_data.get("voice_output_microphone", self.voice_output_microphone) or "")
                 # --- END: 修改部分 ---
 
                 # 音效转发设置 (新增)
                 self.sfx_forwarding_enabled = config_data.get("sfx_forwarding_enabled", self.sfx_forwarding_enabled)
                 if "sfx_forwarding_options" in config_data and isinstance(config_data["sfx_forwarding_options"], dict):
-                    # 使用update方法，只更新存在的键，保留新增的默认键
-                    self.sfx_forwarding_options.update(config_data["sfx_forwarding_options"])
+                    # ⭐⭐ RN-615（批 85）：这里原来是 `dict.update()`，而它上面那行注释
+                    #   逐字写着「只更新存在的键」—— **`update` 对陌生键是插入，不是忽略。**
+                    #   ⭐ 一句注释写的是它想要的语义，而它下面那行给的是相反的；
+                    #     同一个文件里另外六个同类字段走的都是下面这种显式白名单。
+                    for _k, _v in config_data["sfx_forwarding_options"].items():
+                        if _k in self.sfx_forwarding_options:
+                            self.sfx_forwarding_options[_k] = _v
                 self.ui_expert_mode = bool(config_data.get("ui_expert_mode", self.ui_expert_mode))
                 self.config_snapshot_auto_before_risky_ops = bool(
                     config_data.get(
@@ -1556,7 +1502,7 @@ class Config:
                     if os.path.exists(config_path):
                         import time as _t
                         quarantine = f"{config_path}.corrupt-{_t.strftime('%Y%m%d_%H%M%S')}"
-                        os.replace(config_path, quarantine)
+                        replace_with_retry(config_path, quarantine)
                         logger.warning(f"损坏配置已隔离为: {quarantine}")
                 except OSError as _qe:
                     logger.warning(f"隔离损坏配置失败(忽略): {_qe}")
@@ -1598,6 +1544,21 @@ class Config:
                 logger.exception(f"配置 schema 迁移失败: v{version} -> v{version + 1}（已跳过）")
             version += 1
 
+        # ⛔⛔ RN-614（批 85）：这里原来是**无条件** `= CONFIG_SCHEMA_VERSION`。
+        #   于是「用户装过新版（配置已是 v3）、又退回只认 v2 的旧版跑一次」这条路上，
+        #   迁移循环一次都不进（3 < 2 为假），而**版本号被静默改写成 2 并落盘** ——
+        #   再升回新版时，新版看到 v2，会把 2→3 的迁移**在已经是 v3 的数据上再跑一遍**。
+        # ⭐ 版本号是**唯一**记录「这份数据是什么形状」的东西；
+        #   一个只会把它往下拉的赋值，等于允许旧版本抹掉这份记录。
+        # ⇒ 只许前进：比当前新就原样留着，并且**不落盘**（这一趟什么都没迁，
+        #   而落盘会让旧版本按自己的字段表重写文件）。
+        if from_version > CONFIG_SCHEMA_VERSION:
+            logger.warning(
+                f"配置 schema 版本 v{from_version} 比本版本认识的 "
+                f"v{CONFIG_SCHEMA_VERSION} 还新（装过更新的版本？）——"
+                "版本号原样保留，本次不迁移、不改写版本号")
+            self.config_schema_version = from_version
+            return
         self.config_schema_version = CONFIG_SCHEMA_VERSION
         if from_version != CONFIG_SCHEMA_VERSION and isinstance(config_data, dict):
             # 有过迁移→立即落盘固化新版本号
@@ -1623,6 +1584,46 @@ class Config:
                 self._save_timer = None
         self._do_save_config()
 
+    def save_config_on_exit(self, attempts=None, delay=None):
+        """退出路径专用：**在本线程里**把重试做完，一次也不排队。返回是否落盘成功。
+
+        ⭐⭐⭐ RN-624：重试是一句关于未来的承诺，而退出正是把未来拿走的那一刻
+        （15s 看门狗的 `os._exit(0)` 连 atexit 都不跑）。三条退出路径的对照表、
+        实测读数与阳性对照都在档案 `CS2 Customizer_翻新工程/档案/X5_退出链路.md`；
+        判据 `tests/test_a_write_at_exit_is_not_scheduled_into_a_future_that_never_comes.py`。
+
+        ⛔ 预算必须小：看门狗开火的前提是清理已经卡了 15 秒，
+        它的职责是「保证关得掉」，不是「不惜一切把配置写出去」。
+        """
+        attempts = _EXIT_SAVE_ATTEMPTS if attempts is None else attempts
+        delay = _EXIT_SAVE_DELAY_S if delay is None else delay
+
+        with self._save_lock:
+            if self._save_timer is not None:
+                # 排着的那一次和我们要做的是同一件事，且它等不到了。
+                try:
+                    self._save_timer.cancel()
+                except Exception:
+                    pass
+                self._save_timer = None
+            self._exiting = True
+
+        try:
+            for i in range(max(1, attempts)):
+                if self._do_save_config():
+                    return True
+                if i + 1 < attempts:
+                    time.sleep(delay)
+            logger.error(
+                f"退出时配置写盘 {attempts} 次全部失败，本次改动没有落盘 —— "
+                "config.json 可能被别的程序长期占用")
+            return False
+        finally:
+            # ⛔ 必须还原：同一个 Config 实例在测试里会被反复用，
+            #   留着 `_exiting` 会让之后每一次运行期写盘失败都不再重试。
+            with self._save_lock:
+                self._exiting = False
+
     def _do_save_config(self):
         """保存配置到新位置（原子写入）"""
         config_path = get_config_path()
@@ -1636,6 +1637,20 @@ class Config:
         from core.audio.special_events import config_defaults as _sound_style_defaults
 
         with self._save_lock:
+            # ⭐ RN-616（批 85）：这一趟写盘就是防抖 timer 要做的那件事，做完它就不再「待写」。
+            #   原来这里**从不**把 `_save_timer` 置回 `None`（只有 `save_config_now` /
+            #   `_atexit_flush` 会清）⇒ 本次会话只要调过一次 `save_config`，
+            #   `_atexit_flush` 里的 `has_pending = self._save_timer is not None` 就**恒为真**，
+            #   每次正常退出都多做一次内容相同的同步写盘。
+            #   ⚠ 不是数据丢失，⭐ 但它让「真的有待写改动吗」这个信号失真 ——
+            #     而那正是退出路径唯一用来决定「要不要在关机时动磁盘」的依据。
+            #   ⛔ 只认**线程身份**，不认 `is_alive()`：`threading.Timer` 就是一个线程，
+            #     而它到点之后正是**在它自己那个线程里**调这个函数 ⇒ 这一刻 `is_alive()`
+            #     必然为真，照它判就永远清不掉（我第一版就是这么写的）。
+            #   ⭐ 「这一趟是不是那个 timer 自己跑的」只有线程身份答得了；
+            #     `save_config_now` / `_atexit_flush` 走的是别的线程，它们自己会清。
+            if self._save_timer is threading.current_thread():
+                self._save_timer = None
             try:
                 self._normalize_gun_sound_config()
                 with open(tmp_path, "w", encoding="utf-8") as f:
@@ -2002,8 +2017,12 @@ class Config:
                     json.dump(payload, f, indent=4, ensure_ascii=False)
                     f.flush()
                     os.fsync(f.fileno())  # 落盘后再替换:防断电留下残缺文件
-                # 原子替换（Windows NTFS 上 os.replace 是原子的）
-                os.replace(tmp_path, config_path)
+                # 原子替换。⛔ 不许换回裸 `os.replace`：那样撞上 Windows 的扫描窗口
+                # （实测 ~8%）会走下面的 `except` —— 记一行日志、删临时文件、**什么都不做**，
+                # 用户刚改的那一项静默丢掉。RN-613 / 理由见 `core/io_validation.py`。
+                replace_with_retry(tmp_path, config_path)
+                self._save_retries_left = _SAVE_RETRIES_ON_FAILURE  # 写成功，额度还原
+                return True
             except Exception as e:
                 logger.error(f"保存配置失败: {e}")
                 # 清理临时文件
@@ -2011,6 +2030,32 @@ class Config:
                     os.remove(tmp_path)
                 except OSError:
                     pass
+                # ⭐⭐⭐ RN-622（批 86）：**退避用尽之后那一格，RN-613 一个字都没动** ——
+                #   「一次就放弃」变成了「五次才放弃」，而放弃的结果照旧是静默丢掉。
+                #   ⇒ 重新排进防抖队列，过一会儿再写。叙事见登记册 RN-622 / 档案 X4。
+                # ⛔ 不许改成调 `save_config()`：这里正握着不可重入的 `_save_lock` ⇒ 当场死锁。
+                # ⭐⭐⭐ RN-624：**退出路径上不许排队** —— 排一个 1 秒后的 daemon Timer，
+                #   前提是「1 秒后这个进程还在」，而看门狗下一行就是 `os._exit(0)`。
+                #   重试改由 `save_config_on_exit()` 在本线程里循环，这里只管别排队。
+                if self._exiting:
+                    logger.warning("配置写盘失败（退出中，改由调用方同步重试）")
+                elif self._save_retries_left > 0:
+                    self._save_retries_left -= 1
+                    delay = _SAVE_RETRY_DELAY_S * (
+                        _SAVE_RETRIES_ON_FAILURE - self._save_retries_left)
+                    if self._save_timer is not None:
+                        self._save_timer.cancel()
+                    self._save_timer = threading.Timer(delay, self._do_save_config)
+                    self._save_timer.daemon = True
+                    self._save_timer.start()
+                    logger.warning(
+                        f"配置写盘失败，{delay:.1f}s 后重试"
+                        f"（还剩 {self._save_retries_left} 次）")
+                else:
+                    logger.error(
+                        "配置写盘反复失败，本次改动没有落盘 —— "
+                        "磁盘可能已满或 config.json 被别的程序长期占用")
+                return False
             
     def reset_player_steamid(self):
         """重置玩家steamid"""

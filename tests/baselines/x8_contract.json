@@ -1,0 +1,371 @@
+{
+  "contract": {
+    "core.cfg_compiler": [
+      "check_bind_conflicts",
+      "compile_all",
+      "compile_hud_rules",
+      "compile_magnifier_runtime",
+      "compile_viewmodel",
+      "write_cs2customizer_cfg"
+    ],
+    "core.crosshair_reset": [
+      "PRIMARY_ALIAS",
+      "SECONDARY_ALIAS",
+      "resolve_attack_key"
+    ],
+    "core.gun_sound_profiles": [
+      "FULL_AUTO_GUN_SOUND_WEAPON_TYPES",
+      "GUN_SOUND_PROFILES",
+      "GUN_SOUND_PROFILE_LIST",
+      "GUN_SOUND_WEAPON_TYPES",
+      "SUPPORTED_GUN_SOUND_PROFILES",
+      "SUPPORTED_GUN_SOUND_PROFILE_LIST",
+      "SUPPORTED_GUN_SOUND_TAB_GROUPS",
+      "SUPPORTED_GUN_SOUND_WEAPON_TYPES",
+      "build_gun_sound_duck_plan",
+      "gun_sound_style_enabled",
+      "is_gun_sound_burst",
+      "is_gun_sound_master_enabled",
+      "resolve_gun_sound_style",
+      "sync_legacy_gun_sound_flags"
+    ],
+    "core.hud.__init__": [],
+    "core.hud.rule_compiler": [
+      "compile_cfg_rules",
+      "get_cfg_paths",
+      "get_initial_runtime_color",
+      "write_runtime_cfg"
+    ],
+    "core.hud.rule_model": [
+      "HUD_COLORS",
+      "get_default_hud_rules",
+      "has_runtime_enabled_rules",
+      "normalize_hud_rules",
+      "normalize_profile",
+      "normalize_runtime_refresh_key",
+      "normalize_sync_mode"
+    ],
+    "core.hud.runtime_engine": [
+      "RuntimeHudEngine"
+    ],
+    "core.magnifier_sensitivity": [
+      "DEFAULT_SYNC_TRIGGER_KEY",
+      "compute_zoom_sensitivity",
+      "format_sensitivity_value",
+      "get_keyboard_key_for_sync",
+      "get_magnifier_runtime_cfg_path",
+      "write_magnifier_runtime_cfg"
+    ]
+  },
+  "contract_total": 41,
+  "external_use": {
+    "core.cfg_compiler": {
+      "files": [
+        "cfg_utils.py",
+        "pages/hud_color_page.py",
+        "pages/magnifier_page.py",
+        "pages/viewmodel_page.py",
+        "tests/test_cfg_compiler.py",
+        "tests/test_crosshair_reset_cfg.py"
+      ],
+      "names": {
+        "check_bind_conflicts": 1,
+        "compile_all": 2,
+        "compile_hud_rules": 1,
+        "compile_magnifier_runtime": 1,
+        "compile_viewmodel": 2,
+        "write_cs2customizer_cfg": 4
+      }
+    },
+    "core.crosshair_reset": {
+      "files": [
+        "pages/viewmodel_page.py",
+        "tests/test_crosshair_reset_cfg.py"
+      ],
+      "names": {
+        "PRIMARY_ALIAS": 1,
+        "SECONDARY_ALIAS": 1,
+        "resolve_attack_key": 2
+      }
+    },
+    "core.gun_sound_profiles": {
+      "files": [
+        "config.py",
+        "core/audio/audio_manager.py",
+        "gsi_handler_sounds.py",
+        "gui_widget.py",
+        "pages/gun_sound_page.py",
+        "resource_manager.py",
+        "scripts/prepare_website_demo_state.py",
+        "tests/test_apply_one_style_to_every_weapon.py",
+        "tests/test_audio_manager.py",
+        "tests/test_gun_sound_profiles.py",
+        "tests/test_gun_special_sound_truth.py"
+      ],
+      "names": {
+        "FULL_AUTO_GUN_SOUND_WEAPON_TYPES": 1,
+        "GUN_SOUND_PROFILES": 3,
+        "GUN_SOUND_PROFILE_LIST": 2,
+        "GUN_SOUND_WEAPON_TYPES": 1,
+        "SUPPORTED_GUN_SOUND_PROFILES": 2,
+        "SUPPORTED_GUN_SOUND_PROFILE_LIST": 9,
+        "SUPPORTED_GUN_SOUND_TAB_GROUPS": 1,
+        "SUPPORTED_GUN_SOUND_WEAPON_TYPES": 2,
+        "build_gun_sound_duck_plan": 2,
+        "gun_sound_style_enabled": 2,
+        "is_gun_sound_burst": 2,
+        "is_gun_sound_master_enabled": 4,
+        "resolve_gun_sound_style": 3,
+        "sync_legacy_gun_sound_flags": 2
+      }
+    },
+    "core.hud.__init__": {
+      "files": [],
+      "names": {}
+    },
+    "core.hud.rule_compiler": {
+      "files": [
+        "gsi_handler_hud_color.py",
+        "pages/hud_color_page.py",
+        "tests/test_crosshair_reset_cfg.py",
+        "tests/test_hud_rule_compiler.py"
+      ],
+      "names": {
+        "compile_cfg_rules": 2,
+        "get_cfg_paths": 3,
+        "get_initial_runtime_color": 2,
+        "write_runtime_cfg": 2
+      }
+    },
+    "core.hud.rule_model": {
+      "files": [
+        "config.py",
+        "gsi_handler_hud_color.py",
+        "pages/hud_color_page.py",
+        "tests/test_cfg_compiler.py",
+        "tests/test_crosshair_reset_cfg.py",
+        "tests/test_hud_color_has_one_commit_point.py",
+        "tests/test_hud_color_layout_and_controls.py",
+        "tests/test_hud_rule_compiler.py",
+        "tests/test_hud_rule_model.py",
+        "tests/test_hud_runtime_engine.py",
+        "tests/test_page_hud_color_baseline.py",
+        "tests/test_tool_pages_ui_polish.py"
+      ],
+      "names": {
+        "HUD_COLORS": 3,
+        "get_default_hud_rules": 10,
+        "has_runtime_enabled_rules": 3,
+        "normalize_hud_rules": 4,
+        "normalize_profile": 3,
+        "normalize_runtime_refresh_key": 1,
+        "normalize_sync_mode": 1
+      }
+    },
+    "core.hud.runtime_engine": {
+      "files": [
+        "gsi_handler_hud_color.py",
+        "tests/test_hud_runtime_engine.py"
+      ],
+      "names": {
+        "RuntimeHudEngine": 2
+      }
+    },
+    "core.magnifier_sensitivity": {
+      "files": [
+        "pages/magnifier_page.py",
+        "tests/test_magnifier_sensitivity.py"
+      ],
+      "names": {
+        "DEFAULT_SYNC_TRIGGER_KEY": 1,
+        "compute_zoom_sensitivity": 2,
+        "format_sensitivity_value": 2,
+        "get_keyboard_key_for_sync": 2,
+        "get_magnifier_runtime_cfg_path": 1,
+        "write_magnifier_runtime_cfg": 2
+      }
+    }
+  },
+  "imported_but_no_contract": [],
+  "internal_only_modules": [],
+  "loc": {
+    "core.cfg_compiler": 255,
+    "core.crosshair_reset": 286,
+    "core.gun_sound_profiles": 513,
+    "core.hud.__init__": 24,
+    "core.hud.rule_compiler": 147,
+    "core.hud.rule_model": 449,
+    "core.hud.runtime_engine": 382,
+    "core.magnifier_sensitivity": 68
+  },
+  "reexport_only_modules": [],
+  "surface": {
+    "core.cfg_compiler": {
+      "classes": [],
+      "constants": [
+        "SECTION_ORDER",
+        "logger"
+      ],
+      "functions": [
+        "_coerce_number",
+        "_compile_footer",
+        "_compile_header",
+        "_parse_binds",
+        "_sanitize_bind_key",
+        "_sanitize_cfg_text",
+        "check_bind_conflicts",
+        "compile_all",
+        "compile_hud_rules",
+        "compile_magnifier_runtime",
+        "compile_mute",
+        "compile_viewmodel",
+        "get_cs2customizer_cfg_path",
+        "write_cs2customizer_cfg"
+      ]
+    },
+    "core.crosshair_reset": {
+      "classes": [],
+      "constants": [
+        "DEFAULT_ATTACK_KEY",
+        "DEFAULT_SECONDARY_KEY",
+        "LEGACY_ALIASES",
+        "MOVED_MARK",
+        "OWNED_ALIASES",
+        "PRIMARY_ALIAS",
+        "RECOIL_CVAR",
+        "SECONDARY_ALIAS",
+        "_EXEC_RE",
+        "_PLAIN_KEY",
+        "_PUNCT_KEYS"
+      ],
+      "functions": [
+        "_alias",
+        "_defines_our_alias",
+        "_sanitize_key",
+        "build_attack_alias_lines",
+        "exec_order",
+        "find_alias_overriders",
+        "resolve_attack_key",
+        "resolve_secondary_key",
+        "rewrite_autoexec_with_us_last",
+        "secondary_enabled"
+      ]
+    },
+    "core.gun_sound_profiles": {
+      "classes": [
+        "GunSoundDuckPlan",
+        "GunSoundProfile"
+      ],
+      "constants": [
+        "DISABLED_GUN_SOUND_STYLES",
+        "FULL_AUTO_GUN_SOUND_WEAPON_TYPES",
+        "GUN_SOUND_PROFILES",
+        "GUN_SOUND_PROFILE_LIST",
+        "GUN_SOUND_TAB_GROUPS",
+        "GUN_SOUND_WEAPON_TYPES",
+        "LEGACY_GUN_SOUND_ENABLED_KEYS",
+        "SUPPORTED_GUN_SOUND_PROFILES",
+        "SUPPORTED_GUN_SOUND_PROFILE_LIST",
+        "SUPPORTED_GUN_SOUND_TAB_GROUPS",
+        "SUPPORTED_GUN_SOUND_WEAPON_TYPES",
+        "_FAMILY_DEFAULTS"
+      ],
+      "functions": [
+        "_clamp_ratio",
+        "_clamp_time_ms",
+        "_profile",
+        "build_gun_sound_duck_plan",
+        "gun_sound_style_enabled",
+        "is_gun_sound_burst",
+        "is_gun_sound_master_enabled",
+        "resolve_gun_sound_style",
+        "sync_legacy_gun_sound_flags"
+      ]
+    },
+    "core.hud.__init__": {
+      "classes": [],
+      "constants": [],
+      "functions": []
+    },
+    "core.hud.rule_compiler": {
+      "classes": [],
+      "constants": [
+        "HUD_RULES_BEGIN",
+        "HUD_RULES_END"
+      ],
+      "functions": [
+        "build_hud_rules_block",
+        "compile_cfg_rules",
+        "get_cfg_paths",
+        "get_initial_runtime_color",
+        "has_hud_runtime_refresh",
+        "write_runtime_cfg"
+      ]
+    },
+    "core.hud.rule_model": {
+      "classes": [],
+      "constants": [
+        "HUD_COLORS",
+        "HUD_EFFECTS",
+        "HUD_EVENT_KEYS",
+        "HUD_PRIORITIES",
+        "HUD_PROFILES",
+        "HUD_RULES_VERSION",
+        "HUD_RUNTIME_REFRESH_KEYS",
+        "HUD_STATE_KEYS",
+        "HUD_SYNC_MODES"
+      ],
+      "functions": [
+        "_balanced_profile",
+        "_build_key_rules",
+        "_competitive_profile",
+        "_flashy_profile",
+        "_kill_only_profile",
+        "_normalize_key_rules",
+        "_normalize_runtime_rule",
+        "_tactical_profile",
+        "_to_bool",
+        "_to_float",
+        "_to_int",
+        "get_default_hud_rules",
+        "has_runtime_enabled_rules",
+        "is_valid_hud_color",
+        "normalize_effect",
+        "normalize_hud_color",
+        "normalize_hud_rules",
+        "normalize_profile",
+        "normalize_runtime_refresh_key",
+        "normalize_sync_mode"
+      ]
+    },
+    "core.hud.runtime_engine": {
+      "classes": [
+        "RuntimeHudEngine",
+        "RuntimeOutput",
+        "_Candidate"
+      ],
+      "constants": [
+        "PISTOL_WEAPONS",
+        "RIFLE_WEAPONS",
+        "SNIPER_WEAPONS"
+      ],
+      "functions": []
+    },
+    "core.magnifier_sensitivity": {
+      "classes": [],
+      "constants": [
+        "DEFAULT_SYNC_TRIGGER_KEY"
+      ],
+      "functions": [
+        "compute_zoom_sensitivity",
+        "format_sensitivity_value",
+        "get_keyboard_key_for_sync",
+        "get_magnifier_runtime_cfg_path",
+        "write_magnifier_runtime_cfg"
+      ]
+    }
+  },
+  "unreferenced_modules": [
+    "core.hud.__init__"
+  ]
+}

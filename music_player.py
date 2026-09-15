@@ -1362,10 +1362,6 @@ def add_playback_started_listener(callback: Callable[[], None]) -> None:
         _playback_started_listeners.append(callback)
 
 
-def remove_playback_started_listener(callback: Callable[[], None]) -> None:
-    if callback in _playback_started_listeners:
-        _playback_started_listeners.remove(callback)
-
 
 def notify_playback_started() -> None:
     """通告「开始播放」。

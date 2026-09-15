@@ -229,6 +229,10 @@ class GunSoundPage(QWidget):
         self.status_hint_label.setObjectName("hintLabel")
         self.status_hint_label.setWordWrap(True)
         self.status_hint_label.hide()
+        from widgets import community_library as _cl  # RN-197 出口接线
+
+        _cl.wire_stale_route(self.status_hint_label,
+                             lambda: self.COMMUNITY_CATEGORY_KEY)
         status_card_layout.addWidget(self.status_hint_label)
 
         # ⭐⭐⭐ RN-181（批 50）：这一页正是立案原文点名的那个「34 把枪逐个下拉」。
@@ -309,6 +313,12 @@ class GunSoundPage(QWidget):
 
         style_combo = QComboBox()
         style_combo.setMinimumWidth(230)
+        # ⭐⭐⭐ RN-442 的副作用（批 62 改完复跑逮到）：「测试」按钮从 118 缩回 72
+        #   之后，多出来的 46px 全被这颗 `Expanding` 的下拉框吃掉 ——
+        #   外审同一页同一档 **批 61 两发全 NONE、批 62 3/3** 报「选项文字与
+        #   下拉箭头之间大片异常留白，箭头被推到『测试』按钮旁」。
+        #   ⇒ 给它一个上限，多出来的空间交给弹簧，别交给控件。
+        style_combo.setMaximumWidth(420)
         style_combo.setMinimumHeight(34)
         style_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         style_combo.addItem(self.DISABLED_STYLE_TEXT, "0")
@@ -320,6 +330,7 @@ class GunSoundPage(QWidget):
             )
         )
         header_row.addWidget(style_combo, 1)
+        header_row.addStretch()
 
         test_btn = QPushButton("测试")
         test_btn.setObjectName("secondaryButton")
@@ -566,8 +577,10 @@ class GunSoundPage(QWidget):
         if bar is None:
             return
         btn = QPushButton("应用到全部武器…", bar)
-        btn.setObjectName("secondaryButton")
-        btn.setMinimumHeight(30)
+        # RN-549（批 66）：这一排的高度由 `PageActionBar` 说了算。
+        # 原来这里写 `setMinimumHeight(30)` —— 只给下限、不给上限，
+        # 于是紧凑标记认不出它，QSS 那条 54 的下限留在它身上，同排 36/38/54。
+        bar.adopt_button(btn)
         btn.clicked.connect(self._pick_style_and_apply_to_all)
         layout = bar.layout()
         if layout is not None:
@@ -863,7 +876,7 @@ class GunSoundPage(QWidget):
             configured_level = "success" if selected_count else "info"
 
         badges = [
-            ("success" if enabled else "warn", f"开关 · {'已启用' if enabled else '未启用'}"),
+            ("success" if enabled else "warn", f"开关 · {'已开启' if enabled else '未开启'}"),
             (configured_level, configured_text),
             (
                 "success" if current_count else "info",
@@ -879,7 +892,7 @@ class GunSoundPage(QWidget):
         duration_values = [self._get_profile_mute_duration(profile) for profile in current_profiles]
 
         detail_lines = [
-            f"总开关：{'已启用' if enabled else '已关闭'}",
+            f"总开关：{'已开启' if enabled else '未开启'}",
             f"当前分类：{current_tab_name}",
             f"当前分类已配置：{current_count}/{len(current_weapon_types)}",
             f"全局已配置：{selected_count}/{len(self.weapon_configs)}",
@@ -898,8 +911,11 @@ class GunSoundPage(QWidget):
         if stale_names:
             shown = "、".join(stale_names[:3])
             more = f" 等 {len(stale_names)} 把" if len(stale_names) > 3 else ""
+            from widgets import community_library as _cl  # RN-197
+
             hint = (f"{shown}{more}配的风格已经不在了（被改名或删除），"
-                    "下面显示成「不启用」，重新选一个即可。")
+                    "下面显示成「不启用」，重新选一个即可。"
+                    + _cl.stale_style_route(self.COMMUNITY_CATEGORY_KEY))
         else:
             hint = resource_hint(health)
         self.status_hint_label.setText(hint)

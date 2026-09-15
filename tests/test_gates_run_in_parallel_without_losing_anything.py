@@ -241,6 +241,63 @@ def _wall_clock_test_files() -> dict[str, list[str]]:
     return out
 
 
+def _deadline_wait_test_files() -> dict[str, list[str]]:
+    """⭐⭐⭐ RN-633（批 91）：**同样的行为换个形状，上面那个识别器就看不见了。**
+
+    上面 `_wall_clock_test_files()` 认的是「函数体里有时钟调用 **且** 有 `<` 断言」。
+    而 `test_a_failed_config_write_is_retried_not_dropped` 长这样：
+
+        def _wait_until(pred, timeout=12.0):        # 时钟在 **helper** 里
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline: ...
+
+        def test_...():
+            assert _wait_until(lambda: ...)         # 阈值是**参数**，不是断言
+
+    ⇒ 时钟不在函数体里、阈值不是 `<` 断言 ⇒ 漏网。而它**在并行全量里真的红过**
+    （批 90/91 连续几轮），单跑必绿。
+    ⭐ 同一条规律的第 N 次：**一条判据只有两格，而世界有三种**（RN-596 / RN-602）。
+
+    ⇒ 这里认的是另一种形状：模块里有「轮询等待器」（非 test 函数，体内同时有
+    时钟、循环、`sleep`），且某条用例**真的调用**了它。
+
+    ⚠ 误报率量过再落地（RN-156）：加宽后只多点名 **2 个**文件，
+    逐个核实**全真**（`_wait_until` 12 秒截止、`_wait_routed` 3 秒截止），**0 误报**。
+    ⛔ 第一版探针用名字正则对「谁调了等待器」，把 `def test_x(` 这一行当成了
+    「test_x 调用 test_x」，凭空多出 4 个假阳 ——
+    ⭐ 正是 RN-525 注释里那句「**一条按记号划分母的判据，最先撞上的往往是它自己**」。
+    ⇒ 走 AST 的 `Call`，并把 test 函数排除在「等待器」之外。
+    """
+    out: dict[str, list[str]] = {}
+    for p in sorted((REPO / "tests").glob("test_*.py")):
+        src = p.read_text(encoding="utf-8", errors="replace")
+        try:
+            tree = ast.parse(src)
+        except SyntaxError:
+            continue
+        waiters = set()
+        for fn in ast.walk(tree):
+            if not isinstance(fn, ast.FunctionDef) or fn.name.startswith("test_"):
+                continue
+            seg = ast.get_source_segment(src, fn) or ""
+            if not CLOCK.search(seg):
+                continue
+            if any(isinstance(n, (ast.While, ast.For)) for n in ast.walk(fn)) \
+                    and re.search(r"\bsleep\s*\(", seg):
+                waiters.add(fn.name)
+        if not waiters:
+            continue
+        for fn in ast.walk(tree):
+            if not (isinstance(fn, ast.FunctionDef) and fn.name.startswith("test_")):
+                continue
+            for node in ast.walk(fn):
+                if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                        and node.func.id in waiters):
+                    out.setdefault(p.name, []).append(fn.name)
+                    break
+    return out
+
+
 #: ⚠ RN-525：**不是只有时钟阈值判据怕挤。**
 #: 拿多份**子进程 UI 快照**互相比的判据同样怕：子进程要和别的 pytest 抢 CPU，
 #: 快照就可能停在不同的时刻。这个记号是精确的闭集（实测 2 个文件）。
@@ -324,9 +381,17 @@ def test_every_wall_clock_judge_runs_alone():
     assert found, ("一个拿墙钟比阈值的判据都没扫到 —— 多半是识别器瞎了，"
                    "而不是真的一个都没有（历史上至少有 4 个）。")
 
+    # RN-633：把「时钟藏在轮询 helper 里、阈值是参数」的那一类也并进来。
+    waiting = _deadline_wait_test_files()
+    assert waiting, ("一个轮询等待器都没扫到 —— 识别器多半瞎了"
+                     "（实测至少 3 个：_wait_until / _drain / _wait_routed）。")
+    for f, fns in waiting.items():
+        found.setdefault(f, []).extend(fns)
+
     missing = {f: fns for f, fns in found.items() if f not in listed}
     assert not missing, (
-        "这些文件拿墙钟去比阈值，却没进 `run_tests.py` 的 `SERIAL_TAIL`：\n  "
+        "这些文件拿墙钟去比阈值（或在一个截止时间里轮询等待），"
+        "却没进 `run_tests.py` 的 `SERIAL_TAIL`：\n  "
         + "\n  ".join(f"{f} ← {', '.join(fns)}" for f, fns in sorted(missing.items()))
         + "\n⇒ 并行跑的时候它们会和别的 pytest 进程抢 CPU，量出来的数说明不了代码好坏。"
           "\n（批 47 实测：CI 2 核上 12ms 的预算量成 14.2ms，红得毫无道理。）")
@@ -404,9 +469,24 @@ def test_a_shard_without_a_summary_line_is_a_failure():
     assert "没有汇总行" in src and "按失败处理" in src, (
         "少一片汇总行现在不按失败处理了 —— 那就洗得成假绿了")
 
+    # ⚠⚠ 2026-09-10 批 74：这一句原本写死了整个表达式
+    #   `"if (missing or all_missed) else 0"` —— 于是批 74 给裁定**加了一项**
+    #   （`or stale`，失效断点从此计入 rc）时它当场判红，而那是一次**加强**。
+    #   ⭐⭐⭐ **一条按源码字面写的判据，分不出「裁定被拆掉」和「裁定被加强」——
+    #     而它只该拦前者。**
+    #   ⇒ 改成按 AST 问一句「`missing` 还在不在那个决定 rc 的布尔式里」，
+    #     后面爱加多少项都行，少了它就红。
     tree = ast.parse(src)
     main = next(n for n in ast.walk(tree)
                 if isinstance(n, ast.FunctionDef) and n.name == "main")
-    src_main = ast.get_source_segment(src, main) or ""
-    assert "if (missing or all_missed) else 0" in src_main.replace("\n", " "), (
-        "裁定不再把 `missing`（缺汇总行的片）算进红里")
+    verdicts = [n for n in ast.walk(main)
+                if isinstance(n, ast.Assign)
+                and any(getattr(t, "id", "") == "rc" for t in n.targets)
+                and isinstance(n.value, ast.IfExp)]
+    assert verdicts, "`main()` 里不再有一句 `rc = 1 if ... else 0` 的裁定"
+    names = {n.id for v in verdicts for n in ast.walk(v.value.test)
+             if isinstance(n, ast.Name)}
+    assert "missing" in names, (
+        f"裁定不再把 `missing`（缺汇总行的片）算进红里 —— 它现在只看 {sorted(names)}")
+    assert "all_missed" in names, (
+        f"裁定不再把「没逮住」算进红里 —— 它现在只看 {sorted(names)}")

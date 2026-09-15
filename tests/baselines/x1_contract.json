@@ -1,0 +1,525 @@
+{
+ "_说明": "MainWindow 上被 gui_widget.py 之外的代码依赖的名字。改名/删除前先看这里。",
+ "总名字数": 288,
+ "契约名字数": 94,
+ "下划线开头却被依赖": [
+  "_activate_page_tab",
+  "_app_shortcuts",
+  "_apply_account_button_style",
+  "_apply_compact_mode",
+  "_apply_expert_mode_visibility",
+  "_compact_mode",
+  "_create_music_control_bar",
+  "_create_music_control_bar_if_played",
+  "_current_page_id",
+  "_expert_only_pages",
+  "_find_feature_switch",
+  "_find_setting_row",
+  "_first_page_of_group",
+  "_focus_settings_search",
+  "_force_exit",
+  "_frequent_buttons",
+  "_get_page_skeleton",
+  "_goto_nav_group",
+  "_hide_sidebar_overlay",
+  "_home_player_label_text",
+  "_idle_preload_queue",
+  "_mode_toggle_btn",
+  "_nav_groups_in_view",
+  "_nudge_nav_button_fully_into_view",
+  "_on_search_return",
+  "_on_search_text_edited",
+  "_on_switch_changed",
+  "_on_tray_activated",
+  "_onboarding_dialog",
+  "_overlay_buttons",
+  "_page_names",
+  "_preload_next_page",
+  "_preload_skip_pages",
+  "_refresh_system_status_strip",
+  "_reopen_search_popup",
+  "_search_rows",
+  "_set_badge_label_state",
+  "_settings_search_completer",
+  "_show_onboarding_dialog",
+  "_show_search_suggestions",
+  "_show_sidebar_overlay",
+  "_sidebar_mode_btn",
+  "_sidebar_nav_container",
+  "_sidebar_scroll",
+  "_sync_home_tool_rows",
+  "_toggle_compact_mode",
+  "_tray_icon",
+  "_update_basic_status_summary_label"
+ ],
+ "其中产品或脚本在依赖": [
+  "_create_music_control_bar_if_played",
+  "_force_exit",
+  "_on_search_text_edited",
+  "_page_names",
+  "_refresh_system_status_strip",
+  "_search_rows",
+  "_settings_search_completer"
+ ],
+ "扫描文件数": 528,
+ "契约": {
+  "_activate_page_tab": [
+   "tests/test_search_jump_r13.py"
+  ],
+  "_app_shortcuts": [
+   "tests/test_app_shortcuts.py",
+   "tests/test_sidebar_nav_structure.py",
+   "tests/test_x1_link_behavior.py"
+  ],
+  "_apply_account_button_style": [
+   "tests/test_correctness_r8a.py"
+  ],
+  "_apply_compact_mode": [
+   "tests/test_x1_link_behavior.py"
+  ],
+  "_apply_expert_mode_visibility": [
+   "tests/test_ui_expert_mode_smoke.py"
+  ],
+  "_compact_mode": [
+   "tests/test_x1_link_behavior.py"
+  ],
+  "_create_music_control_bar": [
+   "tests/test_music_bar_only_after_playing.py"
+  ],
+  "_create_music_control_bar_if_played": [
+   "main_widget.py",
+   "tests/test_music_bar_only_after_playing.py"
+  ],
+  "_current_page_id": [
+   "tests/test_search_jump_r13.py"
+  ],
+  "_expert_only_pages": [
+   "tests/test_ui_expert_mode_smoke.py"
+  ],
+  "_find_feature_switch": [
+   "tests/test_master_switch_row.py"
+  ],
+  "_find_setting_row": [
+   "tests/test_search_jump_r13.py"
+  ],
+  "_first_page_of_group": [
+   "tests/test_app_shortcuts.py"
+  ],
+  "_focus_settings_search": [
+   "tests/test_search_sticky_r14.py"
+  ],
+  "_force_exit": [
+   "scripts/build_search_index.py",
+   "tests/test_a_switch_is_nearest_to_its_own_label.py",
+   "tests/test_basic_status_strip_says_what_matters.py",
+   "tests/test_search_index_check_exit_code.py",
+   "tests/test_x1_link_behavior.py"
+  ],
+  "_frequent_buttons": [
+   "tests/test_page_usage_tracker.py"
+  ],
+  "_get_page_skeleton": [
+   "tests/test_page_skeleton.py"
+  ],
+  "_goto_nav_group": [
+   "tests/test_app_shortcuts.py",
+   "tests/test_x1_link_behavior.py"
+  ],
+  "_hide_sidebar_overlay": [
+   "tests/test_sidebar_nav_structure.py",
+   "tests/test_x1_link_behavior.py"
+  ],
+  "_home_player_label_text": [
+   "tests/test_basic_status_strip_says_what_matters.py",
+   "tests/test_ui_system_status_smoke.py"
+  ],
+  "_idle_preload_queue": [
+   "tests/test_idle_preload.py"
+  ],
+  "_mode_toggle_btn": [
+   "tests/test_every_status_chip_explains_itself.py"
+  ],
+  "_nav_groups_in_view": [
+   "tests/test_app_shortcuts.py",
+   "tests/test_x1_link_behavior.py"
+  ],
+  "_nudge_nav_button_fully_into_view": [
+   "tests/test_ui_visual_r1_fixes.py"
+  ],
+  "_on_search_return": [
+   "tests/test_search_jump_r13.py"
+  ],
+  "_on_search_text_edited": [
+   "scripts/probe_search_popup_render.py",
+   "tests/test_search_jump_r13.py",
+   "tests/test_search_sticky_r14.py"
+  ],
+  "_on_switch_changed": [
+   "tests/test_master_switch_row.py"
+  ],
+  "_on_tray_activated": [
+   "tests/test_x1_link_behavior.py"
+  ],
+  "_onboarding_dialog": [
+   "tests/test_onboarding_reentry.py"
+  ],
+  "_overlay_buttons": [
+   "tests/test_sidebar_nav_structure.py",
+   "tests/test_x1_link_behavior.py"
+  ],
+  "_page_names": [
+   "scripts/build_search_index.py",
+   "scripts/layout_overflow_audit.py",
+   "scripts/page_fingerprint.py",
+   "scripts/primary_button_census.py",
+   "scripts/r9_visual_evidence.py",
+   "scripts/renovation_baseline.py",
+   "scripts/squeezed_label_audit.py",
+   "scripts/ui_shot_capture.py",
+   "tests/test_audit_can_see_every_page.py",
+   "tests/test_audit_measures_the_whole_page.py",
+   "tests/test_design_w5.py",
+   "tests/test_disabled_buttons_look_disabled.py",
+   "tests/test_help_button_exists_wherever_help_text_does.py",
+   "tests/test_hud_color_has_one_commit_point.py",
+   "tests/test_master_switch_row.py",
+   "tests/test_no_layout_self_talk_at_runtime.py",
+   "tests/test_no_layout_self_talk_sitewide.py",
+   "tests/test_one_action_one_entrance.py",
+   "tests/test_one_primary_button_per_screen.py",
+   "tests/test_preset_center_tells_the_truth.py",
+   "tests/test_side_by_side_cards_end_together.py",
+   "tests/test_sidebar_nav_structure.py",
+   "tests/test_status_chips_do_not_look_clickable.py",
+   "tests/test_the_loudest_button_is_not_the_undo_button.py",
+   "tests/test_the_page_promises_a_feature_it_does_not_have.py",
+   "tests/test_the_sandbox_does_not_remember_yesterday.py",
+   "tests/test_the_status_card_is_a_site_wide_pattern.py",
+   "tests/test_ui_expert_mode_smoke.py",
+   "tests/test_ui_visual_r1_fixes.py",
+   "tests/test_x1_link_behavior.py"
+  ],
+  "_preload_next_page": [
+   "tests/test_idle_preload.py"
+  ],
+  "_preload_skip_pages": [
+   "tests/test_no_hardcoded_page_lists.py"
+  ],
+  "_refresh_system_status_strip": [
+   "main_widget.py"
+  ],
+  "_reopen_search_popup": [
+   "tests/test_search_sticky_r14.py"
+  ],
+  "_search_rows": [
+   "scripts/probe_search_popup_render.py",
+   "tests/test_search_jump_r13.py",
+   "tests/test_search_sticky_r14.py"
+  ],
+  "_set_badge_label_state": [
+   "tests/test_account_page_ui_states.py"
+  ],
+  "_settings_search_completer": [
+   "scripts/probe_search_popup_render.py",
+   "tests/test_search_jump_r13.py",
+   "tests/test_search_sticky_r14.py"
+  ],
+  "_show_onboarding_dialog": [
+   "tests/test_onboarding_reentry.py"
+  ],
+  "_show_search_suggestions": [
+   "tests/test_search_jump_r13.py"
+  ],
+  "_show_sidebar_overlay": [
+   "tests/test_sidebar_nav_structure.py",
+   "tests/test_x1_link_behavior.py"
+  ],
+  "_sidebar_mode_btn": [
+   "tests/test_ui_visual_r1_fixes.py"
+  ],
+  "_sidebar_nav_container": [
+   "tests/test_ui_visual_r1_fixes.py"
+  ],
+  "_sidebar_scroll": [
+   "tests/test_ui_visual_r1_fixes.py"
+  ],
+  "_sync_home_tool_rows": [
+   "tests/test_ui_expert_mode_smoke.py"
+  ],
+  "_toggle_compact_mode": [
+   "tests/test_x1_link_behavior.py"
+  ],
+  "_tray_icon": [
+   "tests/test_x1_link_behavior.py"
+  ],
+  "_update_basic_status_summary_label": [
+   "tests/test_account_page_ui_states.py"
+  ],
+  "account_entry_busy": [
+   "tests/test_account_page_ui_states.py",
+   "tests/test_correctness_r8a.py"
+  ],
+  "account_entry_online": [
+   "tests/test_account_page_ui_states.py",
+   "tests/test_correctness_r8a.py"
+  ],
+  "account_entry_profile": [
+   "tests/test_correctness_r8a.py"
+  ],
+  "account_quick_button": [
+   "tests/test_account_page_tells_the_truth.py",
+   "tests/test_correctness_r8a.py"
+  ],
+  "account_session": [
+   "tests/test_account_page_ui_states.py",
+   "tests/test_audit_never_shows_the_real_account.py",
+   "tests/test_correctness_r8a.py"
+  ],
+  "audio_task_panel_quick_btn": [
+   "tests/test_ui_expert_mode_smoke.py"
+  ],
+  "basic_account_badge": [
+   "tests/test_account_page_ui_states.py",
+   "tests/test_basic_status_strip_says_what_matters.py"
+  ],
+  "basic_audio_badge": [
+   "tests/test_account_page_ui_states.py"
+  ],
+  "basic_config_badge": [
+   "tests/test_account_page_ui_states.py"
+  ],
+  "basic_gsi_badge": [
+   "tests/test_account_page_ui_states.py"
+  ],
+  "basic_mode_badge": [
+   "tests/test_account_page_ui_states.py"
+  ],
+  "basic_onboarding_btn": [
+   "tests/test_basic_page_primary_action.py",
+   "tests/test_onboarding_reentry.py"
+  ],
+  "basic_onboarding_hint": [
+   "tests/test_onboarding_reentry.py"
+  ],
+  "basic_status_badge_label": [
+   "tests/test_account_page_ui_states.py",
+   "tests/test_every_status_chip_explains_itself.py"
+  ],
+  "basic_status_card": [
+   "tests/test_account_page_ui_states.py"
+  ],
+  "basic_theme_badge": [
+   "tests/test_account_page_ui_states.py"
+  ],
+  "closeEvent": [
+   "tests/test_x1_link_behavior.py"
+  ],
+  "config": [
+   "scripts/v5_demo_run.py",
+   "scripts/v5_full_smoke.py",
+   "scripts/v5_perf_check.py",
+   "scripts/v5_themes_smoke.py",
+   "scripts/v5_visual_baseline.py",
+   "tests/test_account_page_ui_states.py",
+   "tests/test_basic_status_strip_says_what_matters.py",
+   "tests/test_ui_expert_mode_smoke.py",
+   "tests/test_ui_system_status_smoke.py",
+   "tests/test_x1_link_behavior.py"
+  ],
+  "content_stack": [
+   "tests/test_music_bar_only_after_playing.py",
+   "tests/test_page_skeleton.py",
+   "tests/test_page_usage_tracker.py",
+   "tests/test_ui_expert_mode_smoke.py"
+  ],
+  "crosshair_animation": [
+   "main_widget.py"
+  ],
+  "ensure_page_loaded": [
+   "main_widget.py",
+   "tests/test_crosshair_says_what_it_actually_does.py",
+   "tests/test_disabled_buttons_look_disabled.py",
+   "tests/test_help_button_exists_wherever_help_text_does.py",
+   "tests/test_hud_color_has_one_commit_point.py",
+   "tests/test_master_switch_effect_is_honest.py",
+   "tests/test_master_switch_row.py",
+   "tests/test_overlay_pages_state_their_requirement.py",
+   "tests/test_preload_scheduler.py",
+   "tests/test_search_jump_r13.py",
+   "tests/test_status_chips_do_not_look_clickable.py",
+   "tests/test_the_loudest_button_is_not_the_undo_button.py",
+   "tests/test_the_page_promises_a_feature_it_does_not_have.py",
+   "tests/test_the_slider_says_one_thing_and_shows_another.py",
+   "tests/test_the_way_out_is_not_dimmed_by_the_master_switch.py"
+  ],
+  "eventFilter": [
+   "tests/test_search_sticky_r14.py"
+  ],
+  "frequent_group": [
+   "tests/test_page_usage_tracker.py",
+   "tests/test_x1_link_behavior.py"
+  ],
+  "gsi_server": [
+   "main_widget.py"
+  ],
+  "home_expert_tools_row": [
+   "tests/test_ui_expert_mode_smoke.py"
+  ],
+  "home_primary_tools_row": [
+   "tests/test_ui_expert_mode_smoke.py"
+  ],
+  "home_reload_audio_btn": [
+   "tests/test_basic_page_primary_action.py"
+  ],
+  "is_page_loaded": [
+   "main_widget.py",
+   "tests/test_idle_preload.py",
+   "tests/test_page_skeleton.py"
+  ],
+  "kill_icon_player": [
+   "main_widget.py",
+   "tests/test_master_switch_row.py"
+  ],
+  "logger": [
+   "tests/test_account_page_ui_states.py"
+  ],
+  "nav_buttons": [
+   "tests/test_audit_can_see_every_page.py",
+   "tests/test_ui_expert_mode_smoke.py",
+   "tests/test_ui_visual_r1_fixes.py",
+   "tests/test_x1_link_behavior.py"
+  ],
+  "nav_groups": [
+   "tests/test_sidebar_nav_structure.py",
+   "tests/test_x1_link_behavior.py"
+  ],
+  "pages": [
+   "_manual_backup_20260610_154957/scripts/build_cs2customizer_local_manual.py",
+   "main_widget.py",
+   "output/manual_backup_2_1_4_20260611_000541/build_cs2customizer_local_manual.py",
+   "scripts/build_cs2customizer_local_manual.py",
+   "scripts/build_search_index.py",
+   "scripts/layout_overflow_audit.py",
+   "scripts/page_fingerprint.py",
+   "scripts/primary_button_census.py",
+   "scripts/r9_visual_evidence.py",
+   "scripts/renovation_baseline.py",
+   "scripts/squeezed_label_audit.py",
+   "scripts/ui_shot_capture.py",
+   "tests/test_a_switch_is_nearest_to_its_own_label.py",
+   "tests/test_audit_measures_the_whole_page.py",
+   "tests/test_audit_never_shows_the_real_account.py",
+   "tests/test_basic_page_primary_action.py",
+   "tests/test_basic_status_strip_says_what_matters.py",
+   "tests/test_compact_mode_layout_r11.py",
+   "tests/test_crosshair_says_what_it_actually_does.py",
+   "tests/test_design_w5.py",
+   "tests/test_disabled_buttons_look_disabled.py",
+   "tests/test_help_button_exists_wherever_help_text_does.py",
+   "tests/test_hud_color_has_one_commit_point.py",
+   "tests/test_master_switch_effect_is_honest.py",
+   "tests/test_master_switch_row.py",
+   "tests/test_no_layout_self_talk_at_runtime.py",
+   "tests/test_no_layout_self_talk_sitewide.py",
+   "tests/test_one_action_one_entrance.py",
+   "tests/test_one_primary_button_per_screen.py",
+   "tests/test_overlay_pages_state_their_requirement.py",
+   "tests/test_page_skeleton.py",
+   "tests/test_page_usage_tracker.py",
+   "tests/test_preset_center_tells_the_truth.py",
+   "tests/test_search_jump_r13.py",
+   "tests/test_side_by_side_cards_end_together.py",
+   "tests/test_status_chips_do_not_look_clickable.py",
+   "tests/test_the_loudest_button_is_not_the_undo_button.py",
+   "tests/test_the_page_promises_a_feature_it_does_not_have.py",
+   "tests/test_the_slider_says_one_thing_and_shows_another.py",
+   "tests/test_the_status_card_is_a_site_wide_pattern.py",
+   "tests/test_the_way_out_is_not_dimmed_by_the_master_switch.py",
+   "tests/test_ui_expert_mode_smoke.py",
+   "tests/test_ui_visual_r1_fixes.py",
+   "tests/test_x1_link_behavior.py"
+  ],
+  "player_label": [
+   "tests/test_basic_status_strip_says_what_matters.py",
+   "tests/test_ui_system_status_smoke.py"
+  ],
+  "set_feature_enabled": [
+   "tests/test_master_switch_row.py",
+   "widgets/master_switch_link.py"
+  ],
+  "settings_search_box": [
+   "scripts/probe_search_popup_render.py",
+   "tests/test_search_jump_r13.py",
+   "tests/test_search_sticky_r14.py"
+  ],
+  "show_page": [
+   "_manual_backup_20260610_154957/scripts/build_cs2customizer_local_manual.py",
+   "main_widget.py",
+   "output/manual_backup_2_1_4_20260611_000541/build_cs2customizer_local_manual.py",
+   "scripts/_ui_mode.py",
+   "scripts/aesthetic_eval_capture.py",
+   "scripts/build_cs2customizer_local_manual.py",
+   "scripts/build_search_index.py",
+   "scripts/capture_website_screenshots.py",
+   "scripts/r9_visual_evidence.py",
+   "scripts/v5_full_smoke.py",
+   "scripts/v5_perf_check.py",
+   "scripts/v5_themes_smoke.py",
+   "scripts/v5_visual_baseline.py",
+   "tests/test_a_switch_is_nearest_to_its_own_label.py",
+   "tests/test_audit_can_see_every_page.py",
+   "tests/test_basic_status_strip_says_what_matters.py",
+   "tests/test_compact_mode_layout_r11.py",
+   "tests/test_crosshair_says_what_it_actually_does.py",
+   "tests/test_design_w5.py",
+   "tests/test_disabled_buttons_look_disabled.py",
+   "tests/test_help_button_exists_wherever_help_text_does.py",
+   "tests/test_hud_color_has_one_commit_point.py",
+   "tests/test_idle_preload.py",
+   "tests/test_master_switch_effect_is_honest.py",
+   "tests/test_master_switch_row.py",
+   "tests/test_no_layout_self_talk_sitewide.py",
+   "tests/test_overlay_pages_state_their_requirement.py",
+   "tests/test_page_skeleton.py",
+   "tests/test_search_jump_r13.py",
+   "tests/test_status_chips_do_not_look_clickable.py",
+   "tests/test_the_loudest_button_is_not_the_undo_button.py",
+   "tests/test_the_page_promises_a_feature_it_does_not_have.py",
+   "tests/test_the_slider_says_one_thing_and_shows_another.py",
+   "tests/test_the_way_out_is_not_dimmed_by_the_master_switch.py",
+   "tests/test_ui_expert_mode_smoke.py",
+   "tests/test_ui_visual_r1_fixes.py",
+   "tests/test_x1_link_behavior.py"
+  ],
+  "sidebar": [
+   "tests/test_x1_link_behavior.py"
+  ],
+  "start_idle_preload": [
+   "main_widget.py",
+   "tests/test_idle_preload.py"
+  ],
+  "switches": [
+   "tests/test_a_switch_is_nearest_to_its_own_label.py"
+  ],
+  "sync_feature_switch": [
+   "pages/flash_page.py"
+  ],
+  "system_status_health_btn": [
+   "tests/test_ui_expert_mode_smoke.py"
+  ],
+  "system_status_label": [
+   "tests/test_account_page_ui_states.py",
+   "tests/test_basic_status_strip_says_what_matters.py"
+  ],
+  "system_status_open_health_btn": [
+   "tests/test_ui_expert_mode_smoke.py"
+  ],
+  "theme_combo": [
+   "pages/advanced_page.py",
+   "tests/test_account_page_ui_states.py"
+  ],
+  "ui_mode_combo": [
+   "tests/test_ui_expert_mode_smoke.py"
+  ]
+ }
+}

@@ -125,11 +125,23 @@ class StyleApplier:
         # 设置统一的最小尺寸
         min_width, min_height, _, _ = self._get_button_metrics(button)
 
+        # ⭐⭐ RN-442（批 62）：**抬 min 不许越过调用方写下的 max。**
+        #   实测批 61：656 颗按钮里 133 颗 `min > max`（「重置ID」118/100、
+        #   六颗「试听」118/72）—— Qt 在 min > max 时取 min，于是调用点
+        #   写下的那个宽度是**一句死声明**，改它不产生任何效果。
+        #   ⚠ `_width_is_fixed` 那道守卫认的是 `setFixedWidth`（min == max），
+        #     **认不出「只设了 max」**；而这一处当时连守卫都没有。
+        #   ⇒ 抬到 max 为止。没设过 max 的控件 maximumWidth() 是
+        #     QWIDGETSIZE_MAX，`min()` 什么都不做（同 UP-018：调用方赢）。
+        # ⚠ RN-442：这里**看不见**调用点的 max —— 实测 `_style_button` 跑不到
+        #   多数按钮上（同一个原因让 `fp_compact` 一直是 None）。
+        #   真正解决 min>max 的是页面建完之后的 `mark_compact_buttons()`。
+        #   这一句仍然夹一下：跑得到的那些，别自己制造 min>max。
         if button.minimumWidth() < min_width:
-            button.setMinimumWidth(min_width)
+            button.setMinimumWidth(min(min_width, button.maximumWidth()))
         
         if button.minimumHeight() < min_height:
-            button.setMinimumHeight(min_height)
+            button.setMinimumHeight(min(min_height, button.maximumHeight()))
         
         # 设置鼠标光标
         button.setCursor(Qt.PointingHandCursor)
@@ -319,13 +331,14 @@ class StyleApplier:
             if not self._width_is_fixed(widget):
                 min_width = max(min_width_spec, text_width + padding_horizontal * 2 + 20)
                 if widget.minimumWidth() < min_width:
-                    widget.setMinimumWidth(min_width)
+                    # RN-442：同上，只设了 max 的也要认。
+                    widget.setMinimumWidth(min(min_width, widget.maximumWidth()))
 
             # 设置最小高度
             if not self._height_is_fixed(widget):
                 min_height = max(text_height + padding_vertical * 2, min_height_spec)
                 if widget.minimumHeight() < min_height:
-                    widget.setMinimumHeight(min_height)
+                    widget.setMinimumHeight(min(min_height, widget.maximumHeight()))
 
         elif isinstance(widget, QLabel):
             # RN-121：**调用方明确说过"我不折行"的，不碰。**
@@ -360,21 +373,7 @@ class StyleApplier:
             # 确保输入框和下拉框有足够的高度
             if not self._height_is_fixed(widget) and widget.minimumHeight() < self.ds.input.text_height:
                 widget.setMinimumHeight(self.ds.input.text_height)
-    
-    def apply_to_container(self, container: QWidget):
-        """
-        为容器应用统一样式
-        自动识别容器类型并应用相应样式
-        """
-        if isinstance(container, QFrame):
-            # 判断是否是卡片容器
-            if (container.frameShape() == QFrame.Box or 
-                container.frameShadow() == QFrame.Raised or
-                container.layout() is not None):
-                container.setObjectName("card")
-        elif isinstance(container, QGroupBox):
-            container.setObjectName("groupBox")
-    
+
     # ========== 递归清理和应用 ==========
     
     # UP-019: 带这个动态属性的控件，其内联样式不会被清掉。
@@ -488,18 +487,147 @@ def keep_inline_style(widget: QWidget) -> QWidget:
     return widget
 
 
-def fix_button_text(button: QPushButton):
-    """快捷函数：修复按钮文字显示"""
-    applier = get_style_applier()
-    applier.fix_text_display(button)
+
+def mark_compact_buttons(root) -> int:
+    """把「调用点已经把宽度限死到比规范还窄」的按钮标成紧凑变体。
+
+    ⭐⭐⭐ RN-442（批 62）：规范的下限写在样式表里
+    （`QPushButton#secondaryButton { min-width: 118px }`），调用点的意图写在
+    `setFixedWidth(72)` 里，**Qt 在 min > max 时取 min** ⇒ 调用点那个宽度
+    是一句死声明。实测批 61：656 颗按钮里 **133 颗** min>max，差 6~46px。
+
+    ⚠ 三件事必须同时成立，缺一条就修不掉（三版都试过）：
+      ① **改样式表，不改 Python** —— Python 侧夹 min 会被随后的 polish 覆盖回去；
+      ② **不许直接删样式表那条下限** —— 删掉当场把全站按钮的下限一起删了
+        （实测 min 分布从「一堵 118 的墙」散成 72/80/84/…），因为
+        `_style_button` 实测跑不到多数按钮上；
+      ③ **在页面建完之后打属性** —— 调用点的 `setFixedWidth` 是在建页过程里
+        执行的，早于任何样式扫描。
+
+    ⭐ 一个动作一个入口：只有这里打这个属性，`show_page` / `ensure_page_loaded`
+      之后调它一次。
+    """
+    from PySide6.QtWidgets import QAbstractButton
+
+    changed = 0
+    for b in root.findChildren(QAbstractButton):
+        narrow = b.maximumWidth() < b.minimumWidth()
+        short = b.maximumHeight() < b.minimumHeight()
+        if not narrow and not short:
+            continue
+        # ⚠ 只能走样式表变体 + repolish：实测**直接 `setMinimumWidth` 不管用**
+        #   （124/125 又回来了）—— QSS 的 min-width 在随后的 polish 里会盖回去。
+        # ⚠⚠ **两个轴各一个标记**：只限了宽的按钮，高度还得站在规范下限上；
+        #   一个标记同时清两个下限，就是我修宽度时踩过的「把下限一起删了」。
+        hit = False
+        if narrow and not b.property("fp_narrow"):
+            b.setProperty("fp_narrow", True)
+            hit = True
+        if short and not b.property("fp_short"):
+            b.setProperty("fp_short", True)
+            hit = True
+        if not hit:
+            continue
+        b.style().unpolish(b)
+        b.style().polish(b)
+        changed += 1
+    return changed
 
 
-def make_primary_button(button: QPushButton):
-    """快捷函数：将按钮设为主要按钮"""
-    button.setObjectName("primaryButton")
-    fix_button_text(button)
+#: 记原样用的属性名。⭐ 一个动作一个入口，撤销也只认这一个记号。
+_DENSITY_ORIGIN = "fp_density_origin"
 
 
-def make_card(frame: QFrame):
-    """快捷函数：将框架设为卡片"""
-    frame.setObjectName("card")
+def _vertical_layouts(root):
+    """root 底下所有会吃竖向高度的 layout（含 root 自己那一层）。
+
+    ⚠ 不能只 `findChildren(QLayout)`：嵌套在 layout 里的 **子 layout 不是任何
+    widget 的孩子**（`addLayout` 加进去的那种），漏掉它们等于漏掉大半。
+    """
+    from PySide6.QtWidgets import QLayout
+
+    seen, out = set(), []
+
+    def dive(layout):
+        stack = [layout]
+        while stack:
+            cur = stack.pop()
+            if cur is None or id(cur) in seen:
+                continue
+            seen.add(id(cur))
+            out.append(cur)
+            for i in range(cur.count()):
+                item = cur.itemAt(i)
+                if item is not None and item.layout() is not None:
+                    stack.append(item.layout())
+
+    dive(root.layout())
+    for child in root.findChildren(QWidget):
+        dive(child.layout())
+    for lay in root.findChildren(QLayout):
+        dive(lay)
+    return out
+
+
+def apply_compact_density(root, compact: bool) -> int:
+    """紧凑档把**竖向**的间距/边距收到规格上限；完整档原样还回去。
+
+    ⭐⭐⭐ RN-548：紧凑档只是把窗口改小（可视区 750 → 462px），
+    而版面密度一档都没跟着变 ⇒ 竖向余量不到 1px，任何一次改进都变成一次「变坏」。
+
+    ⚠⚠ **为什么是「收已经写死的数」而不是「让页面去读 token」**：
+    批 65 用 AST 数过，全仓 813 处版面调用里走 token 的只有 8 处 ——
+    ⭐ **给一个没人在读的规格加一档，等于什么都没做。**
+    这条路够得着那 813 处，代价是它必须**可逆**（紧凑/完整是个能来回拨的开关）。
+
+    ⚠ 可逆性靠把原样记在 layout 自己身上（`fp_density_origin`），
+      **只记第一次**：反复调用不会把收过的数当成原样记进去（幂等）。
+    ⚠ 只收竖向。横向不动 —— 这一档买的是竖向余量。
+
+    返回改动的 layout 个数。
+    """
+    from PySide6.QtCore import QMargins
+    from PySide6.QtWidgets import QBoxLayout, QFormLayout, QGridLayout
+
+    ds = get_design_system()
+    cap_spacing = ds.density.compact_max_vertical_spacing
+    cap_margin = ds.density.compact_max_vertical_margin
+
+    changed = 0
+    for lay in _vertical_layouts(root):
+        grid_like = isinstance(lay, (QGridLayout, QFormLayout))
+        vertical_box = (isinstance(lay, QBoxLayout)
+                        and lay.direction() in (QBoxLayout.TopToBottom,
+                                                QBoxLayout.BottomToTop))
+        origin = lay.property(_DENSITY_ORIGIN)
+        if origin is None:
+            m = lay.contentsMargins()
+            if grid_like:
+                spacing = lay.verticalSpacing()
+            elif vertical_box:
+                spacing = lay.spacing()
+            else:
+                spacing = None
+            origin = (m.top(), m.bottom(), spacing)
+            lay.setProperty(_DENSITY_ORIGIN, origin)
+
+        top0, bottom0, spacing0 = origin
+        top = min(top0, cap_margin) if compact else top0
+        bottom = min(bottom0, cap_margin) if compact else bottom0
+        m = lay.contentsMargins()
+        hit = False
+        if (m.top(), m.bottom()) != (top, bottom):
+            lay.setContentsMargins(QMargins(m.left(), top, m.right(), bottom))
+            hit = True
+        if spacing0 is not None:
+            spacing = min(spacing0, cap_spacing) if compact else spacing0
+            now = lay.verticalSpacing() if grid_like else lay.spacing()
+            if now != spacing:
+                if grid_like:
+                    lay.setVerticalSpacing(spacing)
+                else:
+                    lay.setSpacing(spacing)
+                hit = True
+        if hit:
+            changed += 1
+    return changed
