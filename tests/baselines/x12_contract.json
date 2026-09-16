@@ -1,6 +1,11 @@
 {
   "contract": {
-    "core.resource_catalog": [],
+    "core.resource_catalog": [
+      "RESOURCE_SPECS",
+      "ResourceSpec",
+      "build_spec_lookup",
+      "get_resource_spec"
+    ],
     "core.resource_health": [
       "apply_conservative_resource_fix",
       "collect_resource_system_health",
@@ -9,7 +14,11 @@
     ],
     "core.resource_import_wizard": [
       "apply_resource_import_plan",
-      "scan_resource_import_candidates"
+      "plan_from_decisions",
+      "prepare_decisions",
+      "remember_decisions",
+      "scan_resource_import_candidates",
+      "undo_import"
     ],
     "resource_manager": [
       "MIGRATION_CRITICAL_FILES",
@@ -19,11 +28,21 @@
       "_RESOURCE_COPY_DONE"
     ]
   },
-  "contract_total": 11,
+  "contract_total": 19,
   "external_use": {
     "core.resource_catalog": {
-      "files": [],
-      "names": {}
+      "files": [
+        "core/resource_identify.py",
+        "core/resource_placement.py",
+        "dialogs/resource_import_decision_dialog.py",
+        "tests/test_loose_files_land_where_the_page_will_look_for_them.py"
+      ],
+      "names": {
+        "RESOURCE_SPECS": 2,
+        "ResourceSpec": 1,
+        "build_spec_lookup": 1,
+        "get_resource_spec": 2
+      }
     },
     "core.resource_health": {
       "files": [
@@ -42,11 +61,18 @@
     "core.resource_import_wizard": {
       "files": [
         "pages/audio_import_wizard_page.py",
-        "tests/test_resource_import_wizard.py"
+        "tests/test_a_downloaded_pack_imports_without_a_single_question.py",
+        "tests/test_an_import_can_be_taken_back.py",
+        "tests/test_resource_import_wizard.py",
+        "tests/test_the_import_does_not_freeze_or_ask_twice.py"
       ],
       "names": {
-        "apply_resource_import_plan": 2,
-        "scan_resource_import_candidates": 2
+        "apply_resource_import_plan": 5,
+        "plan_from_decisions": 3,
+        "prepare_decisions": 2,
+        "remember_decisions": 1,
+        "scan_resource_import_candidates": 1,
+        "undo_import": 2
       }
     },
     "resource_manager": {
@@ -100,13 +126,11 @@
     }
   },
   "imported_but_no_contract": [],
-  "internal_only_modules": [
-    "core.resource_catalog"
-  ],
+  "internal_only_modules": [],
   "loc": {
     "core.resource_catalog": 80,
     "core.resource_health": 282,
-    "core.resource_import_wizard": 248,
+    "core.resource_import_wizard": 515,
     "resource_manager": 746
   },
   "reexport_only_modules": [],
@@ -182,12 +206,19 @@
     },
     "core.resource_import_wizard": {
       "classes": [],
-      "constants": [],
+      "constants": [
+        "IMPORT_MEMORY_KEY"
+      ],
       "functions": [
         "_extract_target_rel_path",
         "_normalize_extension",
         "apply_resource_import_plan",
-        "scan_resource_import_candidates"
+        "load_import_memory",
+        "plan_from_decisions",
+        "prepare_decisions",
+        "remember_decisions",
+        "scan_resource_import_candidates",
+        "undo_import"
       ]
     },
     "resource_manager": {

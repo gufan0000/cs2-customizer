@@ -198,7 +198,10 @@ class MainWindow(QMainWindow):
         self._preload_skip_pages = set(DEVICE_OWNING_PAGES)
         self._expert_only_pages = {
             "audio_health",
-            "audio_import_wizard",
+            # ⭐ 2026-09-16：`audio_import_wizard` 从这里**移出去了**（用户在场）。
+            #   它是"把下载来的素材装进软件"的唯一入口，而装素材不是专家操作 ——
+            #   锁在专家模式里的后果是用户根本不知道有这个页面，
+            #   只能自己开资源目录手动摆文件夹。
             "audio_task_panel",
             "audio_replay",
             "config_snapshot",
@@ -1224,7 +1227,9 @@ class MainWindow(QMainWindow):
                 ("utility", "道具瞄点"),
                 ("advanced", "高级设置"),
                 ("audio_health", "资源体检"),
-                ("audio_import_wizard", "资源导入向导"),
+                # ⚠ 显示名去掉"向导"二字：它现在是拖进来就走的一步式，
+                #   而"向导"在用户那里意味着"要点好几下下一步"。
+                ("audio_import_wizard", "导入资源"),
                 ("audio_task_panel", "音频任务面板"),
                 ("audio_replay", "音频事件回放"),
                 ("config_snapshot", "软件设置快照"),

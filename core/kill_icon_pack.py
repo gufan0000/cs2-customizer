@@ -25,7 +25,7 @@
    解到临时目录后走正常导入管线。用户从网盘下下来的多半是这种。
 3. **解压前逐条校验**。zip 是外来数据，`extractall` 直接对着用户磁盘写
    是不能接受的：`../../` 的条目会写到资源目录外面（zip-slip），
-   高压缩比的条目能把磁盘塞满（zip 炸弹）。见 `_iter_safe_members`。
+   高压缩比的条目能把磁盘塞满（zip 炸弹）。见 `core/archive_safe.iter_safe_members`。
 """
 from __future__ import annotations
 
@@ -45,6 +45,13 @@ from core.kill_icon_import import (
 )
 from core.utils.logger import get_logger
 from core.io_validation import replace_with_retry
+from core.archive_safe import (
+    MAX_COMPRESSION_RATIO as _MAX_COMPRESSION_RATIO,
+    MAX_ENTRIES as _MAX_ENTRIES,
+    MAX_UNCOMPRESSED_BYTES as _MAX_UNCOMPRESSED_BYTES,
+    iter_safe_members,
+    strip_single_root,
+)
 
 logger = get_logger("KillIconPack")
 
@@ -57,24 +64,17 @@ MANIFEST_NAME = "style.json"
 LEVEL_ENTRY_RE = re.compile(r"^([1-5])(hs)?\.(png|json)$", re.IGNORECASE)
 
 
-# ---- 以下三条是"外来 zip"的护栏，别为了兼容某个包把它们放宽 ----
-
-#: 条目数上限。
-#:
-#: 我们自己导出的包永远是 5 个等级 ×2 个文件 + 几个附加文件（十几条），
-#: 但**别人的松散包**可以是"每个等级一个帧序列目录"，那就是
-#: 5 个等级 × `MAX_FRAMES`(600) 帧。这个数按后者定。
-#:
-#: ⚠ 这条上限一开始定成 400，结果是**我们自己导出的包自己装不回来**：
-#: 用户的默认风格是 519 帧的逐帧目录，导出来 520 个条目，一导入就被这条挡了。
-#: 拿真实素材跑一次往返才发现——判据里用的都是 3 帧的小样本。
-MAX_ENTRIES = 3200
-
-#: 解压后总字节上限。默认风格 519 帧 350x250 打成图集也就几十 MB。
-MAX_UNCOMPRESSED_BYTES = 512 * 1024 * 1024
-
-#: 单条目压缩比上限。压缩比几千倍的条目只可能是刻意构造的。
-MAX_COMPRESSION_RATIO = 500
+# ---- 外来 zip 的三条护栏：实现在 `core/archive_safe.py`（2026-09-16 提升上去的）----
+#
+#: ⭐ 搬走的理由：同一套护栏原来有三份（这里 / `presets/share_file.py` / 社区站
+#:   `pack_validate.php`），而资源导入统一化要第四个调用点。
+#: ⚠ 行为**零变化**：异常类型（`KillIconImportError`）与消息措辞（"图标包"）
+#:   都是调用时传进去的，判据 `test_kill_icon_pack_ki4.py` 一条没改。
+#: ⚠ 三个上限的值也一字未动 —— `MAX_ENTRIES` 那个数是拿真实素材换来的
+#:   （默认风格 519 帧导出 520 条目，上限原本 400，我们自己的包自己装不回来）。
+MAX_ENTRIES = _MAX_ENTRIES
+MAX_UNCOMPRESSED_BYTES = _MAX_UNCOMPRESSED_BYTES
+MAX_COMPRESSION_RATIO = _MAX_COMPRESSION_RATIO
 
 
 @dataclass
@@ -103,71 +103,6 @@ class PackProbe:
         return bool(self.levels or self.loose_items)
 
 
-def _safe_relpath(name):
-    """把 zip 里的条目名归一成一个**保证落在解压根之内**的相对路径。
-
-    拒绝：绝对路径、盘符、任何 `..` 段。返回 None 表示这条不能要。
-    """
-    raw = str(name or "").replace("\\", "/")
-    if not raw or raw.endswith("/"):
-        return None
-    if raw.startswith("/") or re.match(r"^[A-Za-z]:", raw):
-        return None
-    parts = []
-    for part in raw.split("/"):
-        if part in ("", "."):
-            continue
-        if part == "..":
-            return None
-        parts.append(part)
-    return "/".join(parts) if parts else None
-
-
-def _iter_safe_members(archive):
-    """逐条产出 `(info, 安全相对路径)`，同时把总量卡住。
-
-    ⚠ 不许换成 `ZipFile.extractall`：它对 zip-slip 只有部分防护（依赖 Python
-    版本），对总大小和压缩比完全不管。zip 是从网上下下来的外来数据。
-    """
-    total = 0
-    count = 0
-    for info in archive.infolist():
-        if info.is_dir():
-            continue
-        relative = _safe_relpath(info.filename)
-        if relative is None:
-            raise KillIconImportError(
-                f"这个 zip 里有一条不安全的路径：{info.filename}。为安全起见整个包都不导入。"
-            )
-        count += 1
-        if count > MAX_ENTRIES:
-            raise KillIconImportError(
-                f"这个 zip 里的文件超过 {MAX_ENTRIES} 个，不像是一个图标包。"
-            )
-        size = int(getattr(info, "file_size", 0) or 0)
-        compressed = max(1, int(getattr(info, "compress_size", 0) or 0))
-        if size / compressed > MAX_COMPRESSION_RATIO:
-            raise KillIconImportError(
-                f"这个 zip 里有异常高压缩比的条目（{info.filename}），已拒绝解压。"
-            )
-        total += size
-        if total > MAX_UNCOMPRESSED_BYTES:
-            raise KillIconImportError(
-                f"这个 zip 解压后超过 "
-                f"{MAX_UNCOMPRESSED_BYTES // (1024 * 1024)}MB，不像是一个图标包。"
-            )
-        yield info, relative
-
-
-def _strip_single_root(entries):
-    """很多包解出来是 `包名/1.png`。把这层统一的外壳剥掉。"""
-    roots = {path.split("/")[0] for path in entries if "/" in path}
-    if len(roots) != 1 or any("/" not in path for path in entries):
-        return entries, ""
-    root = roots.pop()
-    return [path[len(root) + 1:] for path in entries], root
-
-
 def probe_pack(zip_path):
     """看包里有什么。**只读，不解压到磁盘。**"""
     zip_path = str(zip_path)
@@ -182,11 +117,11 @@ def probe_pack(zip_path):
 
     probe = PackProbe(path=zip_path)
     with archive:
-        members = list(_iter_safe_members(archive))
+        members = list(iter_safe_members(archive, KillIconImportError, "图标包"))
         probe.entry_count = len(members)
         probe.total_bytes = sum(int(info.file_size or 0) for info, _ in members)
         paths = [relative for _info, relative in members]
-        stripped, root = _strip_single_root(paths)
+        stripped, root = strip_single_root(paths)
         lookup = dict(zip(stripped, paths))
 
         manifest = {}
@@ -288,9 +223,9 @@ def import_pack(zip_path, style_name=None, resource_manager=None,
     temp_root = tempfile.mkdtemp(prefix="cs2customizer_kipack_")
     try:
         with zipfile.ZipFile(str(zip_path)) as archive:
-            members = list(_iter_safe_members(archive))
+            members = list(iter_safe_members(archive, KillIconImportError, "图标包"))
             paths = [relative for _info, relative in members]
-            stripped, _root = _strip_single_root(paths)
+            stripped, _root = strip_single_root(paths)
             total = max(1, len(members))
             for index, ((info, relative), target_rel) in enumerate(
                     zip(members, stripped)):

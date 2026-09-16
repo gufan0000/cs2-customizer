@@ -1112,7 +1112,10 @@ REVERTS = [
     ),
     Revert(
         "KI", "zip 条目路径不再校验",
-        "core/kill_icon_pack.py",
+        # ⚠ 2026-09-16：本体搬到 `core/archive_safe.py`（三份护栏收成一份）。
+        #   ⭐ 断点的文件路径**必须跟着搬** —— 锚点对不上时这条断点静默失效，
+        #   而"失效的断点"和"守住了的断点"在报告上长得一模一样（RN-165 同族）。
+        "core/archive_safe.py",
         '        if part == "..":\n            return None',
         '        if part == "..":\n            continue',
         "tests/test_kill_icon_pack_ki4.py::"
@@ -8087,6 +8090,43 @@ Revert(
         'tests/test_brand_assets.py::test_legacy_splash_art_is_not_tracked',
         '把常量指向一个确实已入库的文件，等价于"那张美术底图被 git add 了"。'
         '它既是旧品牌残留，又是来源不清的 AI 素材，公开仓库两头都不该有',
+    ),
+    Revert(
+        "RI", "拿不准的时候替用户预选一个",
+        "core/resource_identify.py",
+        "        if self.confidence == UNSURE or not self.guesses:\n            return None",
+        "        if not self.guesses:\n            return None",
+        "tests/test_a_pack_that_could_be_five_things_asks_instead_of_guessing.py"
+        "::test_an_unsure_group_preselects_nothing",
+        "五类音频共用「<武器>/<风格>/*.音频」结构，机器原理上分不清。断点让它在拿不准时"
+        "也预选一个 ⇒ 用户看到已选好的下拉框会默认它对，而选错是**静默**的："
+        "文件进错目录，那一类的页面上一个风格都没有",
+    ),
+    Revert(
+        "RI", "源路径自带的层不再复用",
+        "core/resource_placement.py",
+        "        if covered and source_layers:",
+        "        if False and source_layers:",
+        "tests/test_a_downloaded_pack_imports_without_a_single_question.py"
+        "::test_a_weapon_shaped_pack_asks_nothing_and_lands_correctly",
+        "官网包最常见的形态是「<武器>/<风格>/文件」——结构已经对了，只缺最外层类目录。"
+        "断点撤掉这条复用 ⇒ 它会回头去问「这套素材属于哪一把武器」，"
+        "而那一包里每个文件的武器都不一样，**这个问题没有正确答案**",
+    ),
+    Revert(
+        "RI", "剥掉的外壳不再带下去",
+        "core/resource_import_wizard.py",
+        '            outer_layer=getattr(source, "stripped_root", ""),',
+        '            outer_layer="",',
+        # ⚠ 2026-09-16 回退验证当场逮出假绿：原来指的是
+        #   `test_a_kill_sound_pack_lands_under_its_style`，而那个用例的包里有
+        #   **两个**风格目录（清脆 / 低沉）⇒ `strip_single_root` 根本不剥壳，
+        #   撤掉 outer_layer 它照样绿。⭐ **一条断点指错用例，和没有这条断点一样。**
+        "tests/test_a_downloaded_pack_imports_without_a_single_question.py"
+        "::test_the_pack_name_alone_decides_between_two_identical_shapes",
+        "剥壳规则（与社区站逐字一致）在音效包上会把**风格目录本身**当外壳剥掉："
+        "`风格甲/1.mp3` 剥完只剩 `1.mp3`。断点不把剥掉的名字带下去 ⇒ "
+        "用户在包里写好的风格名当场丢失，落进一个他没起过的名字里",
     ),
 ]
 

@@ -230,7 +230,11 @@ def test_audio_import_wizard_page_smoke(qapp, monkeypatch, tmp_path):
     import pages.audio_import_wizard_page as wizard_module
 
     source_dir = tmp_path / "source"
-    source_dir.mkdir(parents=True, exist_ok=True)
+    (source_dir / "kill_sounds" / "default").mkdir(parents=True, exist_ok=True)
+    # ⚠ 2026-09-16：源目录**不能再是空的**。旧链路被整个打桩、根本不读磁盘；
+    #   新链路（`_scan_unified`）会真的去看里面有什么，空目录在 `open_source`
+    #   那一步就被拒了。⭐ 更诚实的实现，需要更诚实的脚手架。
+    (source_dir / "kill_sounds" / "default" / "1.wav").write_bytes(b"RIFF")
     audio_root = tmp_path / "audio_root"
     audio_root.mkdir(parents=True, exist_ok=True)
 
@@ -281,7 +285,9 @@ def test_audio_import_wizard_page_smoke(qapp, monkeypatch, tmp_path):
         },
     }
 
-    monkeypatch.setattr(wizard_module, "scan_resource_import_candidates", lambda *_args, **_kwargs: report)
+    # ⭐ 2026-09-16：扫描改走 `_scan_unified`（识别 + 归类），
+    #   而 `scan_resource_import_candidates` 已不再被页面 import。
+    monkeypatch.setattr(wizard_module, "plan_from_decisions", lambda *_args, **_kwargs: report)
     monkeypatch.setattr(wizard_module, "apply_resource_import_plan", lambda *_args, **_kwargs: import_result)
     monkeypatch.setattr(QMessageBox, "information", lambda *_args, **_kwargs: 0)
     monkeypatch.setattr(QMessageBox, "warning", lambda *_args, **_kwargs: 0)

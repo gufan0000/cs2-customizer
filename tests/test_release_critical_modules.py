@@ -43,6 +43,14 @@ KNOWN_UNLISTED = {
     "core.fun", "core.gun_sound_profiles", "core.hotkeys", "core.hud",
     "core.io_validation", "core.magnifier_sensitivity", "core.presets",
     "core.resource_health", "core.resource_import_wizard", "core.runtime",
+    # ⚖ 2026-09-16 资源导入统一化：这三个由 `pages/audio_import_wizard_page`
+    #   与 `dialogs/resource_import_decision_dialog` **静态 import**，必然进包，
+    #   和上面 `core.resource_import_wizard` 是同一条链路上的邻居。
+    #   （`core.archive_safe` **不在这里**：它已被 `kill_icon_pack` 那条链路覆盖，
+    #    重复登记会被这条判据的双向断言当场逮住。）
+    #   （`core.resource_identify` 也不在这里：把「从源到决定」提到 core 之后，
+    #    页面只 import `resource_import_wizard`，识别器由它间接带进去。）
+    "core.resource_import_source",
     # 批 48（RN-508）：内部记号 → 用户看得懂的话的词表。
     # `audio_replay_page` 在**模块层** `from core.audio_event_text import ...`
     # ⇒ 打包必然收，不需要进 CRITICAL_ARCHIVE_MODULES。

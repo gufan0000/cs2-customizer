@@ -44,25 +44,35 @@ class KillIconImportTask(QObject):
     def running(self) -> bool:
         return bool(self._thread and self._thread.is_alive())
 
-    def start(self, fn, label="导入"):
+    def start(self, fn, label="导入", cancelled_exc=None, error_exc=None):
+        """`cancelled_exc` / `error_exc` 让别的导入链路复用这条线程模型。
+
+        ⚠ 默认值就是击杀图标那两个 ⇒ **现有调用零变化**。
+        ⭐ 2026-09-16 泛化：资源导入统一化需要同样的"后台跑 + 进度 + 取消"，
+        而再写一个一模一样的 task 类只会让两份各自漂。
+        """
         if self.running:
             return False
         self._cancel.clear()
         self._thread = threading.Thread(
-            target=self._run, args=(fn, label), daemon=True, name="KillIconImport")
+            target=self._run, args=(fn, label, cancelled_exc, error_exc),
+            daemon=True, name="KillIconImport")
         self._thread.start()
         return True
 
     def cancel(self):
         self._cancel.set()
 
-    def _run(self, fn, label):
+    def _run(self, fn, label, cancelled_exc=None, error_exc=None):
+        cancelled_types = (KillIconImportCancelled,) + (
+            (cancelled_exc,) if cancelled_exc else ())
+        error_types = (KillIconImportError,) + ((error_exc,) if error_exc else ())
         try:
             result = fn(self._emit_progress, self._cancel.is_set)
-        except KillIconImportCancelled:
+        except cancelled_types:
             self.cancelled.emit()
             return
-        except KillIconImportError as exc:
+        except error_types as exc:
             self.failed.emit(str(exc))
             return
         except Exception as exc:  # 防御：PIL / zipfile 也可能抛别的

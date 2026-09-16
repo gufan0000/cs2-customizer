@@ -23,7 +23,7 @@
   "utility": "道具瞄点",
   "advanced": "高级设置",
   "audio_health": "资源体检",
-  "audio_import_wizard": "资源导入向导",
+  "audio_import_wizard": "导入资源",
   "audio_task_panel": "音频任务面板",
   "audio_replay": "音频事件回放",
   "config_snapshot": "软件设置快照",
@@ -3646,10 +3646,26 @@
   },
   {
    "page": "audio_import_wizard",
+   "text": "撤销",
+   "card": "第 1 步 选目录并扫描",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "audio_import_wizard",
    "text": "源目录",
    "card": "第 1 步 选目录并扫描",
    "tab": "",
    "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "audio_import_wizard",
+   "text": "知道了",
+   "card": "第 1 步 选目录并扫描",
+   "tab": "",
+   "kind": "button",
    "src": "runtime"
   },
   {

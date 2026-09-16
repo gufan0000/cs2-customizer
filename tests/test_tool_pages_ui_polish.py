@@ -364,7 +364,12 @@ def test_audio_import_wizard_page_uses_compact_status_strip(qapp, monkeypatch, t
     import pages.audio_import_wizard_page as wizard_module
 
     source_dir = tmp_path / "source"
-    source_dir.mkdir(parents=True, exist_ok=True)
+    (source_dir / "kill_sounds" / "default").mkdir(parents=True, exist_ok=True)
+    # ⚠ 2026-09-16：源目录**不能再是空的**。扫描改走统一链路之后，
+    #   空目录会在 `open_source` 那一步就被拒（"这个文件夹是空的"），
+    #   芯片当然也就没得看了。⭐ 这条判据钉的是**芯片文案**，
+    #   放一个真文件进去是让它测得到它本来要测的东西。
+    (source_dir / "kill_sounds" / "default" / "1.wav").write_bytes(b"RIFF")
     resources_root = tmp_path / "resources"
     resources_root.mkdir(parents=True, exist_ok=True)
 
@@ -407,7 +412,10 @@ def test_audio_import_wizard_page_uses_compact_status_strip(qapp, monkeypatch, t
         },
     }
 
-    monkeypatch.setattr(wizard_module, "scan_resource_import_candidates", lambda *_args, **_kwargs: report)
+    # ⭐ 2026-09-16 扫描改走 `_scan_unified`（识别 + 归类）⇒ 桩打在新链路的出口。
+    # ⚠ 旧桩那一行删掉了：`scan_resource_import_candidates` 已不再被页面 import
+    #   （死方法棘轮逼着删了 `_scan_source_legacy`，那个 import 也就没人用了）。
+    monkeypatch.setattr(wizard_module, "plan_from_decisions", lambda *_args, **_kwargs: report)
     monkeypatch.setattr(wizard_module, "apply_resource_import_plan", lambda *_args, **_kwargs: import_result)
     monkeypatch.setattr(QMessageBox, "information", lambda *_args, **_kwargs: 0)
     monkeypatch.setattr(QMessageBox, "warning", lambda *_args, **_kwargs: 0)
