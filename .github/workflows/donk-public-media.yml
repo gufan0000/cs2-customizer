@@ -1,0 +1,93 @@
+name: Donk public media
+on:
+  push:
+    branches: ['video/donk-public-media-20260916']
+    paths: ['.github/workflows/donk-public-media.yml']
+permissions:
+  contents: read
+jobs:
+  media:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          python -m pip install -q 'yt-dlp[default]' pillow
+      - name: Public sources
+        run: |
+          mkdir -p archive/media review/proxy review/sheets review/music /tmp/raw
+          cat > /tmp/media.py <<'PY'
+          from pathlib import Path
+          from concurrent.futures import ThreadPoolExecutor,as_completed
+          from PIL import Image,ImageDraw
+          import json,subprocess
+          A=Path('archive/media');O=Path('review');R=Path('/tmp/raw')
+          sources=[
+          ('01_katowice','https://www.facebook.com/ESLCS/videos/team-spirit-lift-the-iem-katowice-2024-trophy-and-they-do-it-in-style/1592758408223927/'),
+          ('02_donk_sh1ro','https://www.facebook.com/teamspiritpage/videos/donk-sh1ro/968286562891571/'),
+          ('03_shanghai_1v5','https://www.facebook.com/HLTV.org/videos/a-1v5-at-a-major-only-a-few-pulled-that-off-and-donk-is-one-of-them-/1934849167163704/'),
+          ('04_shanghai_voice','https://www.facebook.com/teamspiritpage/videos/shanghai-major-2024-teamspeak-httpsyoutube5fgri5ffegk/1819738118763465/'),
+          ('05_champions_vlog','https://www.facebook.com/teamspiritpage/videos/are-you-readythe-champions-vlog-is-here-httpsyoutubelh8tm5u-l0o/2119563368924835/'),
+          ('06_dacha','https://www.facebook.com/teamspiritpage/videos/betboom-dacha-final-vlog-httpsyoutubek6mtck9a5f8/399444396567273/'),
+          ('07_chopper','https://www.facebook.com/teamspiritpage/videos/some-words-from-chopper-about-the-seriesspiritcs-blastpremier/840903274562511/'),
+          ('08_donk_sh1ro_2025','https://www.facebook.com/teamspiritpage/videos/donk-sh1ro/1440634870542396/'),
+          ('09_defeat','https://www.facebook.com/iem/videos/not-even-donk-could-stop-teamvitality-from-getting-to-the-iem-katowice-2025-trop/9961260950597185/'),
+          ('10_ewc_2026','https://www.facebook.com/teamspiritpage/videos/lets-recall-the-most-memorable-and-heartwarming-moments-from-the-ewc-2026-there-/1104523015597993/'),
+          ('11_porto_2026','https://www.facebook.com/teamspiritpage/videos/silence-the-blast-open-porto-2026-champions-are-talking-/1428018632759801/'),
+          ('12_porto_arrival','https://www.facebook.com/HLTV.org/videos/spirit-arrive-for-the-blast-open-porto-grand-final-/1543261264269198/'),
+          ('13_kato_desk','https://www.facebook.com/ESLCS/videos/donk-on-the-desk-freya-maniac-steel-spoke-with-donk-after-he-secure-a-spot-in-th/1042990173464866/'),
+          ('14_biography','https://www.youtube.com/watch?v=GAMxQ9IJ0AY'),
+          ('15_shanghai_vlog','https://www.youtube.com/watch?v=LH8TM5u-L0o'),
+          ('music_buweixia','https://www.bilibili.com/video/BV1XU6qYKEuH/'),
+          ('music_buweixia09','https://www.bilibili.com/video/BV1MMh4zDEGY/')]
+          def run(c,t=240):
+              p=subprocess.run(c,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=t)
+              if p.returncode:raise RuntimeError(p.stdout[-3500:])
+              return p.stdout
+          def one(item):
+              n,u=item;r={'id':n,'source_url':u}
+              try:
+                  fmt='bestaudio/best' if n.startswith('music') else 'bv*[height<=1080]+ba/b[height<=1080]/best'
+                  log=run(['yt-dlp','--no-playlist','--socket-timeout','15','--retries','0','--fragment-retries','0','--max-filesize','350M','-f',fmt,'--write-info-json','--merge-output-format','mp4','-o',str(R/(n+'.%(ext)s')),u],180)
+                  meta=json.loads((R/(n+'.info.json')).read_text());r.update({k:meta.get(k) for k in ['title','description','uploader','upload_date','timestamp','duration','webpage_url','width','height']})
+                  p=next(p for p in R.glob(n+'.*') if p.suffix in ['.mp4','.webm','.mkv','.m4a','.mp3','.flv','.aac','.ogg'])
+                  probe=json.loads(run(['ffprobe','-v','error','-show_format','-show_streams','-of','json',str(p)],30));r['probe']=probe
+                  d=min(float(probe['format']['duration']),300)
+                  if n.startswith('music'):
+                      dst=O/'music'/f'{n}.m4a';run(['ffmpeg','-v','error','-y','-i',str(p),'-vn','-c:a','aac','-b:a','256k',str(dst)],120)
+                  else:
+                      assert any(s['codec_type']=='video' for s in probe['streams'])
+                      dst=A/f'{n}.mp4'
+                      run(['ffmpeg','-v','error','-y','-i',str(p),'-t',str(d),'-map','0:v:0','-map','0:a?','-vf','scale=w=min(1920\\,iw):h=min(1080\\,ih):force_original_aspect_ratio=decrease:force_divisible_by=2,setsar=1,fps=30','-c:v','libx264','-crf','19','-preset','veryfast','-threads','2','-c:a','aac','-b:a','160k','-movflags','+faststart',str(dst)],300)
+                      run(['ffmpeg','-v','error','-y','-i',str(dst),'-vf','scale=w=960:h=540:force_original_aspect_ratio=decrease:force_divisible_by=2','-c:v','libx264','-crf','27','-preset','veryfast','-threads','1','-c:a','aac','-b:a','64k',str(O/'proxy'/dst.name)],180)
+                      sheet=Image.new('RGB',(1280,1224),(15,15,15));draw=ImageDraw.Draw(sheet)
+                      for i in range(24):
+                          ts=(i+.3)*d/24;frame=R/f'{n}_{i}.jpg'
+                          run(['ffmpeg','-v','error','-y','-ss',str(ts),'-i',str(dst),'-frames:v','1','-vf','scale=320:180:force_original_aspect_ratio=decrease,pad=320:180:(ow-iw)/2:(oh-ih)/2',str(frame)],30)
+                          if frame.exists():sheet.paste(Image.open(frame),(i%4*320,i//4*204));draw.text((i%4*320+6,i//4*204+184),f'{n} {ts:.2f}s',fill='white')
+                      sheet.save(O/'sheets'/f'{n}.jpg',quality=87)
+                  r.update(status='ok',file=str(dst),retained_duration=d)
+              except Exception as e:r.update(status='error',error=str(e))
+              print(json.dumps({k:r.get(k) for k in ['id','status','title','duration','error']},ensure_ascii=False),flush=True);return r
+          records=[]
+          with ThreadPoolExecutor(max_workers=3) as pool:
+              for f in as_completed([pool.submit(one,x) for x in sources]):
+                  records.append(f.result());text=json.dumps(records,ensure_ascii=False,indent=2);(O/'sources.json').write_text(text);Path('archive/sources.json').write_text(text)
+          PY
+          python /tmp/media.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: donk-review
+          path: review/
+          retention-days: 3
+          compression-level: 0
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: donk-archive
+          path: archive/
+          retention-days: 3
+          compression-level: 0
