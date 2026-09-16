@@ -1,0 +1,103 @@
+name: Donk compact review and music
+on:
+  push:
+    branches: ['video/donk-public-media-20260916']
+    paths: ['.github/workflows/donk-review-music.yml']
+permissions:
+  contents: write
+  actions: read
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: donk-review
+          path: /tmp/review
+          run-id: 35062112581
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: donk-supplement
+          path: /tmp/supp
+          run-id: 35062382407
+          github-token: ${{ github.token }}
+      - name: Publish compact source review
+        run: |
+          mkdir -p donk-review/sheets
+          cp /tmp/review/sheets/*.jpg donk-review/sheets/
+          cp /tmp/supp/sheets/*.jpg donk-review/sheets/
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          out=[]
+          for folder in ['/tmp/review','/tmp/supp']:
+              for r in json.loads(Path(folder+'/sources.json').read_text()):
+                  if r.get('status')!='ok':continue
+                  d={k:r.get(k) for k in ['id','title','source_url','url','page','uploader','upload_date','duration','retained_duration','description']}
+                  pr=r.get('probe',{});d['media_duration']=pr.get('format',{}).get('duration');d['streams']=[{k:s.get(k) for k in ['codec_type','width','height','r_frame_rate','duration']} for s in pr.get('streams',[])];out.append(d)
+          Path('donk-review/sources.json').write_text(json.dumps(out,ensure_ascii=False,indent=2))
+          PY
+          git config user.name 'media-review'
+          git config user.email 'media-review@users.noreply.github.com'
+          git add donk-review
+          git commit -m 'Add temporary public-archive contact sheets and provenance'
+          git push
+      - name: Music tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg > /tmp/apt.log
+          pip -q install 'yt-dlp[default]' faster-whisper librosa soundfile
+      - name: Obtain public music video audio
+        run: |
+          mkdir -p music /tmp/music
+          python - <<'PY'
+          import subprocess,json
+          from pathlib import Path
+          candidates=[('buweixia','https://www.facebook.com/wcyedm/videos/474512998826718/'),('buweixia_alt','https://www.facebook.com/61563900127509/videos/2041720139950131/')]
+          results=[]
+          for n,u in candidates:
+              r={'id':n,'url':u}
+              try:
+                  p=subprocess.run(['yt-dlp','--no-playlist','--socket-timeout','15','--retries','1','--max-filesize','120M','-f','bestaudio/best','--write-info-json','-o','/tmp/music/'+n+'.%(ext)s',u],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=180)
+                  assert p.returncode==0,p.stdout[-2000:]
+                  meta=json.loads(Path('/tmp/music/'+n+'.info.json').read_text());r.update({k:meta.get(k) for k in ['title','description','uploader','upload_date','duration']})
+                  src=next(p for p in Path('/tmp/music').glob(n+'.*') if p.suffix in ['.mp4','.m4a','.webm','.mkv','.mp3']);dst=Path('music')/(n+'.m4a')
+                  subprocess.run(['ffmpeg','-v','error','-y','-i',str(src),'-vn','-ar','48000','-c:a','aac','-b:a','256k',str(dst)],check=True)
+                  r['status']='ok';r['file']=str(dst)
+              except Exception as e:r.update(status='error',error=str(e))
+              results.append(r);print(json.dumps(r,ensure_ascii=False),flush=True)
+              if r['status']=='ok' and (r.get('duration') or 0)>170:break
+          Path('music/sources.json').write_text(json.dumps(results,ensure_ascii=False,indent=2));assert any(r['status']=='ok' for r in results)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: donk-music-facebook
+          path: music/
+          retention-days: 3
+          compression-level: 0
+      - name: Determine phrase and beat times
+        run: |
+          python - <<'PY'
+          from faster_whisper import WhisperModel
+          from pathlib import Path
+          import json,numpy as np,librosa
+          src=next(Path('music').glob('*.m4a'))
+          m=WhisperModel('small',device='cpu',compute_type='int8',cpu_threads=4)
+          seg,_=m.transcribe(str(src),language='zh',beam_size=5,vad_filter=False,word_timestamps=True,condition_on_previous_text=False)
+          data={'file':str(src),'segments':[{'start':s.start,'end':s.end,'text':s.text,'words':[{'start':w.start,'end':w.end,'word':w.word} for w in s.words]} for s in seg]}
+          y,sr=librosa.load(str(src),sr=22050);tempo,beats=librosa.beat.beat_track(y=y,sr=sr,trim=False);data['tempo']=float(np.asarray(tempo).flat[0]);data['beats']=librosa.frames_to_time(beats,sr=sr).tolist();data['duration']=len(y)/sr
+          Path('donk-review/music_cues.json').write_text(json.dumps(data,ensure_ascii=False,indent=2));Path('donk-review/music_sources.json').write_text(Path('music/sources.json').read_text())
+          print('tempo',data['tempo'],'duration',data['duration'],flush=True)
+          PY
+          git add donk-review/music_cues.json donk-review/music_sources.json
+          git commit -m 'Add music source metadata and internal phrase alignment'
+          git push
+      - uses: actions/upload-artifact@v4
+        with:
+          name: donk-tiny-review
+          path: donk-review/
+          retention-days: 3
