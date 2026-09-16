@@ -1,0 +1,40 @@
+name: Donk frame review
+on:
+  push:
+    branches: ['video/donk-public-media-20260916']
+    paths: ['.github/workflows/donk-contact-review.yml']
+permissions:
+  contents: write
+jobs:
+  frames:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate compact frame review
+        run: |
+          pip -q install pillow requests
+          python - <<'PY'
+          from PIL import Image
+          from pathlib import Path
+          import requests,json
+          paths=sorted(Path('donk-review/sheets').glob('*.jpg'))
+          pages=[Image.open(p).convert('RGB') for p in paths]
+          out=Path('/tmp/contact.pdf');pages[0].save(out,save_all=True,append_images=pages[1:],resolution=96)
+          report=['# Frame review','']+[f'{i+1}: {p.stem}' for i,p in enumerate(paths)]
+          try:
+              r=requests.post('https://litterbox.catbox.moe/resources/internals/api.php',data={'reqtype':'fileupload','time':'1h'},files={'fileToUpload':('donk-contact.pdf',out.read_bytes(),'application/pdf')},timeout=90);r.raise_for_status();report+=['','PDF: '+r.text.strip()]
+          except Exception as e:
+              report+=['Temporary PDF upload: '+str(e)]
+              r=requests.post('https://tmpfiles.org/api/v1/upload',files={'file':('donk-contact.pdf',out.read_bytes(),'application/pdf')},timeout=90);report+=['Fallback: '+r.text]
+          report+=['','## Media']
+          for r in json.loads(Path('donk-review/sources.json').read_text()):
+              report+=[f"{r['id']} | {r.get('media_duration')}s | {r.get('upload_date')} | {r.get('title')}"]
+          Path('donk-review/frame_index.md').write_text('\n'.join(report));print('\n'.join(report))
+          PY
+          git config user.name media-review
+          git config user.email media-review@users.noreply.github.com
+          git add donk-review/frame_index.md
+          git commit -m 'Record temporary frame review and exact source clip titles'
+          git pull --rebase
+          git push
