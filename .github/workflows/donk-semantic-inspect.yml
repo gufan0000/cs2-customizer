@@ -1,0 +1,84 @@
+name: Donk scene and match inspection
+on:
+  push:
+    branches: ['video/donk-public-media-20260916']
+    paths: ['.github/workflows/donk-semantic-inspect.yml']
+permissions:
+  contents: write
+  actions: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      OMP_NUM_THREADS: '3'
+      MKL_NUM_THREADS: '3'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: donk-review
+          path: /tmp/review
+          run-id: 35062112581
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: donk-supplement
+          path: /tmp/supp
+          run-id: 35062382407
+          github-token: ${{ github.token }}
+      - name: Tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg > /tmp/apt.log
+          pip -q install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          pip -q install 'transformers==4.48.3' pillow faster-whisper
+      - name: Describe real frame candidates
+        run: |
+          python - <<'PY'
+          import torch,json,subprocess
+          from PIL import Image
+          from pathlib import Path
+          from transformers import BlipProcessor,BlipForConditionalGeneration
+          torch.set_num_threads(3)
+          proc=BlipProcessor.from_pretrained('Salesforce/blip-image-captioning-base');model=BlipForConditionalGeneration.from_pretrained('Salesforce/blip-image-captioning-base');model.eval()
+          report=['# Machine-assisted scene candidates (not manual frame review)','']
+          ids=['01_katowice','02_donk_sh1ro','04_shanghai_voice','05_champions_vlog','06_dacha','07_chopper','08_donk_sh1ro_2025','09_defeat','10_ewc_2026','11_porto_2026','12_porto_arrival','13_kato_desk']
+          sources={r['id']:r for r in json.loads(Path('/tmp/review/sources.json').read_text())}
+          for n in ids:
+              r=sources[n];d=float(r['retained_duration']);im=Image.open('/tmp/review/sheets/'+n+'.jpg').convert('RGB');report+=['','## '+n+f' ({d:.3f}s)']
+              samples=list(range(0,24,2)) if n in ['05_champions_vlog','06_dacha','10_ewc_2026','01_katowice'] else list(range(0,24,4))
+              for i in samples:
+                  tile=im.crop((i%4*320,i//4*204,i%4*320+320,i//4*204+180));inp=proc(images=tile,return_tensors='pt')
+                  with torch.inference_mode():ans=model.generate(**inp,max_new_tokens=30,num_beams=3)
+                  text=proc.decode(ans[0],skip_special_tokens=True);line=f'{(i+.3)*d/24:.3f}s | {text}';report.append(line);print(n,line,flush=True)
+              Path('donk-review/scene_candidates.md').write_text('\n'.join(report))
+          PY
+          git config user.name media-review
+          git config user.email media-review@users.noreply.github.com
+          git add donk-review/scene_candidates.md
+          git commit -m 'Record machine-assisted footage scene candidates'
+          git pull --rebase
+          git push
+      - name: Timestamp native match commentary
+        run: |
+          python - <<'PY'
+          from faster_whisper import WhisperModel
+          from pathlib import Path
+          import json,subprocess
+          model=WhisperModel('small',device='cpu',compute_type='int8',cpu_threads=4)
+          report=['# Native commentary alignment','']
+          paths=[Path('/tmp/supp/media')/(n+'.mp4') for n in ['shanghai_8','shanghai_9','porto_11','porto_12','porto_14','dacha2023_0']]
+          paths += [Path('/tmp/review/proxy')/(n+'.mp4') for n in ['03_shanghai_1v5','09_defeat','01_katowice']]
+          out={}
+          for p in paths:
+              subprocess.run(['ffmpeg','-v','error','-y','-i',str(p),'-ar','16000','-ac','1','/tmp/audio.wav'],check=True)
+              seg,_=model.transcribe('/tmp/audio.wav',language='en',beam_size=3,condition_on_previous_text=False)
+              ss=[{'start':s.start,'end':s.end,'text':s.text} for s in seg];out[p.stem]=ss
+              report+=['','## '+p.stem]+[f"{s['start']:.2f}-{s['end']:.2f} | {s['text']}" for s in ss]
+          Path('donk-review/commentary.json').write_text(json.dumps(out,ensure_ascii=False,indent=2));Path('donk-review/commentary.md').write_text('\n'.join(report));print('\n'.join(report))
+          PY
+          git add donk-review/commentary.json donk-review/commentary.md
+          git commit -m 'Align real match commentary to source timecodes'
+          git pull --rebase
+          git push
