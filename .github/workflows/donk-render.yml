@@ -1,0 +1,73 @@
+name: Donk finished film
+on:
+  push:
+    branches: ['video/donk-public-media-20260916']
+    paths: ['donk-project/plan.json']
+permissions:
+  contents: write
+  actions: read
+jobs:
+  film:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: donk-archive
+          path: source/main
+          run-id: 35062112581
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: donk-supplement
+          path: source/supp
+          run-id: 35062382407
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: donk-discovery
+          path: source/discovery
+          run-id: 35062382407
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: donk-continuous-music
+          path: source/music
+          run-id: 35064225140
+          github-token: ${{ github.token }}
+      - name: Install render dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg fonts-noto-cjk fonts-noto-core > /tmp/apt.log
+          pip -q install numpy soundfile pillow
+          python -m py_compile donk-project/render_film.py
+      - name: Render continuous finished film
+        run: python donk-project/render_film.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: DONK-film-1080p
+          path: release/
+          retention-days: 7
+          compression-level: 0
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: DONK-film-review
+          path: |
+            donk-review/render_qc.json
+            donk-review/audio_measurement.txt
+            donk-review/resolved_plan.json
+            donk-review/film_contact_*.jpg
+            render/titles.ass
+          retention-days: 3
+      - name: Save verification report
+        if: always()
+        run: |
+          git config user.name media-review
+          git config user.email media-review@users.noreply.github.com
+          git add donk-review
+          git diff --cached --quiet || git commit -m 'Record film export evidence and final contact sheets'
+          git pull --rebase
+          git push
