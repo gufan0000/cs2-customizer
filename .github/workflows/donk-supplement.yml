@@ -1,0 +1,109 @@
+name: Donk archive supplement
+on:
+  push:
+    branches: ['video/donk-public-media-20260916']
+    paths: ['.github/workflows/donk-supplement.yml']
+permissions:
+  contents: read
+jobs:
+  supplement:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - name: Tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          python -m pip install -q requests beautifulsoup4 curl_cffi 'yt-dlp[default]' pillow
+      - name: Discover embedded public sources
+        run: |
+          mkdir -p discover/photos out/media out/sheets /tmp/supplement
+          cat > /tmp/discover.py <<'PY'
+          import requests,json,re,html
+          from pathlib import Path
+          from bs4 import BeautifulSoup
+          from urllib.parse import urljoin,parse_qs,urlparse
+          from curl_cffi import requests as cr
+          pages=[('young','https://www.hltv.org/news/36556/one-for-the-future-donk'),('team2023','https://www.hltv.org/news/36594/spirit-announce-new-roster-with-academy-trio-including-donk'),('dacha2023','https://www.hltv.org/news/37733/live-updates-from-betboom-dacha-grand-final'),('shanghai','https://www.hltv.org/news/40565/spirit-defeat-faze-2-1-to-win-shanghai-major'),('porto','https://www.hltv.org/events/8249/blast-open-porto-2026')]
+          records=[];videos=[]
+          for name,url in pages:
+              r={'id':name,'source_url':url}
+              try:
+                  res=cr.get(url,impersonate='chrome',timeout=35);res.raise_for_status();s=BeautifulSoup(res.text,'html.parser');Path(f'discover/{name}.html').write_text(res.text)
+                  section=s.select_one('.news-article') or s.select_one('.newsitem') or s
+                  r['title']=s.title.get_text();r['embeds']=list(dict.fromkeys([e.get('src') or e.get('data-src') for e in section.select('iframe')]))
+                  # The HTML records exact source clip identifiers; no synthetic clip IDs.
+                  possible=re.findall(r'(?:https?:)?//clips\.twitch\.tv/[^\s\"<>]+',html.unescape(res.text))
+                  possible+=re.findall(r'clips\.twitch\.tv/embed\?[^\s\"<>]+',html.unescape(res.text))
+                  slugs=re.findall(r'data-(?:clip|twitch-clip)=[\"\x27]([^\"\x27]+)',res.text)
+                  for u in possible:
+                      u=html.unescape(u).replace('\\/','/')
+                      if u.startswith('//'):u='https:'+u
+                      if not u.startswith('http'):u='https://'+u
+                      q=parse_qs(urlparse(u).query);slug=(q.get('clip') or [''])[0]
+                      if slug:slugs.append(slug)
+                      elif '/embed' not in u:videos.append({'id':name+'_'+str(len(videos)),'url':u.split('?')[0],'page':url})
+                  for slug in dict.fromkeys(slugs):videos.append({'id':name+'_'+str(len(videos)),'url':'https://clips.twitch.tv/'+slug,'page':url})
+                  for u in r['embeds']:
+                      if u and ('youtube.com/embed/' in u):videos.append({'id':name+'_'+str(len(videos)),'url':urljoin(url,u),'page':url})
+                  imgs=[e.get('src') or e.get('data-src') for e in section.select('img')]
+                  imgs=[u for u in imgs if u and '/gallerypicture/' in u];r['images']=[]
+                  for j,u in enumerate(dict.fromkeys(imgs)):
+                      if j>=4:break
+                      ir=cr.get(u,impersonate='chrome',timeout=25);ir.raise_for_status();ext='.png' if '.png' in u else '.jpg';p=Path(f'discover/photos/{name}_{j}{ext}');p.write_bytes(ir.content);r['images'].append({'file':str(p),'url':u})
+                  r['status']='ok'
+              except Exception as e:r.update(status='error',error=str(e))
+              records.append(r);print(name,r['status'],flush=True)
+          Path('discover/sources.json').write_text(json.dumps(records,ensure_ascii=False,indent=2));Path('discover/videos.json').write_text(json.dumps(videos,ensure_ascii=False,indent=2))
+          print(json.dumps(videos,ensure_ascii=False),flush=True)
+          PY
+          python /tmp/discover.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: donk-discovery
+          path: discover/
+          retention-days: 3
+      - name: Download broadcast excerpts
+        run: |
+          cat > /tmp/supp.py <<'PY'
+          from pathlib import Path
+          import subprocess,json
+          from PIL import Image,ImageDraw
+          from concurrent.futures import ThreadPoolExecutor,as_completed
+          allv=json.loads(Path('discover/videos.json').read_text());selected=[];counts={}
+          for v in allv:
+              key=v['id'].split('_')[0];counts[key]=counts.get(key,0)+1
+              if counts[key]<=4:selected.append(v)
+          extra=[('bio_alt','https://www.youtube.com/watch?v=pvTNXP2L2LQ'),('one_esports','https://www.youtube.com/watch?v=HtT0MA7FcAA'),('clutch_youtube','https://www.youtube.com/watch?v=tRMVBKTwMPA')]
+          selected += [{'id':n,'url':u,'page':u} for n,u in extra]
+          def run(c,t=200):
+              p=subprocess.run(c,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=t)
+              if p.returncode:raise RuntimeError(p.stdout[-2000:])
+              return p.stdout
+          def one(v):
+              n=v['id'];r=dict(v)
+              try:
+                  run(['yt-dlp','--no-playlist','--socket-timeout','12','--retries','0','--fragment-retries','0','--max-filesize','300M','-f','bv*[height<=1080]+ba/b[height<=1080]/best','--write-info-json','--merge-output-format','mp4','-o',f'/tmp/supplement/{n}.%(ext)s',v['url']],160)
+                  m=json.loads(Path(f'/tmp/supplement/{n}.info.json').read_text());r.update({k:m.get(k) for k in ['title','description','uploader','upload_date','duration']})
+                  p=next(p for p in Path('/tmp/supplement').glob(n+'.*') if p.suffix in ['.mp4','.mkv','.webm'])
+                  pr=json.loads(run(['ffprobe','-v','error','-show_format','-show_streams','-of','json',str(p)],30));r['probe']=pr;d=min(float(pr['format']['duration']),240)
+                  dst=Path('out/media')/(n+'.mp4');run(['ffmpeg','-v','error','-y','-i',str(p),'-t',str(d),'-vf','scale=w=1280:h=720:force_original_aspect_ratio=decrease:force_divisible_by=2,setsar=1,fps=30','-c:v','libx264','-crf','20','-preset','veryfast','-threads','2','-c:a','aac','-b:a','128k',str(dst)],240)
+                  sh=Image.new('RGB',(1280,816),(15,15,15));dr=ImageDraw.Draw(sh)
+                  for i in range(16):
+                      ts=(i+.3)*d/16;f=Path('/tmp/supplement')/f'{n}_{i}.jpg';run(['ffmpeg','-v','error','-y','-ss',str(ts),'-i',str(dst),'-frames:v','1','-vf','scale=320:180:force_original_aspect_ratio=decrease,pad=320:180:(ow-iw)/2:(oh-ih)/2',str(f)],25)
+                      if f.exists():sh.paste(Image.open(f),(i%4*320,i//4*204));dr.text((i%4*320+5,i//4*204+183),f'{n} {ts:.2f}s',fill='white')
+                  sh.save(f'out/sheets/{n}.jpg');r.update(status='ok',file=str(dst),retained_duration=d)
+              except Exception as e:r.update(status='error',error=str(e))
+              print(n,r['status'],r.get('error',''),flush=True);return r
+          records=[]
+          with ThreadPoolExecutor(max_workers=3) as pool:
+              for f in as_completed([pool.submit(one,v) for v in selected]):records.append(f.result());Path('out/sources.json').write_text(json.dumps(records,ensure_ascii=False,indent=2))
+          PY
+          python /tmp/supp.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: donk-supplement
+          path: out/
+          retention-days: 3
+          compression-level: 0
