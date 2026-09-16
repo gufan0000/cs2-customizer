@@ -91,7 +91,9 @@ class AudioImportWizardPage(QWidget):
         self.logger = get_logger("AudioImportWizardPage")
         self.audio_root = ResourceManager.get_app_data_path("resources/audio")
         self.resources_root = ResourceManager.get_app_data_path("resources")
-        self._scan_report = None
+        # ⛔ 这两个字段必须**一起动** —— 一律走 `_invalidate_scan()`，
+        #   别在各处分别赋值（那正是本轮修掉的那种"各自列举"）。
+        self._invalidate_scan()
         self._last_import_result = None
         self._init_ui()
         # 对标主流：把文件夹/音频文件直接拖进页面即可填入并扫描
@@ -105,33 +107,68 @@ class AudioImportWizardPage(QWidget):
         else:
             event.ignore()
 
+    @staticmethod
+    def _drop_noun(path):
+        """拖进来的这个东西该叫什么 —— 判断在 `resource_import_source`，这里只兜底。
+
+        ⚠ 这行文案原来写死成「文件夹 / 压缩包」二选一，那是**加单文件那条路
+        之前**的世界；加完之后拖一个 `爆头音效.mp3` 进来会被告知
+        「已填入拖入的**压缩包**」，而它根本不是。
+        ⭐ 每一层单独看都对，错在层与层之间的假设：新入口加在 `open_source`
+        那一层，而说这句话的是页面这一层。
+        """
+        try:
+            from core.resource_import_source import source_noun
+
+            return source_noun(path)
+        except Exception:
+            import os
+
+            return "文件夹" if os.path.isdir(path) else "文件"
+
     def dropEvent(self, event):
         try:
             import os
 
-            for url in event.mimeData().urls():
-                path = url.toLocalFile()
-                if not path:
-                    continue
+            # ⭐ 一次拖进来好几个是常事（一口气选中三个下载好的包）。
+            #   这个页面一次只处理一个源 —— 那没问题，**但不许不说**：
+            #   默默只导第一个，用户会以为三个都进去了。
+            dropped = [url.toLocalFile() for url in event.mimeData().urls()]
+            dropped = [p for p in dropped if p and (os.path.isdir(p) or os.path.isfile(p))]
+            if dropped:
                 # ⭐ 目录直接用；**文件也直接用**（多半是刚下载的 zip）。
                 # ⛔ 不许再退回"取它所在的目录"——那会去扫用户整个下载文件夹。
                 #    认不认得这个文件交给 `open_source`：它按文件头判，
                 #    连改名的 RAR 都能说出一句该怎么办的话。
-                if os.path.isdir(path) or os.path.isfile(path):
-                    self.source_edit.setText(path)
-                    self.logger.info(f"拖拽导入: {path}")
-                    try:
-                        from ui_toast import toast_info
+                path = dropped[0]
+                self.source_edit.setText(path)
+                self.logger.info(f"拖拽导入: {path}（共拖入 {len(dropped)} 个）")
+                try:
+                    from ui_toast import toast_info
 
-                        toast_info(
-                            "已填入拖入的%s，正在识别…"
-                            % ("文件夹" if os.path.isdir(path) else "压缩包"),
-                            2400)
-                    except Exception:
-                        pass
-                    self._scan_source()
-                    event.acceptProposedAction()
-                    return
+                    # ⚠ 这句话放 toast 不放提示条：提示条紧接着就会被扫描结果
+                    #   （`_scan_unified` 那条"导入前请注意"）顶掉，等于没说。
+                    extra = ("" if len(dropped) == 1
+                             else "（共 %d 个，先处理这一个）" % len(dropped))
+                    toast_info(
+                        "已填入拖入的%s%s，正在识别…" % (self._drop_noun(path), extra),
+                        2400 if len(dropped) == 1 else 4000)
+                except Exception:
+                    pass
+                self._scan_source()
+                event.acceptProposedAction()
+                return
+            # ⚠ 走到这里说明拖进来的东西**不是本地文件**（最常见的是从浏览器
+            #   拖了一个下载链接）。原来是一句 `event.ignore()` —— 鼠标显示
+            #   「可以放」，放下之后什么都不发生，**也不说一句**。
+            # ⭐ 拒绝要看得见：一个没有反应的界面，用户只会再试几次然后放弃。
+            try:
+                from ui_toast import toast_warning
+
+                toast_warning("拖进来的不是本地文件。请先把资源下载到本地，"
+                              "再把下载好的压缩包或文件夹拖进来。", 3600)
+            except Exception:
+                pass
             event.ignore()
         except Exception:
             self.logger.exception("处理拖拽失败")
@@ -156,7 +193,14 @@ class AudioImportWizardPage(QWidget):
         from ui_help_panel import PAGE_HELP_TEXTS, install_help_panel
         header = PageHeader(
             "导入资源",
-            description="先扫描外部素材、看清识别成了什么，确认无误再写入资源目录 —— 确认之前不动你现有的音效库。",
+            # ⚠ 外审 5 发点到同一件事：这一页叫「导入资源」、管着 17 类
+            #   （12 音频 + 5 视觉），而页头到输入框通篇写「音效库 / 音频资源」⇒
+            #   手里拿着击杀图标或综合包的玩家会以为进错了页面。
+            # ⭐ 第一句先说**能吃什么**，而不是先说流程 —— 玩家最想确认的是
+            #   "我手上这个东西这里收不收"。
+            description=("压缩包、文件夹，或单个素材文件都能直接拖进来，不用先解压。"
+                         "软件先认出它是哪一类（音效、语音、击杀图标、准心…），"
+                         "给你看清了再写入 —— 确认之前不动你现有的素材。"),
             title_font_size=None,
             spacing=12,
         )
@@ -171,7 +215,7 @@ class AudioImportWizardPage(QWidget):
 
         self.status_badge_label = create_badge_label()
         card_layout.addWidget(self.status_badge_label)
-        self.summary_label = QLabel("请先选择目录并扫描。")
+        self.summary_label = QLabel("请先选择素材并扫描。")
         self.summary_label.setWordWrap(True)
         self.summary_label.setObjectName("hintLabel")
         self.summary_label.hide()
@@ -189,22 +233,23 @@ class AudioImportWizardPage(QWidget):
             #   状态条文案整条丢掉（`_STATUS_COMPOSITE` / `_STATUS_LABELED`），
             #   逗号同理（`_SENTENCE`）。第一版写成「第 1 步 · 选目录，然后扫描」，
             #   索引里这一页的卡片标题**一条都不剩**，判据当场点名（批 40 同族）。
-            "第 1 步 选目录并扫描",
-            "扫描只看不写，不会动你现有的音效库。导入模式和「只预演」都在这一步定。",
+            "第 1 步 选中素材并扫描",
+            "扫描只看不写，不会动你现有的素材。压缩包不用先解压。"
+            "导入模式和「只预演」都在这一步定。",
         )
 
         source_row = QHBoxLayout()
         source_row.setSpacing(8)
-        source_label = QLabel("源目录")
+        source_label = QLabel("素材来源")
         source_label.setMinimumWidth(64)
         source_row.addWidget(source_label)
 
         self.source_edit = QLineEdit()
-        self.source_edit.setPlaceholderText("请选择包含音频资源的根目录")
+        self.source_edit.setPlaceholderText("压缩包、文件夹，或单个素材文件 —— 也可以直接拖进来")
         self.source_edit.setMinimumHeight(34)
         source_row.addWidget(self.source_edit, 1)
 
-        self.browse_btn = browse_btn = QPushButton("选择目录")
+        self.browse_btn = browse_btn = QPushButton("选择文件夹")
         browse_btn.setObjectName("secondaryButton")
         browse_btn.setMinimumHeight(34)
         browse_btn.clicked.connect(self._choose_source_dir)
@@ -214,7 +259,7 @@ class AudioImportWizardPage(QWidget):
         #   用户得先自己解压一次，那一次解压正是"导入很麻烦"的起点。
         # ⚠ 这颗放在**源行**（和「选择目录」并列，同属"选什么"），不放动作行：
         #   那一行五颗按钮在紧凑档已经装不下，UP-100 为此分过两组。
-        self.browse_archive_btn = QPushButton("选择压缩包…")
+        self.browse_archive_btn = QPushButton("选择压缩包 / 文件…")
         self.browse_archive_btn.setObjectName("secondaryButton")
         self.browse_archive_btn.setMinimumHeight(34)
         self.browse_archive_btn.clicked.connect(self._choose_source_archive)
@@ -262,7 +307,7 @@ class AudioImportWizardPage(QWidget):
         # ⭐ 批 46：底栏那颗变身式主按钮撤掉之后，这一屏一颗主按钮都不剩，
         #   外审当场报「按钮平级、无视觉重心」。⇒ 把**第一步**升为主按钮，
         #   且**恒定不变**（不像底栏那颗随状态换词）。这一页的第一步是「扫描目录」：外审 3 发逐字报「玩家想图快直奔一键导入却不知必须先扫描」。
-        self.scan_btn = QPushButton("扫描目录")
+        self.scan_btn = QPushButton("扫描素材")
         # ⚠ 主/次由 `_sync_first_step()` 按「选没选源目录」定，不在这里写死 ——
         #   批 46 第一版把「扫描目录」恒定为主，外审 3 发报
         #   「未选目录时『扫描目录』却是唯一高亮，极易诱导玩家开局盲点导致报错」。
@@ -275,7 +320,7 @@ class AudioImportWizardPage(QWidget):
         self.classify_btn = QPushButton("把未识别音频导入为新风格…")
         self.classify_btn.setObjectName("secondaryButton")
         self.classify_btn.setEnabled(False)
-        self.open_source_btn = QPushButton("打开源目录")
+        self.open_source_btn = QPushButton("打开来源位置")
         self.open_source_btn.setObjectName("secondaryButton")
         self.open_resource_btn = QPushButton("打开资源目录")
         self.open_resource_btn.setObjectName("secondaryButton")
@@ -319,11 +364,18 @@ class AudioImportWizardPage(QWidget):
         # ⭐ RN-520：扫描之前这里是**一整块纯黑**，外审 4/6 报「易误以为卡死」。
         #   一个 400px 高、什么都不说的框，和一个坏掉的框长得一模一样。
         # ⛔ 文案里那个按钮名**从按钮读**，别抄一份（RN-519 的棘轮盯着）。
+        # ⭐⭐⭐ 外审 S4 的判断题「玩家会不会知道可以直接拖 zip 进来」
+        #   **12 发里 10 发答「绝对不会知道」**，而且几乎每一发都点到同一件事：
+        #   「占大半屏的这个空框最像投放区，却只写着『还没有扫描结果』」。
+        # ⚠ 而「不用先解压」正是这一整件事要卖的那句话 ——
+        #   界面上一个字都没说，等于没做。
+        # ⛔ 文案里那个按钮名**从按钮读**，别抄一份（RN-519 的棘轮盯着）。
         self.preview_text.setPlaceholderText(
-            f"还没有扫描结果。\n\n"
-            f"选好源目录后点「{self.scan_btn.text()}」，"
-            f"这里会列出：能认出来的、有冲突的、没认出来的条目各多少。\n"
-            f"扫描只看不写，不会动你现有的音效库。")
+            f"把压缩包、文件夹，或单个素材文件直接拖到这里 —— 不用先解压。\n\n"
+            f"也可以点上面的「{self.browse_archive_btn.text()}」"
+            f"或「{self.browse_btn.text()}」选一个，再点「{self.scan_btn.text()}」。\n\n"
+            f"扫描之后这里会列出：能认出来的、有冲突的、没认出来的条目各多少。\n"
+            f"扫描只看不写，不会动你现有的素材。")
         preview_layout.addWidget(self.preview_text)
 
         # 「确认无误后再导入」——那就把导入放在确认的地方。
@@ -426,11 +478,11 @@ class AudioImportWizardPage(QWidget):
             )
         elif source_dir:
             action_message = (
-                f"当前模式：{mode_text} · 已选中源目录 {self._compact_source_text(source_dir)}，"
+                f"当前模式：{mode_text} · 已选中 {self._compact_source_text(source_dir)}，"
                 "建议先扫描再决定是否导入。"
             )
         else:
-            action_message = f"当前模式：{mode_text} · 先选择源目录并扫描，确认识别结果后再执行导入。"
+            action_message = f"当前模式：{mode_text} · 先选中素材并扫描，确认识别结果后再执行导入。"
         self.action_bar.set_message(action_message)
 
     def _sync_first_step(self, has_source: bool):
@@ -458,7 +510,7 @@ class AudioImportWizardPage(QWidget):
         dry_run = bool(self.dry_run_checkbox.isChecked())
 
         badges = [
-            ("positive" if source_dir else "warning", f"源目录 · {self._compact_source_text(source_dir)}"),
+            ("positive" if source_dir else "warning", f"素材来源 · {self._compact_source_text(source_dir)}"),
             ("info", f"模式 · {mode_text}"),
             ("info" if dry_run else "positive", f"策略 · {'只预演' if dry_run else '不覆盖已有'}"),
         ]
@@ -489,7 +541,7 @@ class AudioImportWizardPage(QWidget):
             detail_text = (
                 f"当前使用“{mode_text}”模式，"
                 f"{'只做预演，不写入文件' if dry_run else '导入时不覆盖已有文件'}。"
-                "先选择源目录并扫描，再决定是否导入。"
+                "先选中素材并扫描，再决定是否导入。"
             )
 
         render_badges(self.status_badge_label, badges, detail_tooltip=detail_text)
@@ -508,13 +560,20 @@ class AudioImportWizardPage(QWidget):
             self._scan_source()
 
     def _choose_source_archive(self):
-        """选一个压缩包。⚠ 过滤器写 zip，但**认格式不看扩展名** ——
-        改名的 RAR 会在 `open_source` 里被文件头认出来并给一句人话。"""
+        """选一个压缩包**或单个素材文件**。
+
+        ⚠ 过滤器写 zip，但**认格式不看扩展名** —— 改名的 RAR 会在
+        `open_source` 里被文件头认出来并给一句人话。
+        ⚠⚠ 外审点出来的一条：单个素材文件**只能拖进来，没有选取入口** ——
+        而"从群里存下来一个 mp3"是玩家最常见的情形之一，
+        ⭐ 一个只能拖、不能选的入口，对不用拖拽的用户等于不存在。
+        """
         path, _filter = QFileDialog.getOpenFileName(
             self,
-            "选择要导入的资源压缩包",
+            "选择压缩包或单个素材文件",
             self.source_edit.text().strip() or os.path.expanduser("~"),
-            "资源包 (*.zip);;所有文件 (*.*)",
+            "资源包与素材 (*.zip *.mp3 *.wav *.ogg *.png *.jpg *.jpeg *.xchr);;"
+            "压缩包 (*.zip);;所有文件 (*.*)",
         )
         if path:
             self.source_edit.setText(path)
@@ -607,7 +666,10 @@ class AudioImportWizardPage(QWidget):
     def _decide_groups(self, source):
         """识别 → 拿不准就问一次 → 决定清单。用户取消返回 None。"""
         # ⭐ 业务逻辑在 core（`prepare_decisions`）——页面只负责"问"这一步。
-        prepared = prepare_decisions(source)
+        # ⚠ 模式（音频 / 视觉 / 全部）以前**没传进去** ⇒ 那个下拉框不起作用，
+        #   选「视觉」照样把音频整包导进去。⭐ 不起作用的控件比没有还糟。
+        prepared = prepare_decisions(source, self._current_mode())
+        self._domain_skipped = list(prepared.get("skipped_by_domain") or [])
         if not prepared["groups"]:
             return []
         decided = prepared["decided"]
@@ -635,7 +697,21 @@ class AudioImportWizardPage(QWidget):
 
         ⭐ 新链路的 `certain` 档**就是**旧规则（路径里带 spec 目录名），
         所以规范包的行为与改之前一致；只有认不出的才多一次确认。
+
+        ⛔⛔ **不管从哪条路退出，都必须先把上一次的报告作废**（见下面第一行）。
+        端到端实测逮到的：导完一个包，再喂一个 `.tar.gz`，它被正确拒绝、
+        错误也弹了 —— 而紧接着"导入"却报「导入完成：成功 1」，
+        **把上一个包又导了一遍**（落到另一个风格目录里）。
+        ⭐⭐⭐ 每一层单独看都对：拒绝是对的、报错是对的、导入也照着报告干了活；
+        错在**报告的寿命没有跟源绑定**。这一刀单元判据一条都没红。
         """
+        # ⚠ 位置就得在这儿 —— 在任何一个 `return` 之前。
+        self._invalidate_scan()
+        # ⭐ 提示条也要归零：实测里 `.tar.gz` 被正确拒绝之后，条上仍写着
+        #   上一次的「导入完成：成功 1」—— 一句过期的好消息压在一条错误上面。
+        # ⛔ 这一句不许搬进 `_invalidate_scan()`：撤销那条路是先 `show_message`
+        #   再作废报告，搬进去会把「已撤销」当场擦掉。
+        self.notice_bar.clear()
         source = self._open_import_source()
         if source is None:
             return
@@ -650,9 +726,23 @@ class AudioImportWizardPage(QWidget):
                 return
             report = plan_from_decisions(source, decisions, self.resources_root)
             self._scan_report = report
+            self._scan_report_source = self.source_edit.text().strip()
             self._last_import_result = None
             self._render_report(report)
             warnings = [str(line) for line in (report.get("warnings") or [])]
+            skipped = len(getattr(self, "_domain_skipped", []) or [])
+            if skipped:
+                # ⭐ 被「导入模式」挡掉的也要说：用户看到"成功 0"而不知道为什么，
+                #   比报一句错还难受。
+                warnings.insert(0, (
+                    f"当前模式是「{self._mode_text()}」，"
+                    f"包里有 {skipped} 组不属于这一类的素材没有导入 —— "
+                    f"要一起导就把模式切到「全部」再扫一次"))
+            aside = self._aside_notice(source)
+            if aside:
+                # ⭐ 摘出来没导入的那些**必须讲出来** —— 悄悄扔掉别人的文件，
+                #   和悄悄把垃圾导进资源库一样不该。位置是"结果可见"，不是弹窗。
+                warnings.insert(0, aside)
             if warnings:
                 # ⭐ 仿击杀图标「缺等级只提示不拦」：这些是"装进去了但不会响"，
                 #   要在**落盘之前**讲出来。
@@ -663,6 +753,28 @@ class AudioImportWizardPage(QWidget):
             #   所以清理必须等到真正落盘之后，见 `_run_import`。
             self._pending_source = source
 
+    @staticmethod
+    def _aside_notice(source) -> str:
+        """包里**没有导入**的那些东西，说一句。
+
+        ⚠ 两类分开说，因为用户要做的事不一样：
+        - 作者的附带文件（`说明.txt` / 封面图）**点名** —— 他可能想自己留着；
+        - 系统临时文件（`__MACOSX/` / `Thumbs.db`）**只报个数** ——
+          对它们没有任何决定要做，点名只是噪声。
+        """
+        import os as _os
+
+        companions = [str(p) for p in (getattr(source, "companions", None) or [])]
+        junk = int(getattr(source, "junk_count", 0) or 0)
+        parts = []
+        if companions:
+            shown = "、".join(_os.path.basename(p) for p in companions[:3])
+            more = f"等 {len(companions)} 个文件" if len(companions) > 3 else ""
+            parts.append(f"包里的 {shown}{more} 不是素材，没有导入")
+        if junk:
+            parts.append(f"另丢掉 {junk} 个系统临时文件")
+        return "；".join(parts)
+
     def _current_mode(self) -> str:
         return str(self.mode_combo.currentData() or "audio")
 
@@ -671,8 +783,12 @@ class AudioImportWizardPage(QWidget):
 
     def _on_mode_changed(self):
         mode_text = self._mode_text()
-        self.source_edit.setPlaceholderText(f"请选择包含{mode_text}资源的根目录")
-        self._scan_report = None
+        # ⚠ 这一行原来把源输入框的提示改回「请选择包含 X 资源的**根目录**」——
+        #   等于一换模式就把"能拖 zip / 能选单文件"这件事又藏起来了。
+        #   ⭐ 同一句话在两处各写一遍，改了一处等于没改。
+        self.source_edit.setPlaceholderText(
+            f"压缩包、文件夹，或单个{mode_text}素材文件 —— 也可以直接拖进来")
+        self._invalidate_scan()
         self._last_import_result = None
         self.summary_label.setText(f"当前模式：{mode_text}。请选择目录并扫描。")
         self.preview_text.clear()
@@ -688,7 +804,27 @@ class AudioImportWizardPage(QWidget):
         """
         self._scan_unified()
 
+    def _invalidate_scan(self):
+        """把上一次的扫描报告作废。
+
+        ⭐ 报告里存的是**那一个源**的绝对路径清单，所以它的寿命不能超过那个源。
+        """
+        self._scan_report = None
+        self._scan_report_source = ""
+
+    def _scan_is_stale(self) -> bool:
+        """手上这份报告**还算不算数**。
+
+        ⭐ 报告里存的是那一个源的绝对路径清单，所以它只对**当时那个路径**有效。
+        改了路径却不重扫就点导入，导进去的是上一个包 —— 而界面上看不出任何异样。
+        """
+        if not self._scan_report:
+            return False        # 没有报告不叫"过期"，叫"还没扫"
+        return self._scan_report_source != self.source_edit.text().strip()
+
     def _run_import(self):
+        if self._scan_is_stale():
+            self._invalidate_scan()
         if not self._scan_report:
             self._scan_source()
             if not self._scan_report:
@@ -709,10 +845,16 @@ class AudioImportWizardPage(QWidget):
         holder = {}
 
         def work(progress, should_cancel):
+            # ⚠⚠ `progress` / `should_cancel` 原来**拿到了却一次都没用** ——
+            #   写盘阶段点「取消」：进度框消失、界面解锁，而复制照常跑完
+            #   并报「导入完成」。⭐ 一个点下去什么都不会发生的取消键，
+            #   比没有取消键更糟。
             holder["result"] = apply_resource_import_plan(
                 self._scan_report,
                 dry_run=dry_run,
                 overwrite_existing=False,
+                progress=progress,
+                should_cancel=should_cancel,
             )
             progress(1, 1, "已写入资源目录")
             return holder["result"]
@@ -746,25 +888,55 @@ class AudioImportWizardPage(QWidget):
         mode_text = "建议预演完成" if dry_run else "导入完成"
         rolled = (result.get("rollback") or {}).get("rolled_back")
         parts = [f"{mode_text}：成功 {copied}"]
+        # ⭐⭐ 「我们替用户动了他的文件」这件事必须**活到最后一条消息里**。
+        #   实测：重命名的提示是在扫描那一步挂上去的，而导入结果紧接着把提示条
+        #   整条顶掉 —— 于是文件被改了名，而用户从头到尾没看见过一个字。
+        # ⛔ 只带"我们做了什么"，不带"你该注意什么"：后者在扫描那步已经看过，
+        #   全带上会把这条消息撑成一段没人读的长文。
+        did = [line for line in (self._scan_report or {}).get("warnings", []) or []
+               if "替你重命名" in str(line) or "没有导入" in str(line)]
+        parts.extend(str(line) for line in did[:2])
         if skipped:
             parts.append(f"冲突跳过 {skipped}（同名的旧素材没被覆盖）")
         if failed:
             parts.append(f"失败 {failed}")
+        if result.get("cancelled"):
+            # ⭐ 取消不是失败，但**必须说清停在哪** —— 已经写进去的那些还在。
+            parts.insert(0, "已取消（前面写进去的还在，可以点撤销收回）")
         if rolled:
             # ⭐ 回滚发生过就要说 —— 不说的话用户以为"失败几个"是"其余都进去了"。
-            parts.append("这一次已整体收回，资源目录没有留下半套素材")
+            stuck = int((result.get("rollback") or {}).get("stuck_count", 0) or 0)
+            if stuck:
+                # ⚠ 回滚**自己也会失败**。原来这里无条件说"没有留下半套素材"，
+                #   而删不掉的那几个还躺在资源库里 ——
+                #   ⭐ 一句不成立的保证比不给保证更坏。
+                parts.append(
+                    f"这一次已收回大部分，但有 {stuck} 个删不掉"
+                    f"（多半正被别的程序占用），资源目录里还留着它们")
+            else:
+                parts.append("这一次已整体收回，资源目录没有留下半套素材")
         # ⭐ 撤销只在**真写了东西**的时候给：一个点下去什么都不会发生的按钮，
         #   比没有还糟。
         can_undo = bool(copied) and not dry_run and not rolled
+
+        # ⛔⛔ 这里原来是 `if not dry_run: self._scan_source()` —— **导完立刻重扫**。
+        #   三路审计各自独立发现，沙箱端到端也复现了它的三重代价：
+        #   ① `_scan_unified` 第一件事是 `notice_bar.clear()` ⇒
+        #      **「导入完成」和「撤销」当场被自己擦掉**，提示条上一片空白，
+        #      撤销按钮用户根本点不到 —— 上一轮做的撤销功能等于不存在；
+        #   ② 重扫的结果必然是"全是冲突"（文件刚落进去），屏幕上一片红，
+        #      而那是**导入成功**的表现，看起来却像失败；
+        #   ③ 拿不准的包会**再弹一次确认框**，且整包再解压一遍。
+        # ⭐⭐⭐ 我上一轮的沙箱测试之所以"通过"，是因为脚本直接点了那个
+        #   已经被隐藏的按钮 —— **能用代码点到，不等于用户点得到。**
+        # ⇒ 先把这一次的结果画出来，再把报告作废（下次点导入自然会重扫）。
+        self._render_report(self._scan_report, result)
+        if not dry_run:
+            self._invalidate_scan()
         self.notice_bar.show_message(
             "；".join(parts),
             undo_callback=(lambda: self._undo_last_import(result)) if can_undo else None,
         )
-
-        if not dry_run:
-            self._scan_source()
-        else:
-            self._render_report(self._scan_report, result)
 
     def _undo_last_import(self, import_result):
         """把刚导进去的收回来。⭐ 走 core 的 `undo_import` ——
@@ -782,7 +954,7 @@ class AudioImportWizardPage(QWidget):
         else:
             self.notice_bar.show_message(f"已撤销，{removed} 个文件放回去了。")
         self._last_import_result = None
-        self._scan_report = None
+        self._invalidate_scan()
         self._sync_status_strip()
 
     def _unrecognized_audio_files(self) -> list[str]:

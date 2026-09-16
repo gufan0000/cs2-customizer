@@ -5096,6 +5096,34 @@ REVERTS = [
         "而注释不会被执行**",
     ),
     Revert(
+        "RN", "RN-652 音频任务的错误处理路径又依赖那个已经坏掉的东西",
+        "core/audio/audio_task_runner.py",
+        "        try:\n"
+        "            if shiboken6 is not None and not shiboken6.isValid(self):\n"
+        "                self._note_host_gone(signal_name)\n"
+        "                return False\n"
+        "            getattr(self, signal_name).emit(*args)\n"
+        "            return True\n"
+        "        except RuntimeError:\n"
+        "            # isValid 与 emit 之间还有一个竞态窗口：宿主可能正好在这一瞬被删\n"
+        "            self._note_host_gone(signal_name)\n"
+        "            return False",
+        "        getattr(self, signal_name).emit(*args)\n"
+        "        return True",
+        "tests/test_the_audio_task_thread_survives_a_dead_host.py::"
+        "test_a_real_failure_still_reaches_history_even_if_the_host_is_dead",
+        "RN-652：宿主的 C++ 对象在任务跑着时被删（页面销毁 / QApplication 收尾 / "
+        "解释器退出，三条实测都成立）⇒ emit 抛 RuntimeError ⇒ **`except` 里的 emit "
+        "用的是同一个坏掉的东西**，再抛一次（于是同一块里的 `logger.error` 根本没跑到），"
+        "`finally` 里第三次抛**并替换掉**前一个异常传播出去 ⇒ worker 线程静默死亡、"
+        "`_push_history` 也丢了 ⇒ 解释器收尾期撞上 stderr 缓冲锁"
+        "（`Fatal Python error: _enter_buffered_busy`，rc=0xC0000409）。"
+        "⚠⚠ **逃出线程的是 `finally` 的 `task_finished`，不是 `except` 的 `task_progress`** —— "
+        "破坏验证实测：只把 except 那一处包起来，6 个用例**一条都不变绿**。"
+        "⭐⭐⭐ 一条错误处理路径如果依赖它正在处理的那个坏东西，它就不是错误处理，"
+        "而是**第二个故障点**；而这种失败连日志都不留，长得和「没反应」一模一样",
+    ),
+    Revert(
         "RN", "专家音频四页的重复入口又长回来",
         "pages/audio_task_panel_page.py",
         '        self.action_bar.configure_secondary("", None, visible=False)',
@@ -8127,6 +8155,139 @@ Revert(
         "剥壳规则（与社区站逐字一致）在音效包上会把**风格目录本身**当外壳剥掉："
         "`风格甲/1.mp3` 剥完只剩 `1.mp3`。断点不把剥掉的名字带下去 ⇒ "
         "用户在包里写好的风格名当场丢失，落进一个他没起过的名字里",
+    ),
+    Revert(
+        "RI", "认得出却打不开的格式又按名单放行",
+        "core/resource_import_source.py",
+        '    if kind != "unknown":',
+        # ⚠ 2026-09-16 回退验证当场逮出假绿：断点原来把这句换成
+        #   `if kind in UNSUPPORTED_HINTS:`（即原缺陷的那一版），而**那样不红** ——
+        #   因为同一批还往 `UNSUPPORTED_HINTS` 补了 gzip，两处修复互相兜住了。
+        #   ⭐⭐ 这正是我手工破坏验证第一次搞错的那件事，回退验证独立又逮了一遍：
+        #   「破坏验证跑绿」有两种读法 —— 判据不守，或者**我根本没破坏到它守的那件事**。
+        # ⇒ 改成重新列举一张手写名单（漏掉 gzip），那才是这条判据真要防的形态。
+        '    if kind in ("rar", "7z", "exe"):',
+        "tests/test_a_downloaded_pack_imports_without_a_single_question.py"
+        "::test_every_format_the_sniffer_knows_is_either_opened_or_refused",
+        "`_MAGIC` 和分发的 if 链各自列举、谁也不管谁 ⇒ 前者每多认一种格式，"
+        "后者就多一条静默的落法。断点把「按名单拒绝」改回「按名单放行」⇒ "
+        "名单外的格式（当时是 gzip）被当成「一个素材文件」收下，"
+        "`枪声包.tar.gz` 原样落进资源目录：**装得进去、永远不会响**",
+    ),
+    Revert(
+        "RI", "一次失败的扫描不作废上一次的报告",
+        "pages/audio_import_wizard_page.py",
+        "        self._invalidate_scan()\n        # ⭐ 提示条也要归零",
+        "        # 断点：这里本该作废上一次的报告\n        # ⭐ 提示条也要归零",
+        "tests/test_the_import_does_not_freeze_or_ask_twice.py"
+        "::test_a_refused_source_does_not_leave_the_previous_plan_armed",
+        "端到端实测逮到：导完一个包再喂一个 `.tar.gz`，它被**正确拒绝**、错误也报了，"
+        "而紧接着「导入」却说「导入完成：成功 1」，**把上一个包又导了一遍**。"
+        "每一层单独看都对，错在报告的寿命没跟源绑定 —— 而单元判据一条都没红，"
+        "因为每条判据都只扫一次，这缺陷只在**第二次**出现",
+    ),
+    # ⚠⚠ 系统垃圾被过滤了**两遍**（解压前一遍、`split_entries` 里一遍），
+    #   于是单点撤掉任何一遍都不红 —— 回退验证当场把这条断点判成假绿。
+    #   ⭐⭐ 两份副本互相兜住，正是 RN-002 那个形态：**只要还有第二份，
+    #   修好一份就等于没修**；反过来，删掉一份也没有任何东西会红。
+    # ⇒ 不合并这两处（各自有只有它能提供的性质），而是让两条断点各钉一个：
+    Revert(
+        "RI", "解压前不再先扔垃圾（外壳就剥不掉了）",
+        "core/resource_import_source.py",
+        "            members = [pair for pair in members if not is_system_junk(pair[1])]",
+        "            members = list(members)",
+        "tests/test_a_downloaded_pack_imports_without_a_single_question.py"
+        "::test_the_mac_metadata_folder_does_not_block_the_shell_strip",
+        "Mac 打的包里 `__MACOSX/` 是和 `枪声包/` **并列的第二个顶层目录** ⇒ "
+        "留着它 `strip_single_root` 就认为根不唯一、整个外壳剥不掉，"
+        "每条路径都多出一层，归类器再也对不上。"
+        "⭐ 这一处不是「顺手清理」，它决定剥壳成不成 —— 而那是只有它提供的性质",
+    ),
+    Revert(
+        "RI", "文件夹里的系统垃圾又照单全收",
+        "core/resource_import_source.py",
+        "        if is_system_junk(text):\n            junk += 1",
+        "        if False:\n            junk += 1",
+        # ⚠ 必须用**文件夹**源：压缩包那条路在解压前已经滤过一遍，撤掉这里不红。
+        "tests/test_a_downloaded_pack_imports_without_a_single_question.py"
+        "::test_a_dragged_folder_is_not_taxed_for_the_thumbnails_windows_left_in_it",
+        "用户把自己整理好的文件夹直接拖进来是最常见的用法之一，而**只要用资源管理器"
+        "看过一眼**那个目录就会有 `Thumbs.db` / `desktop.ini`。它们混进去让那一组的形状"
+        "从 `dir2/audio` 变成 `dir2/mixed`、识别器降到「拿不准」⇒ 凭空多问一次，"
+        "而那个问题**没有正确答案**",
+    ),
+    # ── 2026-09-17：「产品会不会去读这个位置」这一层的五条 ──
+    Revert(
+        "RI", "编号制的类别又不重命名了",
+        "core/resource_placement.py",
+        '    if layout not in ("numbered", "single"):',
+        "    if True:",
+        "tests/test_what_we_write_is_what_the_product_reads.py"
+        "::test_a_kill_sound_pack_with_named_files_is_renumbered",
+        "击杀音效/语音产品**只按 `1.*`~`5.*` 找**（`style_creator` 标成 numbered），"
+        "而 `list_style_dirs_with_audio` 只要目录里有音频就把它算成一个风格 ⇒ "
+        "`清脆/爆头.mp3` 这种包**出现在设置页的下拉框里，进游戏一声不响**。"
+        "⭐ 这是这个功能能犯的最隐蔽的错误：每一步都显示成功",
+    ),
+    Revert(
+        "RI", "武器层不再跟产品的表核对",
+        "core/resource_readback.py",
+        "    sample = \"、\".join(sorted(allowed)[:8])",
+        "    return None\n    sample = \"、\".join(sorted(allowed)[:8])",
+        "tests/test_what_we_write_is_what_the_product_reads.py"
+        "::test_a_chinese_weapon_folder_is_called_out_not_guessed",
+        "枪声替换产品只认 `GUN_SOUND_WEAPON_TYPES` 里的小写代号，而导入是把包里的"
+        "目录名**原样搬**⇒ `沙漠之鹰/` 落进去永远不会被读到，且全程零提示。"
+        "⛔ 这里明说而不猜：猜错一个武器名，用户是**进游戏之后**才发现的",
+    ),
+    Revert(
+        "RI", "单文件那条路的扩展名闸门又没了",
+        "core/resource_import_source.py",
+        "    if extension not in _asset_extensions():",
+        "    if False:",
+        "tests/test_the_import_survives_what_people_actually_drag_in.py"
+        "::test_the_gate_is_the_same_on_every_entry_point",
+        "同一道闸门在三条入口里**只装了两道**，漏掉的正是玩家最常用的那条："
+        "微信/QQ 语音转存的 `.m4a` 被当素材收下，逼用户从 17 个类目里挑一个"
+        "（全部拿不准、没有正确答案），挑完报「成功 1」而进游戏一声不响",
+    ),
+    Revert(
+        "RI", "中文 zip 名又按 CP437 解成乱码",
+        "core/archive_safe.py",
+        "        relative = safe_relpath(decode_member_name(info))",
+        "        relative = safe_relpath(info.filename)",
+        "tests/test_the_import_survives_what_people_actually_drag_in.py"
+        "::test_a_pack_made_by_windows_explorer_keeps_its_chinese_names",
+        "Windows 右键「发送到 → 压缩文件夹」打的中文包，文件名按 GBK 存且不置 "
+        "0x0800 标志位 ⇒ `zipfile` 按 CP437 解，`清脆/1.mp3` 变成 `╟σ┤α/1.mp3`，"
+        "**在用户的资源目录里建出一个叫 `╟σ┤α` 的风格**，而导入报「成功 3」",
+    ),
+    # ⚠ 这两条原本是一条，而回退验证当场判它假绿：本轮的修复同时改了**两件事**
+    #   （去掉导入后的自动重扫 + 把 `show_message` 挪到最后），而断点只还原了一件，
+    #   另一件仍然护着那条判据。⭐⭐ **一个修复改了两件事，就要两条断点** ——
+    #   否则总有一半是没人守的。
+    Revert(
+        "RI", "导入成功之后又自动重扫一遍",
+        "pages/audio_import_wizard_page.py",
+        "        self._render_report(self._scan_report, result)\n        if not dry_run:\n            self._invalidate_scan()",
+        "        self._render_report(self._scan_report, result)\n        if not dry_run:\n            self._scan_source()",
+        "tests/test_the_import_does_not_freeze_or_ask_twice.py"
+        "::test_a_real_import_does_not_silently_rescan_the_same_pack",
+        "导完立刻重扫有三重代价：屏幕被改写成「全是冲突」（而那是**导入成功**的"
+        "表现）、拿不准的包**再弹一次确认框**、整包再解压一遍。"
+        "⭐ 报告作废即可，下次点导入自然会重扫",
+    ),
+    Revert(
+        "RI", "提示条在报告作废时被一起清掉",
+        "pages/audio_import_wizard_page.py",
+        '        self._scan_report = None\n        self._scan_report_source = ""',
+        '        self._scan_report = None\n        self._scan_report_source = ""\n        self.notice_bar.clear()',
+        "tests/test_the_import_does_not_freeze_or_ask_twice.py"
+        "::test_the_undo_button_survives_the_import_that_created_it",
+        "「顺手把提示条也清了」是这一处最容易被后人加上的一行，而它会让"
+        "「导入完成」和**撤销按钮**当场消失 ⇒ 撤销功能对用户等于不存在。"
+        "⭐⭐⭐ 上一轮的沙箱测试之所以「通过」，是因为脚本直接点了那个已被隐藏的"
+        "按钮 —— **能用代码点到，不等于用户点得到**",
     ),
 ]
 

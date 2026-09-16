@@ -28,6 +28,15 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Sequence
 
 from core.resource_catalog import get_resource_spec
+from core.resource_readback import (
+    bucket_problem,
+    layout_of,
+    layout_warning,
+    normalize_bucket,
+    numbered_slots,
+    renumber,
+    style_name_problem,
+)
 
 #: 需要「这套素材叫什么名字」的类：目标结构里有一层 `<风格>`。
 #:
@@ -136,14 +145,31 @@ def detect_c4_events(filenames: Sequence[str]) -> Dict[str, str]:
     ⭐ 这个函数的产出是给**落盘前预检**用的：没命中的事件就是
     "装进去了但不会响"，要在复制之前讲出来。
     """
+    # ⚠⚠ 一个文件只许命中**一个**事件，而且要命中**最像的那个**。
+    #   原来是按 `C4_EVENT_TOKENS` 的字典顺序逐个试、先中先得，而「安放」
+    #   的 tokens 里有一个很泛的 `bomb` ⇒ 实测
+    #   `detect_c4_events(["bomb_defused.mp3", "bomb_exploded.mp3"])`
+    #   把「安放」也算成已就位（命中的还是那个**拆除**的文件），
+    #   于是 missing 为空、**该报的「安放那一声不会响」一个字都没报**。
+    # ⭐⭐ 一条很泛的关键词会把它旁边那几条的判断一起吃掉 ——
+    #   而这里的产出正是"不会响"的唯一预警，漏报等于没有预警。
+    # ⇒ 改成：每个文件挑**最长的那条命中 token**（越长越specific），
+    #   同一个文件不再重复认领第二个事件。
     found: Dict[str, str] = {}
+    taken: set = set()
     for name in filenames:
         low = str(name or "").lower()
+        best_event, best_len = "", 0
         for event, tokens in C4_EVENT_TOKENS.items():
             if event in found:
                 continue
-            if any(str(token).lower() in low for token in tokens):
-                found[event] = name
+            for token in tokens:
+                text = str(token).lower()
+                if text and text in low and len(text) > best_len:
+                    best_event, best_len = event, len(text)
+        if best_event and name not in taken:
+            found[best_event] = name
+            taken.add(name)
     return found
 
 
@@ -168,9 +194,34 @@ def _layers_from_source(path: str, needed: int):
     层数不够返回 None（交给上面去问用户）；层数多余时取**最靠近文件的那几层**。
     """
     parts = str(path).split("/")[:-1]
+    # ⚠ 路径里的**类目录**（`kill_sounds/` / `audio/`）不是风格层，
+    #   它是这一类的目标根。原来没排除它 ⇒ `kill_sounds/1.mp3` 被当成
+    #   「风格叫 kill_sounds」，落成 `audio/kill_sounds/kill_sounds/1.mp3`，
+    #   而用户填的风格名被整个丢掉。
+    # ⭐ 一段路径既可能是"结构"也可能是"内容"，分不清就会把结构当成内容。
+    parts = [p for p in parts if not _is_structural_layer(p)]
     if len(parts) < needed:
         return None
     return parts[len(parts) - needed:] if needed else []
+
+
+_STRUCTURAL_LAYERS = None
+
+
+def _is_structural_layer(part: str) -> bool:
+    """这一层是不是**类目录**（产品的目标结构），而不是用户起的名字。"""
+    global _STRUCTURAL_LAYERS
+    if _STRUCTURAL_LAYERS is None:
+        from core.resource_catalog import RESOURCE_SPECS
+
+        names = {"audio", "resources"}
+        for spec in RESOURCE_SPECS:
+            names.add(str(spec.key).lower())
+            for piece in str(spec.target_rel_root).split("/"):
+                if piece:
+                    names.add(piece.lower())
+        _STRUCTURAL_LAYERS = names
+    return str(part or "").strip().lower() in _STRUCTURAL_LAYERS
 
 
 def plan_placements(
@@ -225,6 +276,10 @@ def plan_placements(
             "被击杀音效是一个文件一个风格（不建风格目录）——"
             f"导入后会在设置页看到 {len(paths)} 个新风格，名字就是文件名。"
         )
+        # ⚠ 这条分支**提前 return**，所以撞点检查要在这里再叫一次 ——
+        #   而 death 恰恰是最容易撞的一类（不同风格目录下的同名文件全平铺到一层）。
+        #   ⭐ 「提前 return 绕过了收尾检查」是这一族缺陷的常见形态。
+        _warn_if_two_files_land_on_one(plan)
         return plan
 
     # ── 特例二：回合音效要先知道是哪个子事件 ──
@@ -248,20 +303,33 @@ def plan_placements(
         from_source[path] = layers
     # ⚠ 回合音效的第一层是**固定集合**里的名字（产品只认 `win`，
     #   而用户目录里可能叫"胜利"）⇒ 源路径里的目录名不算数，那一层永远要问。
-    if spec_key == "round_sounds" and not bucket:
+    # ⚠⚠ 而**用户答过之后也不算数**：原来只在 `not bucket` 时清空，
+    #   于是用户在弹窗里选了 `win`，第二轮 `covered` 成真、走「源路径原样搬」，
+    #   `outer_layer` 补进来的外壳名把它顶掉 ⇒ 实测落成
+    #   `audio/round_sounds/回合音效包/胜利/1.mp3`，产品永远不会读这个目录。
+    # ⭐⭐ **用户明确回答过的东西，不许再被推断出来的东西覆盖。**
+    if spec_key == "round_sounds":
         from_source = {path: None for path in paths}
     covered = all(value is not None for value in from_source.values())
 
     # ── ② 源路径不够层时：先按文件名猜，猜不出再问 ──
     if not covered and spec_key in NEEDS_BUCKET and spec_key != "round_sounds" and not bucket:
-        guessed = {guess_bucket_from_filename(p) for p in paths}
-        guessed.discard("")
-        if not guessed:
+        # ⚠⚠ 这里原来写的是「**一个都猜不出**才问」，于是只要有一个文件猜得出，
+        #   其余猜不出的那些就一路走到下面的 `_clean_name("")` ⇒ 兜底成
+        #   **「新风格」当武器目录**。实测：`["沙漠之鹰.wav", "ak47.wav"]` ⇒
+        #   `audio/gun_sounds/新风格/默认/沙漠之鹰.wav`，而产品按武器代号找目录，
+        #   这一套**永远不会响**，且全程零提示。
+        # ⭐⭐ 「有一个能猜出来」不等于「这一包都能猜出来」—— 分母不是同一个。
+        blind = [p for p in paths
+                 if not guess_bucket_from_filename(p.rsplit("/", 1)[-1])]
+        if blind:
             plan.questions.append({
                 "field": "bucket",
                 "label": f"这套素材属于哪一个{NEEDS_BUCKET[spec_key]}？",
                 "choices": [],
-                "why": "文件名里看不出来，而这一层决定它进哪个目录。",
+                "why": (f"这 {len(blind)} 个文件的名字里看不出来"
+                        f"（例如 {os.path.basename(blind[0])}），"
+                        f"而这一层决定它进哪个目录 —— 放错了进游戏不会响。"),
             })
 
     # ⚠ 判据逮到：`not style_name` 对 `"   "` 是 False —— 全空白会一路走到
@@ -281,6 +349,10 @@ def plan_placements(
 
     style = _clean_name(style_name)
 
+    # ── 特例四：击杀图标有一条**专用导入链路**，这里只能照搬文件 ──
+    if spec_key == "kill_icons":
+        plan.warnings.extend(_kill_icon_caveats(paths))
+
     # ── 特例三：C4 三事件共用一个风格目录，落盘前先报"哪一声会缺" ──
     if spec_key == "c4_sounds":
         found = detect_c4_events([p.rsplit("/", 1)[-1] for p in paths])
@@ -292,19 +364,157 @@ def plan_placements(
                 "可以先导入，再把对应文件改名（比如带上「拆除」两个字）。"
             )
 
+    # ── 落盘前最后一问：**产品会不会去读这个位置** ──
+    #   ⭐⭐⭐ 这一步以前完全没有，于是「导入成功」和「进游戏能响」之间
+    #   没有任何东西连着。实测：`清脆/爆头.mp3` 这种包导进去报成功、
+    #   设置页里看得见「清脆」，而产品找的是 `1.*`~`5.*`，一个都找不到。
+    renamed, dropped = _renumber_if_needed(spec_key, paths, plan)
+    _warn_if_the_product_will_not_look_there(spec_key, spec, bucket, style,
+                                             covered, from_source, plan)
+
     for path in paths:
-        base = path.rsplit("/", 1)[-1]
+        if path in dropped:
+            continue
+        base = renamed.get(path) or path.rsplit("/", 1)[-1]
         parts = [root]
         source_layers = from_source.get(path)
         if covered and source_layers:
             # ⭐ 源路径已经是对的形状，原样搬过去 —— 用户没填的东西不要替他编。
-            parts.extend(_clean_name(layer) for layer in source_layers)
+            #   ⚠ 但 bucket 那一层要归一成产品认的 id（`AK47` ⇒ `ak47`）：
+            #     产品按小写代号找目录，大小写在 Windows 上碰巧能撞对、换个盘就不行。
+            cleaned = [_clean_name(layer) for layer in source_layers]
+            if spec_key in NEEDS_BUCKET and cleaned:
+                cleaned[0] = normalize_bucket(spec_key, cleaned[0])
+            parts.extend(cleaned)
         elif spec_key in NEEDS_BUCKET:
             chosen = bucket or guess_bucket_from_filename(base)
-            parts.append(_clean_name(chosen))
+            parts.append(normalize_bucket(spec_key, _clean_name(chosen)))
         if not (covered and source_layers) and spec_key in NEEDS_STYLE_NAME:
             parts.append(style)
         parts.append(base)
         plan.placements.append(Placement(path, "/".join(parts), spec_key))
 
+    _warn_if_two_files_land_on_one(plan)
     return plan
+
+
+def _renumber_if_needed(spec_key, paths, plan):
+    """编号制的类：替用户把文件名摆成 `1`~`5`，并把这件事说出来。
+
+    ⭐ 这正是用户要的「软件自己归类」—— 把「你得自己改名」退回给用户，
+    等于这个功能只做了一半。
+    """
+    layout = layout_of(spec_key)
+    if layout not in ("numbered", "single"):
+        return {}, set()
+    slots = numbered_slots(spec_key) or 1
+    by_dir = {}
+    for path in paths:
+        by_dir.setdefault(path.rsplit("/", 1)[0] if "/" in path else "", []).append(path)
+    renamed, dropped = {}, set()
+    for group in by_dir.values():
+        # ⚠ 按**风格目录**分别编号：两个风格各自从 1 开始，
+        #   整包一起编会让第二个风格从 4 开始、产品照样找不到 1~3。
+        mapping, extra = renumber(group, slots)
+        renamed.update(mapping)
+        dropped.update(extra)
+    spec = get_resource_spec(spec_key)
+    label = spec.label if spec else spec_key
+    plan.warnings.extend(layout_warning(spec_key, label, renamed, sorted(dropped)))
+    return renamed, dropped
+
+
+def _warn_if_the_product_will_not_look_there(spec_key, spec, bucket, style,
+                                             covered, from_source, plan):
+    """武器名 / 回合事件名 / 风格名 —— 产品读不到的，**明说，不猜**。"""
+    checked = set()
+    if bucket:
+        checked.add(str(bucket))
+    if covered:
+        for layers in from_source.values():
+            if layers and spec_key in NEEDS_BUCKET:
+                checked.add(str(layers[0]))
+    for value in sorted(checked):
+        problem = bucket_problem(spec_key, value)
+        if problem:
+            plan.warnings.append(problem)
+    if spec_key in NEEDS_STYLE_NAME and style and not covered:
+        problem = style_name_problem(style)
+        if problem:
+            plan.warnings.append(f"风格名「{style}」产品收不下：{problem}。")
+
+
+#: 击杀图标一个风格该有的等级。⚠ 产品按 `<等级>.png` + `<等级>.json` 成对读。
+_KILL_ICON_LEVELS = ("1", "2", "3", "4", "5")
+_KILL_ICON_ENTRY_RE = re.compile(r"^([1-5])(hs)?\.(png|json)$", re.IGNORECASE)
+
+
+def _kill_icon_caveats(paths):
+    """击杀图标包走统一链路时，**说清它和专用导入器的差别**。
+
+    ⭐⭐⭐ 统一链路做的是 `shutil.copy2`，而击杀图标的专用导入器
+    （`core/kill_icon_pack.import_pack` → `kill_icon_import.convert_to_style`）
+    对每个等级还要做三件这里做不了的事：
+    ① **补 `hold_seconds`** —— 单帧素材没有它只会在屏幕上闪 **0.03 秒**
+       （KI-4 之前就是这个表现，而且零提示）；
+    ② **钳 `fps`** 到合法范围；
+    ③ **验 json 是不是本产品的图集格式**，不是就重新打图集
+       （`1.gif`、`3/` 逐帧目录这些"松散包"全靠这一步）。
+    ⇒ 这里不复刻那条链路（复刻出来的那份从复刻完就开始漂，见 RN-002），
+      而是**如实说出差别**，并把用户指到那条真正能处理它的入口。
+    """
+    names = [str(p).rsplit("/", 1)[-1] for p in paths]
+    entries = {}
+    loose = []
+    for name in names:
+        match = _KILL_ICON_ENTRY_RE.match(name)
+        if match:
+            entries.setdefault(match.group(1), set()).add(match.group(3).lower())
+        elif name.lower() not in ("style.json", "cs2customizer_pack.json"):
+            loose.append(name)
+    lines = []
+    half = sorted(level for level, kinds in entries.items()
+                  if kinds != {"png", "json"})
+    if half:
+        lines.append(
+            f"这套图标里 {'、'.join(half)} 杀只有半套文件（缺 .png 或 .json），"
+            f"那几个等级进游戏不会显示。")
+    missing = [level for level in _KILL_ICON_LEVELS if level not in entries]
+    if entries and missing:
+        lines.append(
+            f"这套图标缺 {'、'.join(missing)} 杀的素材 —— "
+            f"打到那几个等级时不会有图标弹出来。")
+    if loose:
+        lines.append(
+            f"包里有 {len(loose)} 个不是 `1.png`/`1.json` 这种标准条目的文件"
+            f"（{'、'.join(loose[:3])}{'…' if len(loose) > 3 else ''}）。"
+            f"这个页面只会原样搬运，不会替你打图集 —— "
+            f"这类包请改用「击杀图标」页里的素材导入，那条路会做格式转换。")
+    if entries and not loose:
+        lines.append(
+            "击杀图标这里只做原样搬运：包里 json 的播放参数会照搬。"
+            "如果导完之后图标一闪而过或者不动，请改用「击杀图标」页的素材导入，"
+            "那条路会补齐播放参数。")
+    return lines
+
+
+def _warn_if_two_files_land_on_one(plan):
+    """两个源文件算出同一个落点 ⇒ 后一个盖掉前一个，而计数会报两个。
+
+    ⭐ 实测：`风格甲/death.mp3` 与 `风格乙/death.mp3` 选「被击杀音效」
+    都落到 `audio/death/death.mp3`。
+    """
+    seen = {}
+    clashes = []
+    for item in plan.placements:
+        key = item.target_rel_path.lower()
+        if key in seen:
+            clashes.append((seen[key], item.source, item.target_rel_path))
+        else:
+            seen[key] = item.source
+    if clashes:
+        first = clashes[0]
+        plan.warnings.append(
+            f"有 {len(clashes)} 组文件会落到同一个位置（例如 "
+            f"`{first[0]}` 和 `{first[1]}` 都落到 `{first[2]}`），"
+            f"后一个会盖掉前一个。请先把它们改成不同的文件名。")

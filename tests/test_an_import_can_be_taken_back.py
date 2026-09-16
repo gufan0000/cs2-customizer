@@ -26,7 +26,7 @@ import os
 
 import pytest
 
-from core.resource_identify import LIKELY, UNSURE, identify_groups
+from core.resource_identify import UNSURE, _candidates_for_shape, identify_groups
 from core.resource_import_wizard import apply_resource_import_plan, undo_import
 
 
@@ -131,9 +131,20 @@ def test_a_dry_run_never_rolls_back_because_it_never_wrote(tmp_path):
 
 # ---------------------------------------------------------------- 学习表
 
-def test_a_remembered_shape_is_not_asked_again():
-    """⭐ 记的是**形状指纹**，不是包名 —— 包名每次都不同，
-    而形状是同一个作者的打包习惯。"""
+def test_a_remembered_ambiguous_shape_is_preselected_but_still_asked():
+    """⛔⛔ 2026-09-17 改判：记住了**也还是要问**，除非这个形状只可能是一类。
+
+    旧判据钉的是「记住 ⇒ 不再问」，而那条规则**在原理上就不成立**：
+    实测 `清脆/1.mp3`（击杀音效）、`残血/1.mp3`（血量警告）、
+    `默认/1.mp3`（切枪音效）**形状指纹全是 `dir1/audio`** —— 一个指纹底下
+    坐着七类。于是用户为第一个包答过一次「击杀音效」之后，
+    **之后每一个同形状的包都被无声地归成击杀音效**，
+    而他是在设置页里找不到自己的血量警告时才发现的。
+
+    ⭐⭐⭐ 这正是本功能的前提事实（12 类音频共用扩展名、5 类连结构都一样）
+    被自己的学习表违反了一次 —— **省一次点击，不值得拿"静默归错"去换。**
+    ⇒ 分两档：形状唯一才照办；形状含糊就**预选在第一位**，还是问一次。
+    """
     paths = ["AK47/默认/1.wav", "M4A1/默认/1.wav"]
     fresh = identify_groups(paths, source_name="素材.zip")
     assert fresh[0].confidence == UNSURE
@@ -141,10 +152,24 @@ def test_a_remembered_shape_is_not_asked_again():
 
     shape = fresh[0].shape
     learned = identify_groups(paths, source_name="另一个包.zip",
-                              memory={shape: "switch_weapons"})
-    assert learned[0].confidence == LIKELY
-    assert not learned[0].needs_user
-    assert learned[0].preselect.spec_key == "switch_weapons"
+                              memory={shape: "switch_weapons"})[0]
+    assert learned.needs_user, (
+        f"`{shape}` 这个形状底下不止一类，记住了也不许替用户定 —— "
+        f"候选：{_candidates_for_shape(shape)}")
+    assert learned.remembered == "switch_weapons", (
+        "还是要问，但上次的答案必须预选好，否则「记住」这件事对用户没有意义")
+    assert learned.guesses[0].spec_key == "switch_weapons", "记住的那个要排第一"
+
+
+def test_a_remembered_unambiguous_shape_is_not_asked_again():
+    """⭐ 形状只可能是一类时，「记住 ⇒ 不再问」才成立。"""
+    paths = ["我的准星.xchr"]
+    shape = identify_groups(paths, source_name="素材.zip")[0].shape
+    assert len(_candidates_for_shape(shape)) <= 1, (
+        f"这条判据挑的形状 `{shape}` 必须是唯一候选的，否则它测的不是这件事")
+    group = identify_groups(paths, source_name="素材.zip",
+                            memory={shape: "crosshair"})[0]
+    assert not group.needs_user
 
 
 def test_the_remembered_choice_says_it_is_remembered():
@@ -153,8 +178,8 @@ def test_the_remembered_choice_says_it_is_remembered():
     shape = identify_groups(paths, source_name="素材.zip")[0].shape
     group = identify_groups(paths, source_name="素材.zip",
                             memory={shape: "reload_sounds"})[0]
-    assert any("上次" in line for line in group.preselect.evidence), \
-        group.preselect.evidence
+    assert any("上次" in line for line in group.guesses[0].evidence), \
+        group.guesses[0].evidence
 
 
 def test_a_remembered_category_that_no_longer_exists_is_ignored():

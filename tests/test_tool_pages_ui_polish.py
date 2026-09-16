@@ -433,7 +433,7 @@ def test_audio_import_wizard_page_uses_compact_status_strip(qapp, monkeypatch, t
     assert page.summary_label.isHidden() is True
     chips = _visible_audio_status_chip_texts(page.status_badge_label)
     assert len(chips) == 4
-    assert any(text.startswith("源目录 · source") for text in chips)
+    assert any(text.startswith("素材来源 · source") for text in chips)
     assert any(text.startswith("模式 · 音频") for text in chips)
     # 批 49（RN-508 收尾）：「保守」是内部说法，芯片改说它的实际性质。
     #   照批 33 规矩改钉现在的形态，不是删掉这一行。
@@ -446,7 +446,7 @@ def test_audio_import_wizard_page_uses_compact_status_strip(qapp, monkeypatch, t
     #   撤的是副本，动作一个都没少。
     assert page.action_bar.secondary_btn.isHidden() is True
     assert page.action_bar.primary_btn.isHidden() is True
-    assert page.scan_btn.text() == "扫描目录"
+    assert page.scan_btn.text() == "扫描素材"
     # ⭐ 选好源目录之后，第一步才是「扫描」；没选之前紫的是「选择目录」——
     #   外审 3 发报「未选目录时扫描却是唯一高亮，极易诱导玩家开局盲点导致报错」。
     assert page.scan_btn.objectName() == "primaryButton"

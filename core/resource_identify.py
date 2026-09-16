@@ -123,6 +123,12 @@ class Group:
     guesses: List[Guess] = field(default_factory=list)
     #: 这一组共同的目录前缀，用来在 UI 上说"这些文件都在 X 下"。
     common_dir: str = ""
+    #: 学习表记着的那一类（只在**还要问**的时候有值）。
+    #: ⭐ 它和 `preselect` 是两件事：`preselect` 意思是"不用问了"，
+    #:   这个是"还要问，但把上次的答案摆在最前面，一眼就能确认"。
+    #: ⚠ 之所以不能直接不问：`dir1/audio` 这种指纹底下坐着七类，
+    #:   形状**原理上**分不清它们，而上一次的答案只对上一个包成立。
+    remembered: str = ""
 
     @property
     def confidence(self) -> str:
@@ -252,7 +258,15 @@ def _common_dir(paths: Sequence[str]) -> str:
 #: 让人以为"路径规则работает"，而产品的用户是中文玩家，他们打的包是中文目录名。
 #: ⛔ 不去改 `resource_catalog.build_spec_lookup`：那张表是导入向导与同步面的共用契约
 #: （X12 层契约冻着它），在这里加一层映射的影响面小得多。
-_LABEL_TO_KEY = {spec.label: spec.key for spec in RESOURCE_SPECS}
+#: ⚠ 键要**去掉空格**：`RESOURCE_SPECS` 里的 label 逐字写着「C4 音效」（带空格），
+#: 而用户建目录时最自然的写法是「C4音效」—— 精确匹配就差这一个空格，
+#: 实测 `C4音效/默认/1.mp3` 认不出、`C4 音效/默认/1.mp3` 才认得出。
+#: ⭐ 中文里空格是**可有可无**的，拿它当标识符的一部分必然漏。
+_LABEL_TO_KEY = {}
+for _spec_item in RESOURCE_SPECS:
+    _LABEL_TO_KEY[_spec_item.label] = _spec_item.key
+    _LABEL_TO_KEY[_spec_item.label.replace(" ", "")] = _spec_item.key
+    _LABEL_TO_KEY[_spec_item.label.replace(" ", "").lower()] = _spec_item.key
 
 
 def _spec_key_in_path(path: str) -> str:
@@ -263,8 +277,9 @@ def _spec_key_in_path(path: str) -> str:
         spec = lookup.get(bare.lower())
         if spec:
             return spec.key
-        if bare in _LABEL_TO_KEY:
-            return _LABEL_TO_KEY[bare]
+        for probe in (bare, bare.replace(" ", ""), bare.replace(" ", "").lower()):
+            if probe in _LABEL_TO_KEY:
+                return _LABEL_TO_KEY[probe]
     return ""
 
 
@@ -339,11 +354,28 @@ def identify_groups(
         #   让用户在报告里看得见"这是照上次办的"，而不是无声地照办。
         learned = remembered_key(shape, memory)
         if learned and group.confidence == UNSURE:
+            # ⛔⛔ 这里原来无条件抬到 `LIKELY`，而 `LIKELY` 就是**不再问** ——
+            #   于是学习表变成了一台静默归错的机器：
+            #   实测 `清脆/1.mp3`（击杀音效）、`残血/1.mp3`（血量警告）、
+            #   `默认/1.mp3`（切枪音效）**指纹全是 `dir1/audio`**，
+            #   一个形状底下坐着七类。用户为第一个包答过一次「击杀音效」，
+            #   之后每一个同形状的包都被**无声地**归成击杀音效。
+            # ⭐⭐⭐ 形状指纹在原理上分不清它们（这正是本功能的前提事实），
+            #   所以"记住 ⇒ 不再问"这条规则本身就不成立 ——
+            #   它只在**这个形状只可能是一类**时才成立。
+            # ⇒ 分两档：形状唯一 ⇒ 照办不问；形状含糊 ⇒ **排到第一个候选**，
+            #   还是问，但用户一眼就能确认（省力的目的达到了，静默的风险没有）。
+            unambiguous = len(_candidates_for_shape(shape)) <= 1
+            level = LIKELY if unambiguous else UNSURE
+            why = ("上次同样结构的素材你归成了这一类" if unambiguous else
+                   "上次同样结构的素材你归成了这一类（这种结构有好几类都可能，"
+                   "所以还是问你一次）")
             group.guesses = [Guess(
-                learned, _label(learned), LIKELY,
-                ["上次同样结构的素材你归成了这一类"] + list(group.guesses[0].evidence
-                                                          if group.guesses else []),
+                learned, _label(learned), level,
+                [why] + list(group.guesses[0].evidence if group.guesses else []),
             )] + [g for g in group.guesses if g.spec_key != learned]
+            if not unambiguous:
+                group.remembered = learned
         groups.append(group)
     return groups
 

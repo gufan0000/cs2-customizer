@@ -3607,7 +3607,7 @@
   {
    "page": "audio_import_wizard",
    "text": "仅生成建议（不复制文件）",
-   "card": "第 1 步 选目录并扫描",
+   "card": "第 1 步 选中素材并扫描",
    "tab": "",
    "kind": "check",
    "src": "runtime"
@@ -3615,15 +3615,15 @@
   {
    "page": "audio_import_wizard",
    "text": "导入模式",
-   "card": "第 1 步 选目录并扫描",
+   "card": "第 1 步 选中素材并扫描",
    "tab": "",
    "kind": "label",
    "src": "runtime"
   },
   {
    "page": "audio_import_wizard",
-   "text": "打开源目录",
-   "card": "第 1 步 选目录并扫描",
+   "text": "打开来源位置",
+   "card": "第 1 步 选中素材并扫描",
    "tab": "",
    "kind": "button",
    "src": "runtime"
@@ -3631,15 +3631,15 @@
   {
    "page": "audio_import_wizard",
    "text": "打开资源目录",
-   "card": "第 1 步 选目录并扫描",
+   "card": "第 1 步 选中素材并扫描",
    "tab": "",
    "kind": "button",
    "src": "runtime"
   },
   {
    "page": "audio_import_wizard",
-   "text": "扫描目录",
-   "card": "第 1 步 选目录并扫描",
+   "text": "扫描素材",
+   "card": "第 1 步 选中素材并扫描",
    "tab": "",
    "kind": "button",
    "src": "runtime"
@@ -3647,33 +3647,41 @@
   {
    "page": "audio_import_wizard",
    "text": "撤销",
-   "card": "第 1 步 选目录并扫描",
+   "card": "第 1 步 选中素材并扫描",
    "tab": "",
    "kind": "button",
    "src": "runtime"
   },
   {
    "page": "audio_import_wizard",
-   "text": "源目录",
-   "card": "第 1 步 选目录并扫描",
+   "text": "知道了",
+   "card": "第 1 步 选中素材并扫描",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "audio_import_wizard",
+   "text": "第 1 步 选中素材并扫描",
+   "card": "第 1 步 选中素材并扫描",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "audio_import_wizard",
+   "text": "素材来源",
+   "card": "第 1 步 选中素材并扫描",
    "tab": "",
    "kind": "label",
    "src": "runtime"
   },
   {
    "page": "audio_import_wizard",
-   "text": "知道了",
-   "card": "第 1 步 选目录并扫描",
+   "text": "选择文件夹",
+   "card": "第 1 步 选中素材并扫描",
    "tab": "",
    "kind": "button",
-   "src": "runtime"
-  },
-  {
-   "page": "audio_import_wizard",
-   "text": "第 1 步 选目录并扫描",
-   "card": "第 1 步 选目录并扫描",
-   "tab": "",
-   "kind": "card",
    "src": "runtime"
   },
   {

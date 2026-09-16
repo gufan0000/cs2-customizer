@@ -221,3 +221,180 @@ def test_a_killed_process_leaves_nothing_behind_forever(tmp_path, monkeypatch):
     finally:
         if os.path.isdir(stale):
             os.rmdir(stale)
+
+
+# ------------------------------------- 扫描报告的寿命不许超过它那个源
+
+@pytest.fixture
+def wizard(qapp, monkeypatch, tmp_path):
+    """页面实例。⚠ 必须拦掉模态框，否则页面测试会**卡死**（KI 那批的教训）。
+
+    ⛔⛔ 资源根必须**每个用例一个新目录**。第一版没做这件事，
+    于是页面用的是 `%TEMP%/cs2customizer_test_config/resources` —— 那是一个
+    **跨次持久**的目录（RN-646）。表现是：第一次跑全绿，第二次跑
+    「撤销按钮没出现」红，因为文件已经在那儿了 ⇒ 整包变成"冲突跳过"、
+    `copied` 为空 ⇒ 不给撤销。
+    ⭐⭐⭐ **一条判据的结果取决于上一次运行留下的文件，它就不是判据** ——
+    而它能假绿也能假红，两种都发生过。
+    """
+    from PySide6.QtWidgets import QMessageBox
+
+    import pages.audio_import_wizard_page as mod
+
+    monkeypatch.setattr(QMessageBox, "information", lambda *_a, **_k: 0)
+    monkeypatch.setattr(QMessageBox, "warning", lambda *_a, **_k: 0)
+    page = mod.AudioImportWizardPage()
+    root = tmp_path / "resources"
+    root.mkdir(parents=True, exist_ok=True)
+    page.resources_root = str(root)
+    page.audio_root = str(root / "audio")
+    yield page
+    page.deleteLater()
+
+
+def test_a_refused_source_does_not_leave_the_previous_plan_armed(wizard, tmp_path):
+    """⛔⛔ 一次**失败的扫描**必须把上一次的报告作废。
+
+    端到端实测（沙箱真导入）逮到的：先导一个包成功，再喂一个 `.tar.gz` ——
+    它被正确拒绝、错误也报了，而紧接着"导入"却说「导入完成：成功 1」，
+    **把上一个包又导了一遍**（落进了另一个风格目录）。
+
+    ⭐⭐⭐ 每一层单独看都对：拒绝是对的、报错是对的、导入也照着报告干了活；
+    错在**报告的寿命没有跟源绑定**。
+    ⚠ 而这一刀单元判据一条都没红 —— 每条判据都只扫一次，
+    而这个缺陷只在**第二次**才出现。
+
+    ⚠ 这里把"打不开"直接做成 `_open_import_source` 返回 None
+    （那正是 `.tar.gz` 走的那条路），为的是不在判据里起真的后台线程与进度框。
+    """
+    wizard._scan_report = {"summary": {"recognized_count": 1}}
+    wizard._scan_report_source = "上一个包.zip"
+    wizard.source_edit.setText(str(tmp_path / "打不开的.tar.gz"))
+    wizard._open_import_source = lambda: None       # 认得出、打不开
+    wizard._scan_source()
+    assert wizard._scan_report is None, (
+        "被拒绝的源没有清掉上一次的报告 —— 这时点「导入」会把上一个包再导一遍")
+    assert wizard._scan_report_source == ""
+
+
+def test_a_plan_belongs_to_the_path_it_was_made_for(wizard):
+    """⛔ 同一个缺陷的另一张脸：**改了路径但没重扫**。
+
+    ⭐ 所以判据钉的不是"失败要清理"，而是那个不变式本身：
+    **报告必须属于输入框里现在这个路径。**
+    """
+    wizard.source_edit.setText("C:/下载/AK47枪声替换包.zip")
+    wizard._scan_report = {"summary": {}}
+    wizard._scan_report_source = "C:/下载/AK47枪声替换包.zip"
+    assert not wizard._scan_is_stale()
+
+    wizard.source_edit.setText("C:/下载/击杀音效包.zip")
+    assert wizard._scan_is_stale(), "路径换了，报告必须跟着作废"
+
+
+def test_no_report_is_not_the_same_as_a_stale_one(wizard):
+    """⚠ "还没扫"不算"过期" —— 混成一件事会让首次导入多走一次无谓的作废。"""
+    wizard.source_edit.setText("C:/下载/随便.zip")
+    wizard._invalidate_scan()
+    assert not wizard._scan_is_stale()
+
+
+def test_the_two_fields_are_only_ever_cleared_together():
+    """棘轮：`_scan_report` 不许在 `_invalidate_scan` 之外被单独赋 None。
+
+    ⭐⭐ 两个必须一起动的字段散在四处各自赋值，正是本轮修掉的那种
+    "各自列举、谁也不管谁" —— 而它下一次出问题时长得和这次一模一样。
+    """
+    import ast
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parent.parent
+              / "pages" / "audio_import_wizard_page.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    offenders = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign):
+            continue
+        for target in node.targets:
+            if (isinstance(target, ast.Attribute)
+                    and target.attr == "_scan_report"
+                    and isinstance(target.value, ast.Name)
+                    and target.value.id == "self"):
+                offenders.append(node.lineno)
+    # ⭐ 分母：这个文件里**本来就该有** `self._scan_report = ...` 的赋值
+    #   （`_invalidate_scan` 里一处清空、`_scan_unified` 里一处赋新报告）。
+    #   一个都没扫到说明抽取器瞎了，而"分母为空"和"真的没问题"在报告上一模一样。
+    assert len(offenders) >= 2, (
+        f"只扫到 {len(offenders)} 处 `self._scan_report` 赋值 —— "
+        f"抽取器多半瞎了，这条棘轮在空转")
+    inside = {n.lineno for n in ast.walk(tree)
+              if isinstance(n, ast.FunctionDef) and n.name == "_invalidate_scan"
+              for n in ast.walk(n) if isinstance(n, ast.Assign)}
+    stray = sorted(set(offenders) - inside)
+    # `_scan_unified` 里那一处是**赋新报告**，不是清空 —— 放行。
+    stray = [line for line in stray
+             if "None" in source.splitlines()[line - 1]]
+    assert not stray, (
+        f"这些行单独把 `_scan_report` 设成了 None（第 {stray} 行）：\n"
+        f"⇒ 一律改成 `self._invalidate_scan()`，"
+        f"否则 `_scan_report_source` 会留着上一个路径。")
+
+
+# ------------------------------------- 撤销按钮要活过这一次导入
+
+def test_the_undo_button_survives_the_import_that_created_it(wizard, tmp_path):
+    """⛔⛔ 上一轮做的撤销功能，在真 UI 里**用户根本点不到**。
+
+    `_run_import` 原来是：先 `notice_bar.show_message(..., undo_callback=...)`
+    挂出撤销按钮，**紧接着** `if not dry_run: self._scan_source()` ——
+    而 `_scan_unified` 第一件事就是 `notice_bar.clear()`。
+    实测（沙箱端到端）：导完之后提示条上是一片空白，撤销按钮 `isHidden()` 为真。
+
+    ⭐⭐⭐ 我上一轮的沙箱测试之所以"通过"，是因为脚本**直接点了那个已经被
+    隐藏的按钮** —— 能用代码点到，不等于用户点得到。
+    ⚠ 那次自动重扫还有另外两重代价：结果必然是"全是冲突"（文件刚落进去），
+    以及拿不准的包会**再弹一次确认框**。⇒ 改成不重扫，只作废报告。
+    """
+    packed = tmp_path / "清脆 击杀音效包.zip"
+    with zipfile.ZipFile(packed, "w") as archive:
+        for index in (1, 2):
+            archive.writestr(f"清脆/{index}.mp3", b"ID3" + b"\0" * 32)
+
+    wizard.source_edit.setText(str(packed))
+    wizard._scan_source()
+    assert wizard._scan_report, "扫描就没出报告，判据的前提不成立"
+    wizard.dry_run_checkbox.setChecked(False)
+    wizard._run_import()
+
+    assert wizard.notice_bar.label.text(), (
+        "导完之后提示条是空的 —— 「导入完成」被随后的自动重扫擦掉了")
+    assert "导入完成" in wizard.notice_bar.label.text()
+    assert not wizard.notice_bar.undo_btn.isHidden(), (
+        "撤销按钮被藏起来了 —— 这个功能对用户等于不存在")
+
+
+def test_a_real_import_does_not_silently_rescan_the_same_pack(wizard, tmp_path):
+    """⛔ 导完立刻重扫 ⇒ 屏幕上一片"冲突"，而那是**导入成功**的表现。
+
+    ⭐ 报告作废即可（下次点导入自然会重扫），不必当场再扫一遍。
+    """
+    packed = tmp_path / "低沉 击杀音效包.zip"
+    with zipfile.ZipFile(packed, "w") as archive:
+        archive.writestr("低沉/1.mp3", b"ID3" + b"\0" * 32)
+
+    scans = {"n": 0}
+    original = wizard._scan_unified
+
+    def counted():
+        scans["n"] += 1
+        return original()
+
+    wizard._scan_unified = counted
+    wizard.source_edit.setText(str(packed))
+    wizard._scan_source()
+    wizard.dry_run_checkbox.setChecked(False)
+    wizard._run_import()
+    wizard._scan_unified = original
+
+    assert scans["n"] == 1, f"导入之后又扫了一遍（共 {scans['n']} 次）"
+    assert wizard._scan_report is None, "落盘之后那份报告就不该再算数了"

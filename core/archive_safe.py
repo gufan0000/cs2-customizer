@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import re
+import struct
 import zipfile
 from typing import Iterator, Sequence, Tuple
 
@@ -44,10 +45,24 @@ _MAGIC = (
     (b"MZ", "exe"),
 )
 
+#: 打包格式（**能不能打开是另一回事**）。给调用方措辞用：
+#: 「拖进来的是压缩包」对 rar 也成立，只是接下来会被 `UNSUPPORTED_HINTS` 挡掉。
+#: ⭐ 放在这里是因为**格式名字只在 `_MAGIC` 里定义过一次** ——
+#:   谁要判"这是不是个包"，都不该在自己那头重抄一份名单。
+ARCHIVE_KINDS = frozenset({"zip", "rar", "7z", "gzip"})
+
 #: 认得出、但**打不开**的格式 ⇒ 给一句能照着做的话。
 UNSUPPORTED_HINTS = {
     "rar": "这是 RAR 压缩包，软件打不开。请先用解压软件解开，再把解出来的文件夹拖进来。",
     "7z": "这是 7z 压缩包，软件打不开。请先用解压软件解开，再把解出来的文件夹拖进来。",
+    # ⭐⭐ 2026-09-16 补：gzip 原本**认得出却没有这一条** —— 于是
+    #   `open_source` 的 `kind in UNSUPPORTED_HINTS` 不成立、`kind == "zip"` 也不成立，
+    #   它一路掉到最后那句 `_open_single_file`，被当成"一个素材文件"收下来。
+    #   实测：`枪声包.tar.gz` 原样落进 `audio/…/枪声包.tar.gz`。
+    # ⇒ **装得进去、永远不会响**，而这正是这个功能最该防的那一类失败。
+    #   根因不是漏了一行文案，是这张表和分发的 if 链**各自列举、谁也不管谁**：
+    #   `_MAGIC` 多认一种格式，分发那头就多一条静默的落法。
+    "gzip": "这是 tar.gz / gz 压缩包，软件打不开。请先用解压软件解开，再把解出来的文件夹拖进来。",
     "exe": "这是一个可执行文件，不是资源包。软件不会运行它。",
 }
 
@@ -67,6 +82,36 @@ def sniff_archive_kind(path: str) -> str:
         if head.startswith(magic):
             return kind
     return "unknown"
+
+
+#: 操作系统自己塞进包里的东西。⭐ 它们**不是任何人的内容** ——
+#: 没有哪个用户"打算"把 `Thumbs.db` 导进资源库，所以这一类直接丢掉、不必问。
+_JUNK_NAMES = frozenset({".ds_store", "thumbs.db", "desktop.ini"})
+_JUNK_DIRS = ("__macosx",)
+
+
+def is_system_junk(name: str) -> bool:
+    """这一条是不是操作系统塞进来的垃圾。
+
+    ⭐⭐ 为什么这件事值一个函数：实测同一包素材，加上四样**现实里躲不开**的杂物
+    （Mac 打包必带的 `__MACOSX/._*`、看过一眼图片目录就有的 `Thumbs.db`、
+    作者自己放的 `说明.txt` 和 `封面.jpg`），**要问用户的次数从 0 涨到 4** ——
+    因为混进非音频扩展名会让那一组的形状变成 `mixed`，识别器当场降到"拿不准"。
+    ⇒ 用户的验收标准是"问了几次"，而杂物是最便宜的一条。
+
+    ⚠ 只认**确定是系统产物**的那几样。作者自己放的说明与封面不在这里
+    （那是他的内容，该单独告诉用户"没导入"，而不是当垃圾悄悄扔掉）。
+    """
+    parts = [p for p in str(name or "").replace("\\", "/").split("/") if p]
+    if not parts:
+        return True
+    if any(part.lower() in _JUNK_DIRS for part in parts):
+        return True
+    leaf = parts[-1]
+    if leaf.lower() in _JUNK_NAMES:
+        return True
+    # AppleDouble：Mac 给每个文件配的那份 `._同名` 元数据。
+    return leaf.startswith("._")
 
 
 def safe_relpath(name: str):
@@ -89,6 +134,86 @@ def safe_relpath(name: str):
     return "/".join(parts) if parts else None
 
 
+#: 按这个顺序试着把 CP437 那串还原回中文。⚠ 顺序有讲究：
+#: GBK 是简体中文 Windows 的默认页，放第一个；后面两个是繁中 / 日文。
+_FALLBACK_ENCODINGS = ("gbk", "big5", "cp932")
+
+#: Info-ZIP 的 Unicode Path 扩展字段。7-Zip / WinRAR 写包时会带上它，
+#: 而 Python 的 `zipfile` **不解析它** —— 于是连正确记录了 UTF-8 名字的包
+#: 也一样会乱码。项目既有经验逐字写过「判乱码必须看 0x7075 扩展字段」。
+_UNICODE_PATH_HEADER = 0x7075
+
+
+def _unicode_path_from_extra(info) -> str:
+    """从 0x7075 扩展字段里取真正的 UTF-8 名字；没有就返回空串。"""
+    data = bytes(getattr(info, "extra", b"") or b"")
+    offset = 0
+    while offset + 4 <= len(data):
+        header, size = struct.unpack_from("<HH", data, offset)
+        body = data[offset + 4:offset + 4 + size]
+        offset += 4 + size
+        if header != _UNICODE_PATH_HEADER or len(body) < 5:
+            continue
+        if body[0] != 1:                     # version，只认 1
+            continue
+        try:
+            return body[5:].decode("utf-8")
+        except UnicodeDecodeError:
+            return ""
+    return ""
+
+
+def decode_member_name(info) -> str:
+    """把 zip 条目名还原成人看得懂的字符串。
+
+    ⭐⭐⭐ 为什么必须有这一步：中文用户用 Windows 右键「发送到 → 压缩(zipped)
+    文件夹」打的包，文件名按 **GBK** 存且**不置 0x0800 标志位**；
+    Python 的 `zipfile` 对没有该标志位的名字一律按 **CP437** 解 ⇒
+    `清脆/1.mp3` 变成 `╟σ┤α/1.mp3`。
+    实测：这串乱码一路穿过剥壳、识别、归类，**在用户的资源目录里建出一个
+    叫 `╟σ┤α` 的风格目录**，设置页的下拉框里就显示这串乱码，而导入报「成功 3」。
+
+    ⚠ 更狠的一支：GBK 尾字节正好是 `0x5C` 的那些汉字（`乗` `俓` `僜` … 基本区
+    里有一百多个），CP437 解出来带一个 `\\`，被 `safe_relpath` 归一成 `/` ⇒
+    **凭空多出一层目录、风格名被从中间劈开**。
+
+    三级还原，按可靠度排：
+    ① `0x7075` 扩展字段（打包工具明写的 UTF-8 原名，最可靠）；
+    ② `0x0800` 标志位已置 ⇒ `zipfile` 解对了，原样用；
+    ③ 否则把 `zipfile` 用 CP437 解出来的那串**编回字节**，按本地编码再解一次。
+       ⛔ 只在"解出来确实含中日韩字符"时才采信 —— 否则一个真正用 CP437
+       命名的西文包会被我们改坏。**宁可保留原样，也不许猜错成另一个名字。**
+    """
+    name = str(getattr(info, "filename", "") or "")
+    from_extra = _unicode_path_from_extra(info)
+    if from_extra:
+        return from_extra
+    if int(getattr(info, "flag_bits", 0) or 0) & 0x800:
+        return name
+    # ⚠⚠ 往返必须拿 `orig_filename`，不能拿 `filename`：`zipfile` 读包时会把
+    #   `\` 归一成 `/`（那是它自己的安全处理），而 GBK 尾字节正好是 `0x5C` 的
+    #   那批汉字（`乗` = 81 5C）解出来就带一个 `\` ⇒ 等我们拿到 `filename` 时
+    #   那个字节**已经变成 0x2F 了**，编回 cp437 再也还原不出原字。
+    #   实测：`乗风/1.mp3` 到手是 `ü/╖τ/1.mp3`，凭空多一层目录。
+    # ⭐ 安全性不受影响：还原出来的名字照样要过 `safe_relpath`（拒 `..`、
+    #   拒绝对路径、再归一一次分隔符）。
+    original = str(getattr(info, "orig_filename", "") or name)
+    try:
+        raw = original.encode("cp437")
+    except UnicodeEncodeError:
+        return name
+    for encoding in _FALLBACK_ENCODINGS:
+        try:
+            candidate = raw.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+        if candidate != name and any("一" <= ch <= "鿿" or
+                                     "぀" <= ch <= "ヿ"
+                                     for ch in candidate):
+            return candidate
+    return name
+
+
 def iter_safe_members(
     archive: zipfile.ZipFile,
     error: type = ArchiveError,
@@ -103,7 +228,7 @@ def iter_safe_members(
     for info in archive.infolist():
         if info.is_dir():
             continue
-        relative = safe_relpath(info.filename)
+        relative = safe_relpath(decode_member_name(info))
         if relative is None:
             raise error(
                 f"这个 zip 里有一条不安全的路径：{info.filename}。为安全起见整个包都不导入。"

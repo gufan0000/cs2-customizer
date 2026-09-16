@@ -183,13 +183,36 @@ def apply_resource_import_plan(
     *,
     dry_run: bool = False,
     overwrite_existing: bool = False,
+    progress=None,
+    should_cancel=None,
 ) -> Dict[str, object]:
+    """把计划落到磁盘上。
+
+    ⚠⚠ `progress` / `should_cancel` 是 2026-09-17 补的。原来这个函数**根本
+    没有这两个参数**，而页面那头明明拿到了 `should_cancel` 并画了进度框 ——
+    于是写盘阶段点「取消」：进度框消失、界面解锁，**复制照常跑完并报"导入完成"**。
+    ⭐⭐ 一个点下去什么都不会发生的取消键，比没有取消键更糟：
+    用户以为自己拦住了，然后去别处等一个不会发生的结果。
+    ⛔ 取消**不是回滚**：已经复制过去的那些由调用方决定留还是收（页面给撤销）。
+    """
     recognized = list(scan_report.get("recognized", []) or [])
     copied: List[Dict[str, str]] = []
     skipped_conflicts: List[Dict[str, str]] = []
     failed: List[Dict[str, str]] = []
+    cancelled = False
+    total = max(1, len(recognized))
 
-    for item in recognized:
+    for index, item in enumerate(recognized, start=1):
+        if should_cancel is not None and should_cancel():
+            cancelled = True
+            break
+        if progress is not None:
+            try:
+                progress(index, total, "正在写入资源目录")
+            except Exception:
+                # ⭐ 通知路径绝不许成为故障源（同 RN-652：错误处理不该依赖
+                #   那个已经坏掉的东西）——进度框没了也不该把导入掀翻。
+                pass
         source_path = str(item.get("source_path", ""))
         target_abs_path = str(item.get("target_abs_path", ""))
         target_rel_path = str(item.get("target_rel_path", ""))
@@ -257,17 +280,31 @@ def apply_resource_import_plan(
     # ⚠ dry_run 不会真写，自然也不用回滚。
     if failed and copied and not dry_run:
         rolled = undo_import({"copied": copied})
+        removed = int(rolled["summary"]["removed_count"])
+        # ⚠ 回滚**自己也会失败**（文件被占用、只读、权限）。原来只看删了几个、
+        #   不看删不掉几个，就把 `copied` 清空并对用户说"没有留下半套素材" ——
+        #   而删不掉的那些还躺在资源库里。⭐ 一句不成立的保证比不保证更坏。
+        stuck = int(rolled["summary"].get("failed_count", 0) or 0)
         rollback = {
             "rolled_back": True,
-            "removed_count": int(rolled["summary"]["removed_count"]),
+            "removed_count": removed,
+            "stuck_count": stuck,
+            "stuck": [str(entry.get("target_abs_path", "")) for entry in
+                      (rolled.get("failed") or [])][:20],
         }
-        copied = []
+        # ⭐ 收不回来的那几个**仍然在盘上** ⇒ 留在 `copied` 里，
+        #   这样撤销按钮还能再试一次，报告里也数得出来。
+        copied = [c for c in copied
+                  if os.path.exists(str(c.get("target_abs_path", "")))] \
+            if stuck else []
     else:
-        rollback = {"rolled_back": False, "removed_count": 0}
+        rollback = {"rolled_back": False, "removed_count": 0,
+                    "stuck_count": 0, "stuck": []}
 
     return {
         "dry_run": bool(dry_run),
         "overwrite_existing": bool(overwrite_existing),
+        "cancelled": bool(cancelled),
         "rollback": rollback,
         "copied": copied,
         "skipped_conflicts": skipped_conflicts,
@@ -276,7 +313,8 @@ def apply_resource_import_plan(
             "copied_count": len(copied),
             "skipped_conflicts_count": len(skipped_conflicts),
             "failed_count": len(failed),
-            "ok": len(failed) == 0,
+            "cancelled": bool(cancelled),
+            "ok": len(failed) == 0 and not cancelled,
         },
     }
 
@@ -344,13 +382,39 @@ def undo_import(import_result: Dict[str, object]) -> Dict[str, object]:
 IMPORT_MEMORY_KEY = "resource_import_shape_memory"
 
 
-def load_import_memory() -> Dict[str, str]:
-    """读「同样形状上次归成了哪一类」。读不到就当空表 —— 顶多多问一次。"""
-    try:
-        from config import config
+def _memory_path() -> str:
+    """学习表落在哪。
 
-        raw = getattr(config, IMPORT_MEMORY_KEY, None) or {}
-    except Exception:
+    ⚠ 走 `ResourceManager`，它认 `CS2C_CONFIG_DIR` ——
+    判据和沙箱跑起来不会碰用户的真实配置目录。
+    """
+    from resource_manager import ResourceManager
+
+    return ResourceManager.get_app_data_path("resource_import_memory.json")
+
+
+def load_import_memory() -> Dict[str, str]:
+    """读「同样形状上次归成了哪一类」。读不到就当空表 —— 顶多多问一次。
+
+    ⚠⚠ 这张表原来存在 `config` 的一个属性上，而它**从来没落过盘**，
+    两个独立的原因各自都足以让它失效：
+    ① 写的时候查的是 `config.save`，而 config 上根本没有这个方法
+       （真名是 `save_config()`）；
+    ② 就算名字对了也没用 —— `config.py` 的 `payload` 是一张**写死的字段表**
+       （字典字面量），往 config 上 setattr 一个表里没有的键，
+       保存时压根不会被序列化。
+    ⭐⭐ 而「存不下」的表现（同一次开着软件不再问、重启又问）
+       和「存下了」几乎一样，**只有跨进程才看得出来** ——
+       所以任何只在一个进程里跑的判据都逮不到它。
+    ⇒ 学习表不是用户设置，是导入器自己的状态 ⇒ 给它自己的小文件，
+      不去动 config 那张字段表（那边有 schema 迁移判据盯着）。
+    """
+    import json
+
+    try:
+        with open(_memory_path(), "r", encoding="utf-8") as handle:
+            raw = json.load(handle)
+    except (OSError, ValueError):
         return {}
     return {str(k): str(v) for k, v in raw.items()} if isinstance(raw, dict) else {}
 
@@ -363,8 +427,6 @@ def remember_decisions(groups, decisions) -> None:
     ⚠ 写失败就算了 —— 学习表只是省一次点击，不该为它挡住导入。
     """
     try:
-        from config import config
-
         memory = dict(load_import_memory())
         by_shape = {id(group): group.shape for group in groups if group.needs_user}
         shapes = list(by_shape.values())
@@ -373,20 +435,54 @@ def remember_decisions(groups, decisions) -> None:
             if not key or index >= len(shapes):
                 continue
             memory[shapes[index]] = key
-        setattr(config, IMPORT_MEMORY_KEY, memory)
-        save = getattr(config, "save", None)
-        if callable(save):
-            save()
+        _write_import_memory(memory)
     except Exception:
         return
 
 
+def _write_import_memory(memory: Dict[str, str]) -> None:
+    """把学习表落盘。
+
+    ⚠ 先写临时文件再原子替换 —— 断电时宁可丢这一次的记忆，
+    也不许留下一个解析不了的半截 JSON：那会让**以后每一次导入的每一组
+    都重新问一遍**，而用户根本不会想到去删一个他不知道存在的文件。
+    """
+    import json
+    import os
+    import tempfile
+
+    # ⛔ 不许用裸 `os.replace` —— Windows 上它有 ~8% 概率被 Defender / 索引服务的
+    #   扫描窗口打断（RN-613，判据
+    #   `test_no_file_in_the_product_calls_os_replace_without_the_retry` 盯着）。
+    #   ⭐ 这一条是我这一轮新写的代码当场被那条棘轮逮住的：
+    #     **一条守得住的棘轮，逮的就是"下一个没读过这段历史的人"。**
+    from core.io_validation import replace_with_retry
+
+    path = _memory_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    handle, tmp = tempfile.mkstemp(dir=os.path.dirname(path), suffix=".tmp")
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8") as sink:
+            json.dump(memory, sink, ensure_ascii=False, indent=2)
+        replace_with_retry(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
 # ---------------------------------------------------------------- 从源到决定
 
-def prepare_decisions(source) -> Dict[str, object]:
+def prepare_decisions(source, domain: str = "all") -> Dict[str, object]:
     """读清单 → 识别 → 把**能自动定的**定下来。
 
     返回 `{"decided": [...], "unsure": [Group...], "default_style": str}`。
+
+    ⚠⚠ `domain` 是页面上那个「导入模式」下拉框（音频 / 视觉 / 全部）。
+    它原来**根本没传进来** —— 实测：模式选「视觉」，一个音频包照样整包导进去。
+    ⭐ 一个不起作用的下拉框比没有还糟：用户以为自己划定了范围。
 
     ⭐ 这一段本来长在页面里，核查时为了验证又被抄了一份 ——
     而我改了页面、抄的那份照旧是旧的。⇒ 放在这里，谁都调同一份。
@@ -406,11 +502,18 @@ def prepare_decisions(source) -> Dict[str, object]:
     #   再问一遍"这套叫什么"就是把用户填过的东西又问一次。
     # ⚠ 包名兜底 —— 多数音效包没有清单，而包文件名就是作者起的名字。
     default_style = style_name_from_manifest(manifest) or source.display_name
+    wanted = _domain_spec_keys(domain)
     decided = []
+    skipped_by_domain = []
     for group in groups:
+        pick = group.preselect
+        if wanted is not None and pick is not None and pick.spec_key not in wanted:
+            # ⭐ 被模式挡在外面 ⇒ **说出来**，不许静默丢掉：
+            #   用户看到「导入完成：成功 0」而不知道为什么，比报一句错还难受。
+            skipped_by_domain.append(group)
+            continue
         if group.needs_user:
             continue
-        pick = group.preselect
         decided.append({
             "paths": list(group.paths),
             "spec_key": pick.spec_key,
@@ -420,12 +523,61 @@ def prepare_decisions(source) -> Dict[str, object]:
             #   防静默的位置就全在这一行上了。
             "why": f"{pick.label}（{'；'.join(pick.evidence)}）",
         })
+    unsure = [group for group in groups
+              if group.needs_user and group not in skipped_by_domain]
+    # ⛔⛔ 「认得出这是什么」不等于「知道该摆到哪」。
+    #   实测：一个**结构完全规范**的回合音效包（路径里就带着 `round_sounds/win/`）
+    #   被认成 CERTAIN ⇒ 不问；而归类器还要知道是哪个回合事件，于是它提了个问题，
+    #   `plan_from_decisions` 把这一组扔进 `unresolved` —— 结果是
+    #   **一个文件都没导进去，而且一句话都没说**。
+    # ⭐⭐⭐ 两层各自都对：识别层确实认得出，归类层确实还缺一个答案；
+    #   错在中间没有人把「归类层还要问」这件事**送回给用户**。
+    from core.resource_placement import plan_placements
+
+    still_asking = []
+    for item in list(decided):
+        group = _group_of(groups, item["paths"])
+        if group is None or group in unsure:
+            continue
+        plan = plan_placements(
+            item["spec_key"], item["paths"],
+            style_name=item.get("style_name", ""),
+            bucket=item.get("bucket", ""),
+            outer_layer=getattr(source, "stripped_root", ""))
+        if plan.questions:
+            decided.remove(item)
+            still_asking.append(group)
     return {
         "decided": decided,
-        "unsure": [group for group in groups if group.needs_user],
+        "unsure": unsure + still_asking,
         "default_style": default_style,
         "groups": groups,
+        "skipped_by_domain": skipped_by_domain,
     }
+
+
+def _group_of(groups, paths):
+    """按 paths 找回那个 group（decided 里只留了 paths）。"""
+    wanted = list(paths or [])
+    for group in groups:
+        if list(group.paths) == wanted:
+            return group
+    return None
+
+
+def _domain_spec_keys(domain: str):
+    """这个模式允许哪些 spec；`None` 表示不限。
+
+    ⛔ 不在这里另立一张分类表 —— `RESOURCE_SPECS` 每条自带 `domain`。
+    """
+    value = str(domain or "all").strip().lower()
+    if value in ("", "all"):
+        return None
+    from core.resource_catalog import RESOURCE_SPECS
+
+    keys = {spec.key for spec in RESOURCE_SPECS
+            if str(spec.domain).lower() == value}
+    return keys or None
 
 
 # ---------------------------------------------------------------- 统一导入的连接层

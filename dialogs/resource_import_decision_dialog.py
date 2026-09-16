@@ -32,8 +32,25 @@ from PySide6.QtWidgets import (
 
 from core.resource_catalog import RESOURCE_SPECS
 from core.resource_identify import UNSURE
-from core.resource_placement import ROUND_BUCKETS, layers_needed
+from core.resource_placement import NEEDS_BUCKET, layers_needed
+from core.resource_readback import known_buckets, style_name_problem
 from widgets.settings_card import SettingsCard
+
+
+def _bucket_label(spec_key: str, value: str) -> str:
+    """下拉框里给人看的那一行。⭐ 武器给中文/通用名，别只给代号 ——
+    `m4a1` 是 M4A4、`m4a1_silencer` 才是 M4A1-S，只看代号必选错。"""
+    if spec_key == "round_sounds":
+        return _ROUND_LABELS.get(value, value)
+    try:
+        from core.gun_sound_profiles import GUN_SOUND_PROFILE_LIST
+
+        for profile in GUN_SOUND_PROFILE_LIST:
+            if str(profile.gun_type).lower() == str(value).lower():
+                return f"{profile.display_name}（{value}）"
+    except Exception:
+        pass
+    return str(value)
 
 
 class ResourceImportDecisionDialog(QDialog):
@@ -73,6 +90,14 @@ class ResourceImportDecisionDialog(QDialog):
         body.addStretch()
         scroll.setWidget(holder)
         outer.addWidget(scroll, 1)
+
+        # ⭐ 按钮为什么灰着，要**在按钮旁边**说 —— 一个灰掉却不解释的确定键，
+        #   用户只会以为软件卡住了。
+        self._hint_label = QLabel("", parent=self)
+        self._hint_label.setObjectName("formHint")
+        self._hint_label.setWordWrap(True)
+        self._hint_label.setVisible(False)
+        outer.addWidget(self._hint_label)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=self)
@@ -123,6 +148,15 @@ class ResourceImportDecisionDialog(QDialog):
         if preselect is not None:
             index = combo.findData(preselect.spec_key)
             combo.setCurrentIndex(max(0, index))
+        elif getattr(group, "remembered", ""):
+            # ⭐ 学习表记得上次的答案，但这个形状**原理上分不清**几个类
+            #   （`dir1/audio` 底下坐着七类）⇒ 还是问，只是把上次那个摆在
+            #   已选状态上，用户一眼确认即可。
+            #   ⚠ 与 `preselect` 的区别：那个意思是"不用问了"，这个是
+            #   "还要问，但别让你重新找一遍"。
+            index = combo.findData(group.remembered)
+            if index >= 0:
+                combo.setCurrentIndex(index)
         combo.currentIndexChanged.connect(self._sync_ok)
         form.addRow("这是：", combo)
 
@@ -132,12 +166,14 @@ class ResourceImportDecisionDialog(QDialog):
         style_edit.textChanged.connect(self._sync_ok)
         form.addRow("风格名：", style_edit)
 
+        # ⚠⚠ 这一格原来**写死成回合事件**，于是「这套素材属于哪一把武器」
+        #   那个问题在 UI 上**根本没有地方回答** —— 归类器问得出来，
+        #   对话框答不上来，那一组只能整组落进「未识别」。
+        # ⭐ 改成按类别换内容的一格：回合事件 / 武器 / 投掷物各用各的候选。
         round_combo = QComboBox()
-        round_combo.addItem("请选择…", "")
-        for bucket in ROUND_BUCKETS:
-            round_combo.addItem(_ROUND_LABELS.get(bucket, bucket), bucket)
         round_combo.currentIndexChanged.connect(self._sync_ok)
-        form.addRow("回合事件：", round_combo)
+        self._bucket_label = QLabel("回合事件：")
+        form.addRow(self._bucket_label, round_combo)
 
         layout.addLayout(form)
         row = {
@@ -162,12 +198,41 @@ class ResourceImportDecisionDialog(QDialog):
         # 源路径自带的层够用时也不必问 —— 但对话框不重算那件事，
         # 交给 `plan_placements`：它在层数够时会忽略这里填的名字。
         row["form"].setRowVisible(1, needs_style)
-        row["form"].setRowVisible(2, spec_key == "round_sounds")
+        self._fill_bucket(row, spec_key)
         self._sync_ok()
+
+    def _fill_bucket(self, row, spec_key):
+        """按类别换掉那一格的内容：回合事件 / 武器 / 投掷物。
+
+        ⭐ 候选**从产品自己的表现读**（`resource_readback.known_buckets`），
+        ⛔ 不在对话框里另抄一张武器名单 —— 抄出来那份从抄完就开始漂。
+        """
+        needed = bool(spec_key) and spec_key in NEEDS_BUCKET
+        combo = row["round"]
+        wanted = known_buckets(spec_key) if needed else None
+        if row.get("bucket_for") != spec_key:
+            row["bucket_for"] = spec_key
+            combo.blockSignals(True)
+            combo.clear()
+            combo.addItem("请选择…", "")
+            if needed:
+                if wanted:
+                    for value in sorted(wanted):
+                        combo.addItem(_bucket_label(spec_key, value), value)
+                else:
+                    # 投掷物这类产品不挑固定名字的，给一格自由填的提示项
+                    combo.setEditable(True)
+                    combo.lineEdit().setPlaceholderText("例如 flashbang / smoke")
+            combo.blockSignals(False)
+        if needed:
+            label = NEEDS_BUCKET.get(spec_key, "分类")
+            self._bucket_label.setText(f"{label}：")
+        row["form"].setRowVisible(2, needed)
 
     def _sync_ok(self, *_args):
         """⛔ 没选完不许点确定 —— 半套决定落盘比不落盘更难收拾。"""
         ready = True
+        problem = ""
         for row in self._rows:
             spec_key = str(row["combo"].currentData() or "")
             if not spec_key:
@@ -176,6 +241,21 @@ class ResourceImportDecisionDialog(QDialog):
             if spec_key == "round_sounds" and not str(row["round"].currentData() or ""):
                 ready = False
                 break
+            # ⚠⚠ 这一格原来**完全没查**：风格名清空照样能点确定，而那一组
+            #   随后会被 `plan_placements` 判成"还缺风格名"整组丢掉，
+            #   报告里只剩一行没有文件名的「未识别」—— 用户按了确定，
+            #   什么都没发生，也没有任何一句话解释。
+            # ⭐ 校验走产品自己的 `validate_style_name`（保留名、非法字符、
+            #   首尾点号都在里面），⛔ 不在对话框里另写一套。
+            if row["form"].isRowVisible(1):
+                trouble = style_name_problem(row["style"].text())
+                if trouble:
+                    ready = False
+                    problem = trouble
+                    break
+        if getattr(self, "_hint_label", None) is not None:
+            self._hint_label.setText(problem)
+            self._hint_label.setVisible(bool(problem))
         if getattr(self, "_ok_button", None) is not None:
             self._ok_button.setEnabled(ready)
 

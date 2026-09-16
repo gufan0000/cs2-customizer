@@ -51,7 +51,14 @@ def test_the_preview_box_says_what_will_appear_there(wizard):
     assert hint.strip(), (
         "第 2 步那个 400px 高的框在扫描前什么都不说 —— "
         "而一个什么都不说的框，和一个坏掉的框长得一模一样（RN-520）。")
-    for must in ("还没有扫描结果", "只看不写"):
+    # ⚠ 2026-09-17 改判：这个框的第一句话从「还没有扫描结果」换成了
+    #   「**直接拖到这里 —— 不用先解压**」。
+    #   ⭐⭐⭐ 外审 S4 的判断题「玩家会不会知道可以直接拖 zip 进来」
+    #   **12 发里 10 发答「绝对不会知道」**，而几乎每一发都点到同一件事：
+    #   「占大半屏的这个空框最像投放区，却只写着『还没有扫描结果』」。
+    #   ⇒ 空状态最值钱的位置不该用来说"现在没有东西"，
+    #     而该用来说**"你可以往这儿放什么"**。
+    for must in ("拖到这里", "不用先解压", "只看不写"):
         assert must in hint, f"空状态提示里没有「{must}」：{hint!r}"
 
 
@@ -66,7 +73,7 @@ def test_the_empty_hint_names_the_button_by_reading_it(wizard):
             for arg in node.args:
                 for piece in ast.walk(arg):
                     if isinstance(piece, ast.Constant) and isinstance(piece.value, str):
-                        assert "扫描目录" not in piece.value, (
+                        assert "扫描素材" not in piece.value, (
                             "空状态提示把按钮名抄了一份 —— 改按钮名时它不会跟着动。")
 
 
