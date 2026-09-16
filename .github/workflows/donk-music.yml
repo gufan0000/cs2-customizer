@@ -1,0 +1,96 @@
+name: Donk music and phrasing
+on:
+  push:
+    branches: ['video/donk-public-media-20260916']
+    paths: ['.github/workflows/donk-music.yml']
+permissions:
+  contents: read
+jobs:
+  music:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          pip -q install curl_cffi requests 'yt-dlp[default]' faster-whisper
+      - name: Obtain an openly playable music rendition
+        run: |
+          mkdir -p music /tmp/music
+          cat > /tmp/music.py <<'PY'
+          from curl_cffi import requests as cr
+          from pathlib import Path
+          import requests,subprocess,json
+          from concurrent.futures import ThreadPoolExecutor,as_completed
+          def cmd(c,t=180):
+              p=subprocess.run(c,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=t)
+              if p.returncode:raise RuntimeError(p.stdout[-3000:])
+              return p.stdout
+          def bili(v):
+              r={'id':v,'source_url':'https://www.bilibili.com/video/'+v+'/'}
+              try:
+                  ses=cr.Session(impersonate='chrome');ses.headers.update({'Referer':'https://www.bilibili.com/','Origin':'https://www.bilibili.com'})
+                  meta=ses.get('https://api.bilibili.com/x/web-interface/view',params={'bvid':v},timeout=20).json();r['view']=meta
+                  assert meta.get('code')==0,str(meta)[:500]
+                  data=meta['data'];cid=data['cid'];r.update(title=data['title'],uploader=data.get('owner',{}).get('name'),cid=cid)
+                  play=ses.get('https://api.bilibili.com/x/player/playurl',params={'bvid':v,'cid':cid,'qn':80,'fnver':0,'fnval':4048,'fourk':1},timeout=20).json();r['play_code']=play.get('code');assert play.get('code')==0,str(play)[:500]
+                  pd=play['data'];audio=pd.get('dash',{}).get('audio',[])
+                  if audio:
+                      choice=max(audio,key=lambda x:x.get('bandwidth',0));urls=[choice.get('baseUrl') or choice.get('base_url')]+(choice.get('backupUrl') or choice.get('backup_url') or [])
+                  else:urls=[pd['durl'][0]['url']]
+                  last=None
+                  for u in urls:
+                      try:
+                          rr=ses.get(u,timeout=80);rr.raise_for_status();assert len(rr.content)>100000;p=Path('/tmp/music')/(v+'.raw');p.write_bytes(rr.content);last=None;break
+                      except Exception as e:last=e
+                  if last:raise last
+                  dst=Path('music')/(v+'.m4a');cmd(['ffmpeg','-v','error','-y','-i',str(p),'-vn','-c:a','aac','-b:a','256k',str(dst)])
+                  r.update(status='ok',file=str(dst),probe=json.loads(cmd(['ffprobe','-v','error','-show_format','-show_streams','-of','json',str(dst)])))
+              except Exception as e:r.update(status='error',error=str(e))
+              print(v,r['status'],r.get('title',''),r.get('error',''),flush=True);return r
+          results=[]
+          with ThreadPoolExecutor(max_workers=3) as pool:
+              for f in as_completed([pool.submit(bili,v) for v in ['BV1MMh4zDEGY','BV1XU6qYKEuH','BV1pWhQz2Eiu']]):results.append(f.result())
+          if not any(r['status']=='ok' for r in results):
+              for v in ['acOMMXFtJsM','QZ8hAtGNtKw']:
+                  r={'id':v,'source_url':'https://www.youtube.com/watch?v='+v}
+                  try:
+                      cmd(['yt-dlp','--js-runtimes','deno','--no-playlist','--socket-timeout','15','--retries','0','--max-filesize','60M','-f','bestaudio/best','--write-info-json','-o','/tmp/music/'+v+'.%(ext)s',r['source_url']],180)
+                      m=json.loads(Path('/tmp/music/'+v+'.info.json').read_text());r.update(title=m['title'],uploader=m.get('uploader'),description=m.get('description'))
+                      p=next(p for p in Path('/tmp/music').glob(v+'.*') if p.suffix in ['.m4a','.webm','.mp4','.mp3']);dst=Path('music')/(v+'.m4a');cmd(['ffmpeg','-v','error','-y','-i',str(p),'-vn','-c:a','aac','-b:a','256k',str(dst)]);r.update(status='ok',file=str(dst))
+                  except Exception as e:r.update(status='error',error=str(e))
+                  results.append(r)
+                  if r['status']=='ok':break
+          Path('music/sources.json').write_text(json.dumps(results,ensure_ascii=False,indent=2))
+          assert any(r['status']=='ok' for r in results),'No public music rendition downloaded'
+          PY
+          python /tmp/music.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: donk-music
+          path: music/
+          retention-days: 3
+          compression-level: 0
+      - name: Phrase timing
+        run: |
+          python - <<'PY'
+          from faster_whisper import WhisperModel
+          from pathlib import Path
+          import json
+          src=Path('music/BV1MMh4zDEGY.m4a')
+          if not src.exists():src=next(Path('music').glob('*.m4a'))
+          m=WhisperModel('small',device='cpu',compute_type='int8',cpu_threads=4)
+          seg,info=m.transcribe(str(src),language='zh',beam_size=5,vad_filter=False,word_timestamps=True,condition_on_previous_text=False)
+          data={'file':str(src),'segments':[{'start':s.start,'end':s.end,'text':s.text,'words':[{'start':w.start,'end':w.end,'word':w.word} for w in s.words]} for s in seg]}
+          Path('music_cues.json').write_text(json.dumps(data,ensure_ascii=False,indent=2));print('Done',src)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: donk-music-cues
+          path: music_cues.json
+          retention-days: 3
