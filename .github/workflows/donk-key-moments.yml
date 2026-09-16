@@ -1,0 +1,100 @@
+name: Donk key turning points
+on:
+  push:
+    branches: ['video/donk-public-media-20260916']
+    paths: ['.github/workflows/donk-key-moments.yml']
+permissions:
+  contents: write
+jobs:
+  moments:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg > /tmp/apt.log
+          pip -q install curl_cffi beautifulsoup4 'yt-dlp[default]' pillow faster-whisper
+      - name: Acquire exact article clips
+        run: |
+          mkdir -p critical/media critical/photos critical/sheets /tmp/critical
+          cat > /tmp/key.py <<'PY'
+          from curl_cffi import requests
+          from bs4 import BeautifulSoup
+          from pathlib import Path
+          from PIL import Image,ImageDraw
+          from urllib.parse import urlparse,parse_qs
+          from concurrent.futures import ThreadPoolExecutor,as_completed
+          import re,html,json,subprocess
+          pages=[('kato24','https://www.hltv.org/news/38185/donk-stars-as-spirit-sweep-faze-to-win-iem-katowice'),('heroic24','https://www.hltv.org/news/40512/donk-lifts-spirit-to-shanghai-major-playoffs'),('cologne25','https://www.hltv.org/news/42382/spirit-sweep-mouz-to-claim-iem-cologne-trophy')]
+          allv=[];photos=[]
+          for n,u in pages:
+              r=requests.get(u,impersonate='chrome',timeout=30);r.raise_for_status();s=BeautifulSoup(r.text,'html.parser');article=s.select_one('.news-article') or s.select_one('.newsitem') or s
+              urls=[html.unescape(e.get('src') or e.get('data-src') or '') for e in article.select('iframe')]
+              slugs=[]
+              for x in urls:
+                  if 'clips.twitch.tv' in x:
+                      slug=(parse_qs(urlparse(x).query).get('clip') or [''])[0]
+                      if slug:slugs.append(slug)
+              if not slugs:
+                  for x in re.findall(r'clips\.twitch\.tv/embed\?[^\s\"<>]+',html.unescape(r.text)):
+                      slug=(parse_qs(urlparse('https://'+x).query).get('clip') or [''])[0]
+                      if slug:slugs.append(slug)
+              for i,slug in enumerate(list(dict.fromkeys(slugs))[:3]):allv.append({'id':n+'_'+str(i),'url':'https://clips.twitch.tv/'+slug,'page':u})
+              imgs=list(dict.fromkeys([e.get('src') or e.get('data-src') for e in article.select('img') if '/gallerypicture/' in str(e)]))
+              for i,x in enumerate(imgs[:1]):
+                  ir=requests.get(x,impersonate='chrome',timeout=30);ir.raise_for_status();p=Path('critical/photos')/(n+'_'+str(i)+'.jpg');p.write_bytes(ir.content);photos.append({'id':p.stem,'file':str(p),'url':x,'page':u})
+          Path('critical/discovery.json').write_text(json.dumps({'videos':allv,'photos':photos},ensure_ascii=False,indent=2))
+          def run(c,t=180):
+              p=subprocess.run(c,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=t)
+              if p.returncode:raise RuntimeError(p.stdout[-2000:])
+              return p.stdout
+          def one(v):
+              n=v['id'];r=dict(v)
+              try:
+                  run(['yt-dlp','--no-playlist','--socket-timeout','15','--retries','1','--max-filesize','160M','-f','bv*[height<=1080]+ba/b[height<=1080]/best','--write-info-json','--merge-output-format','mp4','-o','/tmp/critical/'+n+'.%(ext)s',v['url']])
+                  m=json.loads(Path('/tmp/critical/'+n+'.info.json').read_text());r.update({k:m.get(k) for k in ['title','description','uploader','upload_date','duration']})
+                  src=next(p for p in Path('/tmp/critical').glob(n+'.*') if p.suffix in ['.mp4','.mkv','.webm']);dst=Path('critical/media')/(n+'.mp4')
+                  run(['ffmpeg','-v','error','-y','-i',str(src),'-vf','scale=1280:720:force_original_aspect_ratio=decrease:force_divisible_by=2,setsar=1,fps=30','-c:v','libx264','-crf','19','-preset','veryfast','-threads','2','-c:a','aac','-b:a','160k',str(dst)],240)
+                  pr=json.loads(run(['ffprobe','-v','error','-show_format','-show_streams','-of','json',str(dst)],30));d=float(pr['format']['duration']);r.update(status='ok',probe=pr,file=str(dst),retained_duration=d)
+                  sh=Image.new('RGB',(1280,816),(15,15,15));dr=ImageDraw.Draw(sh)
+                  for i in range(16):
+                      ts=(i+.3)*d/16;f=Path('/tmp/critical')/f'{n}_{i}.jpg';run(['ffmpeg','-v','error','-y','-ss',str(ts),'-i',str(dst),'-frames:v','1','-vf','scale=320:180:force_original_aspect_ratio=decrease,pad=320:180:(ow-iw)/2:(oh-ih)/2',str(f)],25)
+                      sh.paste(Image.open(f),(i%4*320,i//4*204));dr.text((i%4*320+5,i//4*204+184),f'{n} {ts:.2f}s',fill='white')
+                  sh.save('critical/sheets/'+n+'.jpg')
+              except Exception as e:r.update(status='error',error=str(e))
+              print(n,r['status'],r.get('title'),r.get('error',''),flush=True);return r
+          records=[]
+          with ThreadPoolExecutor(max_workers=3) as pool:
+              for f in as_completed([pool.submit(one,v) for v in allv]):records.append(f.result())
+          Path('critical/sources.json').write_text(json.dumps(records,ensure_ascii=False,indent=2));report=['# Key source clips']+[f"{r['id']} | {r.get('retained_duration')} | {r.get('title')} | {r['status']}" for r in records]
+          Path('donk-review/key_moments.md').write_text('\n'.join(report));print('\n'.join(report),flush=True)
+          PY
+          python /tmp/key.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: donk-critical-moments
+          path: critical/
+          retention-days: 3
+          compression-level: 0
+      - name: Match commentary alignment
+        run: |
+          python - <<'PY'
+          from faster_whisper import WhisperModel
+          from pathlib import Path
+          import subprocess,json
+          m=WhisperModel('small',device='cpu',compute_type='int8',cpu_threads=4);report=[Path('donk-review/key_moments.md').read_text(),'']
+          for p in sorted(Path('critical/media').glob('*.mp4')):
+              subprocess.run(['ffmpeg','-v','error','-y','-i',str(p),'-ar','16000','-ac','1','/tmp/key.wav'],check=True)
+              ss,_=m.transcribe('/tmp/key.wav',language='en',beam_size=3,condition_on_previous_text=False)
+              report+=['','## '+p.stem]+[f'{s.start:.2f}-{s.end:.2f} | {s.text}' for s in ss]
+          Path('donk-review/key_moments.md').write_text('\n'.join(report));print('\n'.join(report))
+          PY
+          git config user.name media-review
+          git config user.email media-review@users.noreply.github.com
+          git add donk-review/key_moments.md
+          git commit -m 'Record turning-point clip titles and authentic commentary timing'
+          git pull --rebase
+          git push
