@@ -1,0 +1,75 @@
+name: Donk continuous music master
+on:
+  push:
+    branches: ['video/donk-public-media-20260916']
+    paths: ['.github/workflows/donk-full-music.yml']
+permissions:
+  contents: write
+jobs:
+  audio:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg > /tmp/apt.log
+          pip -q install 'yt-dlp[default]' faster-whisper librosa soundfile
+      - name: Obtain long form renditions
+        run: |
+          mkdir -p music /tmp/music
+          python - <<'PY'
+          import subprocess,json
+          from pathlib import Path
+          from concurrent.futures import ThreadPoolExecutor,as_completed
+          candidates=[('yu_chunyang','https://www.facebook.com/jeff.primus.9/videos/9315192298569572/'),('buweixia_dj','https://www.facebook.com/HSH839/videos/891761911639921/'),('buweixia_remix','https://www.facebook.com/tianyam6221/videos/2135094370383458/'),('buweixia_remix2','https://www.facebook.com/meiqi.teh.2025/videos/850910674298499/'),('buweixia_dm','https://www.dailymotion.com/video/x9h8i1y')]
+          def one(item):
+              n,u=item;r={'id':n,'url':u}
+              try:
+                  p=subprocess.run(['yt-dlp','--no-playlist','--socket-timeout','15','--retries','1','--max-filesize','180M','-f','bestaudio/best','--write-info-json','-o','/tmp/music/'+n+'.%(ext)s',u],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=160)
+                  assert p.returncode==0,p.stdout[-2000:]
+                  meta=json.loads(Path('/tmp/music/'+n+'.info.json').read_text());r.update({k:meta.get(k) for k in ['title','description','uploader','upload_date','duration']})
+                  src=next(p for p in Path('/tmp/music').glob(n+'.*') if p.suffix in ['.mp4','.m4a','.webm','.mkv','.mp3']);dst=Path('music')/(n+'.m4a')
+                  subprocess.run(['ffmpeg','-v','error','-y','-i',str(src),'-vn','-ar','48000','-c:a','aac','-b:a','256k',str(dst)],check=True)
+                  r['status']='ok';r['file']=str(dst)
+              except Exception as e:r.update(status='error',error=str(e))
+              print(json.dumps(r,ensure_ascii=False),flush=True);return r
+          results=[]
+          with ThreadPoolExecutor(max_workers=3) as p:
+              for f in as_completed([p.submit(one,c) for c in candidates]):results.append(f.result())
+          Path('music/sources.json').write_text(json.dumps(results,ensure_ascii=False,indent=2))
+          valid=[r for r in results if r['status']=='ok' and (r.get('duration') or 0)>120]
+          valid.sort(key=lambda r:(r['id']=='yu_chunyang',r['id']=='buweixia_dj',r['duration']),reverse=True)
+          assert valid,'No continuous long-form rendition acquired';Path('music/selected.json').write_text(json.dumps(valid[0],ensure_ascii=False,indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: donk-continuous-music
+          path: music/
+          retention-days: 3
+          compression-level: 0
+      - name: Analyze actual song phrasing
+        run: |
+          python - <<'PY'
+          import json,subprocess,numpy as np
+          from pathlib import Path
+          from faster_whisper import WhisperModel
+          import librosa
+          selected=json.loads(Path('music/selected.json').read_text());src=Path(selected['file']);wav='/tmp/song.wav'
+          subprocess.run(['ffmpeg','-v','error','-y','-i',str(src),'-ar','22050','-ac','1',wav],check=True)
+          m=WhisperModel('small',device='cpu',compute_type='int8',cpu_threads=4)
+          seg,_=m.transcribe(wav,language='zh',beam_size=5,vad_filter=False,word_timestamps=True,condition_on_previous_text=False)
+          data={'file':str(src),'segments':[{'start':s.start,'end':s.end,'text':s.text} for s in seg]}
+          y,sr=librosa.load(wav,sr=22050);tempo,beats=librosa.beat.beat_track(y=y,sr=sr,trim=False);data.update(tempo=float(np.asarray(tempo).flat[0]),beats=librosa.frames_to_time(beats,sr=sr).tolist(),duration=len(y)/sr)
+          Path('donk-review/music_cues.json').write_text(json.dumps(data,ensure_ascii=False,indent=2));Path('donk-review/music_selected.json').write_text(json.dumps(selected,ensure_ascii=False,indent=2))
+          text=['Music: '+str(src),'Duration: '+str(data['duration']),'Tempo: '+str(data['tempo'])]+[f"{s['start']:.2f} - {s['end']:.2f} | {s['text']}" for s in data['segments']]
+          Path('donk-review/music_timing.txt').write_text('\n'.join(text));print('\n'.join(text))
+          PY
+          git config user.name media-review
+          git config user.email media-review@users.noreply.github.com
+          git add donk-review/music_cues.json donk-review/music_selected.json donk-review/music_timing.txt
+          git commit -m 'Record verified continuous soundtrack and phrase timings'
+          git pull --rebase
+          git push
