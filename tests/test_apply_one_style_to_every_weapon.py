@@ -153,7 +153,11 @@ def test_it_says_why_when_it_cannot_be_used(page_id, qapp):
     """一个风格都没有时，按钮置灰**并说明原因** —— 灰着不说话等于坏了。"""
     page = _build(page_id, qapp)
     try:
-        if page.apply_all_btn.isEnabled():
+        # gun_sound（批 101）：有套系可选时按钮也可能灰着（占位项「选一套…」没选）——
+        # 那不是空库，看下拉有没有真的套系。
+        usable = (page.apply_all_combo.count() > 1 if page_id == "gun_sound"
+                  else page.apply_all_btn.isEnabled())
+        if usable:
             pytest.skip("这台机器上有可用风格，这条走不到（它守的是空库那一支）")
         assert not page.apply_all_combo.isEnabled()
         hint = page.apply_all_hint.text()
@@ -183,16 +187,29 @@ def test_the_options_never_include_something_no_weapon_has(page_id, qapp, styles
             "造了风格却一个选项都没有 —— 这条判据本来会 skip 过去，"
             "而 skip 在报告上和 pass 几乎长得一样。")
         if page_id == "gun_sound":
-            per_weapon = [set(page.weapon_styles.get(g, []) or [])
-                          for g in page.weapon_configs]
+            # 批 101：这一页的下拉放的是**套系**（`core/gun_sound_series`），一项 = 一套；
+            # 套里每把枪要配的名字都得真在那把枪的目录里。
+            from core.gun_sound_series import find_series
+
+            catalog = {g: set(page.weapon_styles.get(g, []) or []) for g in page.weapon_configs}
+            assert any(catalog.values()), "一把武器都没扫到 —— 这条判据没了分母"
+            for i in range(page.apply_all_combo.count()):
+                if page.apply_all_combo.itemData(i) is None:
+                    continue   # 占位项「选一套…」
+                series = find_series(page._style_series(), page.apply_all_combo.itemData(i))
+                assert series is not None and series.picks, (
+                    f"「{page.apply_all_combo.itemText(i)}」一把武器都配不到，却出现在下拉里。")
+                for gun, style in series.picks.items():
+                    assert style in catalog.get(gun, ()), (
+                        f"「{series.key}」要给 {gun} 配「{style}」，而它的目录里没有这个。")
         else:
             per_weapon = [set(page._style_options_for(w))
                           for w in page._get_all_weapons()]
-        assert per_weapon, "一把武器都没扫到 —— 这条判据没了分母"
-        for opt in options:
-            supported = [i for i, s in enumerate(per_weapon) if opt in s]
-            assert supported, (
-                f"「{opt}」一把武器都用不了，却出现在「整套套用」的下拉里。")
+            assert per_weapon, "一把武器都没扫到 —— 这条判据没了分母"
+            for opt in options:
+                supported = [i for i, s in enumerate(per_weapon) if opt in s]
+                assert supported, (
+                    f"「{opt}」一把武器都用不了，却出现在「整套套用」的下拉里。")
     finally:
         page.deleteLater()
         qapp.processEvents()
@@ -210,7 +227,8 @@ def test_it_asks_before_overwriting_and_says_how_many(page_id, qapp, monkeypatch
         options = [page.apply_all_combo.itemText(i)
                    for i in range(page.apply_all_combo.count())]
         assert options, "造了风格却一个选项都没有"
-        page.apply_all_combo.setCurrentIndex(0)
+        # gun_sound 的第 0 项是占位「选一套…」⇒ 选第一个真套系
+        page.apply_all_combo.setCurrentIndex(1 if page_id == "gun_sound" else 0)
 
         # ⚠⚠ **起始态得自己保证**：同一个进程里前面那条判据可能已经把这个风格
         #   套上去了（`config` 是单例，跨用例不复位）—— 那样这次就走「无需改动」，
@@ -218,7 +236,9 @@ def test_it_asks_before_overwriting_and_says_how_many(page_id, qapp, monkeypatch
         #   ⭐ 判据要造出它要测的那个状态，别指望环境恰好是干净的（同批 48 那条）。
         style0 = page.apply_all_combo.currentText()
         disabled = getattr(page, "DISABLED_STYLE_TEXT", "不启用")
-        for weapon in page._weapons_supporting(style0):
+        targets = (list(page._series_targets(page._current_series()))
+                   if page_id == "gun_sound" else page._weapons_supporting(style0))
+        for weapon in targets:
             # ⭐ 走产品自己的落盘路径复位 —— 各页 `weapon_rows` 装的东西形状不同
             #   （`WeaponRowWidget` vs dict），摸控件会漏掉一半页。
             page._on_weapon_style_changed(weapon, disabled)
@@ -283,12 +303,20 @@ def test_it_skips_weapons_that_do_not_have_the_style(page_id, qapp, monkeypatch,
         options = [page.apply_all_combo.itemText(i)
                    for i in range(page.apply_all_combo.count())]
         assert options, "造了风格却一个选项都没有"
-        style = options[0]
+        style = options[1] if page_id == "gun_sound" else options[0]   # gun_sound 第 0 项是占位
         page.apply_all_combo.setCurrentText(style)
 
         # 同上：复位到「都没配」，否则可能走「无需改动」而这条判据什么都没验到
         disabled = getattr(page, "DISABLED_STYLE_TEXT", "不启用")
-        for weapon in page._weapons_supporting(style):
+        if page_id == "gun_sound":
+            # 批 101：下拉项是套系标签「<名字> · N 把」，真名在 data 里；
+            # 夹具造的每个名字在四把枪上完全相同 ⇒ 套系名就是那个名字。
+            style = page.apply_all_combo.currentData()
+            assert style and " 把" not in style, style
+            targets = list(page._series_targets(page._current_series()))
+        else:
+            targets = page._weapons_supporting(style)
+        for weapon in targets:
             page._on_weapon_style_changed(weapon, disabled)
         qapp.processEvents()
 
@@ -341,6 +369,9 @@ def test_it_skips_weapons_that_do_not_have_the_style(page_id, qapp, monkeypatch,
             assert now == before[weapon], (
                 f"{weapon} 用不了「{style}」，却被改成了 {now!r} —— "
                 "那是一个它自己也解析不出来的值（RN-026 那一族）。")
+        if page_id == "gun_sound":
+            for weapon in supported:
+                assert page._effective_style(page.weapon_configs[weapon]) == style, weapon
     finally:
         page.deleteLater()
         qapp.processEvents()

@@ -823,6 +823,8 @@ REVERTS = [
         '            exists = key in self._sounds\n'
         '        if not exists:\n'
         '            self._load_sound_by_key(key)\n'
+        '        # 枪声：规范键换成这一发要播的取样（多文件风格才会变；别的键原样）。\n'
+        '        key = self._pick_gun_sound_variant(key)\n'
         '\n'
         '        info = self._get_info(key)\n'
         '        if not info:\n'
@@ -3615,10 +3617,10 @@ REVERTS = [
         "查实排除没有技术原因。⛔ 常量名保留（契约快照点名它），但里面不许再有任何一把",
     ),
     Revert(
-        "GUN", "AK 的闸门改回 0.09s",
+        "GUN", "AK 的闸门改回 0.09s（系数 0.5 → 0.9）",
         "core/gun_sound_profiles.py",
-        '    _profile("ak47", "AK-47", "rifle", None, fire_period=0.100),',
-        '    _profile("ak47", "AK-47", "rifle", 0.09, fire_period=0.100),',
+        "FULL_AUTO_GATE_SCALE = 0.5\n",
+        "FULL_AUTO_GATE_SCALE = 0.9\n",
         "tests/test_full_auto_guns_are_heard_every_shot.py::"
         "test_a_spray_at_real_packet_intervals_plays_every_packet[ak47]",
         "真实对局 GSI 包间隔 P5 62ms / P25 100ms，旧闸门 0.09s 下 **AK 白丢 15%**。"
@@ -3653,6 +3655,43 @@ REVERTS = [
         "test_the_gun_sound_channel_pool_has_five_distinct_channels",
         "素材是 1 秒以上的长尾样本，扫射 ~100ms 一发 ⇒ 3 条通道每条只活 300ms 就被抢占砍短；"
         "5 条 ≈ 500ms 正好盖住响亮段（竞品 5 槽轮转）",
+    ),
+    # ---- 批 101（2026-09-17 晚）：半自动闸门也从周期算、多取样随机、整套套用按套系
+    Revert(
+        "GUN", "Tec-9 的周期写成两倍（闸门回到 0.12 = 手填时代的余量）",
+        "core/gun_sound_profiles.py",
+        '    _profile("tec9", "Tec-9", "pistol", fire_period=0.120,',
+        '    _profile("tec9", "Tec-9", "pistol", fire_period=0.240,',
+        "tests/test_full_auto_guns_are_heard_every_shot.py::"
+        "test_a_click_train_at_game_speed_with_gsi_jitter_plays_every_click[tec9]",
+        "批 101：半自动的周期同样由游戏钉死，闸门离周期不到一个抖动量（60ms）就会吃掉真开的那一发。"
+        "⚠ 判据的周期表是独立抄的 CS2 cycletime，不拿被测档案算预期 —— 否则这一刀它看不见",
+    ),
+    Revert(
+        "GUN", "枪声风格目录又只装第一个文件",
+        "core/audio/audio_manager.py",
+        "        paths = list_audio_paths(d, extensions=DEFAULT_AUDIO_EXTENSIONS, sort=True)\n",
+        "        paths = list_audio_paths(d, extensions=DEFAULT_AUDIO_EXTENSIONS, sort=True)[:1]\n",
+        "tests/test_gun_sound_variants_rotate.py::test_every_file_in_a_style_folder_is_loaded_as_a_variant",
+        "批 101：竞品每发 `PickRandomAudio`，它的「离子AK」5 个 wav 是真不同的取样；"
+        "我方原来只取第一个，另外四个白放，扫射就是同一个声音复读",
+    ),
+    Revert(
+        "GUN", "同一把枪自己带的两个近名又被并成一套",
+        "core/gun_sound_series.py",
+        "            if owners[a] & owners[b]:\n                continue\n",
+        "            if False:\n                continue\n",
+        "tests/test_gun_sound_series.py::test_two_near_names_on_the_same_gun_are_choices_not_a_series",
+        "批 101：`ssg08/PUBGAWM` 与 `ssg08/PUBG消音AWM` 是这把枪的两个可选项；"
+        "没有这一条，击杀音那种「判据风格甲 / 乙」也会被并成一个",
+    ),
+    Revert(
+        "GUN", "整套套用的下拉又只写名字、不说覆盖几把",
+        "pages/gun_sound_page.py",
+        "            self.apply_all_combo.addItem(item.label, item.key)\n",
+        "            self.apply_all_combo.addItem(item.key, item.key)\n",
+        "tests/test_gun_sound_series.py::test_the_dropdown_says_how_many_guns_each_series_covers",
+        "批 101：用户截图里那句「配给能用它的 1 把武器」—— 选之前就该知道这一套盖几把",
     ),
     Revert(
         "RN", "ruff.toml 替一个已删的文件留排除行",

@@ -37,6 +37,7 @@ from core.gun_sound_profiles import (
     GUN_SOUND_PROFILES,
     GUN_SOUND_TAB_GROUPS,
     GUN_SOUND_WEAPON_TYPES,
+    SEMI_AUTO_GUN_TYPES,
     SUPPORTED_GUN_SOUND_PROFILES,
     SUPPORTED_GUN_SOUND_TAB_GROUPS,
     SUPPORTED_GUN_SOUND_WEAPON_TYPES,
@@ -69,13 +70,30 @@ def test_no_gun_in_the_profile_table_is_hidden_from_the_runtime():
 
 # ------------------------------------------------ ② 闸门与扫射窗由射击周期算出
 
-@pytest.mark.parametrize("gun_type", AUTOMATIC_GUN_TYPES)
-def test_the_gate_is_half_the_fire_period_and_the_burst_window_covers_gsi_jitter(gun_type):
+#: 真实 GSI 包间隔的下界（P5）。闸门只要低于它，就不可能拦住任何一包；
+#: 高于它的闸门必须离射击周期至少一个抖动量（60ms），否则一次抖动就吃掉一发。
+P5_PACKET_GAP = 0.062
+JITTER = 0.060
+
+
+@pytest.mark.parametrize("gun_type", GUN_SOUND_WEAPON_TYPES)
+def test_the_gate_is_half_the_fire_period_for_every_gun(gun_type):
+    """批 101：半自动的周期同样由游戏钉死（点得再快也快不过 cycletime）⇒ 闸门也从周期算。
+    2026-09-17 之前半自动是手填的：Tec-9 0.09 对周期 0.12、沙鹰 0.18 对 0.224，余量 30~45ms。"""
     profile = GUN_SOUND_PROFILES[gun_type]
     assert profile.fire_period > 0
     # 闸门 = 周期 × 0.5：比周期短（不拦真开的那一发），又能挡同一发被两包重报。
     assert profile.min_fire_interval == pytest.approx(profile.fire_period * FULL_AUTO_GATE_SCALE, abs=1e-3)
     assert profile.min_fire_interval < profile.fire_period
+    gate = profile.min_fire_interval
+    assert gate < P5_PACKET_GAP or gate <= profile.fire_period - JITTER, (
+        f"{gun_type} 闸门 {gate:.3f}s 离周期 {profile.fire_period:.3f}s 不到一个抖动量")
+
+
+@pytest.mark.parametrize("gun_type", AUTOMATIC_GUN_TYPES)
+def test_the_burst_window_covers_gsi_jitter(gun_type):
+    profile = GUN_SOUND_PROFILES[gun_type]
+    assert profile.automatic
     # 扫射窗要盖住 GSI 包间隔的尾部（P50 已有 126ms），否则同一梭子被判成一串单发。
     assert profile.burst_window >= 0.25
     assert is_gun_sound_burst(profile, 0.126) is True
@@ -207,10 +225,46 @@ def test_the_semi_auto_shape_did_not_move():
     cfg = _DummyConfig()
     for gun_type in ("usp", "deagle", "awp", "scar20", "nova"):
         profile = GUN_SOUND_PROFILES[gun_type]
-        assert profile.fire_period == 0
+        assert not profile.automatic and gun_type in SEMI_AUTO_GUN_TYPES
         burst = build_gun_sound_duck_plan(cfg, profile, is_burst=True, hold_duration=0.2)
         single = build_gun_sound_duck_plan(cfg, profile, is_burst=False, hold_duration=0.2)
         assert burst.sustain_ratio < single.sustain_ratio, gun_type
+
+
+# ------------------------------------------------ ⑦ 半自动：游戏速度连点 + GSI 抖动，一发不丢
+
+#: CS2 的 cycletime（秒），**独立于档案表抄的** —— 判据不许拿被测表算自己的预期。
+GAME_CYCLE = {"tec9": 0.12, "elite": 0.12, "glock": 0.15, "deagle": 0.224, "scar20": 0.25}
+#: 2026-09-17 之前手填的闸门，留着当空转守卫的对照。
+HAND_TYPED_GATES = {"tec9": 0.09, "elite": 0.08, "glock": 0.10, "deagle": 0.18}
+
+
+def _jittered_clicks(period: float, n: int = 20, jitter: float = 0.058):
+    """按游戏周期连点，GSI 包时刻前后抖 ±58ms（P5 包间隔 62ms 反推）：短一包、长一包交替。"""
+    return tuple(period + (jitter if i % 2 else -jitter) for i in range(n))
+
+
+@pytest.mark.parametrize("gun_type", sorted(GAME_CYCLE))
+def test_a_click_train_at_game_speed_with_gsi_jitter_plays_every_click(monkeypatch, gun_type):
+    assert GUN_SOUND_PROFILES[gun_type].fire_period == pytest.approx(GAME_CYCLE[gun_type], abs=1e-3)
+    gaps = _jittered_clicks(GAME_CYCLE[gun_type])
+    handler, module, plays, _ducks, clock = _make_handler(monkeypatch, gun_type, "styleX")
+    _spray(handler, module, gun_type, gaps, clock=clock)
+    assert len(plays) == len(gaps), (
+        f"{gun_type}：{len(gaps)} 次点击只播了 {len(plays)} 声 —— "
+        "游戏周期内点不出第二发，闸门离周期太近就只会吃掉真开的那一发")
+
+
+@pytest.mark.parametrize("gun_type", sorted(HAND_TYPED_GATES))
+def test_that_judge_sees_the_hand_typed_gates_losing_clicks(monkeypatch, gun_type):
+    """空转守卫：把闸门改回手填的旧值，同一串点击必须**看得见丢发**。"""
+    gaps = _jittered_clicks(GAME_CYCLE[gun_type])
+    handler, module, plays, _ducks, clock = _make_handler(monkeypatch, gun_type, "styleX")
+    old = dataclasses.replace(GUN_SOUND_PROFILES[gun_type], min_fire_interval=HAND_TYPED_GATES[gun_type])
+    monkeypatch.setitem(SUPPORTED_GUN_SOUND_PROFILES, gun_type, old)
+    _spray(handler, module, gun_type, gaps, clock=clock)
+    assert len(plays) < len(gaps), (
+        f"{gun_type} 旧闸门 {HAND_TYPED_GATES[gun_type]}s 下一发都没丢 —— 上面那条判据在空转")
 
 
 # ------------------------------------------------ ⑤ 通道池 5 条
@@ -284,7 +338,7 @@ def test_the_automatic_tabs_say_a_spray_keeps_some_original_sound(qapp, monkeypa
         for index, (name, weapons) in enumerate(page._tab_groups):
             tab = page.tab_widget.widget(index)
             hints = [lb.text() for lb in tab.findChildren(QLabel) if "扫射" in lb.text() and "原声" in lb.text()]
-            per_tab[name] = (hints, [w for w in weapons if GUN_SOUND_PROFILES[w].fire_period > 0], list(weapons))
+            per_tab[name] = (hints, [w for w in weapons if GUN_SOUND_PROFILES[w].automatic], list(weapons))
         assert {n for n, (_h, auto, _all) in per_tab.items() if auto} >= {"冲锋枪", "步枪", "机枪", "手枪"}, per_tab
         for name, (hints, auto, everyone) in per_tab.items():
             assert len(hints) == (1 if auto else 0), f"{name} 页签上那句扫射说明出现了 {len(hints)} 次：{per_tab}"

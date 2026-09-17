@@ -29,10 +29,15 @@ class GunSoundProfile:
     burst_peak_ms: int = 36
     burst_release_scale: float = 1.35
     burst_hold_scale: float = 1.12
-    #: 游戏钉死的射击周期（秒）。只有全自动枪填：它们的射速不由手指决定，
-    #: 所以 `min_fire_interval` 可以从这里**算**出来，而不是逐把手填一个猜的数。
-    #: 半自动 / 单发留 0（周期由玩家点击速度决定，闸门另有含义）。
+    #: 游戏钉死的射击周期（秒，CS2 的 cycletime）。**35 把都填**：`min_fire_interval`
+    #: 一律从这里算（× `FULL_AUTO_GATE_SCALE`），不再逐把手填一个猜的数。
+    #: ⚠ 半自动的周期也是游戏钉死的（点得再快也快不过它）—— 2026-09-17 之前半自动
+    #: 的闸门是手填的，Tec-9 0.09 对周期 0.12、沙鹰 0.18 对 0.224，余量只有 30~45ms，
+    #: 而真实 GSI 包间隔 P5 就是 62ms：一次抖动就吃掉一发真开的枪。
     fire_period: float = 0.0
+    #: 全自动（扣住扳机自己连发）。它决定两件事：扫射档用 `_FULL_AUTO_BURST` 的形状、
+    #: 页面上哪几个页签要说「扫射会留一点原声」。半自动 / 单发为 False。
+    automatic: bool = False
 
 
 @dataclass(frozen=True)
@@ -127,12 +132,13 @@ _FAMILY_DEFAULTS = {
 }
 
 
-#: 全自动枪的去抖闸门 = 射击周期 × 这个数（2026-09-17）。
-#: ⭐ 这道闸原本是给「半自动极限连点」去抖的；全自动的射速由游戏钉死，不存在
-#: 「点太快」—— 它拦掉的每一发都是玩家真开了的那一发。隔壁会话拿 2026-03 两份
-#: 真实对局日志反推的 GSI 包间隔（P5 62ms / P25 100ms / P50 126ms）过旧闸门
-#: （步枪 0.09s）：**AK 白丢 15%**；改成周期 × 0.5 拿回 12 个点、且仍挡得住同一发
-#: 被两包重报（两包间隔 < 半个周期不可能是两发）。
+#: 去抖闸门 = 射击周期 × 这个数（2026-09-17 先给全自动，同日晚上推到 35 把）。
+#: ⭐ 这道闸原本是给「半自动极限连点」去抖的；可半自动的周期同样由游戏钉死 ——
+#: 玩家点得再快，两发之间也不会短于 cycletime。所以「拦掉两发间隔 < 周期一半的那一包」
+#: 永远只拦重报，不拦真开的枪；而手填的闸门（Tec-9 0.09 / 沙鹰 0.18）离周期只差
+#: 30~45ms，真实 GSI 包间隔 P5 62ms / P25 100ms / P50 126ms 的抖动足够吃掉一发。
+#: 隔壁会话拿 2026-03 两份真实对局日志过旧步枪闸门 0.09s：**AK 白丢 15%**；
+#: 改成周期 × 0.5 拿回 12 个点。⚠ 竞品一道闸都没有、实际效果可以 —— 闸门宁低勿高。
 FULL_AUTO_GATE_SCALE = 0.5
 
 #: 全自动枪扫射时的压声形状（`is_burst` 分支），三个数覆盖族默认：
@@ -157,20 +163,21 @@ def _profile(
     gun_type: str,
     display_name: str,
     family: str,
-    min_fire_interval: float | None,
     *,
+    fire_period: float,
+    automatic: bool = False,
     gsi_names: tuple[str, ...] | None = None,
-    fire_period: float | None = None,
     **overrides,
 ) -> GunSoundProfile:
+    """`fire_period` = CS2 的 cycletime（秒），35 把都要给；闸门从它算，不接受手填。"""
+    if not fire_period or fire_period <= 0:
+        raise ValueError(f"{gun_type}: 每把枪都要给游戏的射击周期 fire_period")
     settings = dict(_FAMILY_DEFAULTS[family])
-    if fire_period:
+    if automatic:
         settings.update(_FULL_AUTO_BURST)
-        settings["fire_period"] = float(fire_period)
-        if min_fire_interval is None:
-            min_fire_interval = round(float(fire_period) * FULL_AUTO_GATE_SCALE, 3)
-    if min_fire_interval is None:
-        raise ValueError(f"{gun_type}: 半自动枪必须显式给 min_fire_interval")
+    settings["fire_period"] = float(fire_period)
+    settings["automatic"] = bool(automatic)
+    min_fire_interval = round(float(fire_period) * FULL_AUTO_GATE_SCALE, 3)
     settings.update(overrides)
     default_mute_duration = float(settings.pop("default_mute_duration", 0.4))
     return GunSoundProfile(
@@ -199,12 +206,13 @@ GUN_SOUND_TAB_GROUPS = (
 
 
 GUN_SOUND_PROFILE_LIST = (
-    _profile("glock", "Glock-18", "pistol", 0.10, default_mute_duration=0.20),
+    # 半自动：`fire_period` 同样是 CS2 的 cycletime（60 / RPM）—— 玩家点得再快也快不过它。
+    _profile("glock", "Glock-18", "pistol", fire_period=0.150, default_mute_duration=0.20),
     _profile(
         "usp",
         "USP-S",
         "pistol",
-        0.10,
+        fire_period=0.170,
         gsi_names=("weapon_usp_silencer",),
         default_mute_duration=0.20,
         duck_ratio_scale=0.68,
@@ -218,16 +226,16 @@ GUN_SOUND_PROFILE_LIST = (
         burst_release_scale=1.95,
         burst_hold_scale=1.34,
     ),
-    _profile("hkp2000", "P2000", "pistol", 0.10, default_mute_duration=0.20),
-    _profile("p250", "P250", "pistol", 0.09, default_mute_duration=0.20),
-    _profile("fiveseven", "Five-SeveN", "pistol", 0.09, default_mute_duration=0.20),
-    _profile("cz75a", "CZ75-Auto", "pistol", None, fire_period=0.100, default_mute_duration=0.18),
-    _profile("elite", "Dual Berettas", "pistol", 0.08, default_mute_duration=0.18),
+    _profile("hkp2000", "P2000", "pistol", fire_period=0.170, default_mute_duration=0.20),
+    _profile("p250", "P250", "pistol", fire_period=0.150, default_mute_duration=0.20),
+    _profile("fiveseven", "Five-SeveN", "pistol", fire_period=0.150, default_mute_duration=0.20),
+    _profile("cz75a", "CZ75-Auto", "pistol", fire_period=0.100, automatic=True, default_mute_duration=0.18),
+    _profile("elite", "Dual Berettas", "pistol", fire_period=0.120, default_mute_duration=0.18),
     _profile(
         "deagle",
         "Desert Eagle",
         "pistol",
-        0.18,
+        fire_period=0.224,
         default_mute_duration=0.40,
         duck_ratio_scale=0.74,
         peak_ratio_scale=0.44,
@@ -244,7 +252,7 @@ GUN_SOUND_PROFILE_LIST = (
         "revolver",
         "R8 Revolver",
         "pistol",
-        0.35,
+        fire_period=0.300,   # 主火每发要先扣住扳机再击发，两发实际 ≥0.4s；取下界（闸门宁低勿高）
         default_mute_duration=0.40,
         duck_ratio_scale=0.90,
         peak_ratio_scale=0.52,
@@ -257,27 +265,27 @@ GUN_SOUND_PROFILE_LIST = (
         burst_release_scale=1.38,
         burst_hold_scale=1.12,
     ),
-    _profile("tec9", "Tec-9", "pistol", 0.09, default_mute_duration=0.20),
+    _profile("tec9", "Tec-9", "pistol", fire_period=0.120, default_mute_duration=0.20),
     # 全自动：`fire_period` = CS2 的射击周期（60 / RPM），闸门由它算出。
-    _profile("mac10", "MAC-10", "smg", None, fire_period=0.075),         # 800 RPM
-    _profile("mp9", "MP9", "smg", None, fire_period=0.070),              # 857 RPM
-    _profile("mp7", "MP7", "smg", None, fire_period=0.080),              # 750 RPM
-    _profile("ump45", "UMP-45", "smg", None, fire_period=0.090),         # 666 RPM
-    _profile("p90", "P90", "smg", None, fire_period=0.070, default_mute_duration=0.22),
-    _profile("bizon", "PP-Bizon", "smg", None, fire_period=0.080, default_mute_duration=0.22),
-    _profile("mp5sd", "MP5-SD", "smg", None, fire_period=0.080),         # 750 RPM
-    _profile("ak47", "AK-47", "rifle", None, fire_period=0.100),         # 600 RPM
-    _profile("m4a1", "M4A4", "rifle", None, fire_period=0.090),          # 666 RPM
-    _profile("m4a1_silencer", "M4A1-S", "rifle", None, fire_period=0.100),
-    _profile("famas", "FAMAS", "rifle", None, fire_period=0.090),        # 666 RPM
-    _profile("galilar", "Galil AR", "rifle", None, fire_period=0.090),   # 666 RPM
-    _profile("aug", "AUG", "rifle", None, fire_period=0.100),            # 600 RPM
-    _profile("sg556", "SG 553", "rifle", None, fire_period=0.110),       # 545 RPM
+    _profile("mac10", "MAC-10", "smg", fire_period=0.075, automatic=True),         # 800 RPM
+    _profile("mp9", "MP9", "smg", fire_period=0.070, automatic=True),              # 857 RPM
+    _profile("mp7", "MP7", "smg", fire_period=0.080, automatic=True),              # 750 RPM
+    _profile("ump45", "UMP-45", "smg", fire_period=0.090, automatic=True),         # 666 RPM
+    _profile("p90", "P90", "smg", fire_period=0.070, automatic=True, default_mute_duration=0.22),
+    _profile("bizon", "PP-Bizon", "smg", fire_period=0.080, automatic=True, default_mute_duration=0.22),
+    _profile("mp5sd", "MP5-SD", "smg", fire_period=0.080, automatic=True),         # 750 RPM
+    _profile("ak47", "AK-47", "rifle", fire_period=0.100, automatic=True),         # 600 RPM
+    _profile("m4a1", "M4A4", "rifle", fire_period=0.090, automatic=True),          # 666 RPM
+    _profile("m4a1_silencer", "M4A1-S", "rifle", fire_period=0.100, automatic=True),
+    _profile("famas", "FAMAS", "rifle", fire_period=0.090, automatic=True),        # 666 RPM
+    _profile("galilar", "Galil AR", "rifle", fire_period=0.090, automatic=True),   # 666 RPM
+    _profile("aug", "AUG", "rifle", fire_period=0.100, automatic=True),            # 600 RPM
+    _profile("sg556", "SG 553", "rifle", fire_period=0.110, automatic=True),       # 545 RPM
     _profile(
         "awp",
         "AWP",
         "special",
-        0.75,
+        fire_period=1.463,
         default_mute_duration=0.50,
         duck_ratio_scale=1.00,
         peak_ratio_scale=0.54,
@@ -294,7 +302,7 @@ GUN_SOUND_PROFILE_LIST = (
         "ssg08",
         "SSG 08",
         "special",
-        0.90,
+        fire_period=1.250,
         default_mute_duration=0.40,
         duck_ratio_scale=0.96,
         peak_ratio_scale=0.54,
@@ -311,7 +319,7 @@ GUN_SOUND_PROFILE_LIST = (
         "scar20",
         "SCAR-20",
         "rifle",
-        0.12,
+        fire_period=0.250,
         default_mute_duration=0.40,
         duck_ratio_scale=0.68,
         peak_ratio_scale=0.34,
@@ -328,7 +336,7 @@ GUN_SOUND_PROFILE_LIST = (
         "g3sg1",
         "G3SG1",
         "rifle",
-        0.12,
+        fire_period=0.250,
         default_mute_duration=0.40,
         duck_ratio_scale=0.68,
         peak_ratio_scale=0.34,
@@ -345,7 +353,7 @@ GUN_SOUND_PROFILE_LIST = (
         "nova",
         "Nova",
         "shotgun",
-        0.80,
+        fire_period=0.882,
         default_mute_duration=0.30,
         duck_ratio_scale=0.94,
         peak_ratio_scale=0.52,
@@ -358,12 +366,12 @@ GUN_SOUND_PROFILE_LIST = (
         burst_release_scale=1.22,
         burst_hold_scale=1.10,
     ),
-    _profile("xm1014", "XM1014", "shotgun", 0.24, default_mute_duration=0.24),
+    _profile("xm1014", "XM1014", "shotgun", fire_period=0.350, default_mute_duration=0.24),
     _profile(
         "mag7",
         "MAG-7",
         "shotgun",
-        0.45,
+        fire_period=0.850,
         default_mute_duration=0.30,
         duck_ratio_scale=0.90,
         peak_ratio_scale=0.50,
@@ -380,7 +388,7 @@ GUN_SOUND_PROFILE_LIST = (
         "sawedoff",
         "Sawed-Off",
         "shotgun",
-        0.45,
+        fire_period=0.850,
         default_mute_duration=0.30,
         duck_ratio_scale=0.90,
         peak_ratio_scale=0.50,
@@ -393,16 +401,19 @@ GUN_SOUND_PROFILE_LIST = (
         burst_release_scale=1.30,
         burst_hold_scale=1.15,
     ),
-    _profile("m249", "M249", "machine_gun", None, fire_period=0.080),    # 750 RPM
-    _profile("negev", "Negev", "machine_gun", None, fire_period=0.075),  # 800 RPM
-    _profile("taser", "Zeus x27", "special", 0.80, gsi_names=("weapon_taser",)),
+    _profile("m249", "M249", "machine_gun", fire_period=0.080, automatic=True),    # 750 RPM
+    _profile("negev", "Negev", "machine_gun", fire_period=0.075, automatic=True),  # 800 RPM
+    _profile("taser", "Zeus x27", "special", fire_period=0.800, gsi_names=("weapon_taser",)),  # 单发后充能，取下界
 )
 
 GUN_SOUND_PROFILES = {profile.gun_type: profile for profile in GUN_SOUND_PROFILE_LIST}
 GUN_SOUND_WEAPON_TYPES = tuple(profile.gun_type for profile in GUN_SOUND_PROFILE_LIST)
 #: 射速由游戏钉死的那些枪（`fire_period > 0`）—— 闸门与压声形状按扫射处理。
 AUTOMATIC_GUN_TYPES = tuple(
-    profile.gun_type for profile in GUN_SOUND_PROFILE_LIST if profile.fire_period > 0
+    profile.gun_type for profile in GUN_SOUND_PROFILE_LIST if profile.automatic
+)
+SEMI_AUTO_GUN_TYPES = tuple(
+    profile.gun_type for profile in GUN_SOUND_PROFILE_LIST if not profile.automatic
 )
 #: ⚠ 这张名单从仓库首个提交起写死了 17 把全自动枪，**上方无一字解释，536 个提交没人回头看**
 #: （RN-254 → RN-432）。2026-09-17 查实（隔壁会话考古 + 本机复核）：**排除没有技术原因** ——

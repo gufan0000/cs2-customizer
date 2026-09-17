@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import os
+import random
 import sys
 import threading
 import time
@@ -22,6 +23,7 @@ from core.audio.audio_file_utils import (
     find_audio_by_stem,
     find_audio_by_tokens,
     find_first_audio_file,
+    list_audio_paths,
     list_style_dirs_with_audio,
     list_unique_audio_stems,
 )
@@ -39,6 +41,10 @@ from core.gun_sound_profiles import (
 from core.audio.audio_event_timeline import AudioEvent, get_audio_event_timeline
 from core.audio.audio_playback_policy import PlaybackRequest, decide_channel_action, resolve_priority
 from core.utils.logger import get_logger
+
+#: 一个枪声风格最多装几个取样（含第一个）。与枪声通道池同数：5 条通道轮转，
+#: 5 个取样已经保证连续两发不同、五发内不重样；再多只是吃 `_max_sounds` 的预算。
+MAX_GUN_SOUND_VARIANTS = 5
 
 
 class _NullChannel:
@@ -110,6 +116,12 @@ class AudioManager:
         self._sounds: Dict[str, AudioInfo] = {}
         self._access_order: OrderedDict[str, None] = OrderedDict()
         self._max_sounds = 50
+        #: 枪声取样变体：规范键 `gun-<枪>-<风格>` → 这一风格目录里全部已加载的键
+        #: （第一个就是规范键自己，其余是 `gun-<枪>-<风格>#1..`）。播放时随机挑一个、
+        #: 且不和上一发相同 —— 竞品每发 `PickRandomAudio`，它的「离子AK」5 个 wav 是真不同的取样；
+        #: 我方原来只取目录里的第一个文件，另外四个白放。
+        self._gun_sound_variants: Dict[str, tuple[str, ...]] = {}
+        self._last_gun_sound_variant: Dict[str, str] = {}
         self._on_loaded_callbacks: List[Callable] = []
         self._on_error_callbacks: List[Callable] = []
         self._compat_warned: set[str] = set()
@@ -641,6 +653,8 @@ class AudioManager:
             exists = key in self._sounds
         if not exists:
             self._load_sound_by_key(key)
+        # 枪声：规范键换成这一发要播的取样（多文件风格才会变；别的键原样）。
+        key = self._pick_gun_sound_variant(key)
 
         info = self._get_info(key)
         if not info:
@@ -1424,14 +1438,52 @@ class AudioManager:
         d = os.path.join(self.gun_sounds_dir, gun_type, style)
         if not os.path.isdir(d):
             return False
-        p = find_first_audio_file(d, extensions=DEFAULT_AUDIO_EXTENSIONS)
-        if not p:
+        paths = list_audio_paths(d, extensions=DEFAULT_AUDIO_EXTENSIONS, sort=True)
+        if not paths:
             return False
         canonical = f"gun-{gun_type}-{style}"
-        ok = self.load_sound(canonical, p, "gun_sound", weapon_id=gun_type, style=style)
-        if ok:
-            self._alias(f"{gun_type}-{style}", canonical)
-        return ok
+        ok = self.load_sound(canonical, paths[0], "gun_sound", weapon_id=gun_type, style=style)
+        if not ok:
+            return False
+        self._alias(f"{gun_type}-{style}", canonical)
+        # 同一风格里的其余文件是同一把枪的不同取样：各装一份，播放时轮着随机挑。
+        # 上限与通道池同数（5）：再多只是吃缓存预算（`_max_sounds`），听不出差别。
+        variants = [canonical]
+        for index, path in enumerate(paths[1:MAX_GUN_SOUND_VARIANTS], start=1):
+            variant_key = f"{canonical}#{index}"
+            if self.load_sound(variant_key, path, "gun_sound", weapon_id=gun_type, style=style):
+                variants.append(variant_key)
+        with self._lock:
+            self._variant_table()[canonical] = tuple(variants)
+        return True
+
+    def _variant_table(self) -> Dict[str, tuple[str, ...]]:
+        """变体表懒建：好几支判据用 `__new__` 搭 manager、不跑 `__init__`（那会占音频设备）。"""
+        table = self.__dict__.get("_gun_sound_variants")
+        if table is None:
+            table = self._gun_sound_variants = {}
+            self._last_gun_sound_variant = {}
+        return table
+
+    def gun_sound_variant_keys(self, gun_type: str, style: str) -> tuple[str, ...]:
+        """这一风格已加载的全部取样键（规范键排第一）；没装过就是空元组。"""
+        with self._lock:
+            return self._variant_table().get(f"gun-{gun_type}-{self._norm_style(style)}", ())
+
+    def _pick_gun_sound_variant(self, key: str) -> str:
+        """规范键 ⇒ 随机一个已加载的取样键，且不和上一发相同；别的键原样返回。"""
+        with self._lock:
+            variants = self._variant_table().get(key)
+            if not variants or len(variants) < 2:
+                return key
+            loaded = [k for k in variants if k in self._sounds and self._sounds[k].loaded]
+            if len(loaded) < 2:
+                return loaded[0] if loaded else key
+            last = self._last_gun_sound_variant.get(key)
+            pool = [k for k in loaded if k != last] or loaded
+            chosen = random.choice(pool)
+            self._last_gun_sound_variant[key] = chosen
+            return chosen
 
     def _remove_keys(self, pred: Callable[[str], bool]) -> int:
         removed = []
@@ -1490,7 +1542,12 @@ class AudioManager:
 
     def unload_gun_sound(self, gun_type, style):
         s = self._norm_style(style)
-        return self._remove_keys(lambda k: k in (f"{gun_type}-{s}", f"gun-{gun_type}-{s}")) > 0
+        canonical = f"gun-{gun_type}-{s}"
+        with self._lock:
+            self._variant_table().pop(canonical, None)
+            self._last_gun_sound_variant.pop(canonical, None)
+        return self._remove_keys(
+            lambda k: k in (f"{gun_type}-{s}", canonical) or k.startswith(canonical + "#")) > 0
 
     def _load_sound_by_key(self, key: str) -> bool:
         self.ensure_styles_scanned()

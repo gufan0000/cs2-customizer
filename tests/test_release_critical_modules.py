@@ -40,7 +40,10 @@ KILL_ICON_CHAIN = {
 KNOWN_UNLISTED = {
     "cfg_utils", "config", "core.audio", "core.cfg_compiler",
     "core.config_snapshot_manager", "core.crosshair_reset", "core.diagnostics",
-    "core.fun", "core.gun_sound_profiles", "core.hotkeys", "core.hud",
+    "core.fun", "core.gun_sound_profiles",
+    # 批 101：枪声页顶部静态 import（套系归组，纯函数），随 gun_sound_page 必然进包。
+    "core.gun_sound_series",
+    "core.hotkeys", "core.hud",
     "core.io_validation", "core.magnifier_sensitivity", "core.presets",
     "core.resource_health", "core.resource_import_wizard", "core.runtime",
     # ⚖ 2026-09-16 资源导入统一化：这三个由 `pages/audio_import_wizard_page`

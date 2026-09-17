@@ -21,6 +21,7 @@
       "GUN_SOUND_PROFILE_LIST",
       "GUN_SOUND_TAB_GROUPS",
       "GUN_SOUND_WEAPON_TYPES",
+      "SEMI_AUTO_GUN_TYPES",
       "SUPPORTED_GUN_SOUND_PROFILES",
       "SUPPORTED_GUN_SOUND_PROFILE_LIST",
       "SUPPORTED_GUN_SOUND_TAB_GROUPS",
@@ -60,7 +61,7 @@
       "write_magnifier_runtime_cfg"
     ]
   },
-  "contract_total": 44,
+  "contract_total": 45,
   "external_use": {
     "core.cfg_compiler": {
       "files": [
@@ -117,6 +118,7 @@
         "GUN_SOUND_PROFILE_LIST": 4,
         "GUN_SOUND_TAB_GROUPS": 2,
         "GUN_SOUND_WEAPON_TYPES": 4,
+        "SEMI_AUTO_GUN_TYPES": 1,
         "SUPPORTED_GUN_SOUND_PROFILES": 3,
         "SUPPORTED_GUN_SOUND_PROFILE_LIST": 9,
         "SUPPORTED_GUN_SOUND_TAB_GROUPS": 3,
@@ -201,7 +203,7 @@
   "loc": {
     "core.cfg_compiler": 255,
     "core.crosshair_reset": 286,
-    "core.gun_sound_profiles": 545,
+    "core.gun_sound_profiles": 556,
     "core.hud.__init__": 24,
     "core.hud.rule_compiler": 147,
     "core.hud.rule_model": 449,
@@ -276,6 +278,7 @@
         "GUN_SOUND_TAB_GROUPS",
         "GUN_SOUND_WEAPON_TYPES",
         "LEGACY_GUN_SOUND_ENABLED_KEYS",
+        "SEMI_AUTO_GUN_TYPES",
         "SUPPORTED_GUN_SOUND_PROFILES",
         "SUPPORTED_GUN_SOUND_PROFILE_LIST",
         "SUPPORTED_GUN_SOUND_TAB_GROUPS",

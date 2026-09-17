@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 from config import config, get_app_data_dir
 from core.audio.audio_file_utils import DEFAULT_AUDIO_EXTENSIONS, list_style_dirs_with_audio
 from core.audio.runtime_audio import get_runtime_audio_manager
+from core.gun_sound_series import find_series, group_style_series
 from core.gun_sound_profiles import (
     GUN_SOUND_PROFILES,  # noqa: F401  本文件未直接用，但测试经 gun_sound_page.GUN_SOUND_PROFILES 访问
     SUPPORTED_GUN_SOUND_PROFILE_LIST,
@@ -55,6 +56,18 @@ class GunSoundPage(QWidget):
     """枪声设置页面。"""
 
     DISABLED_STYLE_TEXT = "不启用"
+    APPLY_ALL_PLACEHOLDER = "选一套…"
+
+    @property
+    def SAVES_AUTOMATICALLY(self) -> bool:  # noqa: N802  共用回执按这个名字读（master_switch_effect）
+        """这一页的改动平时都是自动保存的 —— **除了「整套套用」选了一套还没点按钮的那一刻**。
+        外审批 101 第六轮 3/3：底栏常驻的那句自动保存回执 + 预览，玩家以为那一套已经配上了。
+        ⇒ 那一刻共用回执让位，底栏改说「还没写入」（`_action_bar_message`）。"""
+        return not self._series_pending()
+
+    def _series_pending(self) -> bool:
+        combo = getattr(self, "apply_all_combo", None)
+        return bool(combo is not None and combo.isEnabled() and combo.currentData())
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -287,7 +300,7 @@ class GunSoundPage(QWidget):
         # ⇒ 只在**全自动那几个页签**顶上说一次（不是 17 张卡各挂一句，RN-049）。
         # ⚠ 手枪页签里坐着 CZ75-Auto（也是全自动）：只点它的名，别把整组手枪说成全自动。
         automatic = [self.weapon_configs[w].display_name for w in weapons
-                     if self.weapon_configs[w].fire_period > 0]
+                     if self.weapon_configs[w].automatic]
         if automatic:
             who = "这一组是全自动枪" if len(automatic) == len(weapons) else "、".join(automatic) + " 是全自动枪"
             # ⚠ 改后复跑 20/20 仍答「不会」，理由一致：**句子太长**（原版还带了一句机制解释）。
@@ -380,7 +393,7 @@ class GunSoundPage(QWidget):
         duck_caption = QLabel("原声保留:")
         duck_tip = ("开火时游戏原本的枪声保留多少音量。0% = 完全听不到原声，"
                     "只剩你换上的音效；调高就是两个声音叠在一起。")
-        if profile.fire_period > 0:
+        if profile.automatic:
             # 外审判断题（批 100）：玩家只看控件名 ⇒ 扫射那句也挂在控件上，零像素。
             duck_tip += "扫射时实际会留到这个值的约 1.1 倍当节奏，不是整段换掉。"
         duck_caption.setToolTip(duck_tip)
@@ -531,8 +544,12 @@ class GunSoundPage(QWidget):
         self._refresh_status_badge()
         self.logger.info("枪声设置加载完成")
 
+    # ---- 整套套用（按套系，2026-09-17 批 101）：枪声风格是 per-gun 目录、各枪名字不同，
+    # 按名字套只能配到 1 把 ⇒ 下拉放**套系**（`core/gun_sound_series`），各枪各配各的。
+    # ⚠ 按钮仍叫「应用到全部武器」（批 50 行为题玩家自己说的词，判据钉着）。
+
     def _build_apply_all_row(self):
-        """「整套套用」那一行（RN-181）。与 `SoundPageBase` 那份保持同一形态。"""
+        """「整套套用」那一行（RN-181）：选一个**套系** → 各枪各配各的。"""
         from PySide6.QtWidgets import QHBoxLayout
 
         row = QHBoxLayout()
@@ -541,18 +558,22 @@ class GunSoundPage(QWidget):
         self.apply_all_row = row
 
         self.apply_all_label = QLabel("整套套用")
+        self.apply_all_label.setToolTip(
+            "套系 = 名字开头相同的一组风格。素材作者给每把枪起的名字不一样"
+            "（离子AK、离子战神、离子大狙…），按开头归成一套，各枪各配各的。")
         row.addWidget(self.apply_all_label)
         self.apply_all_combo = QComboBox()
         self.apply_all_combo.setMinimumWidth(170)
         self.apply_all_combo.setMinimumHeight(32)
+        self.apply_all_combo.setToolTip(self.apply_all_label.toolTip())
         row.addWidget(self.apply_all_combo)
 
         self.apply_all_btn = QPushButton("应用到全部武器")
         self.apply_all_btn.setObjectName("secondaryButton")
         self.apply_all_btn.setMinimumHeight(32)
         self.apply_all_btn.clicked.connect(self._apply_style_to_all_weapons)
-        self.apply_all_combo.currentTextChanged.connect(
-            lambda _t: self._sync_apply_all_hint())
+        self.apply_all_combo.currentIndexChanged.connect(
+            lambda _i: self._sync_apply_all_hint())
         row.addWidget(self.apply_all_btn)
 
         self.apply_all_hint = QLabel("")
@@ -562,25 +583,25 @@ class GunSoundPage(QWidget):
         return row
 
     def _pick_style_and_apply_to_all(self) -> None:
-        """紧凑档没有那条下拉行 ⇒ 先问选哪个风格，再走同一个动作。"""
+        """紧凑档没有那条下拉行 ⇒ 先问选哪一套，再走同一个动作。"""
         from PySide6.QtWidgets import QInputDialog
 
-        options = [o for o in self._apply_all_options()
-                   if o and o != getattr(self, "DISABLED_STYLE_TEXT", "不启用")]
-        if not options:
+        series = self._style_series()
+        if not series:
             from PySide6.QtWidgets import QMessageBox
             # ⭐ 按钮名从按钮读，别抄一份（RN-519 的棘轮盯着 —— 它当场逮到了这里）
             QMessageBox.information(
                 self, "还没有可用的风格",
                 f"先导入或新建一个风格，再用「{self.apply_all_btn.text()}」。")
             return
+        labels = [s.label for s in series]
         current = self.apply_all_combo.currentText()
-        index = options.index(current) if current in options else 0
-        style, ok = QInputDialog.getItem(
-            self, "应用到全部武器", "选一个风格：", options, index, False)
-        if not ok or not style:
+        index = labels.index(current) if current in labels else 0
+        label, ok = QInputDialog.getItem(
+            self, "应用到全部武器", "选一套（各枪各配各的）：", labels, index, False)
+        if not ok or not label:
             return
-        self.apply_all_combo.setCurrentText(style)
+        self.apply_all_combo.setCurrentIndex(self.apply_all_combo.findText(label))
         self._apply_style_to_all_weapons()   # ⭐ 同一个动作，不另造一条路
 
     def _ensure_compact_apply_all_entry(self) -> None:
@@ -640,89 +661,177 @@ class GunSoundPage(QWidget):
         except Exception:
             pass
 
-    def _apply_all_options(self) -> list[str]:
-        """并集（理由同基类那份：这一页的风格也是 per-gun 的）。"""
-        seen = set()
-        for gun_type in self.weapon_configs:
-            seen |= set(self.weapon_styles.get(gun_type, []) or [])
-        return sorted(seen)
+    def _style_series(self):
+        """磁盘上现有的风格按套系归好（每次从 `weapon_styles` 现算，35 把 × 几个名字，很便宜）。"""
+        disabled = getattr(self, "DISABLED_STYLE_TEXT", "不启用")
+        catalog = {g: [s for s in (self.weapon_styles.get(g, []) or []) if s and s != disabled]
+                   for g in self.weapon_configs}
+        return group_style_series(catalog)
 
-    def _weapons_supporting(self, style: str) -> list[str]:
-        return [g for g in self.weapon_configs
-                if style in (self.weapon_styles.get(g, []) or [])]
+    def _current_series(self):
+        key = self.apply_all_combo.currentData() if hasattr(self, "apply_all_combo") else None
+        return find_series(self._style_series(), key) if key else None
+
+    def _series_targets(self, series) -> dict[str, str]:
+        """这一套会配到的枪 → 风格（只算这一页真有的枪）。"""
+        if series is None:
+            return {}
+        return {g: s for g, s in series.picks.items() if g in self.weapon_configs}
 
     def _sync_apply_all_row(self) -> None:
         if not hasattr(self, "apply_all_combo"):
             return
-        options = [o for o in self._apply_all_options() if o and o != "不启用"]
-        keep = self.apply_all_combo.currentText()
+        series = self._style_series()
+        keep = self.apply_all_combo.currentData()
         self.apply_all_combo.blockSignals(True)
         self.apply_all_combo.clear()
-        self.apply_all_combo.addItems(options)
-        if keep in options:
-            self.apply_all_combo.setCurrentText(keep)
+        # 外审批 101 第二轮 3/3：预选着「离子 · 9 把」+ 底栏那句自动保存回执，
+        # 玩家会以为这一套已经配上了 ⇒ 第一项是占位，不选就什么都不预览、按钮也不亮。
+        self.apply_all_combo.addItem(self.APPLY_ALL_PLACEHOLDER, None)
+        for item in series:
+            self.apply_all_combo.addItem(item.label, item.key)
+        index = self.apply_all_combo.findData(keep) if keep else -1
+        self.apply_all_combo.setCurrentIndex(index if index >= 0 else 0)
         self.apply_all_combo.blockSignals(False)
 
-        usable = bool(options)
+        usable = bool(series)
         self.apply_all_combo.setEnabled(usable)
-        self.apply_all_btn.setEnabled(usable)
         self._sync_apply_all_visibility()
         if usable:
-            n = len(self._weapons_supporting(self.apply_all_combo.currentText()))
-            self.apply_all_hint.setText(f"把选中的风格一次配给能用它的 {n} 把武器")
+            self._sync_apply_all_hint()
         else:
+            self.apply_all_btn.setEnabled(False)
             self.apply_all_hint.setText("还没有可用的风格 —— 先导入或新建一个")
 
+    def _describe_series(self, series, *, limit: int = 3) -> str:
+        """提示句：**点下去谁会配上哪个**，最多点 `limit` 把的名，其余说一个数。
+
+        外审批 101 第一轮：① 下拉预选着「离子 · 9 把」而下面全是「不启用」，2/2 报
+        「误以为已生效」⇒ 句子以「点右边按钮会…」开头，它是预告不是状态；
+        ② 例子按档案顺序取，手枪永远排前，看步枪页签的人看不到 AK ⇒ **当前页签里的枪先举**。
+        """
+        targets = self._series_targets(series)
+        if not targets:
+            return ""
+        rest = len(self.weapon_configs) - len(targets)
+        names = {g: self.weapon_configs[g].display_name for g in targets}
+        _tab, current = self._get_current_tab_info()
+        ordered = ([g for g in current if g in targets]
+                   + [g for g in self.weapon_configs if g in targets and g not in current])
+        # 例子里名字不重复：「AK-47→离子AK、M4A4→离子AK、Galil→离子AK…」读起来像所有枪都配同一个。
+        shown, seen = [], set()
+        for g in ordered:
+            if targets[g] not in seen:
+                shown.append(g)
+                seen.add(targets[g])
+            if len(shown) >= limit:
+                break
+        shown += [g for g in ordered if g not in shown][: limit - len(shown)]
+        more = "…" if len(ordered) > limit else ""
+        verb = f"还没配上。点「{self.apply_all_btn.text()}」"
+        if len(targets) == 1:
+            head = f"{verb}只会给 {names[ordered[0]]} 配上「{targets[ordered[0]]}」"
+        elif len(set(targets.values())) == 1:
+            head = (f"{verb}会给 {len(targets)} 把都配上「{targets[ordered[0]]}」："
+                    + "、".join(names[g] for g in shown) + more)
+        else:
+            head = (f"{verb}会给 {len(targets)} 把配上："
+                    + "、".join(f"{names[g]}→{targets[g]}" for g in shown) + more)
+        tail = f"；其余 {rest} 把保持原样。" if rest else "。"
+        return head + tail
+
+    def _series_mapping_lines(self, series) -> list[str]:
+        targets = self._series_targets(series)
+        return [f"{self.weapon_configs[g].display_name} → {targets[g]}"
+                for g in self.weapon_configs if g in targets]
+
     def _sync_apply_all_hint(self) -> None:
-        if not hasattr(self, "apply_all_hint") or not self.apply_all_btn.isEnabled():
+        if not hasattr(self, "apply_all_hint") or not self.apply_all_combo.isEnabled():
             return
-        n = len(self._weapons_supporting(self.apply_all_combo.currentText()))
-        self.apply_all_hint.setText(f"把选中的风格一次配给能用它的 {n} 把武器")
+        series = self._current_series()
+        # 没选就不预览、按钮不亮：亮着的按钮 + 一段预览，看起来像「已经配好了」。
+        self.apply_all_btn.setEnabled(series is not None)
+        self.apply_all_hint.setText(self._describe_series(series)
+                                    or "选一套，各枪各配各的；不点按钮不会写入。")
+        # 完整映射挂在提示句上（零像素）：例子只举三把，想看全的悬停就有。
+        self.apply_all_hint.setToolTip("\n".join(self._series_mapping_lines(series)))
+        # 底栏那条回执跟着走（选了一套 ⇒ 这一页此刻有一件事要点按钮）。
+        bar = getattr(self, "action_bar", None)
+        if bar is not None:
+            bar.set_message(self._action_bar_message())
+
+    def _action_bar_message(self) -> str:
+        series = self._current_series() if self._series_pending() else None
+        if series is not None:
+            return (f"「整套套用」选了「{series.key}」这一套，还没写入 —— "
+                    f"点「{self.apply_all_btn.text()}」才会配上；卡上的改动照旧自动保存。")
+        enabled = bool(is_gun_sound_master_enabled(config))
+        current_tab_name, current_weapon_types = self._get_current_tab_info()
+        current_count = self._configured_count_for_weapons(current_weapon_types)
+        if enabled:
+            return (f"当前分类：{current_tab_name} · 已配置 {current_count}/{len(current_weapon_types)}，"
+                    "新增资源后可直接刷新风格列表。")
+        # RN-189：总开关已经在这一页的状态卡里，不必再把用户支去别处。
+        return "总开关当前关闭，这里的映射会保留；如新增资源，可先刷新风格列表，再打开总开关。"
 
     def _apply_style_to_all_weapons(self) -> None:
-        """⚠ 会覆盖能用它的每一把枪已有的设置（RN-506 的破坏性那一侧）⇒ 先问，且带确切的数。"""
+        """⚠ 会覆盖能用它的每一把枪已有的设置（RN-506 的破坏性那一侧）⇒ 先问，且逐把列出谁配哪个。"""
         from PySide6.QtWidgets import QMessageBox
 
-        style = self.apply_all_combo.currentText().strip()
+        series = self._current_series()
         gun_types = list(self.weapon_configs)
-        if not style or not gun_types:
+        targets = self._series_targets(series)
+        if series is None or not gun_types:
             return
-
-        targets = self._weapons_supporting(style)
         skipped = len(gun_types) - len(targets)
         if not targets:
             QMessageBox.information(
-                self, "没有武器能用这个风格",
-                f"这 {len(gun_types)} 把武器都没有「{style}」这个风格。")
+                self, "没有武器能用这一套",
+                f"这 {len(gun_types)} 把武器都没有「{series.key}」这一套的素材。")
             return
 
-        already = sum(1 for g in targets
-                      if self._effective_style(self.weapon_configs[g]) == style)
+        effective = {g: self._effective_style(self.weapon_configs[g]) for g in targets}
+        already = sum(1 for g, s in targets.items() if effective[g] == s)
         changing = len(targets) - already
+        # 「覆盖」只算真配过别的风格的那几把；从「不启用」配上去的不叫覆盖。
+        overwriting = sum(1 for g, s in targets.items() if effective[g] not in ("0", s))
         if changing == 0:
             QMessageBox.information(
                 self, "无需改动",
-                f"能用「{style}」的那 {len(targets)} 把武器已经全都配好了。")
+                f"「{series.key}」这一套能配的那 {len(targets)} 把武器已经全都配好了。")
             return
 
-        skipped_line = (f"\n另有 {skipped} 把武器没有这个风格，会保持原样。"
+        ordered = [g for g in gun_types if g in targets]
+        lines = []
+        for g, line in zip(ordered, self._series_mapping_lines(series)):
+            alt = [s for s in series.alternatives.get(g, ()) if s != targets[g]]
+            if alt:
+                line += f"（还有 {'、'.join(alt)} 可选，套完可在卡上换）"
+            lines.append(line)
+        if len(lines) > 12:
+            lines = lines[:12] + [f"…等 {len(ordered)} 把"]
+        skipped_line = (f"\n另有 {skipped} 把武器没有这一套的素材，会保持原样。"
                         if skipped else "")
         reply = QMessageBox.question(
             self, "应用到全部武器？",
-            f"会把「{style}」配给 {len(targets)} 把武器，"
-            f"其中 {changing} 把的当前设置会被覆盖。{skipped_line}\n\n继续吗？",
+            f"会把「{series.key}」这一套配给 {len(targets)} 把武器"
+            + (f"，其中 {overwriting} 把已配过别的风格、会被覆盖：\n" if overwriting
+               else f"（这 {changing} 把目前都没配）：\n")
+            + "\n".join(lines) + skipped_line + "\n\n继续吗？",
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
         )
         if reply != QMessageBox.Yes:
             return
 
-        for gun_type in targets:
+        for gun_type, style in targets.items():
             row = self.weapon_rows.get(gun_type) or {}
             combo = row.get("style_combo")
             if combo is not None:
                 combo.setCurrentText(style)   # 经既有信号走落盘
             else:
                 self._on_weapon_style_changed(gun_type, style)
+        # 动作做完 ⇒ 下拉回到占位：留着「离子 · 9 把」选着，它又成了一个像状态的东西。
+        self.apply_all_combo.setCurrentIndex(0)
         self._refresh_status_badge()
         self._sync_apply_all_row()
 
@@ -945,14 +1054,6 @@ class GunSoundPage(QWidget):
         self.summary_label.setToolTip(summary_text)
         self.status_card.setToolTip(summary_text)
         if hasattr(self, "action_bar"):
-            if enabled:
-                action_message = (
-                    f"当前分类：{current_tab_name} · 已配置 {current_count}/{len(current_weapon_types)}，"
-                    "新增资源后可直接刷新风格列表。"
-                )
-            else:
-                # RN-189：总开关已经在这一页的状态卡里，不必再把用户支去别处。
-                action_message = "总开关当前关闭，这里的映射会保留；如新增资源，可先刷新风格列表，再打开总开关。"
-            self.action_bar.set_message(action_message)
+            self.action_bar.set_message(self._action_bar_message())
         # RN-165：空库引导（逻辑在 community_library，只有一份）
         self._sync_community_guidance()
