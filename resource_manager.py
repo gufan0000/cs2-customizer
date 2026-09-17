@@ -215,7 +215,7 @@ class ResourceManager:
         gun_sounds_dir = ResourceManager.get_app_data_path("resources/audio/gun_sounds")
         ResourceManager.ensure_directory(gun_sounds_dir)
 
-        # 与枪声页/扫描器同源(SUPPORTED_GUN_SOUND_WEAPON_TYPES,18种)：
+        # 与枪声页/扫描器同源(SUPPORTED_GUN_SOUND_WEAPON_TYPES)：
         # 旧版这里硬编码只建 10 种,导致 glock/p250/fiveseven 等 8 把枪在枪声页
         # 扫不到目录、"打开音频资源"打开不到路径、无法配置枪声。
         try:

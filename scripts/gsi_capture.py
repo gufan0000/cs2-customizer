@@ -16,6 +16,10 @@
     3) 打开 CS2 打一局死斗(或 console 里 playdemo 某录像),正常游戏
     4) 回到本窗口 Ctrl+C 结束
     5) 产出 tests/fixtures/gsi_captures/gsi_capture_<时间>.jsonl,发给助手生成回归用例
+       （每行多一个 `_recv_time`：到达时刻，量「相邻两次 ammo_clip 递减隔多久」用）
+
+想量全自动枪的 GSI 捕获率（RN-432 那十分钟的测量）：创意工坊里 AK / M4 / P90 / Negev
+各打满 3 梭，回来看相邻 `_recv_time` 的间隔分布，和 `ammo_clip` 递减次数 / 实际子弹数。
 
 参数:
     --port 3000     监听端口(须与 gamestate_integration_cs2customizer.cfg 的 uri 端口一致)
@@ -47,6 +51,12 @@ class _Handler(BaseHTTPRequestHandler):
             payload = json.loads(raw.decode("utf-8"))
         except Exception:
             return
+        # 2026-09-17：记下**到达时刻**。没有它，录一整局也答不了「两发隔多久」——
+        # 全自动枪声的闸门（`gun_sound_profiles.FULL_AUTO_GATE_SCALE`）和扫射窗
+        # 都是按 GSI 包间隔定的，目前那个分布来自旧 debug 日志反推，这里才是正经量法。
+        # 键名带下划线前缀，回放管线按 CS2 字段读，不会碰到它。
+        if isinstance(payload, dict):
+            payload["_recv_time"] = round(time.time(), 4)
         line = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
         self.server.out_fp.write(line + "\n")
         self.server.out_fp.flush()

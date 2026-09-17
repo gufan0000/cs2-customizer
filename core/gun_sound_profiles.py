@@ -29,6 +29,10 @@ class GunSoundProfile:
     burst_peak_ms: int = 36
     burst_release_scale: float = 1.35
     burst_hold_scale: float = 1.12
+    #: 游戏钉死的射击周期（秒）。只有全自动枪填：它们的射速不由手指决定，
+    #: 所以 `min_fire_interval` 可以从这里**算**出来，而不是逐把手填一个猜的数。
+    #: 半自动 / 单发留 0（周期由玩家点击速度决定，闸门另有含义）。
+    fire_period: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -123,16 +127,50 @@ _FAMILY_DEFAULTS = {
 }
 
 
+#: 全自动枪的去抖闸门 = 射击周期 × 这个数（2026-09-17）。
+#: ⭐ 这道闸原本是给「半自动极限连点」去抖的；全自动的射速由游戏钉死，不存在
+#: 「点太快」—— 它拦掉的每一发都是玩家真开了的那一发。隔壁会话拿 2026-03 两份
+#: 真实对局日志反推的 GSI 包间隔（P5 62ms / P25 100ms / P50 126ms）过旧闸门
+#: （步枪 0.09s）：**AK 白丢 15%**；改成周期 × 0.5 拿回 12 个点、且仍挡得住同一发
+#: 被两包重报（两包间隔 < 半个周期不可能是两发）。
+FULL_AUTO_GATE_SCALE = 0.5
+
+#: 全自动枪扫射时的压声形状（`is_burst` 分支），三个数覆盖族默认：
+#:  · `burst_window` 0.30 —— GSI 包间隔 P50 就有 126ms、尾部更长，族默认 0.16~0.20
+#:    会把同一梭子的相邻两包判成「两次单发」，每包都走一遍深压 + 峰值 ⇒ 抽吸感。
+#:    两发隔 300ms 对全自动枪来说仍是同一次扣扳机（点射也算），一律按扫射处理。
+#:  · `burst_duck_ratio_scale` / `burst_peak_ratio_scale` 1.10 —— **原声留 ~20%
+#:    当节奏骨架，且不再逐包下探**（峰值 = 持续 ⇒ 平的）。竞品实测好用的机制正是
+#:    这一条：它每包把游戏音量钉在 20%，500ms 的淡回永远走不完；自定义枪声（100%）
+#:    盖在原声扫射（20%）之上，**原声的逐发节奏把「一包一发」漏掉的那几发补齐了**。
+#:    我方旧值把步枪扫射压到 8.6%、机枪 6.8%，正好把骨架一起抹掉。
+#:    ⚠ 这是「能解释竞品观测」的假设，不是本机实测；进游戏 A/B 的第一个变量就是它
+#:    （`M7_进游戏验证清单.md`）。数值随「原声保留」滑块走：默认 18% × 1.10 ≈ 20%。
+_FULL_AUTO_BURST = {
+    "burst_window": 0.30,
+    "burst_duck_ratio_scale": 1.10,
+    "burst_peak_ratio_scale": 1.10,
+}
+
+
 def _profile(
     gun_type: str,
     display_name: str,
     family: str,
-    min_fire_interval: float,
+    min_fire_interval: float | None,
     *,
     gsi_names: tuple[str, ...] | None = None,
+    fire_period: float | None = None,
     **overrides,
 ) -> GunSoundProfile:
     settings = dict(_FAMILY_DEFAULTS[family])
+    if fire_period:
+        settings.update(_FULL_AUTO_BURST)
+        settings["fire_period"] = float(fire_period)
+        if min_fire_interval is None:
+            min_fire_interval = round(float(fire_period) * FULL_AUTO_GATE_SCALE, 3)
+    if min_fire_interval is None:
+        raise ValueError(f"{gun_type}: 半自动枪必须显式给 min_fire_interval")
     settings.update(overrides)
     default_mute_duration = float(settings.pop("default_mute_duration", 0.4))
     return GunSoundProfile(
@@ -183,7 +221,7 @@ GUN_SOUND_PROFILE_LIST = (
     _profile("hkp2000", "P2000", "pistol", 0.10, default_mute_duration=0.20),
     _profile("p250", "P250", "pistol", 0.09, default_mute_duration=0.20),
     _profile("fiveseven", "Five-SeveN", "pistol", 0.09, default_mute_duration=0.20),
-    _profile("cz75a", "CZ75-Auto", "pistol", 0.08, default_mute_duration=0.18),
+    _profile("cz75a", "CZ75-Auto", "pistol", None, fire_period=0.100, default_mute_duration=0.18),
     _profile("elite", "Dual Berettas", "pistol", 0.08, default_mute_duration=0.18),
     _profile(
         "deagle",
@@ -220,20 +258,21 @@ GUN_SOUND_PROFILE_LIST = (
         burst_hold_scale=1.12,
     ),
     _profile("tec9", "Tec-9", "pistol", 0.09, default_mute_duration=0.20),
-    _profile("mac10", "MAC-10", "smg", 0.07),
-    _profile("mp9", "MP9", "smg", 0.07),
-    _profile("mp7", "MP7", "smg", 0.07),
-    _profile("ump45", "UMP-45", "smg", 0.08),
-    _profile("p90", "P90", "smg", 0.06, default_mute_duration=0.22),
-    _profile("bizon", "PP-Bizon", "smg", 0.06, default_mute_duration=0.22),
-    _profile("mp5sd", "MP5-SD", "smg", 0.07),
-    _profile("ak47", "AK-47", "rifle", 0.09),
-    _profile("m4a1", "M4A4", "rifle", 0.09),
-    _profile("m4a1_silencer", "M4A1-S", "rifle", 0.09),
-    _profile("famas", "FAMAS", "rifle", 0.09),
-    _profile("galilar", "Galil AR", "rifle", 0.09),
-    _profile("aug", "AUG", "rifle", 0.09),
-    _profile("sg556", "SG 553", "rifle", 0.09),
+    # 全自动：`fire_period` = CS2 的射击周期（60 / RPM），闸门由它算出。
+    _profile("mac10", "MAC-10", "smg", None, fire_period=0.075),         # 800 RPM
+    _profile("mp9", "MP9", "smg", None, fire_period=0.070),              # 857 RPM
+    _profile("mp7", "MP7", "smg", None, fire_period=0.080),              # 750 RPM
+    _profile("ump45", "UMP-45", "smg", None, fire_period=0.090),         # 666 RPM
+    _profile("p90", "P90", "smg", None, fire_period=0.070, default_mute_duration=0.22),
+    _profile("bizon", "PP-Bizon", "smg", None, fire_period=0.080, default_mute_duration=0.22),
+    _profile("mp5sd", "MP5-SD", "smg", None, fire_period=0.080),         # 750 RPM
+    _profile("ak47", "AK-47", "rifle", None, fire_period=0.100),         # 600 RPM
+    _profile("m4a1", "M4A4", "rifle", None, fire_period=0.090),          # 666 RPM
+    _profile("m4a1_silencer", "M4A1-S", "rifle", None, fire_period=0.100),
+    _profile("famas", "FAMAS", "rifle", None, fire_period=0.090),        # 666 RPM
+    _profile("galilar", "Galil AR", "rifle", None, fire_period=0.090),   # 666 RPM
+    _profile("aug", "AUG", "rifle", None, fire_period=0.100),            # 600 RPM
+    _profile("sg556", "SG 553", "rifle", None, fire_period=0.110),       # 545 RPM
     _profile(
         "awp",
         "AWP",
@@ -354,32 +393,25 @@ GUN_SOUND_PROFILE_LIST = (
         burst_release_scale=1.30,
         burst_hold_scale=1.15,
     ),
-    _profile("m249", "M249", "machine_gun", 0.06),
-    _profile("negev", "Negev", "machine_gun", 0.05),
+    _profile("m249", "M249", "machine_gun", None, fire_period=0.080),    # 750 RPM
+    _profile("negev", "Negev", "machine_gun", None, fire_period=0.075),  # 800 RPM
     _profile("taser", "Zeus x27", "special", 0.80, gsi_names=("weapon_taser",)),
 )
 
 GUN_SOUND_PROFILES = {profile.gun_type: profile for profile in GUN_SOUND_PROFILE_LIST}
 GUN_SOUND_WEAPON_TYPES = tuple(profile.gun_type for profile in GUN_SOUND_PROFILE_LIST)
-FULL_AUTO_GUN_SOUND_WEAPON_TYPES = (
-    "cz75a",
-    "mac10",
-    "mp9",
-    "mp7",
-    "ump45",
-    "p90",
-    "bizon",
-    "mp5sd",
-    "ak47",
-    "m4a1",
-    "m4a1_silencer",
-    "famas",
-    "galilar",
-    "aug",
-    "sg556",
-    "m249",
-    "negev",
+#: 射速由游戏钉死的那些枪（`fire_period > 0`）—— 闸门与压声形状按扫射处理。
+AUTOMATIC_GUN_TYPES = tuple(
+    profile.gun_type for profile in GUN_SOUND_PROFILE_LIST if profile.fire_period > 0
 )
+#: ⚠ 这张名单从仓库首个提交起写死了 17 把全自动枪，**上方无一字解释，536 个提交没人回头看**
+#: （RN-254 → RN-432）。2026-09-17 查实（隔壁会话考古 + 本机复核）：**排除没有技术原因** ——
+#: 2.0 重构把档案扩到 35 把、七个页签写好、六族连发参数调好之后，用它把运行期集合
+#: 收回到前身版本（2025-11，10 把半自动）已经发过货的那一档。真实对局 GSI 包间隔
+#: 与步枪射速同量级（P50 126ms vs AK 100ms），竞品走同一条 `ammo_clip` 递减链路全武器可用。
+#: ⇒ 名单**清空**；⛔ 常量名保留（契约快照 `x8_contract.json` 与判据点名它），
+#: 它现在只是一个「万一要临时下架某把枪」的开关，默认没有任何一把在里面。
+FULL_AUTO_GUN_SOUND_WEAPON_TYPES: tuple[str, ...] = ()
 SUPPORTED_GUN_SOUND_PROFILE_LIST = tuple(
     profile
     for profile in GUN_SOUND_PROFILE_LIST

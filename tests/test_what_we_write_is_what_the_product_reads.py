@@ -59,7 +59,66 @@ def test_a_kill_sound_pack_with_named_files_is_renumbered(tmp_path):
                            ["清脆/爆头.mp3", "清脆/双杀.mp3"], style_name="清脆")
     assert _targets(plan) == ["audio/kill_sounds/清脆/2.mp3",
                               "audio/kill_sounds/清脆/1.mp3"]
-    assert "重命名" in _joined(plan), "替用户改了名却不说，等于偷偷动了他的文件"
+    # 「爆头」不是第几杀 ⇒ 这一组只能按文件名顺序编 —— 那是猜，就得说是猜的。
+    assert "看不出是第几杀" in _joined(plan), "替用户改了名却不说，等于偷偷动了他的文件"
+    assert "1 = 单杀" in _joined(plan), "得告诉他 1~5 各是什么，他才改得对"
+
+
+# ------------------------------------------------ ①-b 编号 = 第几杀，不是字典序
+
+def test_named_kill_counts_land_on_their_own_number():
+    """⭐⭐⭐ 编号 N 的意思是**本回合第 N 杀**。按码位排 `单/双/三/四/五杀` 得到
+    三/五/单/双/四 —— **5/5 全部错位**，且第一版还跟用户说「已替你重命名」
+    （2026-09-17 隔壁会话拿真函数跑出来的）。"""
+    plan = plan_placements(
+        "kill_sounds",
+        [f"清脆/{name}.mp3" for name in ("五杀", "三杀", "单杀", "四杀", "双杀")],
+        style_name="清脆")
+    got = {p.source: p.target_rel_path for p in plan.placements}
+    assert got == {
+        "清脆/单杀.mp3": "audio/kill_sounds/清脆/1.mp3",
+        "清脆/双杀.mp3": "audio/kill_sounds/清脆/2.mp3",
+        "清脆/三杀.mp3": "audio/kill_sounds/清脆/3.mp3",
+        "清脆/四杀.mp3": "audio/kill_sounds/清脆/4.mp3",
+        "清脆/五杀.mp3": "audio/kill_sounds/清脆/5.mp3",
+    }
+    assert "按名字里的击杀数" in _joined(plan)
+    assert "看不出是第几杀" not in _joined(plan), "认出来了就别再说是猜的"
+
+
+@pytest.mark.parametrize("names", [
+    ("single", "double", "triple", "quad", "ace"),
+    ("kill1", "kill2", "kill3", "kill4", "kill5"),
+    ("一杀", "二杀", "三杀", "四杀", "五杀"),
+    ("first", "second", "third", "fourth", "fifth"),
+])
+def test_other_common_spellings_of_the_kill_count_also_work(names):
+    mapping, dropped = renumber([f"{n}.mp3" for n in names], 5)
+    assert not dropped
+    assert [mapping[f"{n}.mp3"] for n in names] == [f"{i}.mp3" for i in range(1, 6)]
+
+
+def test_a_headshot_variant_keeps_its_number():
+    """`N-headshot` 是产品自己认的第 N 杀爆头变体（`_load_range` 逐个找）。"""
+    mapping, _ = renumber(["单杀.mp3", "单杀爆头.mp3", "双杀.mp3"], 5)
+    assert mapping == {"单杀.mp3": "1.mp3", "单杀爆头.mp3": "1-headshot.mp3",
+                       "双杀.mp3": "2.mp3"}
+
+
+def test_an_already_numbered_pack_with_headshot_variants_is_left_alone():
+    """⚠ 第一版只认纯数字：`1-headshot.mp3` 被当成「没编号」，整包重排成
+    1/2/3/4 —— 一个作者已经编好的包就这么被拆散，而且报「成功」。"""
+    mapping, dropped = renumber(["1.mp3", "1-headshot.mp3", "2.mp3", "2-headshot.mp3"], 5)
+    assert mapping == {} and dropped == []
+
+
+def test_ambiguous_names_fall_back_to_filename_order_and_say_so():
+    """名字里读不出次数、或两个名字撞同一个数 ⇒ 退回文件名顺序，**明说是猜的**。"""
+    plan = plan_placements("kill_sounds",
+                           ["清脆/双杀.mp3", "清脆/second.mp3", "清脆/x.mp3"],
+                           style_name="清脆")
+    assert "看不出是第几杀" in _joined(plan)
+    assert len(plan.placements) == 3
 
 
 def test_a_pack_that_is_already_numbered_is_left_alone():

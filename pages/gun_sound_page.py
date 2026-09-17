@@ -182,7 +182,7 @@ class GunSoundPage(QWidget):
         # 这次重构不动一个像素，四种并存的字号是另一回事（UP-092）。
         header = PageHeader(
             "枪声设置",
-            description="开火后压住原始枪声、换成你自己的音效。目前只开放半自动武器（手枪 / 狙击枪 / 霰弹枪 / 宙斯），自动武器暂不支持。",
+            description="开火后压住原始枪声、换成你自己的音效。手枪、冲锋枪、步枪、狙击枪、霰弹枪、机枪都能换；扫射时会留一点原声当节奏。",
             title_font_size=None,
             spacing=12,
         )
@@ -282,6 +282,21 @@ class GunSoundPage(QWidget):
         scroll_layout.setContentsMargins(6, 6, 6, 6)
         scroll_layout.setSpacing(6)
 
+        # 2026-09-17 外审判断题「玩家会不会知道扫射时会留一点原声」**12/12 答不会**：
+        # 那句话埋在页头长句末尾，而「原声保留」滑块本身一个字没提扫射。
+        # ⇒ 只在**全自动那几个页签**顶上说一次（不是 17 张卡各挂一句，RN-049）。
+        # ⚠ 手枪页签里坐着 CZ75-Auto（也是全自动）：只点它的名，别把整组手枪说成全自动。
+        automatic = [self.weapon_configs[w].display_name for w in weapons
+                     if self.weapon_configs[w].fire_period > 0]
+        if automatic:
+            who = "这一组是全自动枪" if len(automatic) == len(weapons) else "、".join(automatic) + " 是全自动枪"
+            # ⚠ 改后复跑 20/20 仍答「不会」，理由一致：**句子太长**（原版还带了一句机制解释）。
+            #   一句话说完；「为什么」留在帮助面板。
+            spray_hint = QLabel(f"{who}：扫射时会留一点原声当节奏，不是整段换掉。")
+            spray_hint.setObjectName("hintLabel")
+            spray_hint.setWordWrap(True)
+            scroll_layout.addWidget(spray_hint)
+
         for weapon_type in weapons:
             profile = self.weapon_configs[weapon_type]
             styles = self.weapon_styles.get(weapon_type, [])
@@ -363,9 +378,12 @@ class GunSoundPage(QWidget):
         # 理解对开火听感的影响」。加说明不能靠往 18 张卡里各塞一行字
         # （那正是 RN-049 刚删掉的东西），所以落在 tooltip 上：**零像素改动**。
         duck_caption = QLabel("原声保留:")
-        duck_caption.setToolTip(
-            "开火时游戏原本的枪声保留多少音量。0% = 完全听不到原声，"
-            "只剩你换上的音效；调高就是两个声音叠在一起。")
+        duck_tip = ("开火时游戏原本的枪声保留多少音量。0% = 完全听不到原声，"
+                    "只剩你换上的音效；调高就是两个声音叠在一起。")
+        if profile.fire_period > 0:
+            # 外审判断题（批 100）：玩家只看控件名 ⇒ 扫射那句也挂在控件上，零像素。
+            duck_tip += "扫射时实际会留到这个值的约 1.1 倍当节奏，不是整段换掉。"
+        duck_caption.setToolTip(duck_tip)
         tuning_layout.addWidget(duck_caption, 0, 0)
 
         duck_slider = QSlider(Qt.Horizontal)
@@ -413,6 +431,7 @@ class GunSoundPage(QWidget):
 
         self.weapon_rows[weapon_type] = {
             "style_combo": style_combo,
+            "duck_caption": duck_caption,
             "duck_slider": duck_slider,
             "duck_label": duck_value_label,
             "duration_slider": duration_slider,

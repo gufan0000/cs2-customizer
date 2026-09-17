@@ -3590,16 +3590,69 @@ REVERTS = [
         "裁定规则在 Python 侧只准有一份。抄出来的那份最容易漂：CI 取**最后一条**"
         "匹配行，本机若取第一条，两道门在「审计中途重跑过」时会给出不同结论",
     ),
+    # ── 2026-09-17 全自动枪开放（RN-432 结）：这一组 `--only GUN` 单独跑 ──
+    # ⚠ 原 RN-254 那条断点（往 tooltip 里塞「连发武器往短了调」）**已无意义**：
+    #   连发武器现在就在页签里，那句话不再点名不存在的东西。判据反转成「文案不许说
+    #   有哪类枪不开放」，断点跟着反转。
     Revert(
-        "RN", "枪声页文案又去教用户调连发武器",
+        "GUN", "页头又说自动武器暂不支持，而页签里就摆着 AK-47",
         "pages/gun_sound_page.py",
-        "太长会盖掉下一枪；点得快的枪往短了调。",
-        "太长会盖掉下一枪；连发武器往短了调。",
+        "手枪、冲锋枪、步枪、狙击枪、霰弹枪、机枪都能换；扫射时会留一点原声当节奏。",
+        "目前只开放半自动武器（手枪 / 狙击枪 / 霰弹枪 / 宙斯），自动武器暂不支持。",
         "tests/test_gun_sound_profiles.py::"
-        "test_the_page_does_not_name_weapon_classes_it_cannot_select",
-        "RN-254：这一页把 17 把全自动枪排除在外，而静音覆盖那颗滑块的 tooltip "
-        "写着「连发武器往短了调」—— 教用户去调一个他在这一页根本选不到的东西。"
-        "⚠ RN-167 那条棘轮只查**按钮名**，看不见「点名一类武器」这种写法",
+        "test_the_copy_does_not_say_a_weapon_class_is_off_limits",
+        "RN-254 的反面：2026-09-17 之前页头就是这句，而这一刀之后「步枪」页签里摆着 AK-47。"
+        "⭐ 文案说的和页面上有的必须一致 —— 前提翻面了，教训还在，判据反转不删",
+    ),
+    Revert(
+        "GUN", "排除表里又塞回一把枪",
+        "core/gun_sound_profiles.py",
+        "FULL_AUTO_GUN_SOUND_WEAPON_TYPES: tuple[str, ...] = ()",
+        'FULL_AUTO_GUN_SOUND_WEAPON_TYPES: tuple[str, ...] = ("ak47",)',
+        "tests/test_full_auto_guns_are_heard_every_shot.py::"
+        "test_no_gun_in_the_profile_table_is_hidden_from_the_runtime",
+        "RN-432：那张名单从仓库首个提交起写死 17 把、上方无一字解释、536 个提交没人回头看。"
+        "查实排除没有技术原因。⛔ 常量名保留（契约快照点名它），但里面不许再有任何一把",
+    ),
+    Revert(
+        "GUN", "AK 的闸门改回 0.09s",
+        "core/gun_sound_profiles.py",
+        '    _profile("ak47", "AK-47", "rifle", None, fire_period=0.100),',
+        '    _profile("ak47", "AK-47", "rifle", 0.09, fire_period=0.100),',
+        "tests/test_full_auto_guns_are_heard_every_shot.py::"
+        "test_a_spray_at_real_packet_intervals_plays_every_packet[ak47]",
+        "真实对局 GSI 包间隔 P5 62ms / P25 100ms，旧闸门 0.09s 下 **AK 白丢 15%**。"
+        "全自动的射速由游戏钉死，不存在「点太快」—— 它拦掉的每一发都是玩家真开了的那一发",
+    ),
+    Revert(
+        "GUN", "扫射档又逐包下探（抽吸）",
+        "core/gun_sound_profiles.py",
+        '    "burst_peak_ratio_scale": 1.10,\n}',
+        '    "burst_peak_ratio_scale": 0.22,\n}',
+        "tests/test_full_auto_guns_are_heard_every_shot.py::"
+        "test_the_spray_duck_keeps_a_flat_rhythm_skeleton[ak47]",
+        "竞品把原声钉在 20% 当节奏骨架且不逐包下探；我方旧值每包先砸到 4% 再回 8.6%，"
+        "一梭子 30 发就是 30 次抽吸，还把骨架抹掉。⚠ 20% 是能解释竞品观测的假设，进游戏 A/B 的第一个变量",
+    ),
+    Revert(
+        "GUN", "全自动页签顶上那句「扫射会留一点原声」又没了",
+        "pages/gun_sound_page.py",
+        "        if automatic:\n            who = ",
+        "        if False:\n            who = ",
+        "tests/test_full_auto_guns_are_heard_every_shot.py::"
+        "test_the_automatic_tabs_say_a_spray_keeps_some_original_sound",
+        "批 100 外审判断题「玩家会不会知道扫射时会留一点原声、不是整个换掉」12/12 答不会："
+        "那句话埋在页头长句末尾，「原声保留」滑块一个字没提扫射。⇒ 全自动页签顶上各说一次",
+    ),
+    Revert(
+        "GUN", "枪声通道池缩回 3 条",
+        "core/audio/audio_manager.py",
+        "            self._make_channel(14),\n            self._make_channel(15),\n",
+        "",
+        "tests/test_full_auto_guns_are_heard_every_shot.py::"
+        "test_the_gun_sound_channel_pool_has_five_distinct_channels",
+        "素材是 1 秒以上的长尾样本，扫射 ~100ms 一发 ⇒ 3 条通道每条只活 300ms 就被抢占砍短；"
+        "5 条 ≈ 500ms 正好盖住响亮段（竞品 5 槽轮转）",
     ),
     Revert(
         "RN", "ruff.toml 替一个已删的文件留排除行",
@@ -8239,6 +8292,28 @@ Revert(
         "枪声替换产品只认 `GUN_SOUND_WEAPON_TYPES` 里的小写代号，而导入是把包里的"
         "目录名**原样搬**⇒ `沙漠之鹰/` 落进去永远不会被读到，且全程零提示。"
         "⛔ 这里明说而不猜：猜错一个武器名，用户是**进游戏之后**才发现的",
+    ),
+    Revert(
+        "RI", "编号又按字典序排、不按名字里的击杀数",
+        "core/resource_readback.py",
+        "    if all(r is not None for r, _ in ranked) and len(set(keys)) == len(keys):",
+        "    if False:",
+        "tests/test_what_we_write_is_what_the_product_reads.py"
+        "::test_named_kill_counts_land_on_their_own_number",
+        "编号 N = 本回合第 N 杀。按码位排 `单/双/三/四/五杀` 得到 三/五/单/双/四，"
+        "**5/5 全部错位**，且第一版还跟用户说「已替你重命名」（隔壁会话拿真函数跑出来的）",
+    ),
+    Revert(
+        "RI", "已编号包里的爆头变体又被当成没编号",
+        "core/resource_readback.py",
+        '_HEADSHOT_MARKS = ("headshot", "爆头")',
+        '_HEADSHOT_MARKS = ("爆头",)',
+        "tests/test_what_we_write_is_what_the_product_reads.py"
+        "::test_an_already_numbered_pack_with_headshot_variants_is_left_alone",
+        "`N-headshot` 是产品自己认的第 N 杀爆头变体（`_load_range` 逐个找）。第一版只认纯数字，"
+        "`1-headshot.mp3` 被当成「没编号」一起重排成 1/2/3/4 —— 一个作者编好的包被拆散，还报成功。"
+        "⚠ 第一版断点撤的是那道「纯数字」前置判断，**不红**：按击杀数那一档把它兜住了 ⇒ "
+        "前置判断删掉（RN-002 形态），断点改撤爆头变体的识别 —— `1` 和 `1-headshot` 撞号退回字典序",
     ),
     Revert(
         "RI", "单文件那条路的扩展名闸门又没了",

@@ -412,15 +412,19 @@ def _renumber_if_needed(spec_key, paths, plan):
     for path in paths:
         by_dir.setdefault(path.rsplit("/", 1)[0] if "/" in path else "", []).append(path)
     renamed, dropped = {}, set()
+    by_meaning = True
     for group in by_dir.values():
         # ⚠ 按**风格目录**分别编号：两个风格各自从 1 开始，
         #   整包一起编会让第二个风格从 4 开始、产品照样找不到 1~3。
-        mapping, extra = renumber(group, slots)
-        renamed.update(mapping)
-        dropped.update(extra)
+        numbering = renumber(group, slots)
+        renamed.update(numbering.mapping)
+        dropped.update(numbering.dropped)
+        if numbering.mapping and not numbering.by_meaning:
+            by_meaning = False
     spec = get_resource_spec(spec_key)
     label = spec.label if spec else spec_key
-    plan.warnings.extend(layout_warning(spec_key, label, renamed, sorted(dropped)))
+    plan.warnings.extend(layout_warning(spec_key, label, renamed, sorted(dropped),
+                                        by_meaning=by_meaning))
     return renamed, dropped
 
 

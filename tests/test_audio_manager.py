@@ -175,7 +175,9 @@ def test_load_all_enabled_sounds_supports_new_gun_profiles(monkeypatch):
     assert ("xm1014", "styleShotgun") in loaded
 
 
-def test_load_all_enabled_sounds_skips_hidden_full_auto_gun_profiles(monkeypatch):
+def test_load_all_enabled_sounds_loads_full_auto_gun_profiles_too(monkeypatch):
+    """2026-09-17 反转：以前断言 ak47 **不被加载**（17 把全自动被一张无解释的名单排除，
+    RN-432）。现在 `ak47_style` 配了就得装，和 awp 一样。"""
     from core.audio.audio_manager import AudioManager
     from config import config
 
@@ -193,4 +195,4 @@ def test_load_all_enabled_sounds_skips_hidden_full_auto_gun_profiles(monkeypatch
     mgr.load_all_enabled_sounds()
 
     assert ("awp", "styleAwp") in loaded
-    assert ("ak47", "styleAk") not in loaded
+    assert ("ak47", "styleAk") in loaded

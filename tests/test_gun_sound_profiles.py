@@ -84,15 +84,18 @@ def test_registry_covers_all_supported_firearms_and_taser():
     assert GUN_SOUND_PROFILES["xm1014"].gsi_names == ("weapon_xm1014",)
 
 
-def test_runtime_supported_gun_sound_profiles_hide_full_auto_weapons():
-    assert "ak47" in FULL_AUTO_GUN_SOUND_WEAPON_TYPES
-    assert "mp9" in FULL_AUTO_GUN_SOUND_WEAPON_TYPES
-    assert "cz75a" in FULL_AUTO_GUN_SOUND_WEAPON_TYPES
-    assert "ak47" not in SUPPORTED_GUN_SOUND_WEAPON_TYPES
-    assert "mp9" not in SUPPORTED_GUN_SOUND_WEAPON_TYPES
-    assert "cz75a" not in SUPPORTED_GUN_SOUND_WEAPON_TYPES
-    assert "xm1014" in SUPPORTED_GUN_SOUND_WEAPON_TYPES
-    assert "scar20" in SUPPORTED_GUN_SOUND_WEAPON_TYPES
+def test_every_profiled_gun_is_selectable_at_runtime():
+    """2026-09-17 反转：这条以前断言 ak47/mp9/cz75a **在排除表里**。
+
+    排除表从仓库首个提交起写死 17 把全自动、上方无一字解释（RN-432），查实没有技术原因
+    （前身版本只发过 10 把半自动，2.0 重构把档案扩到 35 把后用它收回到旧的那一档）。
+    ⇒ 现在断言的是反面：**档案表里的每一把枪，运行期都必须在。**
+    """
+    assert FULL_AUTO_GUN_SOUND_WEAPON_TYPES == ()
+    assert SUPPORTED_GUN_SOUND_WEAPON_TYPES == GUN_SOUND_WEAPON_TYPES
+    assert len(SUPPORTED_GUN_SOUND_WEAPON_TYPES) == 35
+    for gun_type in ("ak47", "mp9", "cz75a", "xm1014", "scar20", "negev"):
+        assert gun_type in SUPPORTED_GUN_SOUND_WEAPON_TYPES
 
 
 @pytest.mark.parametrize("gun_type", ["usp", "deagle", "scar20", "g3sg1"])
@@ -107,56 +110,63 @@ def test_fast_fire_profiles_have_peak_ducking(gun_type: str):
     assert plan.peak_ms > 0
 
 
-# ================================================ RN-254：页面文案不许点名选不到的枪
+# ================================================ RN-254 → 反转：文案不许说有哪类枪「不开放」
 
-#: 这一页把 17 把全自动枪排除在外（`FULL_AUTO_GUN_SOUND_WEAPON_TYPES`），
-#: 所以页面上的**控件文案**不许再教用户去调它们。
-#: ⚠ 2026-08-23 实测：静音覆盖那颗滑块的 tooltip 写着「连发武器往短了调」——
-#: 而连发武器在这一页根本选不到。属 RN-167 族（文案点名了这一页不存在的东西），
-#: 而 RN-167 那条棘轮只查**按钮名**，看不见这种「点名一类武器」的写法。
-#: ⭐ **一个教训只修在它被发现的那条轴上，等于只修了一份副本。**
-_CLASSES_NOT_ON_THIS_PAGE = ("连发", "全自动", "步枪", "冲锋枪", "机枪")
-
-#: ⛔ 帮助面板**不在这条判据的管辖里**，那是有意的：
-#: `ui_help_panel` 的 gun_sound 段落写着「连发武器（步枪、冲锋枪、机枪）暂未开放」——
-#: 那是**明确说明它没有**，正是玩家需要知道的。判据要防的是「教你去调它」，
-#: 不是「告诉你没有它」。⇒ 只扫页面自己的控件文案。
+#: 2026-08-23 这条判据的形态是「页面文案不许点名 连发/全自动/步枪/冲锋枪/机枪」——
+#: 因为那 17 把枪在这一页根本选不到，教用户去调它们是 RN-167 族（点名不存在的东西）。
+#: 2026-09-17 全自动开放之后，页签名就叫「步枪 / 冲锋枪 / 机枪」，那张词表的前提没了。
+#: ⭐ **判据反转不删**：它记录的教训是「文案说的和页面上有的必须一致」，前提翻面了，
+#: 教训还在 —— 现在要防的是反面：页头 / 帮助面板还留着一句「自动武器暂不支持」，
+#: 而页签里就摆着 AK-47。⇒ 扫**页面 + 帮助面板**里所有字符串字面量，不许出现这些说法。
+_OFF_LIMITS_PHRASES = ("暂未开放", "暂不支持", "不支持", "被排除", "只开放", "只支持", "未开放")
 
 
-def test_the_page_does_not_name_weapon_classes_it_cannot_select():
+def _page_and_help_strings():
     import ast
     from pathlib import Path
 
+    root = Path(__file__).resolve().parent.parent
+    found = []
+    for rel in ("pages/gun_sound_page.py", "ui_help_panel.py"):
+        tree = ast.parse((root / rel).read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                found.append((rel, node.lineno, node.value))
+    return found
+
+
+def test_the_copy_does_not_say_a_weapon_class_is_off_limits():
     from _denominator import must_scan
 
-    src = Path(__file__).resolve().parent.parent / "pages" / "gun_sound_page.py"
-    tree = ast.parse(src.read_text(encoding="utf-8"))
+    from core.gun_sound_profiles import GUN_SOUND_TAB_GROUPS, SUPPORTED_GUN_SOUND_TAB_GROUPS
 
-    # ⭐ 两个分母都要在：这一页得真的有文案，那张「这一页选不到的武器类」名单也不许空。
-    must_scan([n for n in ast.walk(tree)
-               if isinstance(n, ast.Constant) and isinstance(n.value, str)],
-              "gun_sound 页里的字符串字面量", least=20)
-    must_scan(_CLASSES_NOT_ON_THIS_PAGE, "_CLASSES_NOT_ON_THIS_PAGE（这一页选不到的武器类）")
+    # ⭐ 先证前提：页签一个都没被藏起来，文案才没资格说「某类不开放」。
+    assert SUPPORTED_GUN_SOUND_TAB_GROUPS == GUN_SOUND_TAB_GROUPS
 
-    offenders = []
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
-            continue
-        hit = [w for w in _CLASSES_NOT_ON_THIS_PAGE if w in node.value]
-        if hit:
-            offenders.append((node.lineno, hit, node.value[:60]))
+    strings = _page_and_help_strings()
+    must_scan(strings, "gun_sound 页 + 帮助面板里的字符串字面量", least=20)
+    must_scan(_OFF_LIMITS_PHRASES, "_OFF_LIMITS_PHRASES（「不开放」的各种说法）", least=4)
 
+    # 只看**会显示出来、且说的是武器**的那些句子：帮助面板是一个大 dict，别的页面的段落
+    # 也在同一个文件里，所以要求句子里同时出现「枪 / 武器」二字之一。
+    offenders = [
+        (rel, ln, text[:70])
+        for rel, ln, text in strings
+        if any(p in text for p in _OFF_LIMITS_PHRASES)
+        and ("枪" in text or "武器" in text)
+        and ("gun_sound" in rel or "枪声" in text)
+    ]
     assert not offenders, (
-        "gun_sound 页的文案点名了这一页选不到的武器类：\n"
-        + "\n".join(f"  :{ln} {hit} -> {text!r}" for ln, hit, text in offenders)
-        + "\n这一页只开放半自动/单发武器；要么按射速说（「点得快的枪」），"
-          "要么明确说「暂未开放」，别教用户去调一个他找不到的东西。"
+        "枪声页 / 帮助面板还在说有哪类枪不开放，而页签里就摆着它们：\n"
+        + "\n".join(f"  {rel}:{ln} -> {text!r}" for rel, ln, text in offenders)
+        + "\n⭐ 文案说的和页面上有的必须一致（RN-254 的反面）。"
     )
 
 
 def test_that_judge_is_not_vacuous():
-    """空转守卫：先证明这条判据看得见那句原文。"""
-    bad = "太长会盖掉下一枪；连发武器往短了调。"
-    assert [w for w in _CLASSES_NOT_ON_THIS_PAGE if w in bad] == ["连发"], (
-        "词表已经认不出 RN-254 那句原话了 —— 这条判据现在是空转的。"
+    """空转守卫：先证明这条判据看得见 2026-09-17 之前页头那句原话。"""
+    bad = "开火后压住原始枪声、换成你自己的音效。目前只开放半自动武器（手枪 / 狙击枪 / 霰弹枪 / 宙斯），自动武器暂不支持。"
+    assert [p for p in _OFF_LIMITS_PHRASES if p in bad], (
+        "词表已经认不出旧页头那句话了 —— 这条判据现在是空转的。"
     )
+    assert "枪" in bad or "武器" in bad

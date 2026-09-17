@@ -225,10 +225,11 @@ class GSIHandlerSounds:
                 self._apply_gun_sound_duck(profile, last_fire_time=last_fire_time, current_time=current_time)
                 setattr(self, last_fire_time_attr, current_time)
                 sound_key = f"gun-{gun_type}-{style}"
-                # allow_preempt=True：连点/连射时若 3 条枪声通道都还在播（尤其用了较长的
+                # allow_preempt=True：连点/连射时若 5 条枪声通道都还在播（尤其用了较长的
                 # 自定义枪声素材），新的一发会抢占最旧的通道而不是被直接丢掉，
-                # 保证每一发都有声音反馈。（GSI 靠弹夹数轮询判断开火，两帧之间的极限连点
-                # 仍无法逐发捕获，这是平台粒度限制，只能缓解。）
+                # 保证每一发都有声音反馈。（GSI 靠弹夹数轮询判断开火，一包只报一次递减；
+                # 全自动扫射时原声保留 ~20% 当节奏骨架，把两包之间漏掉的那发补上 ——
+                # 见 `gun_sound_profiles._FULL_AUTO_BURST`。）
                 audio_manager.play_sound(
                     sound_key,
                     channel_type="gun_sound",

@@ -119,10 +119,15 @@ class AudioManager:
         self._mixer_ready = self._init_mixer()
 
         self.awp_channel = self._make_channel(0)
+        # 枪声通道池 3 → 5（2026-09-17，全自动枪开放）：素材是 1 秒以上的长尾样本，
+        # 而扫射一包 ~100ms 就来一发 ⇒ 3 条通道每条样本只活 300ms 就被抢占砍短；
+        # 5 条 ≈ 500ms，正好盖住响亮段（竞品实测好用的正是 5 槽轮转）。ch14/ch15 原本空着。
         self.gun_sound_channels = [
             self.awp_channel,
             self._make_channel(9),
             self._make_channel(10),
+            self._make_channel(14),
+            self._make_channel(15),
         ]
         self._gun_sound_channel_index = 0
         self.kill_sound_channel = self._make_channel(1)
