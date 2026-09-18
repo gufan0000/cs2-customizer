@@ -54,9 +54,19 @@ class _SessionAudioBackend:
         self._cached_sessions: list[tuple[str, object, str]] = []
         self._last_scan_time = 0.0
         self._refresh_thread: threading.Thread | None = None
+        #: 上一次「枚举完但一个都没匹配到」的时刻。⚠ 批 102 的两道缓存门都写成
+        #: `and self._cached_sessions`，空 list 直接短路到全量枚举 ⇒ 只要没匹配到
+        #: cs2.exe（游戏没起、进程名不在名单、设备刚切换、枚举抛异常），**每开一枪**
+        #: 都在 GSI 线程上等一次 44ms 的 COM 枚举，而且这一发还压不住（批 103）。
+        self._empty_scan_time = 0.0
         self._transition_token = 0
         self._ducked_sessions: dict[str, dict[str, object]] = {}
         self._state_path = self._resolve_state_path()
+        #: 上一次真正落盘的那份状态。⭐ 状态文件只是「上次没恢复就自动修」的兜底，
+        #: 一次对局写一次就够；而它以前**每开一枪都写一次**（AK 扫射 600 RPM = 每秒 10 次
+        #: 覆写 + 恢复时 10 次删除，全落在同一个文件上），而且写在 `_run_transition`
+        #: **之前** —— 磁盘忙或实时扫描卡住那一次，压声和枪声一起被推后（批 103）。
+        self._persisted_state: tuple | None = None
         self._stale_state = self._load_stale_state()
         # 2.1.4: COM 每线程初始化标记（GSI 工作线程里调 pycaw 前必须 CoInitialize，
         # 否则在 Qt(STA) 主线程已占用 COM 的进程里会报
@@ -87,16 +97,34 @@ class _SessionAudioBackend:
         return os.path.join(runtime_dir, "gun_sound_duck_state.json")
 
     def _clear_runtime_state_locked(self) -> None:
+        if self._persisted_state is None and not os.path.exists(self._state_path):
+            # 本来就没写过：不要每次恢复都去敲一次磁盘。
+            self._stale_state = None
+            return
         try:
             if os.path.exists(self._state_path):
                 os.remove(self._state_path)
         except Exception:
             pass
+        self._persisted_state = None
         self._stale_state = None
 
     def _write_runtime_state_locked(self) -> None:
         if not self._ducked_sessions:
             self._clear_runtime_state_locked()
+            return
+
+        # 压的是哪几个会话、原值与目标值 —— 这三样没变就不用再写一遍。
+        fingerprint = tuple(sorted(
+            (
+                str(state.get("process_name", "") or "").lower(),
+                round(float(state.get("original", 1.0)), 4),
+                round(float(state.get("ducked", 0.0)), 4),
+            )
+            for state in self._ducked_sessions.values()
+            if state.get("volume") is not None
+        ))
+        if fingerprint and fingerprint == self._persisted_state:
             return
 
         payload = {
@@ -119,6 +147,8 @@ class _SessionAudioBackend:
                 json.dump(payload, handle, ensure_ascii=False, indent=2)
         except Exception as exc:
             self._logger.debug(f"写入 Ducking 状态失败: {exc}")
+        else:
+            self._persisted_state = fingerprint
 
     def _load_stale_state(self):
         try:
@@ -222,7 +252,13 @@ class _SessionAudioBackend:
         except Exception as exc:
             self._import_failed = True
             if not self._import_error_logged:
-                self._logger.info(f"未检测到 pycaw，枪声 Ducking 将回退到热键模式: {exc}")
+                # ⚠ 别说「会回退到热键模式」：`GSIHandlerSounds` 建 ducker 时**没有传**
+                # `fallback_backend`（`build_hotkey_ducker` 在产品代码里零调用方），
+                # 所以 pycaw 不在时是**完全不压声**，不是换了一种压法（批 103）。
+                self._logger.warning(
+                    f"未检测到 pycaw：枪声播放正常，但**不会压低游戏原声**"
+                    f"（自定义枪声会和游戏枪声叠在一起）。原因: {exc}"
+                )
                 self._import_error_logged = True
             return None
 
@@ -247,11 +283,16 @@ class _SessionAudioBackend:
         return f"{process_id}:{process_name}:{display_name}"
 
     def _scan_sessions(self, refresh: bool = False) -> list[tuple[str, object, str]]:
-        if not refresh and self._cached_sessions:
-            # 首发不等枚举：先拿缓存设音量，缓存旧了丢到后台刷新。
-            if (time.monotonic() - self._last_scan_time) >= SESSION_CACHE_REFRESH_SECONDS:
+        if not refresh:
+            if self._cached_sessions:
+                # 首发不等枚举：先拿缓存设音量，缓存旧了丢到后台刷新。
+                if (time.monotonic() - self._last_scan_time) >= SESSION_CACHE_REFRESH_SECONDS:
+                    self._refresh_in_background()
+                return list(self._cached_sessions)
+            # 缓存是空的：上次枚举没多久就别再同步枚举一次（批 103）。
+            if (time.monotonic() - self._empty_scan_time) < SESSION_CACHE_REFRESH_SECONDS:
                 self._refresh_in_background()
-            return list(self._cached_sessions)
+                return []
         with self._scan_lock:
             return self._scan_sessions_locked(refresh)
 
@@ -303,6 +344,9 @@ class _SessionAudioBackend:
             sessions = audio_utilities.GetAllSessions() or []
         except Exception as exc:
             self._logger.debug(f"扫描游戏音频会话失败: {exc}")
+            # ⚠ 失败也要记时刻：否则「枚举一直抛异常」会退化成每开一枪都试一次。
+            if not self._cached_sessions:
+                self._empty_scan_time = time.monotonic()
             return list(self._cached_sessions)
 
         for session in sessions:
@@ -328,6 +372,9 @@ class _SessionAudioBackend:
 
         if matches:
             self._recover_stale_state_if_needed(matches)
+        else:
+            # 记下「这次枚举一个都没匹配到」的时刻，给空缓存那条路当节流依据。
+            self._empty_scan_time = time.monotonic()
         self._cached_sessions = matches
         self._last_scan_time = now
         return list(matches)

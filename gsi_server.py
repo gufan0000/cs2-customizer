@@ -124,10 +124,21 @@ def _record_drop():
             _last_drop_report = now
 
 
+#: 入队时刻。⭐ 队列 100 深而消费端**不看包的年龄**：处理线程被拖住一次，队列就堆，
+#: 然后把积压的包一个不少地补跑完（100 个包 ≈ 12.6 秒）—— 对实时音频触发器，
+#: 补播比丢掉更糟（RN-655）。⚠ 不在这里统一丢：别的处理器要的是**状态边沿**，
+#: 丢包会丢掉边沿 ⇒ 只打时刻，由每个处理器自己决定。
+PACKET_RECV_KEY = "_cs2customizer_recv_monotonic"
+
+
 @flask_app.route('/', methods=['POST'])
 def game_state_update():
     data = request.get_json()
     if data:
+        try:
+            data[PACKET_RECV_KEY] = time.monotonic()
+        except Exception:
+            pass
         try:
             # 非阻塞放入，队列满时丢弃最旧数据
             data_queue.put_nowait(data)

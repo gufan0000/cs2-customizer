@@ -65,6 +65,8 @@
       "_parse_round_args",
       "_pick_gun_sound_variant",
       "_preload_budget_left",
+      "_prewarm_gun_sound_worker",
+      "_raise_cache_cap_for_guns",
       "_record_timeline_event",
       "_remove_keys",
       "_resolve_play_volume",
@@ -76,6 +78,7 @@
       "_select_switch_weapon_channel",
       "_store",
       "_style_enabled",
+      "_unload_other_styles_for_gun",
       "_variant_table",
       "_warn_deprecated_once",
       "all_sounds_loaded",
@@ -86,6 +89,7 @@
       "get_loaded_sounds",
       "get_sound_info",
       "get_volume",
+      "gun_sound_is_fully_loaded",
       "gun_sound_variant_keys",
       "is_loaded",
       "load_all_enabled_sounds",
@@ -107,6 +111,7 @@
       "play_sound",
       "play_sound_with_fade",
       "play_voice",
+      "prewarm_gun_sound",
       "register_callback",
       "scan_c4_sound_styles",
       "scan_death_styles",
@@ -142,6 +147,7 @@
       "voices"
     ],
     "other_attrs": [
+      "_gun_prewarm_thread",
       "_gun_sound_variants",
       "_last_gun_sound_variant",
       "c4_sound_styles",
@@ -178,7 +184,9 @@
     "core.audio.audio_manager": [
       "AudioInfo",
       "AudioManager",
+      "GUN_SOUND_CACHE_HEADROOM",
       "MAX_GUN_SOUND_VARIANTS",
+      "_NullChannel",
       "get_audio_manager"
     ],
     "core.audio.audio_playback_policy": [
@@ -232,7 +240,7 @@
       "validate_style_name"
     ]
   },
-  "contract_total": 51,
+  "contract_total": 53,
   "external_use": {
     "core.audio.__init__": {
       "files": [],
@@ -291,14 +299,18 @@
         "tests/test_category_volume_and_norm.py",
         "tests/test_full_auto_guns_are_heard_every_shot.py",
         "tests/test_gsi_edge_loss_fixes.py",
+        "tests/test_gun_sound_cache_budget.py",
+        "tests/test_gun_sound_chain_after_the_in_game_test.py",
         "tests/test_gun_sound_variants_rotate.py",
         "tests/test_kill_sound_loss_fixes.py",
         "tests/test_special_sound_events.py"
       ],
       "names": {
         "AudioInfo": 1,
-        "AudioManager": 16,
-        "MAX_GUN_SOUND_VARIANTS": 1,
+        "AudioManager": 19,
+        "GUN_SOUND_CACHE_HEADROOM": 1,
+        "MAX_GUN_SOUND_VARIANTS": 2,
+        "_NullChannel": 2,
         "get_audio_manager": 5
       }
     },
@@ -438,11 +450,11 @@
     "core.audio.__init__": 104,
     "core.audio.audio_event_timeline": 113,
     "core.audio.audio_file_utils": 232,
-    "core.audio.audio_manager": 1809,
+    "core.audio.audio_manager": 1935,
     "core.audio.audio_playback_policy": 152,
     "core.audio.audio_resource_health": 407,
     "core.audio.audio_task_runner": 240,
-    "core.audio.game_audio_ducker": 768,
+    "core.audio.game_audio_ducker": 869,
     "core.audio.runtime_audio": 45,
     "core.audio.special_events": 209,
     "core.audio.style_creator": 328
@@ -503,6 +515,7 @@
         "_NullChannel"
       ],
       "constants": [
+        "GUN_SOUND_CACHE_HEADROOM",
         "MAX_GUN_SOUND_VARIANTS",
         "_audio_manager_instance",
         "_instance_lock"
@@ -569,7 +582,8 @@
         "DEFAULT_GUN_SOUND_DUCK_ATTACK_MS",
         "DEFAULT_GUN_SOUND_DUCK_RATIO",
         "DEFAULT_GUN_SOUND_DUCK_RELEASE_MS",
-        "DEFAULT_TARGET_PROCESS_NAMES"
+        "DEFAULT_TARGET_PROCESS_NAMES",
+        "SESSION_CACHE_REFRESH_SECONDS"
       ],
       "functions": [
         "build_hotkey_ducker",

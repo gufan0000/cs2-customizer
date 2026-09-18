@@ -3617,14 +3617,16 @@ REVERTS = [
         "查实排除没有技术原因。⛔ 常量名保留（契约快照点名它），但里面不许再有任何一把",
     ),
     Revert(
-        "GUN", "AK 的闸门改回 0.09s（系数 0.5 → 0.9）",
+        "GUN", "闸门天花板抬到包间隔之上（0.060 → 0.120）",
         "core/gun_sound_profiles.py",
-        "FULL_AUTO_GATE_SCALE = 0.5\n",
-        "FULL_AUTO_GATE_SCALE = 0.9\n",
+        "GATE_CEILING_SECONDS = 0.060\n",
+        "GATE_CEILING_SECONDS = 0.120\n",
         "tests/test_full_auto_guns_are_heard_every_shot.py::"
-        "test_a_spray_at_real_packet_intervals_plays_every_packet[ak47]",
-        "真实对局 GSI 包间隔 P5 62ms / P25 100ms，旧闸门 0.09s 下 **AK 白丢 15%**。"
-        "全自动的射速由游戏钉死，不存在「点太快」—— 它拦掉的每一发都是玩家真开了的那一发",
+        "test_the_gate_can_never_swallow_a_shot_the_player_really_fired[glock]",
+        "真实对局 GSI 包间隔 P5 62ms / P25 100ms —— 闸门一旦高过它就开始吞真开的枪。"
+        "⭐ 批 103 之前这一刀动的是 `FULL_AUTO_GATE_SCALE`（0.5 → 0.9），而天花板加上之后"
+        "那个系数**再也不可能**把闸门抬过包间隔（回退验证当场逮到那一刀空转了）—— "
+        "天花板现在是唯一能让闸门吞发的旋钮，所以这一刀改成动它。⚠ 被测的枪是**格洛克**不是 AK：天花板只削「半周期 > 60ms」的那些，AK 的半周期 50ms 本来就在天花板下面，抬天花板对它一点影响都没有（也是回退验证逮到的）",
     ),
     Revert(
         "GUN", "扫射档又逐包下探（抽吸）",
@@ -3693,14 +3695,124 @@ REVERTS = [
         "tests/test_gun_sound_series.py::test_the_dropdown_says_how_many_guns_each_series_covers",
         "批 101：用户截图里那句「配给能用它的 1 把武器」—— 选之前就该知道这一套盖几把",
     ),
+    # ---- 批 103（2026-09-18）：用户进游戏实测后的链路返修
+    Revert(
+        "GUN", "闸门的绝对上限又没了（周期填错就变成一道吞枪的闸）",
+        "core/gun_sound_profiles.py",
+        "    min_fire_interval = min(\n"
+        "        round(float(fire_period) * FULL_AUTO_GATE_SCALE, 3),\n"
+        "        GATE_CEILING_SECONDS,\n"
+        "    )\n",
+        "    min_fire_interval = round(float(fire_period) * FULL_AUTO_GATE_SCALE, 3)\n",
+        "tests/test_full_auto_guns_are_heard_every_shot.py::"
+        "test_the_ceiling_is_the_thing_that_makes_a_wrong_period_harmless",
+        "批 103：周期表是照抄的、没有可核的原始证据（CS2 已不在可读数据文件里给 cycletime）。"
+        "天花板把「抄错一个数」从缺陷降级成无害 —— 闸门永远低于最小包间隔就吞不掉真枪",
+    ),
+    Revert(
+        "GUN", "一包掉 N 发又只播一声（快枪的替换声只响一半）",
+        "gsi_handler_sounds.py",
+        "                    self._schedule_extra_shots(gun_type, profile, sound_key, shots - 1)\n",
+        "                    pass\n",
+        "tests/test_gun_sound_chain_after_the_in_game_test.py::"
+        "test_a_packet_that_dropped_two_rounds_plays_two_shots",
+        "批 103：GSI 包间隔 P50 126ms 而快枪周期 70~80ms ⇒ 一包常掉 2 发。"
+        "差值本来就在手上，以前只看「有没有变少」不看少了多少",
+    ),
+    Revert(
+        "GUN", "本机 steamid 又从 player 段自举（首包在观战就永久哑火）",
+        "gsi_handler_sounds.py",
+        '        provider = data.get("provider") or {}\n'
+        '        return str(provider.get("steamid", "") or "").strip()\n',
+        '        player = data.get("player") or {}\n'
+        '        return str(player.get("steamid", "") or "").strip()\n',
+        "tests/test_gun_sound_chain_after_the_in_game_test.py::"
+        "test_the_self_steamid_comes_from_the_provider_block_not_the_spectated_player",
+        "批 103：观战时 `player` 段整段是被观战者。首包收在观战 ⇒ 别人的 ID 被永久写进配置，"
+        "之后本人每一包都被判成观战而静音，且不会自行恢复",
+    ),
+    Revert(
+        "GUN", "弹夹账本又不清了（捡同型枪响幻影枪声）",
+        "gsi_handler_sounds.py",
+        '            getattr(self, f"previous_{profile.gun_type}_ammo").clear()\n',
+        "            pass\n",
+        "tests/test_gun_sound_chain_after_the_in_game_test.py::"
+        "test_a_pickup_after_death_does_not_fire_a_phantom_shot",
+        "批 103：账本按 `weapon_N` 槽位键记数且从不清。同槽位换一把弹夹更少的同型枪 ⇒ "
+        "旧数比新数大 ⇒ 被当成开了一枪，放一发幻影枪声还压一次原声",
+    ),
+    Revert(
+        "GUN", "播不出来的那一发又不撤压声（开枪几乎没声音）",
+        "gsi_handler_sounds.py",
+        "                if played is False:\n",
+        "                if False:\n",
+        "tests/test_gun_sound_chain_after_the_in_game_test.py::"
+        "test_a_shot_that_could_not_be_played_undoes_the_duck",
+        "批 103：压声先于播放。素材被删/解码失败时压声不撤 ⇒ 原声被压掉、替换声也没响，"
+        "比不替换还糟",
+    ),
+    Revert(
+        "GUN", "风格目录第一个文件坏了又让整把枪静音",
+        "core/audio/audio_manager.py",
+        "        while remaining and not variants:\n",
+        "        while remaining and not variants and False:\n",
+        "tests/test_gun_sound_chain_after_the_in_game_test.py::"
+        "test_a_broken_first_file_does_not_silence_the_whole_style",
+        "批 103：以前 `paths[0]` 装不上就 `return False` ⇒ 后面那几个好取样一个都不装，"
+        "而设置页里看得见这个风格、试听走的还是另一条路",
+    ),
+    Revert(
+        "GUN", "枪声预载又不抬缓存上限（35 把 × 5 取样冲爆 50 格）",
+        "core/audio/audio_manager.py",
+        "            self._raise_cache_cap_for_guns(config)\n",
+        "            pass\n",
+        "tests/test_gun_sound_cache_budget.py::"
+        "test_the_preload_raises_the_cap_before_loading_guns",
+        "批 103（批 101 自己引进来的回归）：多取样把每把枪从 2 个缓存键变成最多 6 个，"
+        "而 `_max_sounds` 还是按「枪声 10 个键」定的 50。本机实测 30 把枪要 112 格 ⇒ "
+        "后装的把先装的挤出去，连 AK-47 都不在缓存里",
+    ),
+    Revert(
+        "GUN", "闪光音频又占回枪声池里的 ch10",
+        "flash_process_manager.py",
+        "FLASH_AUDIO_CHANNEL = 16\n",
+        "FLASH_AUDIO_CHANNEL = 10\n",
+        "tests/test_gun_sound_chain_after_the_in_game_test.py::"
+        "test_the_flash_audio_is_not_on_a_gun_sound_channel",
+        "批 103：ch10 同时在枪声通道池里，循环播的闪光音频会掐掉枪声、开枪也会切掉闪光音频，"
+        "而两边的策略层都看不见对方。⭐ 既有那条通道判据只扫 audio_manager 里的 "
+        "`_make_channel`，写成 `pygame.mixer.Channel(10)` 的它结构上看不见",
+    ),
+    Revert(
+        "GUN", "假通道又静默吞声（拿不到真通道还报成功）",
+        "core/audio/audio_manager.py",
+        '            if getattr(use_channel, "is_null", False):\n',
+        "            if False:\n",
+        "tests/test_gun_sound_chain_after_the_in_game_test.py::"
+        "test_a_shot_that_landed_on_a_fake_channel_reports_failure",
+        "批 103：`_NullChannel.get_busy()` 恒为假 ⇒ 轮转选通道时它永远像空闲的，"
+        "落到它身上那一发被静默吞掉，而 `play_sound` 返回 True、时间线记 success。"
+        "玩家的感受是「有时候不响」而日志一个字都没有",
+    ),
+    Revert(
+        "GUN", "积压的包又会补播（枪声整段慢一大截还在继续响）",
+        "gsi_handler_sounds.py",
+        "            if self._packet_is_stale(data, current_time):\n",
+        "            if False:\n",
+        "tests/test_gun_sound_chain_after_the_in_game_test.py::"
+        "test_a_packet_that_waited_too_long_updates_the_ledger_but_makes_no_sound",
+        "批 103：GSI 队列 100 深而消费端完全不看包的年龄。处理线程卡顿一次，"
+        "队列开始堆，然后把积压的包一个不少地补跑完 —— 按包间隔 P50 126ms 算，100 个包约 12.6 秒。"
+        "⚠ 只能由枪声自己跳过（别的处理器要的是状态边沿，统一丢包会丢掉边沿）",
+    ),
     # ---- 批 102（2026-09-18）：首发不等音频会话枚举
     Revert(
         "GUN", "停火一秒后的首发又要先等音频会话枚举（缓存过期就同步重扫）",
         "core/audio/game_audio_ducker.py",
-        "        if not refresh and self._cached_sessions:\n"
-        "            # 首发不等枚举",
-        "        if not refresh and self._cached_sessions and (time.monotonic() - self._last_scan_time) < 1.0:\n"
-        "            # 首发不等枚举",
+        "            if self._cached_sessions:\n"
+        "                # 首发不等枚举",
+        "            if self._cached_sessions and (time.monotonic() - self._last_scan_time) < 1.0:\n"
+        "                # 首发不等枚举",
         "tests/test_game_audio_ducker.py::"
         "test_the_first_shot_after_a_pause_sets_volume_from_the_cache_without_enumerating",
         "批 102：用户进游戏实测「第一发有可能有本音」。本机 GetAllSessions 中位 44ms、SetMasterVolume 0.08ms，"

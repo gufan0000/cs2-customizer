@@ -33,6 +33,7 @@ import pytest
 from core.gun_sound_profiles import (
     AUTOMATIC_GUN_TYPES,
     FULL_AUTO_GATE_SCALE,
+    GATE_CEILING_SECONDS,
     FULL_AUTO_GUN_SOUND_WEAPON_TYPES,
     GUN_SOUND_PROFILES,
     GUN_SOUND_TAB_GROUPS,
@@ -77,17 +78,48 @@ JITTER = 0.060
 
 
 @pytest.mark.parametrize("gun_type", GUN_SOUND_WEAPON_TYPES)
-def test_the_gate_is_half_the_fire_period_for_every_gun(gun_type):
-    """批 101：半自动的周期同样由游戏钉死（点得再快也快不过 cycletime）⇒ 闸门也从周期算。
-    2026-09-17 之前半自动是手填的：Tec-9 0.09 对周期 0.12、沙鹰 0.18 对 0.224，余量 30~45ms。"""
+def test_the_gate_can_never_swallow_a_shot_the_player_really_fired(gun_type):
+    """批 103：闸门永远低于最小包间隔 ⇒ **结构上**拦不到真开的那一发。
+
+    批 101 这条钉的是「闸门 == 周期 × 0.5」，等于把正确性押在周期表抄得对；
+    而那张表没有可核的原始证据（CS2 已不在可读数据文件里给 cycletime，
+    `items_game.txt` 只剩属性注册表，逐枪数值在 LZ4 压缩的 vdata 里）。
+    ⭐ 现在改钉一件不依赖那张表的事：跨包的两次弹夹递减至少隔一个包间隔（P5 62ms），
+    同包重报由 `fired_this_frame` 拦 ⇒ 闸门 < 62ms 就吞不掉任何真枪，
+    周期抄错也只是让闸门更低，而更低的闸门无害。
+    """
     profile = GUN_SOUND_PROFILES[gun_type]
     assert profile.fire_period > 0
-    # 闸门 = 周期 × 0.5：比周期短（不拦真开的那一发），又能挡同一发被两包重报。
-    assert profile.min_fire_interval == pytest.approx(profile.fire_period * FULL_AUTO_GATE_SCALE, abs=1e-3)
-    assert profile.min_fire_interval < profile.fire_period
     gate = profile.min_fire_interval
-    assert gate < P5_PACKET_GAP or gate <= profile.fire_period - JITTER, (
-        f"{gun_type} 闸门 {gate:.3f}s 离周期 {profile.fire_period:.3f}s 不到一个抖动量")
+    # ① 天花板：再慢的枪、再离谱的周期，闸门都不许高过包间隔下界。
+    assert gate <= GATE_CEILING_SECONDS, f"{gun_type} 闸门 {gate:.3f}s 高过天花板"
+    assert gate < P5_PACKET_GAP, (
+        f"{gun_type} 闸门 {gate:.3f}s >= 最小包间隔 {P5_PACKET_GAP}s —— 一次抖动就会吃掉一发")
+    # ② 仍然从周期算出来，不接受手填：要么是半周期，要么被天花板削平。
+    assert gate == pytest.approx(
+        min(profile.fire_period * FULL_AUTO_GATE_SCALE, GATE_CEILING_SECONDS), abs=1e-3)
+    assert gate < profile.fire_period
+
+
+def test_the_ceiling_is_the_thing_that_makes_a_wrong_period_harmless():
+    """天花板的意义在于「填错也不出事」—— 拿一个离谱的周期验一遍。
+
+    ⚠ 这条是给 CZ75-Auto 那类**周期存疑**的枪兜底的（外审两个视角独立说它该是
+    ~0.055 而表里写 0.100，而我没有原始证据裁定）。有了天花板，这个争论不再影响听感。
+    """
+    from core.gun_sound_profiles import GATE_CEILING_SECONDS as ceiling
+    from core.gun_sound_profiles import _profile
+
+    # 周期填成真实值的两倍：闸门仍被削到天花板，仍低于包间隔。
+    fake = _profile("ak47", "AK-47", "rifle", fire_period=0.200, automatic=True)
+    assert fake.min_fire_interval == pytest.approx(ceiling, abs=1e-6)
+    assert fake.min_fire_interval < P5_PACKET_GAP
+    # 周期填成真实值的十倍也一样。
+    worse = _profile("ak47", "AK-47", "rifle", fire_period=1.000, automatic=True)
+    assert worse.min_fire_interval == pytest.approx(ceiling, abs=1e-6)
+    # 而比天花板还快的枪不受影响：仍是半周期。
+    fast = _profile("p90", "P90", "smg", fire_period=0.070, automatic=True)
+    assert fast.min_fire_interval == pytest.approx(0.035, abs=1e-6)
 
 
 @pytest.mark.parametrize("gun_type", AUTOMATIC_GUN_TYPES)
@@ -115,6 +147,31 @@ def _spray(handler, module, gun_type: str, gaps, *, clock):
             "name": gsi_name, "state": "active", "ammo_clip": ammo}}}}
         handler._reset_gun_frame_flags()
         handler._process_gun_sound(gun_type, payload)
+
+
+class _CollectTimer:
+    """补发定时器的替身：不起线程、不睡，`start()` 当场执行。
+
+    判据要看的是「补了几声、补的是哪个键」，不是「隔了多久补」——
+    间隔由 `_schedule_extra_shots` 传的 `index * fire_period` 决定，单独一条判据钉它。
+    """
+
+    instances: list = []
+
+    def __init__(self, delay, fn, args=()):
+        self.delay = delay
+        self.fn = fn
+        self.args = args
+        self.daemon = False
+        self.cancelled = False
+        _CollectTimer.instances.append(self)
+
+    def start(self):
+        if not self.cancelled:
+            self.fn(*self.args)
+
+    def cancel(self):
+        self.cancelled = True
 
 
 def _make_handler(monkeypatch, gun_type: str, style: str):
@@ -150,12 +207,18 @@ def _make_handler(monkeypatch, gun_type: str, style: str):
     clock = {"now": 100.0}
     monkeypatch.setattr(gsi_handler_sounds, "audio_manager", _Audio())
     monkeypatch.setattr(gsi_handler_sounds, "Controller", _Keyboard)
-    monkeypatch.setattr(gsi_handler_sounds, "time", types.SimpleNamespace(time=lambda: clock["now"]))
+    # 闸门量的是相对时间，产品侧已换成 `time.monotonic()`（墙钟回拨会吞发）。
+    # 假时钟两个都要给，否则这一族会因为 AttributeError 全红 —— 那种红和真缺陷长得一样。
+    monkeypatch.setattr(
+        gsi_handler_sounds, "time",
+        types.SimpleNamespace(time=lambda: clock["now"], monotonic=lambda: clock["now"]),
+    )
     monkeypatch.setattr(config, f"{gun_type}_style", style, raising=False)
     monkeypatch.setattr(config, "gun_sound_duck_ratio", 0.18, raising=False)
     monkeypatch.setattr(config, "gun_sound_duck_release_ms", 120, raising=False)
     handler = gsi_handler_sounds.GSIHandlerSounds()
     handler._game_audio_ducker = _Ducker()
+    handler._extra_shot_timer_factory = _CollectTimer
     return handler, gsi_handler_sounds, plays, ducks, clock
 
 

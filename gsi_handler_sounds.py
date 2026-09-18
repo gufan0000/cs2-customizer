@@ -1,11 +1,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 from __future__ import annotations
 
+import threading
 import time
 
 from pynput.keyboard import Controller, KeyCode
 
 from config import config
+from gsi_server import PACKET_RECV_KEY
 from core.audio.game_audio_ducker import (
     DEFAULT_GUN_SOUND_DUCK_RATIO,
     DEFAULT_GUN_SOUND_DUCK_RELEASE_MS,
@@ -15,6 +17,8 @@ from core.audio.game_audio_ducker import (
 )
 from core.gun_sound_profiles import (
     GUN_SOUND_PROFILES,  # noqa: F401  本文件未直接用，但测试经 gsi_handler_sounds.GUN_SOUND_PROFILES 访问
+    MAX_SHOTS_PER_PACKET,
+    STALE_PACKET_SECONDS,
     SUPPORTED_GUN_SOUND_PROFILE_LIST,
     SUPPORTED_GUN_SOUND_PROFILES,
     build_gun_sound_duck_plan,
@@ -56,6 +60,10 @@ class GSIHandlerSounds:
         self.last_active_weapon = ""
         self.weapon_reload_states = {}
         self.magnifier_component = None
+        #: 一包掉 N 发时补发用的定时器工厂。做成可注入的是为了判据能同步驱动它
+        #: （`GameAudioDucker` 早就是这个写法）—— 判据里真 sleep 会让「量墙钟」那族变红。
+        self._extra_shot_timer_factory = threading.Timer
+        self._pending_extra_shots: dict[str, list] = {}
 
     def set_magnifier_component(self, magnifier_component):
         self.magnifier_component = magnifier_component
@@ -96,18 +104,31 @@ class GSIHandlerSounds:
 
         return fallback_weapon
 
+    @staticmethod
+    def _self_steamid(data) -> str:
+        """本机玩家的 steamid。**只认 `provider` 段**：它不随观战切换。
+
+        ⭐ 以前用 `player.steamid`，而观战时那一段是**被观战者** ⇒ 首包收在观战就把别人的
+        ID 永久写进配置，之后本人每一包都被判成观战而整条静音，且不会自行恢复（RN-655）。
+        """
+        provider = data.get("provider") or {}
+        return str(provider.get("steamid", "") or "").strip()
+
     def process_data(self, data):
         player_data = data.get("player", {})
         current_steamid = player_data.get("steamid", "")
+        provider_steamid = self._self_steamid(data)
         current_weapon = self._resolve_current_weapon(player_data)
         self._restore_ducker_if_features_disabled()
 
-        if not config.player_steamid and current_steamid:
-            config.player_steamid = current_steamid
+        if not config.player_steamid and provider_steamid:
+            config.player_steamid = provider_steamid
             config.save_config()
-            self.logger.info(f"记录玩家SteamID: {current_steamid}")
+            self.logger.info(f"记录玩家SteamID: {provider_steamid}")
 
-        if config.spectator_mode_mute and current_steamid and current_steamid != config.player_steamid:
+        # provider 在场就用它比，不在场才退回配置里那个值。
+        self_steamid = provider_steamid or config.player_steamid
+        if config.spectator_mode_mute and current_steamid and self_steamid and current_steamid != self_steamid:
             if self.magnifier_component:
                 self.magnifier_component.update_current_weapon("")
             return
@@ -150,12 +171,100 @@ class GSIHandlerSounds:
             setattr(self, f"{profile.gun_type}_fired_this_frame", False)
 
     def _reset_weapon_states(self):
+        """离开游戏态（死亡、回合切换、回菜单）时清干净。
+
+        ⚠ 弹夹账本按 `weapon_N` 槽位键记数，以前**不清** ⇒ 同槽位换一把弹夹更少的
+        同型枪就被当成开了一枪，放一发幻影枪声还压一次原声（RN-655）。
+        """
         for profile in SUPPORTED_GUN_SOUND_PROFILE_LIST:
             setattr(self, f"is_{profile.gun_type}_active", False)
+            getattr(self, f"previous_{profile.gun_type}_ammo").clear()
+        self._cancel_pending_extra_shots()
 
     @staticmethod
     def _style_disabled(style):
         return not gun_sound_style_enabled(style)
+
+    def _cancel_pending_extra_shots(self, gun_type: str | None = None) -> None:
+        """撤掉还没响的补发。新一包来了就作废旧的补发，免得两包的补发叠在一起。"""
+        keys = [gun_type] if gun_type else list(self._pending_extra_shots)
+        for key in keys:
+            for timer in self._pending_extra_shots.pop(key, ()):
+                try:
+                    timer.cancel()
+                except Exception:
+                    pass
+
+    @staticmethod
+    def _packet_is_stale(data, now: float) -> bool:
+        """这一包在队列里躺了多久。没有时刻戳（判据造的包、别的入口）就当它是新的。"""
+        try:
+            recv = data.get(PACKET_RECV_KEY)
+        except AttributeError:
+            return False
+        if recv is None:
+            return False
+        try:
+            return (now - float(recv)) > STALE_PACKET_SECONDS
+        except (TypeError, ValueError):
+            return False
+
+    @staticmethod
+    def _shots_in_this_packet(prev_ammo, current_ammo) -> int:
+        """这一包弹夹掉了几发就算开了几发；掉得太多说明账本对不上，返回 0。
+
+        ⭐ 包间隔 P50 126ms ÷ 快枪周期 70ms ≈ 1.8 发/包，而以前只看「有没有变少」、
+        不看少了多少 —— 差值本来就在手上（RN-655）。
+        ⛔ 超过 `MAX_SHOTS_PER_PACKET` 返回 0：宁可少响一声，也不要凭一次错账喷一梭子。
+        """
+        if prev_ammo is None or current_ammo is None:
+            return 0
+        dropped = int(prev_ammo) - int(current_ammo)
+        if dropped <= 0 or dropped > MAX_SHOTS_PER_PACKET:
+            return 0
+        return dropped
+
+    def _schedule_extra_shots(self, gun_type: str, profile, sound_key: str, extra: int) -> None:
+        """第 1 发已经播了，其余 N-1 发按游戏的射击周期铺开补上。
+
+        ⚠ 不许一次全播：N 发叠在同一毫秒是一声爆音，不是 N 声枪响。
+        """
+        self._cancel_pending_extra_shots(gun_type)
+        if extra <= 0:
+            return
+        timers = []
+        for index in range(1, extra + 1):
+            timer = self._extra_shot_timer_factory(
+                index * float(profile.fire_period),
+                self._play_extra_shot,
+                (gun_type, sound_key),
+            )
+            timer.daemon = True
+            timers.append(timer)
+        self._pending_extra_shots[gun_type] = timers
+        for timer in timers:
+            timer.start()
+
+    def _play_extra_shot(self, gun_type: str, sound_key: str) -> None:
+        """补发那一声。到点时风格已经被关掉/换掉就不响了。"""
+        try:
+            if not is_gun_sound_master_enabled(config):
+                return
+            profile = SUPPORTED_GUN_SOUND_PROFILES.get(gun_type)
+            if profile is None:
+                return
+            style = resolve_gun_sound_style(getattr(config, profile.style_key, "0"))
+            if not gun_sound_style_enabled(style) or f"gun-{gun_type}-{style}" != sound_key:
+                return
+            audio_manager.play_sound(
+                sound_key,
+                channel_type="gun_sound",
+                event_type="gun_fire",
+                priority=35,
+                allow_preempt=True,
+            )
+        except Exception:
+            self.logger.debug("补发枪声失败（忽略）", exc_info=True)
 
     def _apply_gun_sound_duck(self, profile, *, last_fire_time: float, current_time: float):
         shot_interval = None
@@ -186,7 +295,9 @@ class GSIHandlerSounds:
 
         player_data = data.get("player", {})
         weapons = player_data.get("weapons", {}) or {}
-        current_time = time.time()
+        # 闸门量的是「离上次开火多久」——相对量一律用单调钟：
+        # 墙钟被系统对时回拨一下，闸门就会把接下来那几发全吞掉（压声模块本来就用 monotonic）。
+        current_time = time.monotonic()
 
         previous_ammo = getattr(self, f"previous_{gun_type}_ammo")
         last_fire_time_attr = f"last_{gun_type}_fire_time"
@@ -210,20 +321,32 @@ class GSIHandlerSounds:
             if current_ammo is not None:
                 previous_ammo[weapon_key] = current_ammo
 
-            if state != "active" or state == "reloading" or current_ammo is None:
+            # `state == "reloading"` 这半句以前挂在这里，而它永远到不了：换弹时 state
+            # 本来就不是 "active"，已经被前半句短路。删掉它不改行为，只是不再假装多拦了一件事。
+            if state != "active" or current_ammo is None:
                 setattr(self, active_attr, False)
                 return
 
-            # 枪举着还没开火：先把音频会话枚举做掉，首发那一包直接设音量（批 102）。
+            # 枪举着还没开火：把开火那一刻要用的东西提前在后台备好（批 102/103）——
+            # ① 音频会话枚举（本机 44ms）；② 这把枪的取样解码（比 ① 更贵）。
             prewarm = getattr(self._game_audio_ducker, "prewarm", None)
             if callable(prewarm):
                 prewarm()
+            prewarm_gun = getattr(audio_manager, "prewarm_gun_sound", None)
+            if callable(prewarm_gun):
+                prewarm_gun(gun_type, style)
+
+            if self._packet_is_stale(data, current_time):
+                # 这包已经在队列里躺太久了（处理线程卡顿后补跑积压）。账本已经在上面更新过，
+                # 这里只是不出声 —— 补播一串迟到的枪声比漏掉它们更难听（批 103）。
+                setattr(self, active_attr, False)
+                return
 
             last_fire_time = getattr(self, last_fire_time_attr, 0.0)
             fired_this_frame = bool(getattr(self, fired_this_frame_attr, False))
+            shots = self._shots_in_this_packet(prev_ammo, current_ammo)
             if (
-                prev_ammo is not None
-                and current_ammo < prev_ammo
+                shots
                 and (current_time - last_fire_time) > profile.min_fire_interval
                 and not fired_this_frame
             ):
@@ -232,16 +355,22 @@ class GSIHandlerSounds:
                 sound_key = f"gun-{gun_type}-{style}"
                 # allow_preempt=True：连点/连射时若 5 条枪声通道都还在播（尤其用了较长的
                 # 自定义枪声素材），新的一发会抢占最旧的通道而不是被直接丢掉，
-                # 保证每一发都有声音反馈。（GSI 靠弹夹数轮询判断开火，一包只报一次递减；
-                # 全自动扫射时原声保留 ~20% 当节奏骨架，把两包之间漏掉的那发补上 ——
-                # 见 `gun_sound_profiles._FULL_AUTO_BURST`。）
-                audio_manager.play_sound(
+                # 保证每一发都有声音反馈。
+                played = audio_manager.play_sound(
                     sound_key,
                     channel_type="gun_sound",
                     event_type="gun_fire",
                     priority=35,
                     allow_preempt=True,
                 )
+                if played is False:
+                    # 压声已经生效了。这一发播不出来（素材被删、解码失败、通道全丢）
+                    # 而压声不撤 ⇒ 玩家听到的是「原声被压掉、替换声也没响」，
+                    # 也就是开枪几乎没声音 —— 比不替换还糟（批 103）。
+                    self._game_audio_ducker.restore()
+                else:
+                    # 这一包弹夹掉了几发就补几声，按游戏周期铺开。
+                    self._schedule_extra_shots(gun_type, profile, sound_key, shots - 1)
                 setattr(self, active_attr, True)
                 setattr(self, fired_this_frame_attr, True)
             else:

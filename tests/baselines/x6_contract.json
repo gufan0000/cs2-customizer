@@ -33,10 +33,11 @@
     ],
     "gsi_server": [
       "GSIServer",
+      "PACKET_RECV_KEY",
       "get_active_port"
     ]
   },
-  "contract_total": 15,
+  "contract_total": 16,
   "external_use": {
     "gsi_handler_flash": {
       "files": [
@@ -101,14 +102,16 @@
       "files": [
         "main_widget.py",
         "scripts/gsi_full_sim.py",
+        "tests/test_full_auto_guns_are_heard_every_shot.py",
         "tests/test_gsi_audio_handlers.py",
-        "tests/test_gsi_replay_pipeline.py"
+        "tests/test_gsi_replay_pipeline.py",
+        "tests/test_gun_sound_chain_after_the_in_game_test.py"
       ],
       "names": {
         "Controller": 1,
         "DEATH_SOUND_HOLD_DURATION": 1,
         "DEATH_SOUND_PEAK_MS": 1,
-        "GSIHandlerSounds": 17,
+        "GSIHandlerSounds": 20,
         "GUN_SOUND_PROFILES": 1
       }
     },
@@ -149,10 +152,12 @@
       "files": [
         "main_widget.py",
         "pages/about_page.py",
-        "tests/test_about_diagnostics_gsi.py"
+        "tests/test_about_diagnostics_gsi.py",
+        "tests/test_gun_sound_chain_after_the_in_game_test.py"
       ],
       "names": {
         "GSIServer": 2,
+        "PACKET_RECV_KEY": 2,
         "get_active_port": 1
       }
     }
@@ -165,11 +170,11 @@
     "gsi_handler_hud_color": 189,
     "gsi_handler_kills": 1093,
     "gsi_handler_music": 278,
-    "gsi_handler_sounds": 458,
+    "gsi_handler_sounds": 593,
     "gsi_handler_special": 722,
     "gsi_handler_stats": 147,
     "gsi_handler_utility": 736,
-    "gsi_server": 235
+    "gsi_server": 246
   },
   "reexport_only_modules": [],
   "surface": {
@@ -268,6 +273,7 @@
         "GSIServer"
       ],
       "constants": [
+        "PACKET_RECV_KEY",
         "_PORT_CANDIDATE_RANGE",
         "_active_port",
         "_drop_stats_lock",

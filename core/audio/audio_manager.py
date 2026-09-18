@@ -46,8 +46,20 @@ from core.utils.logger import get_logger
 #: 5 个取样已经保证连续两发不同、五发内不重样；再多只是吃 `_max_sounds` 的预算。
 MAX_GUN_SOUND_VARIANTS = 5
 
+#: 抬缓存上限时给高基数那一层（击杀音/语音/切枪/换弹）留的格数。
+#: 50 是 `_max_sounds` 的老值、也是那一层在本机实测的量级（UP-060 注释里的 36~50）。
+GUN_SOUND_CACHE_HEADROOM = 50
+
 
 class _NullChannel:
+    """拿不到真通道时的占位（mixer 初始化失败、或通道号超出条数）。
+
+    ⚠ `get_busy()` 恒为假 ⇒ 轮转时它永远像空闲的，落到它身上那一发被静默吞掉而
+    `play_sound` 仍报成功（RN-655）。`is_null` 就是为了让调用方认出它。
+    """
+
+    is_null = True
+
     def play(self, *_args, **_kwargs):
         return None
 
@@ -218,7 +230,11 @@ class AudioManager:
         try:
             if not pygame.mixer.get_init():
                 pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
-            pygame.mixer.set_num_channels(16)
+            # 18 而不是 16：ch0~15 早已全部分配完（枪声池 5 条、切枪池 3 条、
+            # 击杀/语音/换弹/投掷/C4/血量/回合/死亡各 1 条），而 `flash_process_manager`
+            # 还在直接抓 ch10 播闪光音频 —— 那条同时属于枪声池，两边互相硬切。
+            # 扩两条，把闪光挪到 ch16（ch17 留给下一个要独立通道的功能）。
+            pygame.mixer.set_num_channels(18)
             return True
         except Exception as e:
             self.logger.error(f"Pygame mixer init failed: {e}")
@@ -698,6 +714,19 @@ class AudioManager:
             volume = self._resolve_play_volume(config, channel_type, info)
             info.sound.set_volume(volume)
             use_channel = channel or self._select_channel(channel_type)
+            if getattr(use_channel, "is_null", False):
+                # 拿不到真通道：如实报失败，别假装播出去了（批 103）。
+                # 枪声这条路上游会据此撤掉已经生效的压声 —— 否则原声被压掉、替换声也没响。
+                self._notify_error(f"Audio channel unavailable: {channel_type}")
+                self._record_timeline_event(
+                    action="drop",
+                    key=key,
+                    channel_type=channel_type,
+                    event_type=resolved_event_type,
+                    reason="channel_unavailable",
+                    success=False,
+                )
+                return False
             channel_key = self._channel_state_key(channel_type, use_channel)
 
             with self._playback_lock:
@@ -1442,20 +1471,81 @@ class AudioManager:
         if not paths:
             return False
         canonical = f"gun-{gun_type}-{style}"
-        ok = self.load_sound(canonical, paths[0], "gun_sound", weapon_id=gun_type, style=style)
-        if not ok:
+
+        # 换风格先卸旧的：这把枪别的风格留在缓存里只会占预算，永远不会再被播到。
+        self._unload_other_styles_for_gun(gun_type, style)
+
+        # ⭐ 规范键挨个试，不能只试第一个文件（RN-655）：第一个坏了以前直接
+        # `return False` ⇒ 后面那几个好取样一个不装，整把枪静音，而设置页里看得见这个风格。
+        variants = []
+        remaining = list(paths)
+        while remaining and not variants:
+            first = remaining.pop(0)
+            if self.load_sound(canonical, first, "gun_sound", weapon_id=gun_type, style=style):
+                variants.append(canonical)
+        if not variants:
             return False
         self._alias(f"{gun_type}-{style}", canonical)
         # 同一风格里的其余文件是同一把枪的不同取样：各装一份，播放时轮着随机挑。
-        # 上限与通道池同数（5）：再多只是吃缓存预算（`_max_sounds`），听不出差别。
-        variants = [canonical]
-        for index, path in enumerate(paths[1:MAX_GUN_SOUND_VARIANTS], start=1):
-            variant_key = f"{canonical}#{index}"
+        # 上限与通道池同数（5）：再多只是吃缓存预算，听不出差别（帮助面板已写明「最多用前 5 个」）。
+        for path in remaining[: MAX_GUN_SOUND_VARIANTS - 1]:
+            variant_key = f"{canonical}#{len(variants)}"
             if self.load_sound(variant_key, path, "gun_sound", weapon_id=gun_type, style=style):
                 variants.append(variant_key)
         with self._lock:
             self._variant_table()[canonical] = tuple(variants)
         return True
+
+    def _unload_other_styles_for_gun(self, gun_type: str, keep_style: str) -> None:
+        """这把枪换到 `keep_style` ⇒ 它别的风格从缓存里撤掉。
+
+        ⚠ `unload_gun_sound` 以前在产品代码里**零调用方**：换一次风格就多一套占着缓存，
+        而缓存是 LRU 的 ⇒ 换几次风格就把正在用的那些挤出去（批 103）。
+        """
+        prefix = f"gun-{gun_type}-"
+        keep = f"{prefix}{keep_style}"
+        with self._lock:
+            stale = [k for k in self._variant_table() if k.startswith(prefix) and k != keep]
+        for canonical in stale:
+            self.unload_gun_sound(gun_type, canonical[len(prefix):])
+
+    def gun_sound_is_fully_loaded(self, gun_type: str, style: str) -> bool:
+        """这一风格的取样是不是都还在缓存里（被 LRU 撤掉过就不算）。"""
+        canonical = f"gun-{gun_type}-{self._norm_style(style)}"
+        with self._lock:
+            variants = self._variant_table().get(canonical)
+            if not variants:
+                return False
+            return all(k in self._sounds and self._sounds[k].loaded for k in variants)
+
+    def prewarm_gun_sound(self, gun_type: str, style: str) -> None:
+        """枪举起来了、还没开火：把取样装好，**开火路径不碰磁盘**（RN-655）。
+
+        ⭐ 首发延迟的结构性修法：以前第一发要在 GSI 线程上扫目录 + 解码最多 5 个文件，
+        比批 102 挪走的那 44ms 会话枚举更贵，且缓存被挤掉后会反复发生。
+        """
+        if not style or not self._style_enabled(style):
+            return
+        if self.gun_sound_is_fully_loaded(gun_type, style):
+            return
+        with self._lock:
+            thread = self.__dict__.get("_gun_prewarm_thread")
+            if thread is not None and thread.is_alive():
+                return
+            thread = threading.Thread(
+                target=self._prewarm_gun_sound_worker,
+                args=(gun_type, self._norm_style(style)),
+                name="gun-sound-prewarm",
+                daemon=True,
+            )
+            self._gun_prewarm_thread = thread
+        thread.start()
+
+    def _prewarm_gun_sound_worker(self, gun_type: str, style: str) -> None:
+        try:
+            self.load_gun_sound(gun_type, style)
+        except Exception:
+            self.logger.debug(f"预热枪声失败 {gun_type}/{style}（忽略）", exc_info=True)
 
     def _variant_table(self) -> Dict[str, tuple[str, ...]]:
         """变体表懒建：好几支判据用 `__new__` 搭 manager、不跑 `__init__`（那会占音频设备）。"""
@@ -1697,6 +1787,41 @@ class AudioManager:
         with self._lock:
             return self._max_sounds - len(self._sounds)
 
+    def _raise_cache_cap_for_guns(self, cfg) -> None:
+        """枪声这一层需要多少格，就把缓存上限抬到多少 —— 它是**必须常驻**的那一层。
+
+        ⭐⭐⭐ 批 101 的回归（RN-655）：多取样把每把枪从 2 个缓存键变成最多 6 个，
+        而 `_max_sounds` 还是按「枪声 10 个键」定的 50，且第 1 轮**不查预算** ⇒
+        本机实测 30 把枪要 112 格，后装的把先装的挤出去（连 AK-47 都不在缓存里）。
+        ⚠ 抬上限而不是砍取样：枪声素材最短（0.3~1 秒）而事件最高频；抬的数按当下配置实测算。
+        """
+        need = 0
+        for profile in SUPPORTED_GUN_SOUND_PROFILE_LIST:
+            style = self._norm_style(getattr(cfg, profile.style_key, "0"))
+            if not gun_sound_style_enabled(style):
+                continue
+            d = os.path.join(self.gun_sounds_dir, profile.gun_type, style)
+            if not os.path.isdir(d):
+                continue
+            files = list_audio_paths(d, extensions=DEFAULT_AUDIO_EXTENSIONS, sort=True)
+            if not files:
+                continue
+            # 规范键 + 取样键（合计最多 5）+ 别名键
+            need += min(len(files), MAX_GUN_SOUND_VARIANTS) + 1
+        if need <= 0:
+            return
+        # 留给高基数那一层（击杀音/语音/切枪/换弹）的余量：不许被枪声吃光。
+        wanted = need + GUN_SOUND_CACHE_HEADROOM
+        with self._lock:
+            if wanted <= self._max_sounds:
+                return
+            before = self._max_sounds
+            self._max_sounds = wanted
+        self.logger.info(
+            f"[预载] 枪声这一层需要 {need} 格，缓存上限 {before} → {wanted}"
+            f"（含给击杀音等高基数项留的 {GUN_SOUND_CACHE_HEADROOM} 格）"
+        )
+
     def load_all_enabled_sounds(self):
         """启动预热音频缓存。**受 `_max_sounds` 预算约束**（UP-060）。
 
@@ -1725,6 +1850,7 @@ class AudioManager:
             self.load_death_sound(getattr(config, "death_sound_style", "0"))
 
         if is_gun_sound_master_enabled(config):
+            self._raise_cache_cap_for_guns(config)
             for profile in SUPPORTED_GUN_SOUND_PROFILE_LIST:
                 style = getattr(config, profile.style_key, "0")
                 if gun_sound_style_enabled(style):

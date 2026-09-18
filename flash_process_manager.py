@@ -7,6 +7,10 @@ import sys
 import threading
 from core.utils.logger import get_logger
 
+#: 闪光音频独占的 mixer 通道。⛔ 不许改成 0~15 里的任何一条：那 16 条
+#: 已经被 `core/audio/audio_manager.py` 分配完了（判据会逮）。
+FLASH_AUDIO_CHANNEL = 16
+
 logger = get_logger("FlashProcess")
 
 def _set_spawn_method():
@@ -783,11 +787,18 @@ class FlashProcessManager:
         try:
             import pygame
             if not pygame.mixer.get_init():
-                pygame.mixer.init(frequency=44100, channels=2)
+                # 与 AudioManager._init_mixer 同参：谁先起谁定，参数不一致会让
+                # 另一方拿到不是自己要的缓冲区大小（缓冲越大，出声越晚）。
+                pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
             
-            # 创建专用通道用于播放闪光音频
+            # 专用通道 ch16。⚠ 以前写的是 ch10，而**那条同时在枪声通道池里**
+            # （`audio_manager.gun_sound_channels` = ch0/9/10/14/15）⇒ 开枪会把
+            # 正在循环播的闪光音频切掉，闪光音频也会掐掉一发枪声，而两边的策略层
+            # 都看不见对方（批 103）。ch16 是 `set_num_channels(18)` 扩出来的。
+            if pygame.mixer.get_num_channels() < FLASH_AUDIO_CHANNEL + 1:
+                pygame.mixer.set_num_channels(FLASH_AUDIO_CHANNEL + 1)
             if self.audio_channel is None:
-                self.audio_channel = pygame.mixer.Channel(10)  # 使用通道10
+                self.audio_channel = pygame.mixer.Channel(FLASH_AUDIO_CHANNEL)
             
             # 加载音频
             self.current_audio = pygame.mixer.Sound(audio_file)

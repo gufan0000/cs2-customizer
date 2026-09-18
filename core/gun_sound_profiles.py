@@ -141,6 +141,19 @@ _FAMILY_DEFAULTS = {
 #: 改成周期 × 0.5 拿回 12 个点。⚠ 竞品一道闸都没有、实际效果可以 —— 闸门宁低勿高。
 FULL_AUTO_GATE_SCALE = 0.5
 
+#: 闸门的绝对上限（秒）。⭐⭐⭐ 它把「周期填错」从缺陷降级成无害（RN-655）：
+#: 跨包的两次递减至少隔一个包间隔（实测 P5 62ms），同包重报由 `fired_this_frame` 拦 ⇒
+#: 闸门低于 62ms 就永远拦不到真开的枪。⛔ 不许抬到 62ms 以上。
+GATE_CEILING_SECONDS = 0.060
+
+#: 一包里最多按几发处理（包间隔 P50 126ms ÷ 快枪周期 70ms ≈ 1.8 发/包）。
+#: 超过它就不是「打了这么多发」而是账本对不上 ⇒ 只重记不出声（RN-655）。
+MAX_SHOTS_PER_PACKET = 3
+
+#: 包在队列里躺超过这么久就不再为它出声（账本照常更新）。0.5s ≈ 四个包都没轮到我，
+#: 正常抖动碰不到；而队列 100 深，一次卡顿能攒出十几秒积压（RN-655）。
+STALE_PACKET_SECONDS = 0.5
+
 #: 全自动枪扫射时的压声形状（`is_burst` 分支），三个数覆盖族默认：
 #:  · `burst_window` 0.30 —— GSI 包间隔 P50 就有 126ms、尾部更长，族默认 0.16~0.20
 #:    会把同一梭子的相邻两包判成「两次单发」，每包都走一遍深压 + 峰值 ⇒ 抽吸感。
@@ -177,7 +190,10 @@ def _profile(
         settings.update(_FULL_AUTO_BURST)
     settings["fire_period"] = float(fire_period)
     settings["automatic"] = bool(automatic)
-    min_fire_interval = round(float(fire_period) * FULL_AUTO_GATE_SCALE, 3)
+    min_fire_interval = min(
+        round(float(fire_period) * FULL_AUTO_GATE_SCALE, 3),
+        GATE_CEILING_SECONDS,
+    )
     settings.update(overrides)
     default_mute_duration = float(settings.pop("default_mute_duration", 0.4))
     return GunSoundProfile(
