@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 from __future__ import annotations
 
+import pytest
+
 from core.audio.game_audio_ducker import GameAudioDucker, _SessionAudioBackend
 
 
@@ -279,3 +281,114 @@ def test_session_backend_restore_rescans_current_session_when_original_handle_is
     assert backend.restore(0) is True
     assert current_volume.value == 1.0
     assert backend._ducked_sessions == {}
+
+
+# ---- 批 102：首发不等会话枚举（本机实测 GetAllSessions 44ms、SetMasterVolume 0.08ms）----
+
+
+class _FakeVolume:
+    def __init__(self, value: float = 1.0):
+        self.value = value
+
+    def GetMasterVolume(self):
+        return self.value
+
+    def SetMasterVolume(self, value, _ctx):
+        self.value = float(value)
+
+
+class _DeadVolume:
+    def GetMasterVolume(self):
+        raise RuntimeError("session gone")
+
+    def SetMasterVolume(self, value, _ctx):
+        raise RuntimeError("session gone")
+
+
+class _FakeProcess:
+    def __init__(self, name: str):
+        self._name = name
+        self.pid = 4242
+
+    def name(self):
+        return self._name
+
+
+class _FakeSession:
+    def __init__(self, name: str, volume):
+        self.Process = _FakeProcess(name)
+        self.SimpleAudioVolume = volume
+        self.DisplayName = name
+
+
+class _CountingUtilities:
+    """替身 pycaw：数一数开火路径上到底枚举了几次。"""
+
+    def __init__(self, volume):
+        self.calls = 0
+        self.volume = volume
+
+    def GetAllSessions(self):
+        self.calls += 1
+        return [_FakeSession("cs2.exe", self.volume)]
+
+
+def _backend_with_cache(volume, *, age_seconds: float):
+    import time as _time
+
+    backend = _SessionAudioBackend(cfg=_DummyConfig())
+    backend._stale_state = None
+    utilities = _CountingUtilities(volume)
+    backend._audio_utilities = utilities
+    backend._cached_sessions = [("4242:cs2.exe:cs2.exe", volume, "cs2.exe")]
+    backend._last_scan_time = _time.monotonic() - age_seconds
+    refreshes: list[int] = []
+    backend._refresh_in_background = lambda: refreshes.append(1)
+    return backend, utilities, refreshes
+
+
+def test_the_first_shot_after_a_pause_sets_volume_from_the_cache_without_enumerating():
+    volume = _FakeVolume(1.0)
+    backend, utilities, refreshes = _backend_with_cache(volume, age_seconds=10.0)
+
+    assert backend.start_duck(0.18, attack_ms=0) is True
+
+    assert volume.value == pytest.approx(0.18)
+    assert utilities.calls == 0, "开火路径上枚举了会话 —— 首发又要等那 44ms"
+    assert refreshes == [1], "缓存旧了该丢到后台刷新，而不是不刷"
+
+
+def test_prewarm_enumerates_in_the_background_only_when_the_cache_is_cold_or_old():
+    volume = _FakeVolume(1.0)
+    backend = _SessionAudioBackend(cfg=_DummyConfig())
+    backend._stale_state = None
+    utilities = _CountingUtilities(volume)
+    backend._audio_utilities = utilities
+    refreshes: list[int] = []
+    backend._refresh_in_background = lambda: refreshes.append(1)
+
+    backend.prewarm()
+    assert refreshes == [1], "缓存是空的，预热该去枚举"
+
+    backend._refresh_worker()  # 后台线程干的活，这里同步跑一遍
+    assert utilities.calls == 1
+    assert [name for _k, _v, name in backend._cached_sessions] == ["cs2.exe"]
+
+    backend.prewarm()
+    assert refreshes == [1], "缓存刚刷过，预热不该再枚举"
+
+    assert backend.start_duck(0.18, attack_ms=0) is True
+    assert volume.value == pytest.approx(0.18)
+    assert utilities.calls == 1, "预热过的缓存，开火路径一次都不该枚举"
+
+
+def test_a_dead_cached_session_triggers_one_synchronous_rescan_instead_of_hotkey_fallback():
+    live = _FakeVolume(1.0)
+    backend, utilities, _refreshes = _backend_with_cache(_DeadVolume(), age_seconds=0.0)
+    utilities.volume = live  # 游戏重开了：重扫拿到的是新会话
+
+    assert backend.start_duck(0.18, attack_ms=0) is True
+
+    assert utilities.calls == 1, "缓存里的句柄全死了（游戏重开过），该同步重扫一次"
+    assert live.value == pytest.approx(0.18)
+    assert [name for _k, _v, name in backend._cached_sessions] == ["cs2.exe"]

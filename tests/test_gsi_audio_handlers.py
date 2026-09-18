@@ -603,6 +603,45 @@ def test_usp_burst_ducking_becomes_more_aggressive(monkeypatch):
     assert second_kwargs["release_ms"] > first_kwargs["release_ms"]
 
 
+def test_the_ducker_is_prewarmed_while_the_gun_is_raised_before_the_first_shot(monkeypatch):
+    """批 102：枪举着还没开火的每一包都预热压声后端，首发那一包不用等会话枚举。"""
+
+    class _DummyDucker:
+        def __init__(self):
+            self.prewarm_calls = 0
+            self.duck_calls: list[float] = []
+
+        def prewarm(self):
+            self.prewarm_calls += 1
+
+        def duck_for(self, delay: float, **_kwargs):
+            self.duck_calls.append(delay)
+            return True
+
+    dummy_audio = _DummyAudioManager()
+    dummy_ducker = _DummyDucker()
+    monkeypatch.setattr(gsi_handler_sounds, "audio_manager", dummy_audio)
+    monkeypatch.setattr(gsi_handler_sounds, "Controller", _DummyKeyboardController)
+    monkeypatch.setattr(config, "usp_style", "styleUsp", raising=False)
+    monkeypatch.setattr(config, "usp_mute_duration", 0.2, raising=False)
+
+    handler = gsi_handler_sounds.GSIHandlerSounds()
+    handler._game_audio_ducker = dummy_ducker
+    handler.previous_usp_ammo["weapon_0"] = 12
+    handler.last_usp_fire_time = 0.0
+
+    def packet(ammo: int):
+        return {"player": {"weapons": {"weapon_0": {"name": "weapon_usp_silencer", "state": "active", "ammo_clip": ammo}}}}
+
+    handler._process_usp_sound(packet(12))
+    assert dummy_ducker.prewarm_calls == 1, "枪举着、弹夹没变：该预热"
+    assert dummy_ducker.duck_calls == [], "没开火不许压声"
+
+    handler._process_usp_sound(packet(11))
+    assert len(dummy_ducker.duck_calls) == 1, "开火了该压声"
+    assert ("gun-usp-styleUsp", "gun_sound") in dummy_audio.play_sound_calls
+
+
 def test_death_sound_ducking_uses_aggressive_runtime_plan(monkeypatch):
     class _DummyDucker:
         def __init__(self):

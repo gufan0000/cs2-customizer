@@ -3693,6 +3693,19 @@ REVERTS = [
         "tests/test_gun_sound_series.py::test_the_dropdown_says_how_many_guns_each_series_covers",
         "批 101：用户截图里那句「配给能用它的 1 把武器」—— 选之前就该知道这一套盖几把",
     ),
+    # ---- 批 102（2026-09-18）：首发不等音频会话枚举
+    Revert(
+        "GUN", "停火一秒后的首发又要先等音频会话枚举（缓存过期就同步重扫）",
+        "core/audio/game_audio_ducker.py",
+        "        if not refresh and self._cached_sessions:\n"
+        "            # 首发不等枚举",
+        "        if not refresh and self._cached_sessions and (time.monotonic() - self._last_scan_time) < 1.0:\n"
+        "            # 首发不等枚举",
+        "tests/test_game_audio_ducker.py::"
+        "test_the_first_shot_after_a_pause_sets_volume_from_the_cache_without_enumerating",
+        "批 102：用户进游戏实测「第一发有可能有本音」。本机 GetAllSessions 中位 44ms、SetMasterVolume 0.08ms，"
+        "枪响最响的那段就在开火后头 50ms —— 首发的原声正是在等枚举的这 44ms 里漏出来的",
+    ),
     Revert(
         "RN", "ruff.toml 替一个已删的文件留排除行",
         "ruff.toml",

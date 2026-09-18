@@ -214,6 +214,11 @@ class GSIHandlerSounds:
                 setattr(self, active_attr, False)
                 return
 
+            # 枪举着还没开火：先把音频会话枚举做掉，首发那一包直接设音量（批 102）。
+            prewarm = getattr(self._game_audio_ducker, "prewarm", None)
+            if callable(prewarm):
+                prewarm()
+
             last_fire_time = getattr(self, last_fire_time_attr, 0.0)
             fired_this_frame = bool(getattr(self, fired_this_frame_attr, False))
             if (

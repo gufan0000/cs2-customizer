@@ -15,6 +15,10 @@ DEFAULT_GUN_SOUND_DUCK_RATIO = 0.18
 DEFAULT_GUN_SOUND_DUCK_ATTACK_MS = 0
 DEFAULT_GUN_SOUND_DUCK_RELEASE_MS = 120
 DEFAULT_TARGET_PROCESS_NAMES = ("cs2.exe", "csgo.exe")
+#: 会话缓存的后台刷新间隔。⚠ 开火路径永远先用缓存、不许等枚举：本机实测 `GetAllSessions`
+#: 中位 44ms 而 `SetMasterVolume` 0.08ms，枪响最响的那段就在开火后头 50ms —— 原来缓存只活
+#: 1 秒，停火超过 1 秒后的首发要先等这 44ms 才压声，用户听到的「首发有本音」就是它（批 102）。
+SESSION_CACHE_REFRESH_SECONDS = 3.0
 
 
 def clamp_gun_sound_duck_ratio(value, fallback: float = DEFAULT_GUN_SOUND_DUCK_RATIO) -> float:
@@ -49,6 +53,7 @@ class _SessionAudioBackend:
         self._import_error_logged = False
         self._cached_sessions: list[tuple[str, object, str]] = []
         self._last_scan_time = 0.0
+        self._refresh_thread: threading.Thread | None = None
         self._transition_token = 0
         self._ducked_sessions: dict[str, dict[str, object]] = {}
         self._state_path = self._resolve_state_path()
@@ -242,8 +247,45 @@ class _SessionAudioBackend:
         return f"{process_id}:{process_name}:{display_name}"
 
     def _scan_sessions(self, refresh: bool = False) -> list[tuple[str, object, str]]:
+        if not refresh and self._cached_sessions:
+            # 首发不等枚举：先拿缓存设音量，缓存旧了丢到后台刷新。
+            if (time.monotonic() - self._last_scan_time) >= SESSION_CACHE_REFRESH_SECONDS:
+                self._refresh_in_background()
+            return list(self._cached_sessions)
         with self._scan_lock:
             return self._scan_sessions_locked(refresh)
+
+    def _refresh_in_background(self) -> None:
+        thread = self._refresh_thread
+        if thread is not None and thread.is_alive():
+            return
+        thread = threading.Thread(
+            target=self._refresh_worker, name="gun-sound-duck-sessions", daemon=True
+        )
+        self._refresh_thread = thread
+        thread.start()
+
+    def _refresh_worker(self) -> None:
+        with self._scan_lock:
+            self._scan_sessions_locked(refresh=True)
+
+    def prewarm(self) -> None:
+        """枪举起来了、还没开火：把会话枚举提前做掉，开火那一包直接设音量。"""
+        if self._import_failed:
+            return
+        stale = (time.monotonic() - self._last_scan_time) >= SESSION_CACHE_REFRESH_SECONDS
+        if not self._cached_sessions or stale:
+            self._refresh_in_background()
+
+    @staticmethod
+    def _any_handle_alive(sessions: list[tuple[str, object, str]]) -> bool:
+        for _key, volume, _name in sessions:
+            try:
+                volume.GetMasterVolume()
+            except Exception:
+                continue
+            return True
+        return False
 
     def _scan_sessions_locked(self, refresh: bool = False) -> list[tuple[str, object, str]]:
         audio_utilities = self._import_audio_utilities()
@@ -354,6 +396,9 @@ class _SessionAudioBackend:
     def start_duck(self, ratio: float, attack_ms: int | None = None) -> bool:
         ratio = clamp_gun_sound_duck_ratio(ratio)
         sessions = self._scan_sessions(refresh=not bool(self._cached_sessions))
+        if sessions and not self._any_handle_alive(sessions):
+            # 缓存里的句柄全死了（游戏重开过）：这一次同步重扫，别退到热键模式。
+            sessions = self._scan_sessions(refresh=True)
         if not sessions and self._ducked_sessions:
             sessions = [
                 (key, state.get("volume"), "")
@@ -604,6 +649,15 @@ class GameAudioDucker:
     def start_duck(self, *, ratio: float | None = None, attack_ms: int | None = None) -> bool:
         with self._lock:
             return self._apply_duck_level_locked(ratio=ratio, attack_ms=attack_ms)
+
+    def prewarm(self) -> None:
+        """枪举起来了、还没开火：让会话后端提前把枚举做掉（不拿锁、不阻塞 GSI 线程）。"""
+        prewarm = getattr(self._session_backend, "prewarm", None)
+        if self._ducking_enabled() and callable(prewarm):
+            try:
+                prewarm()
+            except Exception:
+                pass
 
     def hold_for(
         self,
