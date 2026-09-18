@@ -3818,6 +3818,193 @@ REVERTS = [
         "批 102：用户进游戏实测「第一发有可能有本音」。本机 GetAllSessions 中位 44ms、SetMasterVolume 0.08ms，"
         "枪响最响的那段就在开火后头 50ms —— 首发的原声正是在等枚举的这 44ms 里漏出来的",
     ),
+    # ── 2026-09-18 开镜放大链路返修（RN-657）：这一组 `--only MAG` 单独跑 ──
+    # 用户报「整个功能完善了没什么问题」之后，五个只读视角把这一块从头审了一遍。
+    Revert(
+        "MAG", "开镜热路径又 force 重写 cfg（每按一次开镜键写 3~4 个文件 + 注入一次按键）",
+        "pages/magnifier_page.py",
+        "                self._sync_magnifier_sensitivity_state(True)\n",
+        "                self._sync_magnifier_sensitivity_state(True, force=True)\n",
+        "tests/test_magnifier_page.py::test_magnifier_activate_and_deactivate_sync_sensitivity",
+        "⭐⭐⭐ 本批最重的一条。`force=True` 同时顶开两道闸（联动开没开 / cfg 签名变没变），"
+        "于是每次开镜都要 setup_autoexec + write_cs2customizer_cfg + 两次写 runtime cfg + 一次 SCROLLLOCK 注入，"
+        "**连从没勾过联动的用户也一样跑**。⚠ 病根同批 102 首发漏原声：把一条为「配置变更」"
+        "写的慢路径挂在了「每次触发」的热路径上。⭐ 而当时那条判据钉的正是这个缺陷本身",
+    ),
+    Revert(
+        "MAG", "联动没勾也照样写盘注键（那道闸没了）",
+        "pages/magnifier_page.py",
+        "        if not enabled and not self._sensitivity_runtime_applied:\n"
+        "            # 功能没开，也没有上一次留在游戏里的放大值要撤 ⇒ 一步都不该走\n"
+        "            return False\n",
+        "",
+        "tests/test_magnifier_chain_after_the_audit.py::"
+        "test_turning_the_sync_off_does_not_inject_a_key_when_nothing_was_applied",
+        "上一刀的另一半：光把 force 摘掉还不够，功能开关本身得有人守。"
+        "⭐⭐⭐ 这条断点第一轮**没逮住**，而那一刀是真的：我原本指的是"
+        "「联动没勾就不写盘」那条判据，它在闸被删掉之后照样绿 —— 因为**第二道闸**"
+        "（`not desired_active and not force and not applied`）先把那个场景拦住了。"
+        "两道闸只在 `force=True` 这条路上分得开：用户勾一下联动又取消勾（从没放大过），"
+        "修复前会白写一轮盘 + 注入一次 SCROLLLOCK（键盘灯当场闪一下）。"
+        "⇒ 批 103 那条规律的第二次现身：**两条修复互相盖住，先撞上的那条会把"
+        "后一条的判据变成空转** —— 而只有回退验证看得见这件事",
+    ),
+    Revert(
+        "MAG", "关放大的 API 失败又被当成已关闭",
+        "pages/magnifier_page.py",
+        "                if not result:\n",
+        "                if False:\n",
+        "tests/test_magnifier_chain_after_the_audit.py::"
+        "test_a_failed_close_does_not_pretend_the_magnifier_is_off",
+        "激活路径一直是查返回值 + GetLastError 的，唯独反激活这条没有。"
+        "⭐ 而**关不掉比开不起来严重得多**：状态标成已关之后没人会再试着关，"
+        "屏幕却还放大着（`_deactivate_magnifier` 头一行就 return）",
+    ),
+    Revert(
+        "MAG", "复位屏幕放大又排到退出清理表的后面去了",
+        "gui_widget.py",
+        '            ("复位屏幕放大", self._reset_screen_magnification),\n',
+        "",
+        "tests/test_magnifier_chain_after_the_audit.py::"
+        "test_the_screen_transform_reset_runs_before_anything_that_can_block",
+        "它是整张表里唯一一个「不做就会在本进程之外留下副作用」的步骤（系统级全屏变换）。"
+        "15 秒看门狗一开火就 os._exit(0) —— 排在第 10 位时前面隔着关外部浏览器进程这类会卡的步骤。"
+        "⭐ 退出清理的顺序该按「漏掉的代价」排，不是按模块归属排",
+    ),
+    Revert(
+        "MAG", "看门狗强杀之前又不复位屏幕了",
+        "gui_widget.py",
+        "            try:\n                self._reset_screen_magnification()\n            except Exception:\n                pass\n",
+        "",
+        "tests/test_magnifier_chain_after_the_audit.py::"
+        "test_the_watchdog_resets_the_screen_before_it_kills_the_process",
+        "`os._exit(0)` 那一刀之后没有任何代码会跑，连 atexit 都不跑（同 RN-624 的账）",
+    ),
+    Revert(
+        "MAG", "退出路径又改回 emit 信号去关放大",
+        "pages/magnifier_page.py",
+        "        if self.is_magnifier_active:\n"
+        "            self._do_deactivate_magnification()\n"
+        "            self.reset_screen_transform_now()  # 上一句若因 API 失败没关掉，这里再兜一次\n",
+        "        if self.is_magnifier_active:\n            self._deactivate_magnifier()\n",
+        "tests/test_magnifier_chain_after_the_audit.py::"
+        "test_shutdown_paths_close_synchronously_instead_of_emitting_a_signal",
+        "emit 要等主线程事件循环再转一圈，而退出时它可能已经不转了 ⇒ 那个信号永远等不到人处理 ⇒ 屏幕留在放大态",
+    ),
+    Revert(
+        "MAG", "全局热键又不看游戏在不在前台（在桌面点右键就全屏放大）",
+        "pages/magnifier_page.py",
+        "        if not game_is_in_foreground():\n",
+        "        if False:\n",
+        "tests/test_magnifier_chain_after_the_audit.py::"
+        "test_a_hotkey_outside_the_game_does_not_zoom_the_screen",
+        "⭐⭐ 默认主/副热键**都是鼠标右键**（config.magnifier 的默认值），挂的又是系统级全局钩子。"
+        "玩家 Alt-Tab 出去在浏览器里点一下右键，只要 GSI 上报的武器还留在启用列表里，整块屏幕就会被放大",
+    ),
+    Revert(
+        "MAG", "前台判断失灵时又朝「拦」倒（整个开镜放大静默失效）",
+        "core/foreground_game.py",
+        "    if not name:\n        return True\n",
+        "    if not name:\n        return False\n",
+        "tests/test_magnifier_chain_after_the_audit.py::"
+        "test_the_foreground_gate_opens_when_it_cannot_tell",
+        "同 `.claude/hooks/no_inline_python.py` 那条：**闸失效时朝放行倒**。"
+        "朝拦倒会让功能在某些机器上（OpenProcess 被权限或杀软挡住）静默失效，"
+        "而那种故障长得和「功能坏了」一模一样，还不留任何线索",
+    ),
+    Revert(
+        "MAG", "放大结束又把本来关着的准心强行显示出来",
+        "pages/magnifier_page.py",
+        "            if self.original_crosshair_visible:\n"
+        "                if hasattr(self.crosshair_component, 'show_crosshair'):\n"
+        "                    self.crosshair_component.show_crosshair()\n"
+        "            elif hasattr(self.crosshair_component, 'hide_crosshair'):\n"
+        "                self.crosshair_component.hide_crosshair()\n",
+        "            if hasattr(self.crosshair_component, 'show_crosshair'):\n"
+        "                self.crosshair_component.show_crosshair()\n",
+        "tests/test_magnifier_chain_after_the_audit.py::"
+        "test_a_hidden_crosshair_stays_hidden_after_the_zoom_ends",
+        "`original_crosshair_visible` 一直被**存着却从来没人读过**。"
+        "⭐ 存了不用的字段不是冗余，是一条写了一半的修复",
+    ),
+    Revert(
+        "MAG", "长按放大中换触发方式又卡住（松手关不掉）",
+        "pages/magnifier_page.py",
+        "        if previous != text:\n            if self.is_magnifier_active:\n",
+        "        if False:\n            if self.is_magnifier_active:\n",
+        "tests/test_magnifier_chain_after_the_audit.py::"
+        "test_switching_trigger_mode_while_zoomed_does_not_get_stuck",
+        "松手时 `not _is_toggle_mode()` 已经变成 False，整支关闭分支被跳过",
+    ),
+    Revert(
+        "MAG", "防抖到点又不复核武器/前台/总开关",
+        "pages/magnifier_page.py",
+        "                    if not self._activation_is_allowed(label):\n                        return\n",
+        "",
+        "tests/test_magnifier_chain_after_the_audit.py::"
+        "test_the_debounce_rechecks_the_weapon_when_it_fires",
+        "三道闸原来只在**按下那一瞬**查过，而到点已经是 150ms 之后；"
+        "`_do_update_current_weapon` 的自动关闭又只在「已激活」时才管用 ⇒ "
+        "「在防抖窗口里换了武器」这条路当时没有任何人拦",
+    ),
+    Revert(
+        "MAG", "防抖计时又用会往回拨的钟",
+        "pages/magnifier_page.py",
+        "            elapsed = time.monotonic() * 1000 - getattr(self, press_time_attr)\n",
+        "            elapsed = time.time() * 1000 - getattr(self, press_time_attr)\n",
+        "tests/test_magnifier_chain_after_the_audit.py::"
+        "test_the_debounce_uses_a_clock_that_cannot_go_backwards",
+        "系统对时把 time.time() 往回拨 ⇒ elapsed 变负 ⇒ 这一次开镜被「防抖没到」静默吃掉",
+    ),
+    Revert(
+        "MAG", "偏移微调又没有边界（箭头能一直点到越界）",
+        "pages/magnifier_page.py",
+        "        entry[\"x_offset\"], entry[\"y_offset\"] = self._clamp_offsets(\n"
+        "            entry[\"x_offset\"], entry[\"y_offset\"]\n"
+        "        )\n",
+        "",
+        "tests/test_magnifier_chain_after_the_audit.py::"
+        "test_the_offset_cannot_be_nudged_out_of_range",
+        "合法区间是 [0, 宽 - 宽/倍率]，基准值正好是中点 ⇒ 用户偏移最多 ±中点。"
+        "⚠ 越界之后 API 是失败还是被系统钳住我没有实测 —— 所以不猜，直接不让它越界",
+    ),
+    Revert(
+        "MAG", "运行期 cfg 又不比内容就写（一次开镜写两遍同样的字节）",
+        "core/magnifier_sensitivity.py",
+        "    try:\n"
+        "        with open(runtime_cfg_path, \"r\", encoding=\"utf-8\") as existing:\n"
+        "            if existing.read() == content:\n"
+        "                return False\n",
+        "    try:\n"
+        "        with open(runtime_cfg_path, \"r\", encoding=\"utf-8\") as existing:\n"
+        "            if False:\n"
+        "                return False\n",
+        "tests/test_magnifier_chain_after_the_audit.py::"
+        "test_the_runtime_cfg_is_not_rewritten_when_the_bytes_are_the_same",
+        "这个文件在一次开镜里会被两个写点各写一遍，而后一次往往和前一次一模一样",
+    ),
+    Revert(
+        "MAG", "热键注册又塞回一个空转线程（在工作线程上碰 Qt 控件）",
+        "pages/magnifier_page.py",
+        "        self._hotkeys_registered = self._register_hotkeys(primary_key, secondary_key)\n",
+        "        import threading as _t\n"
+        "        _t.Thread(target=lambda: self._register_hotkeys(primary_key, secondary_key),\n"
+        "                  daemon=True, name=\"MagnifierKeyboard\").start()\n",
+        "tests/test_magnifier_chain_after_the_audit.py::"
+        "test_no_worker_thread_touches_qt_widgets_during_hotkey_setup",
+        "那个线程注册完只剩 `while ...: sleep(0.05)` 的空转，而代价是在工作线程上"
+        "读 combo、写 status_label —— PySide6 里那是未定义行为",
+    ),
+    Revert(
+        "MAG", "导入预设后运行态又不跟着改（界面写新键、按旧键才放大）",
+        "pages/magnifier_page.py",
+        "        if self._settings_loaded_once:\n            self._resync_runtime_with_config()\n",
+        "        if False:\n            self._resync_runtime_with_config()\n",
+        "tests/test_magnifier_chain_after_the_audit.py::"
+        "test_a_config_reload_resyncs_the_running_state",
+        "配置重载走的是 `_on_config_reloaded` → `load_settings()`，而热键 combo 是在"
+        "disconnect 之间 setCurrentText 的 ⇒ 不触发 `_on_hotkey_changed` ⇒ 注册中心里挂的还是旧键",
+    ),
     Revert(
         "RN", "ruff.toml 替一个已删的文件留排除行",
         "ruff.toml",

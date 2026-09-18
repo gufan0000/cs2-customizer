@@ -4670,6 +4670,14 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'pages') and page_id in self.pages:
             self.pages[page_id].cleanup()
 
+    def _reset_screen_magnification(self):
+        """RN-657：复位系统全屏放大变换。看门狗线程也叫它 ⇒ 任何线程上都要能跑。
+        放大镜页没加载过 ⇒ 这次运行根本没碰过 Magnification API ⇒ 无事可做。"""
+        page = getattr(self, 'pages', {}).get('magnifier') if hasattr(self, 'pages') else None
+        reset = getattr(page, 'reset_screen_transform_now', None) if page is not None else None
+        if callable(reset):
+            reset()
+
     def _run_shutdown_steps(self):
         """按表执行退出清理：每步独立 try + 计时，慢步骤（>1s)记 warning。
 
@@ -4683,6 +4691,12 @@ class MainWindow(QMainWindow):
         def _watchdog_fire():
             try:
                 self.logger.error("退出清理超时(15s)，触发看门狗强制退出")
+            except Exception:
+                pass
+            # ⭐⭐ RN-657：和落盘配置同一类 —— 这一刀之后没有任何代码还会跑，
+            #   而漏掉它的代价不在本进程内：整块屏幕留在放大状态。
+            try:
+                self._reset_screen_magnification()
             except Exception:
                 pass
             try:
@@ -4704,6 +4718,11 @@ class MainWindow(QMainWindow):
             # 不退订的话它会一直握着这个已析构窗口的方法引用——
             # 之后任何一次 apply_bundle() 都会往死对象上打,抛 RuntimeError。
             ("退订配置重载广播", self._unsubscribe_config_reload),
+            # ⭐⭐ RN-657：整张表里唯一一个「不做就会在**本进程之外**留下副作用」的步骤
+            # （系统级全屏放大变换），一次 Win32 调用、快到不计时。原来埋在第 10 位，
+            # 前面隔着关外部进程这类会卡的步骤 —— 15s 看门狗一开火就 os._exit(0)，跑不到。
+            # ⭐ 退出清理的顺序该按「漏掉的代价」排，不是按模块归属排。叙事见登记册 RN-657。
+            ("复位屏幕放大", self._reset_screen_magnification),
             ("保存音乐进度", self._save_music_progress_on_close),
             ("恢复GSI游戏内状态", self._cleanup_gsi_handlers_on_close),
             ("停止GSI服务器", lambda: self.gsi_server.stop() if getattr(self, 'gsi_server', None) else None),

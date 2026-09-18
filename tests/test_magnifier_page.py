@@ -122,6 +122,15 @@ def test_magnifier_toggle_mode_uses_click_toggle(magnifier_page, monkeypatch):
 
 
 def test_magnifier_activate_and_deactivate_sync_sensitivity(magnifier_page, monkeypatch):
+    """开镜要同步灵敏度，**而且不许 force**。
+
+    ⭐⭐⭐ RN-657：这条判据原来钉的是 `[(True, True), (False, True)]` ——
+    也就是**那个缺陷本身**。`force=True` 会同时顶开两道闸：「联动开关开没开」
+    和「cfg 签名没变就别重编」，于是每按一次开镜键都要 `setup_autoexec` +
+    `write_cs2customizer_cfg` + 写两次 runtime cfg + 注入一次 SCROLLLOCK，
+    连从没勾过联动的用户也一样跑。开镜是一局上百次、就在开火前那一瞬的动作。
+    ⇒ 现在钉的是该有的性质：**热路径调用它，但不许 force。**
+    """
     events: list[tuple[bool, bool]] = []
 
     monkeypatch.setattr(
@@ -133,4 +142,6 @@ def test_magnifier_activate_and_deactivate_sync_sensitivity(magnifier_page, monk
     magnifier_page._do_activate_magnification("primary")
     magnifier_page._do_deactivate_magnification()
 
-    assert events == [(True, True), (False, True)]
+    assert events == [(True, False), (False, False)], (
+        "开镜/收镜这条热路径又把 force 打开了 —— 那会绕过联动开关和 cfg 签名闸"
+    )

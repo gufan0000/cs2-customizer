@@ -43,6 +43,10 @@ KNOWN_UNLISTED = {
     "core.fun", "core.gun_sound_profiles",
     # 批 101：枪声页顶部静态 import（套系归组，纯函数），随 gun_sound_page 必然进包。
     "core.gun_sound_series",
+    # RN-657（批 104）：开镜放大的"游戏在不在前台"判断，由 `pages/magnifier_page`
+    # 在**模块层** `from core.foreground_game import game_is_in_foreground`
+    # ⇒ 打包必然收，和它旁边的 `core.magnifier_sensitivity` 是同一条链路上的邻居。
+    "core.foreground_game",
     "core.hotkeys", "core.hud",
     "core.io_validation", "core.magnifier_sensitivity", "core.presets",
     "core.resource_health", "core.resource_import_wizard", "core.runtime",

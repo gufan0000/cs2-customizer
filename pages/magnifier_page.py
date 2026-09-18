@@ -13,6 +13,7 @@ from PySide6.QtGui import QIntValidator, QDoubleValidator
 from config import config
 from cfg_utils import setup_autoexec
 from core.cfg_compiler import write_cs2customizer_cfg
+from core.foreground_game import game_is_in_foreground
 from core.magnifier_sensitivity import (
     DEFAULT_SYNC_TRIGGER_KEY,
     compute_zoom_sensitivity,
@@ -166,10 +167,18 @@ class MagnifierPage(QWidget):
         # 武器启用状态
         self.weapon_enabled_vars = {}
         
-        # 键盘监听
-        self.keyboard_thread = None
-        self.keyboard_running = False
+        # 键盘监听。RN-657：以前这里是一个 Thread + 一个"线程还活着吗"的布尔，
+        # 而那个线程注册完热键就只剩空转（见 _setup_key_detection）。
+        # 现在记的是**热键到底挂上了没有** —— 徽章上的「监听中」问的本来就是这件事。
+        self._hotkeys_registered = False
         self._mouse_hooks = []
+        # RN-657：测试按钮那颗 3 秒自动关闭定时器。以前既不跟踪也不 daemon，
+        # 到点时无条件关放大——可能关掉的是用户此刻正按着热键维持的那一次。
+        self._test_close_timer = None
+        self._test_activation_serial = 0
+        # RN-657：load_settings 第一次是构造期跑的，那时启停由 __init__ 末尾统一管；
+        # 之后再跑（预设导入 / 配置重载）就得自己把运行态跟上。
+        self._settings_loaded_once = False
         
         # 箭头按钮列表（用于主题刷新）
         self._arrow_buttons = []
@@ -228,7 +237,7 @@ class MagnifierPage(QWidget):
             if self.current_active_type == "secondary":
                 return "手枪激活", "success"
             return "放大中", "success"
-        if self.keyboard_running:
+        if self._hotkeys_registered:
             return "监听中", "info"
         return "待命", "info"
 
@@ -1150,14 +1159,31 @@ class MagnifierPage(QWidget):
     def _sync_magnifier_sensitivity_state(self, active, force=False):
         enabled = self.sensitivity_sync_checkbox.isChecked()
         desired_active = bool(active and enabled)
+
+        # ⭐⭐⭐ RN-657（批 104）：**这三道闸以前只有中间那一道，而它带着 `not force`**
+        #   —— 开镜和收镜两条路（`_do_activate_magnification` /
+        #   `_do_deactivate_magnification`）当时都传 `force=True`，于是每按一次开镜键
+        #   都会：`setup_autoexec` + `write_cs2customizer_cfg`（整份编译）+ 两次写
+        #   runtime cfg + 一次 `keyboard.press_and_release("scroll lock")`，
+        #   **而且「开镜灵敏度联动」根本没勾的用户也一样跑**。
+        #   开镜是一局上百次、且就在开火前那一瞬的动作 —— 这条链不该在上面。
+        #   ⭐ 病根和批 102 首发漏原声同一个：**把一条为"配置变更"写的慢路径
+        #   挂在了"每次触发"的热路径上**。
+        if not enabled and not self._sensitivity_runtime_applied:
+            # 功能没开，也没有上一次留在游戏里的放大值要撤 ⇒ 一步都不该走
+            return False
         if not desired_active and not force and not self._sensitivity_runtime_applied:
             return False
+        if desired_active == self._sensitivity_runtime_applied and not force:
+            # 游戏里已经是想要的那个值了。`force` 留给"值本身变了"（用户改倍数/开关联动）
+            return True
 
         csgo_dir = (self.config.csgo_dir or "").strip()
         runtime_cfg_path = get_magnifier_runtime_cfg_path(csgo_dir)
         if not runtime_cfg_path:
             return False
 
+        # force 只在"配置变更"那几条路上为真；开镜路径走签名闸，签名没变就不重编 cfg
         self._ensure_sensitivity_support_files_if_needed(force=force)
         try:
             write_magnifier_runtime_cfg(
@@ -1256,7 +1282,19 @@ class MagnifierPage(QWidget):
 
     def _on_trigger_mode_changed(self, text):
         """触发方式改变"""
+        previous = self.trigger_mode
         self.trigger_mode = text
+        # ⭐ RN-657：换模式得从"没放大、没按着键"这个干净态重新开始。
+        #   原来只赋一个值：长按模式下按着键放大着的时候切到「单击切换」，
+        #   松手时 `_global_primary_key_release` 里 `not _is_toggle_mode()` 已经变成
+        #   False，那一整支关闭分支被跳过 ⇒ **松手关不掉**，得再摸索着按一次键。
+        if previous != text:
+            if self.is_magnifier_active:
+                self._do_deactivate_magnification()
+            self.primary_key_pressed = False
+            self.secondary_key_pressed = False
+            self.primary_debouncing = False
+            self.secondary_debouncing = False
         self.status_label.setText(f"已切换触发方式: {text}")
         self.logger.info(f"放大触发方式更新: {text}")
         self.save_settings()
@@ -1268,27 +1306,55 @@ class MagnifierPage(QWidget):
         self.status_label.setText(f"已设置防抖时间为 {value}ms")
         self.save_settings()
     
+    def _offset_limits(self):
+        """当前倍率下，用户偏移的合法上下界（对称，返回正的那一半）。
+
+        `MagSetFullscreenTransform` 的 offset 是"放大后可见区域左上角在未放大坐标里的位置"，
+        合法区间是 `[0, 宽 - 宽/倍率]`；而 `_update_magnification` 算出的基准值
+        `center * (1 - 1/zoom)` 正好是这个区间的**中点** ⇒ 用户偏移最多走到 ±中点。
+        ⭐ RN-657：原来一个界都没有，箭头按钮可以一直点下去，把 offset 累到越界
+        （越界后 API 是失败还是被系统钳住，我没有实测，所以不猜——直接不让它越界）。
+        """
+        if self.zoom_factor <= 1.0:
+            return 0, 0
+        max_x = int(self.screen_center_x * (1 - 1 / self.zoom_factor))
+        max_y = int(self.screen_center_y * (1 - 1 / self.zoom_factor))
+        return max(0, max_x), max(0, max_y)
+
+    def _clamp_offsets(self, x_offset, y_offset):
+        max_x, max_y = self._offset_limits()
+        return (
+            max(-max_x, min(max_x, int(x_offset))),
+            max(-max_y, min(max_y, int(y_offset))),
+        )
+
     def _apply_offset(self):
         """应用偏移"""
         if not self.config.magnifier_enabled:
             return
-        
+
         try:
-            x_offset = int(self.x_offset_input.text())
-            y_offset = int(self.y_offset_input.text())
-            
+            x_offset, y_offset = self._clamp_offsets(
+                int(self.x_offset_input.text()), int(self.y_offset_input.text())
+            )
+            self.x_offset_input.setText(str(x_offset))
+            self.y_offset_input.setText(str(y_offset))
+
             zoom_key = str(self.zoom_factor)
             if zoom_key not in self.zoom_settings:
                 self.zoom_settings[zoom_key] = {"x_offset": 0, "y_offset": 0}
-            
+
             self.zoom_settings[zoom_key]["x_offset"] = x_offset
             self.zoom_settings[zoom_key]["y_offset"] = y_offset
-            
+
             self.save_settings()
-            
-            if self.is_magnifier_active:
-                self._update_magnification()
-            
+
+            # ⭐ RN-657：这里原来不看返回值，失败也照报「已应用」——
+            #   用户以为调好了，画面其实一动没动，还没有任何线索。
+            if self.is_magnifier_active and not self._update_magnification():
+                self.status_label.setText(f"偏移没能应用: X={x_offset}, Y={y_offset}（详见日志）")
+                return
+
             self.status_label.setText(f"已应用偏移: X={x_offset}, Y={y_offset}")
         except Exception as e:
             self.status_label.setText(f"应用偏移错误: {e}")
@@ -1322,41 +1388,70 @@ class MagnifierPage(QWidget):
         if zoom_key not in self.zoom_settings:
             self.zoom_settings[zoom_key] = {"x_offset": 0, "y_offset": 0}
         
+        entry = self.zoom_settings[zoom_key]
         if axis == 'x':
-            self.zoom_settings[zoom_key]["x_offset"] += amount
-            self.x_offset_input.setText(str(self.zoom_settings[zoom_key]["x_offset"]))
+            entry["x_offset"] += amount
         else:
-            self.zoom_settings[zoom_key]["y_offset"] += amount
-            self.y_offset_input.setText(str(self.zoom_settings[zoom_key]["y_offset"]))
-        
+            entry["y_offset"] += amount
+        # RN-657：钳在当前倍率的合法区间内，见 _offset_limits
+        entry["x_offset"], entry["y_offset"] = self._clamp_offsets(
+            entry["x_offset"], entry["y_offset"]
+        )
+        self.x_offset_input.setText(str(entry["x_offset"]))
+        self.y_offset_input.setText(str(entry["y_offset"]))
+
         self.save_settings()
-        
-        if self.is_magnifier_active:
-            self._update_magnification()
-        
-        self.status_label.setText(f"偏移已调整: X={self.zoom_settings[zoom_key]['x_offset']}, Y={self.zoom_settings[zoom_key]['y_offset']}")
+
+        # RN-657：同 _apply_offset —— 失败就说失败
+        if self.is_magnifier_active and not self._update_magnification():
+            self.status_label.setText(
+                f"偏移没能应用: X={entry['x_offset']}, Y={entry['y_offset']}（详见日志）"
+            )
+            return
+
+        self.status_label.setText(f"偏移已调整: X={entry['x_offset']}, Y={entry['y_offset']}")
     
+    def _start_hotkey_test(self, kind, hotkey, label):
+        """试一下这个热键：立刻放大，3 秒后**只关自己放的这一次**。
+
+        ⭐ RN-657：那颗定时器原来是 `Timer(3.0, self._deactivate_magnifier)` —— 既不跟踪
+        也不是 daemon，到点**无条件**关放大。两个后果：① 这 3 秒里用户真按了开镜键，
+        到点会把用户正按着的那一次关掉；② 3 秒没到就关软件的话，cleanup 已经
+        MagUninitialize 了，这个游离线程还会再碰一次 API，还把退出多拖最多 3 秒。
+        ⇒ 发一个流水号，到点只关"还是我那一次"的放大。
+        """
+        self.logger.info(f"测试{label}热键: {hotkey}")
+        self.status_label.setText(f"测试{label}热键: {hotkey}")
+        # immediate=True：测试路径不模拟按键，防抖检查的 *_key_pressed
+        # 永远为 False，走防抖分支会静默不激活（测试按钮形同失效）
+        if kind == "primary":
+            self._activate_primary_magnifier(test=True, immediate=True)
+        else:
+            self._activate_secondary_magnifier(test=True, immediate=True)
+
+        self._test_activation_serial += 1
+        serial = self._test_activation_serial
+        if self._test_close_timer is not None:
+            self._test_close_timer.cancel()
+        timer = threading.Timer(3.0, lambda: self._close_hotkey_test(serial))
+        timer.daemon = True
+        self._test_close_timer = timer
+        timer.start()
+
+    def _close_hotkey_test(self, serial):
+        if serial != self._test_activation_serial:
+            return  # 已经有新的测试或真实操作接手了，这一枪不该我开
+        if self.primary_key_pressed or self.secondary_key_pressed:
+            return  # 用户此刻正按着热键维持放大，不许替他关掉
+        self._deactivate_magnifier()
+
     def _test_primary_hotkey(self):
         """测试主武器热键"""
-        hotkey = self.primary_hotkey_combo.currentText()
-        self.logger.info(f"测试主武器热键: {hotkey}")
-        self.status_label.setText(f"测试主武器热键: {hotkey}")
-        # immediate=True：测试路径不模拟按键，防抖检查的 primary_key_pressed
-        # 永远为 False，走防抖分支会静默不激活（测试按钮形同失效）
-        self._activate_primary_magnifier(test=True, immediate=True)
-
-        # 3秒后自动关闭
-        threading.Timer(3.0, self._deactivate_magnifier).start()
+        self._start_hotkey_test("primary", self.primary_hotkey_combo.currentText(), "主武器")
 
     def _test_secondary_hotkey(self):
         """测试副武器热键"""
-        hotkey = self.secondary_hotkey_combo.currentText()
-        self.logger.info(f"测试副武器热键: {hotkey}")
-        self.status_label.setText(f"测试副武器热键: {hotkey}")
-        self._activate_secondary_magnifier(test=True, immediate=True)
-
-        # 3秒后自动关闭
-        threading.Timer(3.0, self._deactivate_magnifier).start()
+        self._start_hotkey_test("secondary", self.secondary_hotkey_combo.currentText(), "副武器")
     
     def _select_all_weapons(self):
         """全选武器"""
@@ -1372,8 +1467,22 @@ class MagnifierPage(QWidget):
         self.save_settings()
         self.status_label.setText("已禁用所有武器的放大功能")
 
+    def _cancel_test_close_timer(self):
+        """撤掉「测试热键」那颗 3 秒自动关闭定时器（见 _start_hotkey_test）。"""
+        timer, self._test_close_timer = self._test_close_timer, None
+        if timer is not None:
+            try:
+                timer.cancel()
+            except Exception:
+                pass
+
     def _clear_mouse_hooks(self, mouse_module=None):
-        """清理鼠标热键钩子"""
+        """清理鼠标热键钩子。
+
+        ⚠ RN-657 查明：`self._mouse_hooks` 自 P2.1 把注册交给 `core.hotkeys.registry`
+        之后**再没有被 append 过** ⇒ 这个方法当下恒空转，真正的注销由
+        `unregister_owner` 完成。留着是因为它幂等 —— 但别被名字骗了：**它什么也没清。**
+        """
         if not self._mouse_hooks:
             return
         try:
@@ -1388,122 +1497,123 @@ class MagnifierPage(QWidget):
             self._mouse_hooks = []
     
     def _setup_key_detection(self):
-        """设置键盘监听"""
-        # 停止现有线程
-        if self.keyboard_thread and self.keyboard_thread.is_alive():
-            self.keyboard_running = False
-            self.keyboard_thread.join(timeout=1.0)
-        
+        """向热键注册中心登记主/副开镜键。
+
+        ⭐ RN-657：这件事以前是在一个**自建线程**里做的，而那个线程注册完之后
+        只剩 `while self.keyboard_running: time.sleep(0.05)` —— 热键回调本来就跑在
+        keyboard/mouse 库自己的监听线程上，这个线程一件活都没有，纯空转。
+        代价却是实打实的两条：① 注册段里读 `primary_hotkey_combo.currentText()`、
+        写 `status_label.setText()` 都是**在工作线程上碰 Qt 控件**；
+        ② 每次改热键都要先 join 掉上一个线程。⇒ 整个线程去掉，注册同步做。
+        """
         if not self.config.magnifier_enabled:
+            self._hotkeys_registered = False
             self.status_label.setText("开镜放大全局禁用中")
             return
-        
-        self.keyboard_running = True
-        
-        def key_listener():
-            try:
-                # P2.1: 经热键注册中心统一注册（底层仍是 keyboard/mouse，行为等价），
-                # 获得跨功能域冲突检测与"已绑热键总览"。
-                from core.hotkeys import registry as hotkey_registry
 
-                # 键盘热键映射
-                key_mapping = {
-                    "F2": "f2", "F3": "f3", "F4": "f4", "F5": "f5",
-                    "Z": "z", "X": "x", "2": "2",
-                    "右键": None, "中键": None, "Mouse3": None, "Mouse4": None
-                }
+        primary_key = self.primary_hotkey_combo.currentText()
+        secondary_key = self.secondary_hotkey_combo.currentText()
+        self._hotkeys_registered = self._register_hotkeys(primary_key, secondary_key)
+        self._sync_overview_status()
 
-                # 清除本功能域现有热键（注册中心按 owner 批量注销）
-                hotkey_registry.unregister_owner(self.HOTKEY_OWNER)
-                self._clear_mouse_hooks()
+    #: 界面上的热键名 → keyboard 库认的键名。值为 None 的那几个是鼠标键，走下面那张表。
+    KEYBOARD_KEY_MAPPING = {
+        "F2": "f2", "F3": "f3", "F4": "f4", "F5": "f5",
+        "Z": "z", "X": "x", "2": "2",
+        "右键": None, "中键": None, "Mouse3": None, "Mouse4": None,
+    }
+    MOUSE_KEY_MAPPING = {
+        "右键": "right",
+        "中键": "middle",
+        "Mouse3": "x",
+        "Mouse4": "x2",
+    }
 
-                primary_key = self.primary_hotkey_combo.currentText()
-                secondary_key = self.secondary_hotkey_combo.currentText()
+    def _register_hotkeys(self, primary_key, secondary_key):
+        """真正调注册中心。热键文案由调用方在主线程上读好再传进来。"""
+        try:
+            # P2.1: 经热键注册中心统一注册（底层仍是 keyboard/mouse，行为等价），
+            # 获得跨功能域冲突检测与"已绑热键总览"。
+            from core.hotkeys import registry as hotkey_registry
 
-                mouse_mapping = {
-                    "右键": "right",
-                    "中键": "middle",
-                    "Mouse3": "x",
-                    "Mouse4": "x2",
-                }
+            key_mapping = self.KEYBOARD_KEY_MAPPING
+            mouse_mapping = self.MOUSE_KEY_MAPPING
 
-                # 跨功能域冲突检测（advisory：提示但不阻止）
-                conflict_notes = []
-                for label, ui_key in (("主武器", primary_key), ("副武器", secondary_key)):
-                    target = key_mapping.get(ui_key) or (
-                        f"mouse:{mouse_mapping[ui_key]}" if ui_key in mouse_mapping else ""
-                    )
-                    if not target:
-                        continue
-                    owners = hotkey_registry.find_conflicts(target, exclude_owner=self.HOTKEY_OWNER)
-                    if owners:
-                        conflict_notes.append(f"{label}键({ui_key})已被「{'、'.join(owners)}」使用")
-                if conflict_notes:
-                    self.logger.warning("热键冲突: " + "；".join(conflict_notes))
+            # 清除本功能域现有热键（注册中心按 owner 批量注销）
+            hotkey_registry.unregister_owner(self.HOTKEY_OWNER)
+            self._clear_mouse_hooks()
 
-                # 注册主武器键盘热键
-                primary_kb_key = key_mapping.get(primary_key)
-                if primary_kb_key:
-                    self.logger.info(f"注册主武器键盘热键: {primary_kb_key}")
+            # 跨功能域冲突检测（advisory：提示但不阻止）
+            conflict_notes = []
+            for label, ui_key in (("主武器", primary_key), ("副武器", secondary_key)):
+                target = key_mapping.get(ui_key) or (
+                    f"mouse:{mouse_mapping[ui_key]}" if ui_key in mouse_mapping else ""
+                )
+                if not target:
+                    continue
+                owners = hotkey_registry.find_conflicts(target, exclude_owner=self.HOTKEY_OWNER)
+                if owners:
+                    conflict_notes.append(f"{label}键({ui_key})已被「{'、'.join(owners)}」使用")
+            if conflict_notes:
+                self.logger.warning("热键冲突: " + "；".join(conflict_notes))
+
+            # 注册主武器键盘热键
+            primary_kb_key = key_mapping.get(primary_key)
+            if primary_kb_key:
+                self.logger.info(f"注册主武器键盘热键: {primary_kb_key}")
+                hotkey_registry.register_key(
+                    self.HOTKEY_OWNER, primary_kb_key,
+                    on_press=lambda e: self._global_primary_key_press(),
+                    on_release=lambda e: self._global_primary_key_release(),
+                    note="主武器开镜",
+                )
+
+            # 注册副武器键盘热键(如果与主武器热键不同)
+            if secondary_key != primary_key:
+                secondary_kb_key = key_mapping.get(secondary_key)
+                if secondary_kb_key:
+                    self.logger.info(f"注册副武器键盘热键: {secondary_kb_key}")
                     hotkey_registry.register_key(
-                        self.HOTKEY_OWNER, primary_kb_key,
-                        on_press=lambda e: self._global_primary_key_press(),
-                        on_release=lambda e: self._global_primary_key_release(),
-                        note="主武器开镜",
+                        self.HOTKEY_OWNER, secondary_kb_key,
+                        on_press=lambda e: self._global_secondary_key_press(),
+                        on_release=lambda e: self._global_secondary_key_release(),
+                        note="手枪开镜",
                     )
 
-                # 注册副武器键盘热键(如果与主武器热键不同)
-                if secondary_key != primary_key:
-                    secondary_kb_key = key_mapping.get(secondary_key)
-                    if secondary_kb_key:
-                        self.logger.info(f"注册副武器键盘热键: {secondary_kb_key}")
-                        hotkey_registry.register_key(
-                            self.HOTKEY_OWNER, secondary_kb_key,
-                            on_press=lambda e: self._global_secondary_key_press(),
-                            on_release=lambda e: self._global_secondary_key_release(),
-                            note="手枪开镜",
-                        )
+            primary_mouse_button = mouse_mapping.get(primary_key)
+            if primary_mouse_button:
+                self.logger.info(f"注册主武器鼠标热键: {primary_mouse_button}")
+                hotkey_registry.register_mouse(
+                    self.HOTKEY_OWNER, primary_mouse_button,
+                    on_press=lambda: self._global_primary_key_press(),
+                    on_release=lambda: self._global_primary_key_release(),
+                    note="主武器开镜",
+                )
 
-                primary_mouse_button = mouse_mapping.get(primary_key)
-                if primary_mouse_button:
-                    self.logger.info(f"注册主武器鼠标热键: {primary_mouse_button}")
+            if secondary_key != primary_key:
+                secondary_mouse_button = mouse_mapping.get(secondary_key)
+                if secondary_mouse_button:
+                    self.logger.info(f"注册副武器鼠标热键: {secondary_mouse_button}")
                     hotkey_registry.register_mouse(
-                        self.HOTKEY_OWNER, primary_mouse_button,
-                        on_press=lambda: self._global_primary_key_press(),
-                        on_release=lambda: self._global_primary_key_release(),
-                        note="主武器开镜",
+                        self.HOTKEY_OWNER, secondary_mouse_button,
+                        on_press=lambda: self._global_secondary_key_press(),
+                        on_release=lambda: self._global_secondary_key_release(),
+                        note="手枪开镜",
                     )
 
-                if secondary_key != primary_key:
-                    secondary_mouse_button = mouse_mapping.get(secondary_key)
-                    if secondary_mouse_button:
-                        self.logger.info(f"注册副武器鼠标热键: {secondary_mouse_button}")
-                        hotkey_registry.register_mouse(
-                            self.HOTKEY_OWNER, secondary_mouse_button,
-                            on_press=lambda: self._global_secondary_key_press(),
-                            on_release=lambda: self._global_secondary_key_release(),
-                            note="手枪开镜",
-                        )
-
-                status_text = f"主武器热键: {primary_key} | 手枪热键: {secondary_key}"
-                if conflict_notes:
-                    status_text += " ⚠️ " + "；".join(conflict_notes)
-                self.status_label.setText(status_text)
-                self.logger.info(f"热键设置完成 - 主武器: {primary_key}, 副武器: {secondary_key}")
-                
-                # 保持监听线程存活
-                while self.keyboard_running:
-                    time.sleep(0.05)
-                
-            except ImportError:
-                self.status_label.setText("未安装keyboard/mouse库")
-                self.logger.warning("未安装keyboard/mouse库")
-            except Exception as e:
-                self.status_label.setText(f"热键错误: {e}")
-                self.logger.error(f"热键错误: {e}")
-        
-        self.keyboard_thread = threading.Thread(target=key_listener, daemon=True, name="MagnifierKeyboard")
-        self.keyboard_thread.start()
+            status_text = f"主武器热键: {primary_key} | 手枪热键: {secondary_key}"
+            if conflict_notes:
+                status_text += " ⚠️ " + "；".join(conflict_notes)
+            self.status_label.setText(status_text)
+            self.logger.info(f"热键设置完成 - 主武器: {primary_key}, 副武器: {secondary_key}")
+            return True
+        except ImportError:
+            self.status_label.setText("未安装keyboard/mouse库")
+            self.logger.warning("未安装keyboard/mouse库")
+        except Exception as e:
+            self.status_label.setText(f"热键错误: {e}")
+            self.logger.error(f"热键错误: {e}")
+        return False
 
     def _is_toggle_mode(self):
         return self.trigger_mode == "单击切换"
@@ -1565,21 +1675,34 @@ class MagnifierPage(QWidget):
             return False
         
         return self.weapon_enabled_vars[weapon].isChecked()
-    
+
+    def _activation_is_allowed(self, label):
+        """按下热键的这一刻，到底该不该放大。三道闸，任何一道不过就不放大。
+
+        ⭐⭐ RN-657 新加的是第三道「游戏得在前台」。默认热键是**鼠标右键**
+        （`config.magnifier` 里主副键的默认值都是「右键」），而挂的是系统级全局钩子 ——
+        没有这道闸，玩家 Alt-Tab 出去在浏览器里点一下右键，只要 GSI 上报的武器
+        还留在启用列表里，整块屏幕就会被放大。
+        ⚠ `game_is_in_foreground()` 判断不出来时返回 True（放行），理由见那个模块的头。
+        """
+        if not self.config.magnifier_enabled:
+            self.logger.info(f"放大功能全局禁用中，无法激活{label}放大")
+            return False
+        if not self._is_current_weapon_enabled():
+            self.logger.info(f"当前武器 {self.current_weapon} 未启用放大功能")
+            return False
+        if not game_is_in_foreground():
+            self.logger.info("游戏不在前台，忽略这次开镜热键")
+            return False
+        return True
+
     def _activate_primary_magnifier(self, test=False, immediate=False):
         """激活主武器放大"""
         # 标记测试模式下不需要检查武器启用状态
         if not test:
-            # 如果全局禁用了，不响应激活命令
-            if not self.config.magnifier_enabled:
-                self.logger.info("放大功能全局禁用中，无法激活主武器放大")
+            if not self._activation_is_allowed("主武器"):
                 return
-            
-            # 检查当前武器是否启用了放大
-            if not self._is_current_weapon_enabled():
-                self.logger.info(f"当前武器 {self.current_weapon} 未启用放大功能")
-                return
-            
+
             # 如果已经激活了同类型的放大，不需要处理
             if self.is_magnifier_active and self.current_active_type == 'primary':
                 return
@@ -1597,8 +1720,10 @@ class MagnifierPage(QWidget):
         self.current_active_type = 'primary'
         
         # 防抖处理
-        current_time = time.time() * 1000  # 转换为毫秒
-        
+        # RN-657：改用 monotonic —— time.time() 会被系统对时/夏令时跳变往回拨，
+        # 那会让 elapsed 变成负数，这一次开镜就被"防抖没到"静默吃掉。
+        current_time = time.monotonic() * 1000  # 转换为毫秒
+
         # 主武器专用防抖状态
         if not self.primary_debouncing:
             # 启动防抖
@@ -1613,16 +1738,9 @@ class MagnifierPage(QWidget):
         """激活副武器放大"""
         # 标记测试模式下不需要检查武器启用状态
         if not test:
-            # 如果全局禁用了，不响应激活命令
-            if not self.config.magnifier_enabled:
-                self.logger.info("放大功能全局禁用中，无法激活副武器放大")
+            if not self._activation_is_allowed("副武器"):
                 return
-            
-            # 检查当前武器是否启用了放大
-            if not self._is_current_weapon_enabled():
-                self.logger.info(f"当前武器 {self.current_weapon} 未启用放大功能")
-                return
-            
+
             # 如果已经激活了同类型的放大，不需要处理
             if self.is_magnifier_active and self.current_active_type == 'secondary':
                 return
@@ -1639,9 +1757,9 @@ class MagnifierPage(QWidget):
         # 设置当前激活类型
         self.current_active_type = 'secondary'
         
-        # 防抖处理 - 副武器专用
-        current_time = time.time() * 1000  # 转换为毫秒
-        
+        # 防抖处理 - 副武器专用（时间基准同主武器，见上）
+        current_time = time.monotonic() * 1000  # 转换为毫秒
+
         # 副武器专用防抖状态
         if not self.secondary_debouncing:
             # 启动防抖
@@ -1652,68 +1770,59 @@ class MagnifierPage(QWidget):
             self.logger.info(f"启动副武器防抖处理，延迟: {self.debounce_time}ms")
             threading.Timer(self.debounce_time / 1000.0, self._check_secondary_debounce).start()
     
+    def _check_debounce(self, kind):
+        """防抖到点：按键还按着、时间够了、**且现在仍然该放大**，才真的激活。
+
+        ⭐ RN-657 补的是最后那一条。武器/前台/总开关三道闸以前**只在按下那一瞬**查过
+        （`_activation_is_allowed`），而这里到点已经是 150ms 之后了 —— 这 150ms 里
+        玩家可能已经切成小刀、已经 Alt-Tab 出去、或者把总开关关了。
+        `_do_update_current_weapon` 的自动关闭只在**已激活**时才管用，
+        所以"在防抖窗口里换了武器"这条路当时没有任何人拦。
+
+        ⚠ 日志：这里原来每次开镜打 6 行 info。开镜是一局上百次的动作，
+        那是把日志文件当噪声源在用 —— 压成一行 debug。
+        """
+        label = "主武器" if kind == "primary" else "副武器"
+        debouncing_attr = f"{kind}_debouncing"
+        pressed_attr = f"{kind}_key_pressed"
+        press_time_attr = f"{kind}_key_press_time"
+
+        if not getattr(self, debouncing_attr):
+            self.logger.debug(f"{label}防抖状态已重置，不需要检查")
+            return
+
+        try:
+            elapsed = time.monotonic() * 1000 - getattr(self, press_time_attr)
+            still_pressed = getattr(self, pressed_attr)
+            self.logger.debug(
+                f"{label}防抖检查: 已按下 {elapsed:.0f}ms/需要 {self.debounce_time}ms, "
+                f"按着={still_pressed}, 已放大={self.is_magnifier_active}, "
+                f"API={self.magnification_available}"
+            )
+
+            if still_pressed and elapsed >= self.debounce_time:
+                if not self.is_magnifier_active and self.magnification_available:
+                    if not self._activation_is_allowed(label):
+                        return
+                    try:
+                        # 使用信号在主线程中激活放大
+                        self.activate_magnification_signal.emit(kind)
+                        self.logger.debug(f"[工作线程] 已发送{label}放大激活信号")
+                    except Exception as e:
+                        self.logger.error(f"发送{label}放大信号失败: {e}")
+        finally:
+            # 重置防抖状态（任何一条早退路径上都得放掉，否则这一把枪的防抖就锁死了）
+            setattr(self, debouncing_attr, False)
+
     def _check_primary_debounce(self):
         """检查主武器防抖时间是否达到"""
-        if not self.primary_debouncing:
-            self.logger.info("主武器防抖状态已重置，不需要检查")
-            return
-        
-        current_time = time.time() * 1000
-        elapsed = current_time - self.primary_key_press_time
-        
-        self.logger.info(f"主武器防抖检查: 已按下 {elapsed}ms, 需要 {self.debounce_time}ms")
-        self.logger.info(f"  - 按键状态: primary_key_pressed={self.primary_key_pressed}")
-        self.logger.info(f"  - 放大状态: is_magnifier_active={self.is_magnifier_active}")
-        self.logger.info(f"  - API可用: magnification_available={self.magnification_available}")
-        
-        # 检查按键是否仍然按下
-        if self.primary_key_pressed:
-            # 检查是否达到防抖时间
-            if elapsed >= self.debounce_time:
-                self.logger.info("[PASS] 主武器防抖时间达到，激活放大")
-                # 防抖时间已达到，实际激活放大
-                if not self.is_magnifier_active and self.magnification_available:
-                    try:
-                        # 使用信号在主线程中激活放大
-                        self.activate_magnification_signal.emit('primary')
-                        self.logger.info("[工作线程] 已发送主武器放大激活信号")
-                    except Exception as e:
-                        self.logger.error(f"发送主武器放大信号失败: {e}")
-        
-        # 重置防抖状态
-        self.primary_debouncing = False
-    
+        self._check_debounce("primary")
+
     def _check_secondary_debounce(self):
         """检查副武器防抖时间是否达到"""
-        if not self.secondary_debouncing:
-            self.logger.info("副武器防抖状态已重置，不需要检查")
-            return
-        
-        current_time = time.time() * 1000
-        elapsed = current_time - self.secondary_key_press_time
-        
-        self.logger.info(f"副武器防抖检查: 已按下 {elapsed}ms, 需要 {self.debounce_time}ms")
-        self.logger.info(f"  - 按键状态: secondary_key_pressed={self.secondary_key_pressed}")
-        self.logger.info(f"  - 放大状态: is_magnifier_active={self.is_magnifier_active}")
-        self.logger.info(f"  - API可用: magnification_available={self.magnification_available}")
-        
-        # 检查按键是否仍然按下
-        if self.secondary_key_pressed:
-            # 检查是否达到防抖时间
-            if elapsed >= self.debounce_time:
-                self.logger.info("[PASS] 副武器防抖时间达到，激活放大")
-                # 防抖时间已达到，实际激活放大
-                if not self.is_magnifier_active and self.magnification_available:
-                    try:
-                        # 使用信号在主线程中激活放大
-                        self.activate_magnification_signal.emit('secondary')
-                        self.logger.info("[工作线程] 已发送副武器放大激活信号")
-                    except Exception as e:
-                        self.logger.error(f"发送副武器放大信号失败: {e}")
-        
-        # 重置防抖状态
-        self.secondary_debouncing = False
-    
+        self._check_debounce("secondary")
+
+
     def _set_magnifier_crosshair(self):
         """设置放大时的准心样式"""
         if self.crosshair_component:
@@ -1762,10 +1871,17 @@ class MagnifierPage(QWidget):
     def _restore_original_crosshair(self):
         """恢复原始准心样式"""
         if self.crosshair_component and hasattr(self, 'original_crosshair_saved') and self.original_crosshair_saved:
-            # 如果准心被隐藏了，先显示
-            if hasattr(self.crosshair_component, 'show_crosshair'):
-                self.crosshair_component.show_crosshair()
-            
+            # ⭐ RN-657：这里原来是**无条件** show_crosshair()，而进放大镜之前存下来的
+            #   original_crosshair_visible（1727 行存的）**从来没有人读过**。
+            #   后果：玩家的准心本来是关着的，开一次镜再关，准心就自己冒出来了 ——
+            #   而且是 show_crosshair() 真的去建窗口、置顶、起重定心定时器。
+            #   ⇒ 存了就得用：原来什么样，还回什么样。
+            if self.original_crosshair_visible:
+                if hasattr(self.crosshair_component, 'show_crosshair'):
+                    self.crosshair_component.show_crosshair()
+            elif hasattr(self.crosshair_component, 'hide_crosshair'):
+                self.crosshair_component.hide_crosshair()
+
             # 恢复所有原始设置
             if hasattr(self.crosshair_component, 'update_settings'):
                 self.crosshair_component.update_settings(
@@ -1818,9 +1934,13 @@ class MagnifierPage(QWidget):
             base_x_offset = self.screen_center_x * (1 - 1/self.zoom_factor)
             base_y_offset = self.screen_center_y * (1 - 1/self.zoom_factor)
             
-            final_x_offset = int(base_x_offset) + user_x_offset
-            final_y_offset = int(base_y_offset) + user_y_offset
-            
+            # RN-657：最后一道保底钳制——配置文件被手改、或旧配置里留着越界的
+            # 校准值时，这里也不许把越界坐标喂给 API。
+            max_x_offset = max(0, int(base_x_offset) * 2)
+            max_y_offset = max(0, int(base_y_offset) * 2)
+            final_x_offset = max(0, min(max_x_offset, int(base_x_offset) + user_x_offset))
+            final_y_offset = max(0, min(max_y_offset, int(base_y_offset) + user_y_offset))
+
             self.logger.debug(f"调用MagSetFullscreenTransform: zoom={self.zoom_factor}, x={final_x_offset}, y={final_y_offset}")
             
             # 清除之前的错误代码，以便准确获取本次调用的错误
@@ -1875,7 +1995,8 @@ class MagnifierPage(QWidget):
 
                 # 修改准心样式
                 self._set_magnifier_crosshair()
-                self._sync_magnifier_sensitivity_state(True, force=True)
+                # RN-657：这里以前是 force=True —— 见 _sync_magnifier_sensitivity_state 顶上的账
+                self._sync_magnifier_sensitivity_state(True)
 
                 # 更新状态标签
                 hotkey = self.primary_hotkey_combo.currentText() if activation_type == 'primary' else self.secondary_hotkey_combo.currentText()
@@ -1894,20 +2015,59 @@ class MagnifierPage(QWidget):
         if self.magnification_available:
             try:
                 self.logger.info("[主线程] 开始停用放大")
-                MagSetFullscreenTransform(float(1.0), 0, 0)
+                kernel32.SetLastError(0)
+                result = MagSetFullscreenTransform(float(1.0), 0, 0)
+                if not result:
+                    # ⭐⭐ RN-657：这一句以前**没有人看返回值**，失败照样往下把
+                    #   is_magnifier_active 置 False、状态栏写「已关闭」。
+                    #   那意味着：屏幕还放大着，而软件认为已经关了 ——
+                    #   再按热键也不会再试着关（_deactivate_magnifier 头一行就 return）。
+                    #   激活路径（_update_magnification）一直是查返回值 + GetLastError 的，
+                    #   唯独反激活这条没有，而**关不掉比开不起来严重得多**。
+                    error_code = kernel32.GetLastError()
+                    self.logger.error(
+                        f"关闭放大失败：MagSetFullscreenTransform 返回 {result}（错误代码: {error_code}）"
+                    )
+                    self.status_label.setText("关闭放大失败，屏幕可能仍在放大 —— 请再按一次热键")
+                    return
                 self.is_magnifier_active = False
                 self.current_active_type = None
-                self._sync_magnifier_sensitivity_state(False, force=True)
-                
+                # RN-657：这里以前是 force=True
+                self._sync_magnifier_sensitivity_state(False)
+
                 # 恢复原始准心样式
                 self._restore_original_crosshair()
-                
+
                 self.status_label.setText("放大镜已关闭")
                 self.logger.info("放大镜已关闭")
             except Exception as e:
                 self.status_label.setText(f"关闭放大镜失败: {e}")
                 self.logger.error(f"关闭放大镜失败: {e}", exc_info=True)
     
+    def reset_screen_transform_now(self):
+        """把系统全屏放大变换复位。**退出路径专用：同步、极快、不碰 Qt、不发信号。**
+
+        ⭐⭐ RN-657：退出时唯一"不做就会留下系统级副作用"的一步就是它，而原来它排在
+        退出清理表的第 10 位，前面隔着关外部浏览器进程之类会卡的步骤；
+        `_run_shutdown_steps` 的 15 秒看门狗一旦开火就直接 `os._exit(0)`，这一步根本跑不到。
+        ⚠ 更要命的是 `cleanup()` 里走的是 `_deactivate_magnifier()` —— 那是 **emit 信号**，
+        要等主线程事件循环再转一圈；而退出时事件循环可能已经不转了 ⇒ 永远不执行。
+        ⇒ 这个方法直接调 API，谁都能叫，叫几次都行。
+        """
+        if not self.magnification_available or not self.is_magnifier_active:
+            return False
+        try:
+            ok = bool(MagSetFullscreenTransform(float(1.0), 0, 0))
+            if ok:
+                self.is_magnifier_active = False
+                self.current_active_type = None
+            else:
+                self.logger.error("退出时复位屏幕放大失败（MagSetFullscreenTransform 返回 0）")
+            return ok
+        except Exception as e:
+            self.logger.error(f"退出时复位屏幕放大出错: {e}")
+            return False
+
     def _attempt_mag_init(self):
         """尝试初始化 Magnification API，可重复调用。
 
@@ -1978,8 +2138,11 @@ class MagnifierPage(QWidget):
     
     def disable_magnifier(self):
         """禁用放大功能"""
+        # RN-657：这两条路都在主线程上（首页开关走 QTimer.singleShot、退出走清理表），
+        # 所以直接同步关，不要 emit 一个可能等不到事件循环的信号。
         if self.is_magnifier_active:
-            self._deactivate_magnifier()
+            self._do_deactivate_magnification()
+            self.reset_screen_transform_now()  # 上一句若因 API 失败没关掉，这里再兜一次
         elif self._sensitivity_runtime_applied:
             self._sync_magnifier_sensitivity_state(False, force=True)
         # P2.1: 注销本功能域全部热键（含键盘与鼠标）
@@ -1990,13 +2153,8 @@ class MagnifierPage(QWidget):
         except Exception:
             pass
         self._clear_mouse_hooks()
-        
-        self.keyboard_running = False
-        if self.keyboard_thread and self.keyboard_thread.is_alive():
-            try:
-                self.keyboard_thread.join(timeout=0.5)
-            except Exception:
-                pass
+        self._cancel_test_close_timer()
+        self._hotkeys_registered = False
 
         self.status_label.setText("开镜放大已禁用")
         self.logger.info("开镜放大功能已禁用")
@@ -2113,6 +2271,29 @@ class MagnifierPage(QWidget):
             
             self.status_label.setText("已加载保存的设置")
             self.logger.info("开镜放大设置加载完成")
+
+        # ⭐⭐ RN-657：配置被整体改写（导入预设、配置重载总线）走的是
+        #   `gui_widget._on_config_reloaded` → `page.load_settings()` 这一条，
+        #   而上面那一整段**只刷界面控件**：
+        #   ① 热键 combo 是在 disconnect 之间 setCurrentText 的 ⇒ 不会触发
+        #      `_on_hotkey_changed` ⇒ **注册中心里挂的还是旧键**：界面写着新键、
+        #      按新键没反应、按旧键反而放大；
+        #   ② `magnifier_enabled` 从开变关（或反过来）时，这里既不 enable 也不 disable
+        #      ⇒ 用户以为关了，全局钩子还挂着。
+        #   构造期那一次不走这里（启停由 __init__ 末尾统一管，别抢它的活）。
+        if self._settings_loaded_once:
+            self._resync_runtime_with_config()
+        self._settings_loaded_once = True
+
+    def _resync_runtime_with_config(self):
+        """配置被外部改写之后，把"实际在跑的东西"追上界面显示的东西。"""
+        try:
+            if self.config.magnifier_enabled:
+                self.enable_magnifier(interactive=False)
+            else:
+                self.disable_magnifier()
+        except Exception as e:
+            self.logger.warning(f"配置重载后同步开镜放大运行态失败: {e}")
     
     def save_settings(self):
         """保存设置"""
@@ -2146,8 +2327,11 @@ class MagnifierPage(QWidget):
         from theme_manager import get_theme_manager
         get_theme_manager().unregister_theme_changed_callback(self._apply_theme_styles)
 
+        # RN-657：同 disable_magnifier —— 退出时事件循环可能已经不转了，
+        # 这里必须同步关，不能 emit 信号等主线程。
         if self.is_magnifier_active:
-            self._deactivate_magnifier()
+            self._do_deactivate_magnification()
+            self.reset_screen_transform_now()
         elif self._sensitivity_runtime_applied:
             self._sync_magnifier_sensitivity_state(False, force=True)
 
@@ -2159,12 +2343,8 @@ class MagnifierPage(QWidget):
         except Exception:
             pass
         self._clear_mouse_hooks()
-        self.keyboard_running = False
-        if self.keyboard_thread and self.keyboard_thread.is_alive():
-            try:
-                self.keyboard_thread.join(timeout=0.5)
-            except Exception:
-                pass
+        self._cancel_test_close_timer()
+        self._hotkeys_registered = False
 
         self.save_settings()
         
