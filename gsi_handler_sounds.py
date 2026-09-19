@@ -59,6 +59,9 @@ class GSIHandlerSounds:
         self.death_cooldown_duration = 5.0
         self.last_active_weapon = ""
         self.weapon_reload_states = {}
+        #: 上一包的 `round.phase`。RN-660：回合阶段跳变的那一包，武器栏是**游戏**在改
+        #: （发装备、收装备、换边），不是玩家自己切的 —— 那一包不许出声。
+        self._last_round_phase = None
         self.magnifier_component = None
         #: 一包掉 N 发时补发用的定时器工厂。做成可注入的是为了判据能同步驱动它
         #: （`GameAudioDucker` 早就是这个写法）—— 判据里真 sleep 会让「量墙钟」那族变红。
@@ -119,6 +122,7 @@ class GSIHandlerSounds:
         current_steamid = player_data.get("steamid", "")
         provider_steamid = self._self_steamid(data)
         current_weapon = self._resolve_current_weapon(player_data)
+        phase_changed = self._track_round_phase(data, player_data)
         self._restore_ducker_if_features_disabled()
 
         if not config.player_steamid and provider_steamid:
@@ -154,10 +158,39 @@ class GSIHandlerSounds:
             self._sync_death_baseline(player_data)
 
         if config.switch_weapon_sound_enabled:
-            self._process_weapon_switch_sound(data)
+            self._process_weapon_switch_sound(data, phase_changed=phase_changed)
 
         if config.reload_sound_enabled:
             self._process_reload_sound(data)
+
+    def _track_round_phase(self, data, player_data):
+        """这一包的回合阶段跟上一包比变了没有。变了就返回 True。
+
+        ⭐⭐ RN-660：回合切换 / 拆包结束 / 比赛结束那一瞬间，**是游戏在动玩家的武器栏**，
+        不是玩家自己切枪 —— 而切枪判定只看「和上一包不一样」，于是如实地响了一声。
+        ⭐ 门开在「阶段**跳变**」而不是「阶段是不是 over」：买枪阶段玩家自己切枪要听到
+        （那时阶段没变），而游戏重置武器栏只发生在跳变那一包。按状态值挡会误伤前者。
+        ⚠ **根因尚未坐实**（证伪掉的两条假设见登记册 RN-660）—— 下面那行 info
+        就是为了让下一次进游戏一局就能抓到真相。
+        """
+        round_phase = str((data.get("round") or {}).get("phase", "") or "")
+        previous = self._last_round_phase
+        self._last_round_phase = round_phase
+        if previous is None or round_phase == previous:
+            return False
+
+        weapons = player_data.get("weapons") or {}
+        snapshot = {
+            key: f"{info.get('name', '?')}/{info.get('state', '?')}"
+            for key, info in weapons.items()
+            if isinstance(info, dict)
+        }
+        self.logger.info(
+            f"[回合阶段] {previous or '(无)'} -> {round_phase or '(无)'}；"
+            f"这一包的武器栏: {snapshot or '(空)'}；上一次记到的当前武器: "
+            f"{self.last_active_weapon or '(空)'}"
+        )
+        return True
 
     def _is_player_active(self, data):
         return (
@@ -501,7 +534,7 @@ class GSIHandlerSounds:
             release_ms=release_ms,
         )
 
-    def _process_weapon_switch_sound(self, data):
+    def _process_weapon_switch_sound(self, data, phase_changed=False):
         player_data = data.get("player", {})
         current_weapon = ""
         if "weapons" in player_data and player_data["weapons"] is not None:
@@ -514,8 +547,23 @@ class GSIHandlerSounds:
             self.logger.debug(f"检测到刀类型: {current_weapon}，映射为 weapon_knife")
             current_weapon = "weapon_knife"
 
+        if current_weapon and current_weapon != self.last_active_weapon and phase_changed:
+            # RN-660：回合阶段刚跳变 ⇒ 这次武器变化是游戏干的，不是玩家切的。
+            # 只把基线追上去，不出声（否则下一包又会被当成一次切枪）。
+            self.logger.info(
+                f"[回合阶段跳变] 武器栏被游戏改动，不报切枪: "
+                f"{self.last_active_weapon or '(空)'} -> {current_weapon}"
+            )
+            self.last_active_weapon = current_weapon
+            return
+
         if current_weapon and current_weapon != self.last_active_weapon:
             self.logger.info(f"武器切换: {self.last_active_weapon} -> {current_weapon}")
+            # ⭐ RN-659：换到别的枪了，上一把的切枪音就不该还在响。
+            #   三条通道轮转，连切三把枪以前是三个音叠着响（用户报「不会因为切换其他武器停止」）。
+            audio_manager.stop_channel_type("switch_weapon")
+            # 枪都换了，上一把的换弹动作也不可能还在继续
+            audio_manager.stop_channel_type("reload")
             weapon_style = config.weapon_switch_sounds.get(current_weapon, "0")
             if not self._style_disabled(weapon_style):
                 sound_key = f"switch-{current_weapon}-{weapon_style}"
@@ -547,6 +595,11 @@ class GSIHandlerSounds:
 
             is_reloading = weapon_data.get("state") == "reloading"
             was_reloading = self.weapon_reload_states.get(weapon_key, False)
+            # ⭐ RN-659：换弹结束（装满了、或者被开火/切枪打断）⇒ 那段音效就该停。
+            #   以前只收上升沿、不收下降沿，于是取消换弹之后声音还在自顾自地播完。
+            if was_reloading and not is_reloading:
+                self.logger.debug(f"换弹结束，停掉换弹音效: {weapon_name}")
+                audio_manager.stop_channel_type("reload")
             if is_reloading and not was_reloading:
                 self.logger.info(f"检测到武器开始换弹: {weapon_name}")
                 weapon_style = config.weapon_reload_sounds.get(weapon_name, "0")

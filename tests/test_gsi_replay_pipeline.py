@@ -18,6 +18,8 @@ class _DummyAudioManager:
         self.load_round_sound_calls: list[tuple[str, str]] = []
         self.load_c4_sound_calls: list[tuple[str, str]] = []
         self.play_sound_with_fade_calls: list[tuple[str, str]] = []
+        #: RN-659：切枪/换弹会先停掉同类正在响的声音
+        self.stop_channel_type_calls: list[str] = []
 
     def play_sound(self, key: str, channel_type: str = "kill_sound", **_kwargs):
         self.play_sound_calls.append((key, channel_type))
@@ -37,6 +39,10 @@ class _DummyAudioManager:
     def play_sound_with_fade(self, key: str, channel_type: str = "round_sound", **_kwargs):
         self.play_sound_with_fade_calls.append((key, channel_type))
         return True
+
+    def stop_channel_type(self, channel_type: str):
+        self.stop_channel_type_calls.append(channel_type)
+        return False
 
     def load_health_warning_sound(self, _style: str):
         return True

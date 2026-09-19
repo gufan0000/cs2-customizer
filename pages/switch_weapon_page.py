@@ -71,7 +71,14 @@ class SwitchWeaponPage(SoundPageBase, QWidget):
         "狙击枪": ["weapon_awp", "weapon_ssg08", "weapon_scar20", "weapon_g3sg1"],
         "霰弹枪": ["weapon_nova", "weapon_xm1014", "weapon_mag7", "weapon_sawedoff"],
         "机枪": ["weapon_m249", "weapon_negev"],
-        "投掷物": ["weapon_hegrenade", "weapon_molotov", "weapon_incgrenade"],
+        # ⭐⭐ RN-659（社区报「切出的音效没闪没烟」）：这三个以前不在表里，因为这张表
+        #   跟着 `weapon_kill_sounds` 走，而那张按「能不能杀人」组织 —— 闪光弹杀不了人，
+        #   于是它连**拿得出来**这件事也一起丢了。
+        #   ⭐ 一张表被另一件事的口径划了分母，不合那个口径的东西在这件事上也跟着消失。
+        "投掷物": [
+            "weapon_hegrenade", "weapon_molotov", "weapon_incgrenade",
+            "weapon_flashbang", "weapon_smokegrenade", "weapon_decoy",
+        ],
         "近战": ["weapon_knife", "weapon_taser"],
     }
 
@@ -113,6 +120,9 @@ class SwitchWeaponPage(SoundPageBase, QWidget):
         "weapon_hegrenade": "高爆手雷",
         "weapon_molotov": "燃烧瓶",
         "weapon_incgrenade": "燃烧弹",
+        "weapon_flashbang": "闪光弹",
+        "weapon_smokegrenade": "烟雾弹",
+        "weapon_decoy": "诱饵弹",
         "weapon_knife": "刀",
         "weapon_taser": "宙斯 x27",
     }

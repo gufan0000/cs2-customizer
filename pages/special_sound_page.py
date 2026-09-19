@@ -464,6 +464,7 @@ class SpecialSoundPage(QWidget):
         self.grenade_summary_label = self._create_summary_label()
         header_layout.addWidget(self.grenade_summary_label)
 
+
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
@@ -476,6 +477,25 @@ class SpecialSoundPage(QWidget):
         # UP-100: 同 `_create_round_tab`——头部卡进滚动区。这一档的头部卡最小高 125px
         # （1.25 档 139px），滚动区视口被挤到 103px，内容 652px。
         scroll_layout.addWidget(header_card)
+
+        # ⭐⭐ RN-664（社区问「怎么导入手雷的音效」「没有教程和命名格式」）：六个类型
+        #   目录名**只存在于源码里**，帮助面板那行还是占位符。⇒ 摆在它该在的地方。
+        #   ⚠ 文件名那句也要说：帮助面板以前写 `throw.mp3`，而代码根本不看文件名。
+        #   ⚠⚠ **放在滚动区里而不是头部卡里**：头部卡最小高 125px（见上面 UP-100），
+        #   多行文本塞进去会被裁掉最后一行 —— 而排版审计和挤压审计**都看不见那种裁切**
+        #   （外审 9/9 逮到，本机三条审计 0/3，同 §1 那条血账）。
+        # ⚠ 不用 <code>：等宽字体和中文混排时字距会乱（外审 4 发报「燃烧瓶/燃烧弹
+        #   重叠挤压」，而本机排版审计照样绿）。类型名分两行排，一行三个。
+        _types = [f"{key}（{label}）" for key, label in self.GRENADE_TYPES.items()]
+        naming_hint = QLabel(
+            "自己加素材：grenade_sounds / 类型 / 风格名 / ，文件名随便起。<br>"
+            "类型只认这六个：" + "、".join(_types[:3]) + "、<br>"
+            + "、".join(_types[3:])
+        )
+        naming_hint.setObjectName("hintLabel")
+        naming_hint.setWordWrap(True)
+        naming_hint.setTextFormat(Qt.RichText)
+        scroll_layout.addWidget(naming_hint)
 
         grid = QGridLayout()
         grid.setContentsMargins(0, 0, 0, 0)

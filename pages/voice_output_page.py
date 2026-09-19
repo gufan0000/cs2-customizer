@@ -149,6 +149,32 @@ class VoiceOutputPage(QWidget):
         manager = getattr(self, "voice_manager", None)
         return getattr(manager, "vb_cable_device_id", None) is not None
 
+    def _sfx_forwarding_blockers(self):
+        """转发开着、但队友仍然听不到的原因。空列表 = 真的通了。
+
+        ⚠ 这两条都不是本页这个开关管的，而缺了任何一条，转发都是**静默**失败的
+        （`voice_output_manager.play_pygame_sound_to_voice` 里 return False + 一行 debug）。
+        """
+        blockers = []
+        if not bool(getattr(config, "voice_output_enabled", False)):
+            blockers.append("「语音播放」总开关还没开")
+        if not self._driver_ready():
+            blockers.append("没有检测到 VB-Cable 虚拟声卡")
+        return blockers
+
+    def _refresh_sfx_forwarding_requirements(self):
+        label = getattr(self, "sfx_forwarding_requirement_label", None)
+        if label is None:
+            return
+        if not bool(getattr(config, "sfx_forwarding_enabled", False)):
+            label.setText("转发还没开。开了之后这里会告诉你它还缺什么。")
+            return
+        blockers = self._sfx_forwarding_blockers()
+        if blockers:
+            label.setText("队友现在还听不到：" + "；".join(blockers) + "。补齐后这行会变。")
+        else:
+            label.setText("已经通了：勾选的这几类音效会跟着你的麦克风一起发出去。")
+
     @staticmethod
     def _is_checked_state(state):
         if state == Qt.CheckState.Checked:
@@ -499,6 +525,8 @@ class VoiceOutputPage(QWidget):
     def showEvent(self, event):
         super().showEvent(event)
         QTimer.singleShot(0, self._refresh_control_panel_summary)
+        # RN-663：总开关和驱动都可能在别处被改，每次进页重算一次缺什么
+        QTimer.singleShot(0, self._refresh_sfx_forwarding_requirements)
         # 每次进页按当前配置(含语音总开关)重注册全局热键：
         # 用户在首页切了总开关后进本页，热键状态随之同步(关→撤销拦截，开→恢复)
         if hasattr(self, "_register_hotkeys_func"):
@@ -797,6 +825,16 @@ class VoiceOutputPage(QWidget):
         # 连接信号
         self.sfx_forwarding_check.stateChanged.connect(self._update_sfx_forwarding)
         layout.addWidget(self.sfx_forwarding_check)
+
+        # ⭐⭐ RN-663：转发要**三件事**同时成立（这个开关 + 「语音播放」总开关 + VB-Cable），
+        #   缺后两者时是在 `voice_output_manager` 里 return False 掉的，只留一行 debug。
+        #   社区报「疑似不生效、也可能是我的问题」—— 不是他的问题，是软件把缺什么咽下去了。
+        self.sfx_forwarding_requirement_label = QLabel()
+        self.sfx_forwarding_requirement_label.setObjectName("hintLabel")
+        self.sfx_forwarding_requirement_label.setWordWrap(True)
+        self.sfx_forwarding_requirement_label.setFont(QFont("Microsoft YaHei", 10))
+        layout.addWidget(self.sfx_forwarding_requirement_label)
+        self._refresh_sfx_forwarding_requirements()
         
         # 音效选项
         options_group = QGroupBox("音效选项")
@@ -1471,6 +1509,7 @@ class VoiceOutputPage(QWidget):
         
         self.logger.info(f"[音效转发开关] 已保存配置: {enabled}")
         self.logger.info(f"[音效转发开关] config.json 中的值: {config.sfx_forwarding_enabled}")
+        self._refresh_sfx_forwarding_requirements()
         self._sync_overview_status()
     
     def _update_sfx_option(self, option_key, enabled):

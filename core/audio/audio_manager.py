@@ -1052,6 +1052,39 @@ class AudioManager:
             except Exception:
                 pass
 
+    def channels_for_type(self, channel_type: str):
+        """这一类音效可能落在哪几条通道上。
+
+        ⚠ 切枪是**三条通道轮转**的 ⇒ 「停掉切枪音」必须三条都看：只停
+        `_select_channel` 挑的那条，停到的是下次要用的那条，不是正在响的那条。
+        """
+        if channel_type == "switch_weapon":
+            channels = getattr(self, "switch_weapon_channels", None)
+            return list(channels) if channels else [self.switch_weapon_channel]
+        if channel_type in {"awp", "gun_sound"}:
+            channels = getattr(self, "gun_sound_channels", None)
+            return list(channels) if channels else []
+        return [self._select_channel(channel_type)]
+
+    def stop_channel_type(self, channel_type: str) -> bool:
+        """停掉某一类正在响的音效，返回有没有真的停到东西。
+
+        ⭐ RN-659：切枪/换弹以前"播了就不管"—— 动作已经没了而声音还在，那声音说的
+        就是假话。（`stop_sound`/`stop_channel` 一直都在，只是处理器一次没调过。）
+        """
+        stopped = False
+        for channel in self.channels_for_type(channel_type):
+            if channel is None:
+                continue
+            try:
+                if hasattr(channel, "get_busy") and not channel.get_busy():
+                    continue
+                channel.stop()
+                stopped = True
+            except Exception:
+                continue
+        return stopped
+
     def unload_sound(self, key: str):
         with self._lock:
             info = self._sounds.pop(key, None)

@@ -4005,6 +4005,143 @@ REVERTS = [
         "配置重载走的是 `_on_config_reloaded` → `load_settings()`，而热键 combo 是在"
         "disconnect 之间 setCurrentText 的 ⇒ 不触发 `_on_hotkey_changed` ⇒ 注册中心里挂的还是旧键",
     ),
+    # ── 2026-09-19 社区工单返修（RN-659~664）：这一组 `--only TKT` 单独跑 ──
+    # 用户在 CSCS2 Customizer 交流群报的一批问题，五视角核对后确凿属实的那几条。
+    Revert(
+        "TKT", "切枪音效又只认三种投掷物（闪光弹/烟雾弹/诱饵弹消失）",
+        "pages/switch_weapon_page.py",
+        '            "weapon_flashbang", "weapon_smokegrenade", "weapon_decoy",\n',
+        "",
+        "tests/test_community_ticket_fixes.py::test_every_throwable_can_have_a_switch_sound",
+        "⭐⭐ 用户原话「还有投掷物切出的音效没闪没烟」。根子是**分母问题**："
+        "这张表跟着 `weapon_kill_sounds` 走，而那张按「能不能杀人」组织 —— "
+        "闪光弹杀不了人，于是它连**拿得出来**这件事也一起从界面上消失了。"
+        "⭐ 一张表被另一件事的口径划了分母，不合那个口径的东西在这件事上也跟着消失",
+    ),
+    Revert(
+        "TKT", "新投掷物又没有配置位（界面选了存不下来）",
+        "config.py",
+        '        for weapon in ("weapon_flashbang", "weapon_smokegrenade", "weapon_decoy"):\n'
+        "            self.weapon_switch_sounds.setdefault(weapon, \"0\")\n",
+        "",
+        "tests/test_community_ticket_fixes.py::test_the_new_throwables_have_a_config_slot",
+        "上一刀的另一半：页面上摆出来了但配置里没位置，选完重开就没了",
+    ),
+    Revert(
+        "TKT", "换弹被打断后那段音效又自顾自播完",
+        "gsi_handler_sounds.py",
+        '            if was_reloading and not is_reloading:\n',
+        "            if False:\n",
+        "tests/test_community_ticket_fixes.py::test_a_cancelled_reload_stops_the_reload_sound",
+        "用户原话「切枪、换弹音效不会因为停止换弹或切换其他武器停止」。"
+        "以前只收 `reloading` 的**上升沿**，下降沿没人管 —— 动作已经没了而声音还在，"
+        "那声音说的就是假话。⭐ `stop_sound`/`stop_channel` 一直都在，只是处理器一次没调过",
+    ),
+    Revert(
+        "TKT", "切到新枪时又不掐上一把的切枪音（三条通道叠着响）",
+        "gsi_handler_sounds.py",
+        '            audio_manager.stop_channel_type("switch_weapon")\n',
+        "",
+        "tests/test_community_ticket_fixes.py::test_switching_weapons_cuts_the_previous_switch_sound",
+        "切枪音效走三条通道轮转，连切三把枪以前是三个音叠着响",
+    ),
+    Revert(
+        "TKT", "停某一类音效时又只停 _select_channel 挑的那一条",
+        "core/audio/audio_manager.py",
+        '        if channel_type == "switch_weapon":\n'
+        "            channels = getattr(self, \"switch_weapon_channels\", None)\n"
+        "            return list(channels) if channels else [self.switch_weapon_channel]\n",
+        "",
+        "tests/test_community_ticket_fixes.py::test_the_audio_manager_can_stop_a_whole_channel_type",
+        "⚠ 切枪是三条通道**轮转**的 —— `_select_channel` 挑出来的是**下一次要用的**那条，"
+        "不是正在响的那条。只停它等于什么都没停，而判据若只断言「调了 stop」照样会绿",
+    ),
+    Revert(
+        "TKT", "回合阶段跳变那一包又报切枪（拆完包响一下）",
+        "gsi_handler_sounds.py",
+        "        if current_weapon and current_weapon != self.last_active_weapon and phase_changed:\n",
+        "        if False:\n",
+        "tests/test_community_ticket_fixes.py::"
+        "test_a_round_phase_change_does_not_report_a_weapon_switch",
+        "用户原话「游戏结束的时候切枪和击杀音效又触发一次」「比如说你拆完包他也会响一下」。"
+        "那一瞬间是**游戏**在动玩家的武器栏（收装备/发装备/换边），不是玩家切枪。"
+        "⚠ 根因尚未坐实（日志里唯一的大样本是死斗模式，没有回合胜负）——"
+        "这道门是对三种可能根因都有效的那一版，另配了一行取证日志",
+    ),
+    Revert(
+        "TKT", "投掷物目录名写错又永不报警",
+        "core/resource_readback.py",
+        '    if key == "grenade_sounds":\n'
+        "        from core.audio.audio_manager import AudioManager\n\n"
+        "        return frozenset(str(t).lower() for t in AudioManager.GRENADE_TYPES)\n",
+        "",
+        "tests/test_community_ticket_fixes.py::test_a_misspelled_grenade_folder_is_reported",
+        "`known_buckets` 返回 `None` 会让 `bucket_problem()` 直接短路 ⇒ 永不报警 ⇒ "
+        "用户把目录名写成「闪光」而不是 `flashbang`，导入向导一声不吭地把文件放进"
+        "一个产品永远不会去读的目录。⭐ 旧注释说它「没有固定表」——那句话是错的",
+    ),
+    Revert(
+        "TKT", "帮助面板又只讲 C4 三个事件里的一个",
+        "ui_help_panel.py",
+        "        \"• C4：<b>安放</b>＝下包完成那一刻；<b>拆除</b>＝拆包<b>成功</b>那一刻\"\n"
+        "        \"（拆到一半被打断不会响）；<b>爆炸</b>＝炸弹炸开那一刻。\"\n"
+        "        \"没有「滴滴」倒计时这一类<br>\"\n",
+        '        "• C4：安装炸弹（下包）时<br>"\n',
+        "tests/test_community_ticket_fixes.py::test_the_help_text_says_when_each_c4_event_fires",
+        "界面上摆着安放/拆除/爆炸三项，而帮助面板只写了第一项 —— "
+        "用户只好跑到群里问「这个是拆除后触发还是拆的那个音效」「是滴包么」",
+    ),
+    Revert(
+        "TKT", "投掷物目录名又退回占位符「投掷物类型」",
+        "ui_help_panel.py",
+        "        \"<b>类型这一层只认这六个英文名</b>：\"\n",
+        '        "<b>投掷物类型</b>："\n',
+        "tests/test_community_ticket_fixes.py::"
+        "test_the_help_text_lists_the_real_grenade_folder_names",
+        "六个类型目录名以前**只存在于源码里**，用户照着占位符是拼不出来的",
+    ),
+    Revert(
+        "TKT", "帮助面板又写死一个根本不看的文件名",
+        "ui_help_panel.py",
+        '        "• 血量警告：<code>health_warning/风格名/</code><br>"\n',
+        '        "• 血量警告：<code>health_warning/风格名/warning.mp3</code><br>"\n',
+        "tests/test_community_ticket_fixes.py::"
+        "test_the_help_text_does_not_promise_a_filename_that_is_ignored",
+        "⭐⭐ 这几类走的都是 `find_first_audio_file`（目录里排序第一个），**根本不看文件名**。"
+        "一句**说得很具体却是假的**说明比没有说明更糟：用户照着做，做完不响，然后怀疑自己",
+    ),
+    Revert(
+        "TKT", "投掷物页签上又不写目录名（只藏在帮助面板里）",
+        "pages/special_sound_page.py",
+        # ⚠ 锚点在本批里更新过一次：这段文案被外审逼着改了两版（先是被头部卡裁掉
+        #   最后一行，挪进滚动区后又报中英混排重叠），锚点跟着漂了。
+        "            \"自己加素材：grenade_sounds / 类型 / 风格名 / ，文件名随便起。<br>\"\n",
+        "",
+        "tests/test_community_ticket_fixes.py::"
+        "test_the_grenade_tab_shows_the_folder_names_on_the_page_itself",
+        "用户是先在**页面上**找不到，才跑到群里问的。帮助面板要点右上角「?」才看得到",
+    ),
+    Revert(
+        "TKT", "音效转发又不说自己缺什么",
+        "pages/voice_output_page.py",
+        '        if not bool(getattr(config, "voice_output_enabled", False)):\n'
+        '            blockers.append("「语音播放」总开关还没开")\n',
+        "",
+        "tests/test_community_ticket_fixes.py::"
+        "test_the_forwarding_page_names_what_is_still_missing",
+        "用户原话「音效转发疑似不生效、也可能是我的问题」。不是他的问题：缺「语音播放」"
+        "总开关或 VB-Cable 时，转发是在 `voice_output_manager` 里 return False 掉的，"
+        "**只留一行 debug 日志** —— 软件把自己缺什么咽下去了",
+    ),
+    Revert(
+        "TKT", "转发开关动了之后那行提示不重算（显示上一次的状态）",
+        "pages/voice_output_page.py",
+        "        self._refresh_sfx_forwarding_requirements()\n        self._sync_overview_status()\n",
+        "        self._sync_overview_status()\n",
+        "tests/test_community_ticket_fixes.py::"
+        "test_the_forwarding_hint_is_refreshed_when_the_switch_changes",
+        "一行说着旧状态的提示，比没有提示更容易让人下错判断",
+    ),
     Revert(
         "RN", "ruff.toml 替一个已删的文件留排除行",
         "ruff.toml",

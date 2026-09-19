@@ -663,6 +663,12 @@ class Config:
         # 初始化所有武器的切枪音效设置
         for weapon in self.weapon_kill_sounds.keys():
             self.weapon_switch_sounds[weapon] = "0"  # 默认不使用切枪音效
+
+        # ⭐ RN-659：上表按「能不能杀人」组织，闪光弹/烟雾弹/诱饵弹不在里面 ——
+        #   但它们**拿得出来**，切出来就该能配音效。
+        #   ⛔ 不许反过来塞进 `weapon_kill_sounds`：那会冒出「闪光弹击杀」这种条目。
+        for weapon in ("weapon_flashbang", "weapon_smokegrenade", "weapon_decoy"):
+            self.weapon_switch_sounds.setdefault(weapon, "0")
             
         # 复制武器击杀音效配置作为初始配置，但排除近战武器和手雷/道具
         for weapon in self.weapon_kill_sounds.keys():

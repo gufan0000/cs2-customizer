@@ -73,7 +73,10 @@ def numbered_slots(spec_key: str) -> int:
 
 
 #: 哪几类的 bucket 层是**产品的固定集合**，以及它的真源。
-#: ⚠ `grenade_sounds` 不在这里：投掷物目录名产品那头按目录扫，没有固定表。
+#: ⭐⭐ RN-662：`grenade_sounds` 以前不在这里，旧注释说它「没有固定表」——**那是错的**，
+#: 产品读的就是 `AudioManager.GRENADE_TYPES` 这个六元组。返回 `None` 会让
+#: `bucket_problem()` 短路 ⇒ 目录名写错**永不报警**，文件静静躺在产品不读的地方。
+#: ⭐ 「按目录扫」和「没有固定表」是两件事 —— 扫的是风格层，类型层一直是固定的。
 def known_buckets(spec_key: str) -> Optional[frozenset]:
     """这一类的 bucket 层只许是哪些值；`None` 表示产品不挑。"""
     key = str(spec_key or "")
@@ -81,6 +84,10 @@ def known_buckets(spec_key: str) -> Optional[frozenset]:
         from core.resource_placement import ROUND_BUCKETS
 
         return frozenset(ROUND_BUCKETS)
+    if key == "grenade_sounds":
+        from core.audio.audio_manager import AudioManager
+
+        return frozenset(str(t).lower() for t in AudioManager.GRENADE_TYPES)
     if key in ("gun_sounds", "switch_weapons", "reload_sounds",
                "weapon_kill_sounds", "weapon_kill_voices"):
         from core.gun_sound_profiles import GUN_SOUND_WEAPON_TYPES

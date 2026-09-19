@@ -726,6 +726,30 @@
   },
   {
    "page": "switch_weapon",
+   "text": "烟雾弹",
+   "card": "",
+   "tab": "投掷物",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "switch_weapon",
+   "text": "诱饵弹",
+   "card": "",
+   "tab": "投掷物",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "switch_weapon",
+   "text": "闪光弹",
+   "card": "",
+   "tab": "投掷物",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "switch_weapon",
    "text": "高爆手雷",
    "card": "",
    "tab": "投掷物",

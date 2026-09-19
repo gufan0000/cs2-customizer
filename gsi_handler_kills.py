@@ -545,6 +545,16 @@ class GSIHandlerKills:
         # 使用默认音效
         else:
             sound_style_dir = kill_sounds_dir
+            # ⭐ 诊断日志（社区用户报「投掷物丢出后的击杀会触发 21 冠音效」——
+            #   「21冠军」是他自己素材库里的一个**通用**击杀音效风格名）：
+            #   落到通用音效这条路上时，把"这次判成是哪把枪杀的"记一行。
+            #   ⚠ 机制推断是：判断开火武器靠弹夹数递减，而投掷物没有弹夹字段，
+            #   加上爆炸有延时、确认击杀时玩家常已切回枪 ⇒ 认不出是手雷。
+            #   **这条推断我没有真实 GSI 数据坐实**，这行日志就是为了坐实它。
+            self.logger.info(
+                f"[击杀音效] 落到通用风格：判定武器={weapon_name}，"
+                f"配置里有它吗={has_explicit_style}，风格={weapon_style}"
+            )
         
         # 检查音效文件情况
         has_only_first_sounds = False
