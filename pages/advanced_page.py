@@ -602,6 +602,15 @@ class AdvancedPage(QWidget):
         close_row.addWidget(self.close_action_combo, 1)
         section_layout.addLayout(close_row)
 
+        # RN-666④：没有托盘时这三个选项全塌缩成"直接退出"（`closeEvent` 里 ask 和
+        # tray 两条分支都带 `and tray_ready`）⇒ 整个下拉框置灰，不只灰「托盘」那一项。
+        self.close_action_tray_hint = QLabel("")
+        self.close_action_tray_hint.setObjectName("closeActionTrayHint")
+        self.close_action_tray_hint.setWordWrap(True)
+        self.close_action_tray_hint.setVisible(False)
+        section_layout.addWidget(self.close_action_tray_hint)
+        self._refresh_close_action_availability()
+
         # 开机自启（真实来源 = 注册表，勾选状态启动时读取）
         self.autostart_checkbox = QCheckBox("开机自动启动 CS2 Customizer")
         try:
@@ -621,6 +630,41 @@ class AdvancedPage(QWidget):
         section_layout.addWidget(self.remember_window_checkbox)
 
         parent_layout.addWidget(panel)
+
+    @staticmethod
+    def _system_tray_available() -> bool:
+        """⚠ 拿不到答案时**朝"可用"倒** —— 朝"不可用"倒会在正常机器上把选项灰掉。"""
+        try:
+            from PySide6.QtWidgets import QSystemTrayIcon
+
+            return bool(QSystemTrayIcon.isSystemTrayAvailable())
+        except Exception:
+            return True
+
+    def _refresh_close_action_availability(self):
+        """托盘不可用 ⇒ 关闭行为下拉框置灰 + 说明原因（RN-666④）。"""
+        combo = getattr(self, "close_action_combo", None)
+        hint = getattr(self, "close_action_tray_hint", None)
+        if combo is None:
+            return
+        available = self._system_tray_available()
+        combo.setEnabled(available)
+        combo.setToolTip("" if available else "当前系统没有可用的通知区域（系统托盘）")
+        if not available:
+            idx = combo.findData("exit")
+            if idx >= 0:
+                combo.blockSignals(True)
+                combo.setCurrentIndex(idx)
+                combo.blockSignals(False)
+        if hint is not None:
+            hint.setText("" if available else
+                         "这台电脑的通知区域（系统托盘）不可用，关闭窗口只能直接退出程序。")
+            hint.setVisible(not available)
+
+    def showEvent(self, event):
+        # 托盘可用性会变（explorer.exe 重启、远程桌面切换），每次进页面复核
+        super().showEvent(event)
+        self._refresh_close_action_availability()
 
     def _on_close_action_changed(self, index):
         choice = str(self.close_action_combo.itemData(index) or "ask")

@@ -62,6 +62,10 @@ def _handler(monkeypatch, gun_type: str, style: str = "styleX", *, play_result=T
         def prewarm_gun_sound(self, *_a, **_k):
             return None
 
+        def stop_channel_type(self, _channel_type):
+            # 替身最小接口（RN-665④）：处理器会调它，替身就得有
+            return False
+
     class _Ducker:
         def duck_for(self, _delay, **_kw):
             return True

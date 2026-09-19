@@ -4142,6 +4142,76 @@ REVERTS = [
         "test_the_forwarding_hint_is_refreshed_when_the_switch_changes",
         "一行说着旧状态的提示，比没有提示更容易让人下错判断",
     ),
+    # ── 2026-09-20 收尾批（RN-666~669）：这一组 `--only WRP` 单独跑 ──
+    # 上一轮立案不修的几条，加上社区工单里那条「任务栏图标」。
+    # ⚠ 图标那条**没有断点**：修的是两个二进制文件，而本工装是按文本替换做回退的。
+    #   判据 `test_the_packaged_icon_is_a_real_ico_container` 直接读文件头，
+    #   回退方式只有"把 PNG 拷回去"，不在这套机制里。
+    Revert(
+        "WRP", "拍图工装的 --whole 又不往逐页签那条路上传",
+        "scripts/ui_shot_capture.py",
+        ",\n                                            whole=args.whole)",
+        ")",
+        "tests/test_the_things_the_audit_left_open.py::"
+        "test_the_whole_switch_reaches_the_per_tab_capture",
+        "⭐⭐⭐ 两个开关各自都在，盲区在**乘积**上：`--tabs` 按视口高度拍、"
+        "`--whole` 只管默认页签 ⇒ 「有页签 + 内容超高」那一格从来没有过一张完整的图。"
+        "RN-170 的注释当时写的是「同一个形状的第二条腿」，把两件事写成了并列，"
+        "于是没人去想它们要相乘",
+    ),
+    Revert(
+        "WRP", "逐页签拍图时又不出整页图",
+        "scripts/ui_shot_capture.py",
+        "                if whole:\n",
+        "                if False:\n",
+        "tests/test_the_things_the_audit_left_open.py::"
+        "test_the_per_tab_capture_can_also_shoot_whole_pages",
+        "上一条的另一半：参数传进来了但函数体里不用它",
+    ),
+    Revert(
+        "WRP", "托盘不可用时又让人选「最小化到系统托盘」",
+        "pages/advanced_page.py",
+        "        combo.setEnabled(available)\n",
+        "        combo.setEnabled(True)\n",
+        "tests/test_the_things_the_audit_left_open.py::"
+        "test_close_action_is_greyed_out_when_there_is_no_tray",
+        "三个关闭行为在没有托盘时**全部塌缩成「直接退出」**（`closeEvent` 里 ask 和 tray "
+        "两条分支都带 `and tray_ready`）⇒ 用户选了托盘、程序照样退出，一声不吭。"
+        "⭐ 做不到的事不要摆成可选项 —— 同 `autostart_checkbox` 的 `setEnabled(is_supported())`",
+    ),
+    Revert(
+        "WRP", "替身又漏掉产品会调的方法",
+        "tests/test_melee_kill_config_actually_applies.py",
+        "    def play_sound(self, _key, **_kw):\n        return True\n",
+        "",
+        "tests/test_the_things_the_audit_left_open.py::"
+        "test_gsi_stand_ins_implement_what_the_handlers_actually_call",
+        "⭐⭐ 上一批给产品加 `stop_channel_type`，两个替身当场 AttributeError；"
+        "而**另外两个文件的替身同样缺它，只是没走到那条路径所以一直绿**。"
+        "⇒ 把「替身该有哪些方法」从人记变成从产品 AST 算出来",
+    ),
+    Revert(
+        "WRP", "投掷物网格的列数阈值又退回一个永远达不到的数",
+        "pages/special_sound_page.py",
+        "        if width >= 1040 and count >= 3:\n",
+        "        if width >= 1380 and count >= 3:\n",
+        "tests/test_the_things_the_audit_left_open.py::"
+        "test_six_grenade_types_fit_in_two_rows_on_a_normal_window",
+        "⭐⭐⭐ 1280 的窗口减掉侧栏只剩 ~1060，于是那个 1380 的三列档**一次都没生效过** —— "
+        "六张卡固定 2 列 3 行，首屏只露 4 张，而状态条同时写着「0/6」。"
+        "⭐ **一个永远达不到的阈值，和没有这一档是一回事**，却在代码里长得像已经考虑过宽屏了",
+    ),
+    Revert(
+        "WRP", "命名提示又跑回网格上面",
+        "pages/special_sound_page.py",
+        # ⚠ 锚点在本批里改过一次：注释里的编号从 RN-665③ 换成了 RN-666③
+        #   （产品代码不许点名还开着的条目，见同名判据）。
+        "        scroll_layout.addWidget(naming_hint)   # RN-666③：在网格**之后**，理由见上面\n",
+        "",
+        "tests/test_the_things_the_audit_left_open.py::test_the_naming_hint_sits_below_the_cards",
+        "那三行提示（我上一批自己加的）顶在网格上面，把六张卡又往下推了半行。"
+        "⭐ 它是「我要自己做素材」时才看的，不是进页面第一眼要看的",
+    ),
     Revert(
         "RN", "ruff.toml 替一个已删的文件留排除行",
         "ruff.toml",

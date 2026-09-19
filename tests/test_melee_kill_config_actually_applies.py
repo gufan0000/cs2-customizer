@@ -38,6 +38,14 @@ class _DummyAudio:
     weapon_voices_dir = ""
     kill_voices_dir = ""
 
+    # 替身最小接口（RN-665④）：GSIHandlerKills 会调这两个，替身就得有 ——
+    # 这一版之所以一直绿，只是因为本文件的用例没走到出声那一步。
+    def play_sound(self, _key, **_kw):
+        return True
+
+    def play_voice(self, _key, **_kw):
+        return True
+
 
 @pytest.fixture()
 def handler(monkeypatch):

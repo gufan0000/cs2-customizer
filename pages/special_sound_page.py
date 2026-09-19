@@ -321,12 +321,16 @@ class SpecialSoundPage(QWidget):
             grid.setColumnStretch(column, 1)
 
     def _responsive_columns_for_cards(self, count: int) -> int:
+        """⭐ RN-666③：阈值原来是 1380 / 940，而**这一页永远到不了 1380**（1280 窗口
+        减侧栏只剩 ~1060）⇒ 那一档一次都没生效过。现按卡片真正需要多宽来定：
+        一列 = 下拉框 190 + 测试钮 80 + 间距 8 + 卡内边距 24 ≈ 302。
+        """
         if count <= 1:
             return 1
         width = max(self.width(), 0)
-        if width >= 1380 and count >= 3:
+        if width >= 1040 and count >= 3:
             return 3
-        if width >= 940 and count >= 2:
+        if width >= 700 and count >= 2:
             return 2
         return 1
 
@@ -486,6 +490,8 @@ class SpecialSoundPage(QWidget):
         #   （外审 9/9 逮到，本机三条审计 0/3，同 §1 那条血账）。
         # ⚠ 不用 <code>：等宽字体和中文混排时字距会乱（外审 4 发报「燃烧瓶/燃烧弹
         #   重叠挤压」，而本机排版审计照样绿）。类型名分两行排，一行三个。
+        #   ⚠⚠⚠ RN-666③：它原先摆在网格**上面**，三行 ≈55px 顶在首屏，把六张卡
+        #   又往下推了半行 ⇒ 已挪到网格下面（「我要自己做素材」不是第一眼要看的）。
         _types = [f"{key}（{label}）" for key, label in self.GRENADE_TYPES.items()]
         naming_hint = QLabel(
             "自己加素材：grenade_sounds / 类型 / 风格名 / ，文件名随便起。<br>"
@@ -495,7 +501,6 @@ class SpecialSoundPage(QWidget):
         naming_hint.setObjectName("hintLabel")
         naming_hint.setWordWrap(True)
         naming_hint.setTextFormat(Qt.RichText)
-        scroll_layout.addWidget(naming_hint)
 
         grid = QGridLayout()
         grid.setContentsMargins(0, 0, 0, 0)
@@ -524,7 +529,8 @@ class SpecialSoundPage(QWidget):
             combo.addItem("不启用", "0")
             for style in grenade_styles.get(grenade_type, []):
                 combo.addItem(style, style)
-            combo.setMinimumWidth(220)
+            # RN-666③：220 → 190，为三列腾出余量（算式见 `_responsive_columns_for_cards`）
+            combo.setMinimumWidth(190)
             self._set_compact_heights(combo)
             combo.currentIndexChanged.connect(
                 lambda _idx, g=grenade_type: self._on_grenade_style_changed(g)
@@ -544,6 +550,7 @@ class SpecialSoundPage(QWidget):
 
         self._apply_responsive_grid(grid, self.grenade_cards, self._responsive_columns_for_cards(len(self.grenade_cards)))
         scroll_layout.addLayout(grid)
+        scroll_layout.addWidget(naming_hint)   # RN-666③：在网格**之后**，理由见上面
         scroll_layout.addStretch()
         scroll.setWidget(scroll_content)
         layout.addWidget(scroll)
@@ -839,7 +846,9 @@ class SpecialSoundPage(QWidget):
             combo.addItem("不启用", "0")
             for style in getattr(self.audio_manager, manager_attr, []):
                 combo.addItem(style, style)
-            combo.setMinimumWidth(220)
+            # RN-666③：和投掷物页签同一个数 —— 两边共用 `_responsive_columns_for_cards`，
+            # 阈值按 190 算的，这里留 220 会让回合页签在三列下顶到边。
+            combo.setMinimumWidth(190)
             self._set_compact_heights(combo)
             combo.currentIndexChanged.connect(
                 lambda _idx, rt=round_type, ca=config_attr: self._on_round_style_changed(rt, ca)

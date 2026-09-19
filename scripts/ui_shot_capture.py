@@ -92,6 +92,48 @@ def _safe_name(text: str) -> str:
     return "".join(keep)
 
 
+def _shoot_whole(app, win, page, path: Path, failed: list, tag: str) -> int:
+    """把窗口撑高到当前页（当前页签）不需要滚动，拍一张没有折线的整窗图。
+
+    从 `_capture_whole` 里抽出来的，因为**同一件事逐页签也要做一遍** ——
+    见 `_capture_tabs` 的 `whole` 形参。
+    """
+    from PySide6.QtWidgets import QScrollArea
+
+    # ⚠ 只认**看得见的**滚动区。第一版没这一条，于是把 `helpScrollArea`
+    # （帮助面板，一个默认隐藏的浮层）也算进来了 —— 它自己也会溢出。
+    # ⚠ 而且不能只拍"滚动区里的内容控件"：`kill_icon` 的页头和状态卡
+    #   **在滚动区外面**，那样拍会丢掉半页（实测拍出来 634px，比视口还矮）。
+    # ⇒ 改成**把整个窗口撑高到不需要滚动**再拍整窗：既没有折线，
+    #   又保住了「导航区与内容区的关系」这个只有整窗图才看得见的问题域。
+    overflow = max(
+        (s.verticalScrollBar().maximum()
+         for s in page.findChildren(QScrollArea) if s.isVisible()),
+        default=0,
+    )
+    if overflow <= 0:
+        return 0
+
+    original = win.size()
+    original_min = win.minimumSize()
+    try:
+        win.setMinimumSize(0, 0)
+        win.resize(original.width(), original.height() + overflow)
+        for _ in range(4):
+            app.processEvents()
+        if _save(win, path):
+            return 1
+        failed.append(tag)
+        return 0
+    finally:
+        # ⚠ 必须复位：不复位的话后面几页会按这个撑高的尺寸拍，
+        # 而基线/对比立的是标准视口的样子（同 `_capture_tabs` 的复位理由）。
+        win.setMinimumSize(original_min)
+        win.resize(original)
+        for _ in range(4):
+            app.processEvents()
+
+
 def _capture_whole(app, win, pid: str, out: Path, mode: str, failed: list) -> int:
     """内容比视口高的页，**另拍一张没有折线的整页图**（RN-170）。
 
@@ -122,47 +164,19 @@ def _capture_whole(app, win, pid: str, out: Path, mode: str, failed: list) -> in
     ⚠ 它**不替代**整窗那张：整窗那张要看的是导航区与内容区的关系
     （见 `_save` 的调用处注释），这一张只看内容自己有没有真的坏。
     两张各有各的问题域，缺一不可。
-    """
-    from PySide6.QtWidgets import QScrollArea
 
+    ⚠⚠ **它只拍当前页签** —— 有页签的页要逐页签各来一张，见 `_capture_tabs`
+    的 `whole` 形参（RN-666①）。
+    """
     page = getattr(win, "pages", {}).get(pid)
     if page is None:
         return 0
-    # ⚠ 只认**看得见的**滚动区。第一版没这一条，于是把 `helpScrollArea`
-    # （帮助面板，一个默认隐藏的浮层）也算进来了 —— 它自己也会溢出。
-    # ⚠ 而且不能只拍"滚动区里的内容控件"：`kill_icon` 的页头和状态卡
-    #   **在滚动区外面**，那样拍会丢掉半页（实测拍出来 634px，比视口还矮）。
-    # ⇒ 改成**把整个窗口撑高到不需要滚动**再拍整窗：既没有折线，
-    #   又保住了「导航区与内容区的关系」这个只有整窗图才看得见的问题域。
-    overflow = max(
-        (s.verticalScrollBar().maximum()
-         for s in page.findChildren(QScrollArea) if s.isVisible()),
-        default=0,
-    )
-    if overflow <= 0:
-        return 0
-
-    original = win.size()
-    original_min = win.minimumSize()
-    try:
-        win.setMinimumSize(0, 0)
-        win.resize(original.width(), original.height() + overflow)
-        for _ in range(4):
-            app.processEvents()
-        if _save(win, out / f"{mode}_{pid}__whole.png"):
-            return 1
-        failed.append(f"{pid}(whole)")
-        return 0
-    finally:
-        # ⚠ 必须复位：不复位的话后面几页会按这个撑高的尺寸拍，
-        # 而基线/对比立的是标准视口的样子（同 `_capture_tabs` 的复位理由）。
-        win.setMinimumSize(original_min)
-        win.resize(original)
-        for _ in range(4):
-            app.processEvents()
+    return _shoot_whole(app, win, page, out / f"{mode}_{pid}__whole.png",
+                        failed, f"{pid}(whole)")
 
 
-def _capture_tabs(app, win, pid: str, out: Path, mode: str, failed: list) -> int:
+def _capture_tabs(app, win, pid: str, out: Path, mode: str, failed: list,
+                  whole: bool = False) -> int:
     """有页签的页，每个页签各拍一张。
 
     ⚠ 为什么需要这个：默认只拍"当前页签"，而 `gun_sound`（5 个页签）和
@@ -173,6 +187,14 @@ def _capture_tabs(app, win, pid: str, out: Path, mode: str, failed: list) -> int
 
     拍完把页签**复位到原来那个**：不复位会让后续基线/指纹拿到"停在末页签"的
     状态，而基线是按"刚进页面"的样子立的。
+
+    ⭐⭐⭐ RN-666①：`--tabs` 和 `--whole` 以前是**两个各自独立的开关**，
+    于是两个盲区**交叉的那一格没人管** —— 逐页签的图仍按视口高度拍（页签里
+    折线以下没被看过），而整页图只对**默认页签**生效。`special_sound` 四个
+    页签里有三个从来没有一张无折线的图。
+    ⚠ 这正是 RN-170 注释里那句「同一个形状的第二条腿」—— 而当时只补了一条腿，
+    因为那条注释把两件事写成了并列关系，没人去想它们的**乘积**。
+    ⇒ `whole=True` 时每个页签各再出一张撑高图。
     """
     from PySide6.QtWidgets import QTabWidget
 
@@ -196,6 +218,9 @@ def _capture_tabs(app, win, pid: str, out: Path, mode: str, failed: list) -> int
                     shots += 1
                 else:
                     failed.append(f"{pid}#tab{index}")
+                if whole:
+                    shots += _shoot_whole(app, win, page, out / f"{stem}__whole.png",
+                                          failed, f"{pid}#tab{index}(whole)")
         finally:
             tab_widget.setCurrentIndex(original)
             app.processEvents()
@@ -216,7 +241,8 @@ def main() -> int:
     ap.add_argument("--whole", action="store_true",
                     help="内容比视口高的页，**另拍一张没有折线的整页图**（RN-170）。"
                          "不给的话每一页折线以下的部分永远没人看过，"
-                         "而折线处那个被切一半的元素会被外审读成「容器坏了」")
+                         "而折线处那个被切一半的元素会被外审读成「容器坏了」。"
+                         "⭐ 和 --tabs 一起给时，**每个页签各出一张**整页图（RN-666①）")
     ap.add_argument(
         "--scenario", action="append", default=[], metavar="KEY=VALUE",
         help="⭐ 造场景：拍之前往 config 上按几个值（可重复给）。"
@@ -354,7 +380,10 @@ def main() -> int:
             if args.whole:
                 extra_whole += _capture_whole(app, win, pid, out, mode, failed)
             if args.tabs:
-                extra_tabs += _capture_tabs(app, win, pid, out, mode, failed)
+                # ⚠ 把 `--whole` 一路传进去：两个开关的**交叉格**才是盲区所在
+                # （RN-666①）。分开给 = 逐页签只有视口图、整页图只有默认页签。
+                extra_tabs += _capture_tabs(app, win, pid, out, mode, failed,
+                                            whole=args.whole)
         except Exception as exc:
             print(f"!! {pid} 异常: {exc}")
             failed.append(pid)

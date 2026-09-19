@@ -186,6 +186,10 @@ def _make_handler(monkeypatch, gun_type: str, style: str):
             plays.append(key)
             return True
 
+        def stop_channel_type(self, _channel_type):
+            # 替身最小接口（RN-665④）：处理器会调它，替身就得有
+            return False
+
     class _Ducker:
         def duck_for(self, delay, **kw):
             ducks.append(kw)
