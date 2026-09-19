@@ -437,3 +437,42 @@ Five read-only lenses (lifecycle, trigger state machine, Magnification API, sens
 - Other fixes: importing a preset now restarts the hotkey registration and the enable/disable state (the reload path only refreshed the widgets, so the UI showed the new key while the old one still triggered); a crosshair that was hidden before zooming is no longer forced visible afterwards; changing the trigger mode while holding the zoom key no longer sticks; the debounce timer rechecks the weapon, foreground and master switch when it fires, and uses a monotonic clock; the test button's three-second timer only closes its own activation; offsets are clamped to the range the API accepts and a failed apply says so; the hotkey registration no longer runs on a worker thread that idled in a sleep loop while touching Qt widgets; and the runtime cfg is not rewritten when the bytes are unchanged.
 
 Judges: 27 in one new file. Revert breakpoints: a new MAG group of 16. Revert verification caught two holes in my own work — one of them two fixes masking each other, where the breakpoint for a new gate stayed green because an older gate caught the case first.
+
+## Community ticket fixes: throwable switch sounds, sound cutoff, and honest hints
+
+A batch of issues reported by users, verified one by one against the source.
+
+- **Flashbangs, smokes and decoys had no switch sound.** The weapon list for
+  switch sounds was derived from the kill-sound table, which is organised by
+  "can it kill" — a flashbang cannot, so it lost the unrelated fact that you can
+  still *pull it out*. A table whose denominator was drawn for a different
+  question silently drops whatever does not fit that question.
+- **Switch and reload sounds never stopped.** Cancelling a reload or switching
+  weapons mid-sound left the previous clip playing to the end, and three
+  rotating channels meant three switch sounds could overlap. `stop_sound` and
+  `stop_channel` had been there all along; the handler simply never called
+  them. Stopping by channel *type* has to consider all three rotating channels:
+  the one `_select_channel` returns is the next one to use, not the one playing.
+- **A weapon switch was reported when the round ended.** Nothing gated switch or
+  reload sounds on round phase, while the kill handler had a dedicated
+  round-end rule. The gate added here fires on a phase *transition* rather than
+  on a particular phase value, so a player switching weapons during buy time is
+  still heard while the game's own weapon reset at a round boundary is not.
+  The root cause is not yet established — the only large log available is from
+  deathmatch, which has no round win or loss — so a diagnostic line now records
+  the weapon list on every phase transition.
+- **A misspelled grenade folder was never reported.** The importer's bucket
+  check returned "the product does not care" for grenade sounds, which short
+  circuits the whole check; files with a mistyped type folder were placed where
+  nothing would ever read them. The product does care — it reads a fixed set of
+  six type names.
+- **Sound forwarding failed silently** when either the voice-output master
+  switch or the virtual audio device was missing; both paths returned false with
+  only a debug log. The page now states what is still missing.
+- **The documented folder layout was wrong.** The help panel named a file
+  (`throw.mp3`) that the loader never looks at, and used a placeholder instead
+  of the six real type names. A very specific instruction that happens to be
+  false is worse than none: users follow it, it does not work, and they doubt
+  themselves. The names now also appear on the page itself.
+
+Judges: 18 in one new file. Revert breakpoints: a new group of 13.
