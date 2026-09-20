@@ -1788,7 +1788,9 @@ REVERTS = [
     Revert(
         "RN", "「基础设置」又被塞回音效组里",
         "gui_widget.py",
-        "            (\"开始\", [\n                (\"basic\", \"基础设置\"),\n            ]),\n"
+        # ⚠ RN-673 起「开始」组多了一项（导入资源）⇒ 原来那个跨整组的长锚点碎了。
+        #   改成最短且稳的写法：往音效组**加**一条 basic（它同时还留在开始组，
+        #   而判据查的是「同一组里有没有 basic + kill_sound」，照样命中）。
         "            (\"音效设置\", [\n",
         "            (\"音效设置\", [\n                (\"basic\", \"基础设置\"),\n",
         "tests/test_sidebar_nav_structure.py::"
@@ -1801,9 +1803,10 @@ REVERTS = [
     Revert(
         "RN", "有新页面插到「基础设置」前面去了",
         "gui_widget.py",
-        "            (\"开始\", [\n                (\"basic\", \"基础设置\"),\n            ]),",
+        # ⚠ RN-673：锚点砍掉结尾那句 `]),` —— 开始组后面现在还跟着「导入资源」。
+        "            (\"开始\", [\n                (\"basic\", \"基础设置\"),\n",
         "            (\"开始\", [\n                (\"about\", \"关于软件\"),\n"
-        "                (\"basic\", \"基础设置\"),\n            ]),",
+        "                (\"basic\", \"基础设置\"),\n",
         "tests/test_sidebar_nav_structure.py::"
         "test_basic_settings_is_the_very_first_nav_item",
         "置顶这件事只有「第一项」算数：往它上面塞一项，"
@@ -9078,6 +9081,36 @@ Revert(
         "而那 750 本身就是毛病。**一个缺陷可以一直替另一个缺陷挡着，"
         "直到前一个被修好。** 机制是 Qt 的坑：`QScrollArea` 的内层控件不是顶层窗口，"
         "`SetDefaultConstraint` 不给它设 minimumSize ⇒ 视口一小就压扁而不是滚",
+    ),
+    # ── 2026-09-20 RN-673：侧栏折叠线（`--only NAV`）──
+    # 用户报「资源导入页面真的做了嘛，为啥我打开侧边栏也看不到」。
+    Revert(
+        "NAV", "「导入资源」又被排回最后一组（折叠线以下）",
+        "gui_widget.py",
+        '                ("audio_import_wizard", "导入资源"),\n'
+        '            ]),\n'
+        '            ("音效设置", [\n',
+        '            ]),\n'
+        '            ("音效设置", [\n',
+        "tests/test_sidebar_nav_structure.py::"
+        "test_the_first_steps_are_not_below_the_sidebar_fold",
+        "⭐⭐⭐ **`isVisible()` 为真不等于屏幕上看得见。** 实测 1280×800 普通模式："
+        "侧栏视口 650px、内容 842px，23 项里 **5 项完全在折叠线以下**，"
+        "「导入资源」在 y=765；而底部那颗「紧凑模式 «」按钮钉在滚动区**外面**，"
+        "给了一个「到底了」的假结束符 ⇒ 用户翻遍侧栏也找不到这一页。"
+        "⚠ 2026-09-16 刚把它移出专家模式（理由：锁在专家模式里用户根本不知道有它），"
+        "而它换了个方式继续不可见 —— **同一个「看不见」有两种机制，修掉一种不等于修好**",
+    ),
+    Revert(
+        "NAV", "「导入资源」又被锁回专家模式",
+        "gui_widget.py",
+        '        self._expert_only_pages = {\n            "audio_health",\n',
+        '        self._expert_only_pages = {\n            "audio_health",\n'
+        '            "audio_import_wizard",\n',
+        "tests/test_sidebar_nav_structure.py::"
+        "test_importing_resources_is_not_locked_behind_expert_mode",
+        "装素材不是专家操作。这是 2026-09-16 用户在场时的裁定，"
+        "而那条裁定此前只活在一句注释里 —— 注释拦不住下一次重构",
     ),
 ]
 

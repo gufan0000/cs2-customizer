@@ -3,6 +3,7 @@
  "generated_by": "scripts/build_search_index.py",
  "pages": {
   "basic": "基础设置",
+  "audio_import_wizard": "导入资源",
   "kill_sound": "击杀音效",
   "kill_voice": "击杀语音",
   "death_sound": "被击杀音效",
@@ -23,7 +24,6 @@
   "utility": "道具瞄点",
   "advanced": "高级设置",
   "audio_health": "资源体检",
-  "audio_import_wizard": "导入资源",
   "audio_task_panel": "音频任务面板",
   "audio_replay": "音频事件回放",
   "config_snapshot": "软件设置快照",
@@ -472,6 +472,102 @@
    "page": "basic",
    "text": "音量控制",
    "card": "音量控制",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "audio_import_wizard",
+   "text": "仅生成建议（不复制文件）",
+   "card": "第 1 步 选中素材并扫描",
+   "tab": "",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "audio_import_wizard",
+   "text": "导入模式",
+   "card": "第 1 步 选中素材并扫描",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "audio_import_wizard",
+   "text": "打开来源位置",
+   "card": "第 1 步 选中素材并扫描",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "audio_import_wizard",
+   "text": "打开资源目录",
+   "card": "第 1 步 选中素材并扫描",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "audio_import_wizard",
+   "text": "扫描素材",
+   "card": "第 1 步 选中素材并扫描",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "audio_import_wizard",
+   "text": "撤销",
+   "card": "第 1 步 选中素材并扫描",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "audio_import_wizard",
+   "text": "知道了",
+   "card": "第 1 步 选中素材并扫描",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "audio_import_wizard",
+   "text": "第 1 步 选中素材并扫描",
+   "card": "第 1 步 选中素材并扫描",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "audio_import_wizard",
+   "text": "素材来源",
+   "card": "第 1 步 选中素材并扫描",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "audio_import_wizard",
+   "text": "选择文件夹",
+   "card": "第 1 步 选中素材并扫描",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "audio_import_wizard",
+   "text": "开始导入（不覆盖已有文件）",
+   "card": "第 2 步 看清结果再导入",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "audio_import_wizard",
+   "text": "第 2 步 看清结果再导入",
+   "card": "第 2 步 看清结果再导入",
    "tab": "",
    "kind": "card",
    "src": "runtime"
@@ -3624,102 +3720,6 @@
    "page": "audio_health",
    "text": "体检报告",
    "card": "体检报告",
-   "tab": "",
-   "kind": "card",
-   "src": "runtime"
-  },
-  {
-   "page": "audio_import_wizard",
-   "text": "仅生成建议（不复制文件）",
-   "card": "第 1 步 选中素材并扫描",
-   "tab": "",
-   "kind": "check",
-   "src": "runtime"
-  },
-  {
-   "page": "audio_import_wizard",
-   "text": "导入模式",
-   "card": "第 1 步 选中素材并扫描",
-   "tab": "",
-   "kind": "label",
-   "src": "runtime"
-  },
-  {
-   "page": "audio_import_wizard",
-   "text": "打开来源位置",
-   "card": "第 1 步 选中素材并扫描",
-   "tab": "",
-   "kind": "button",
-   "src": "runtime"
-  },
-  {
-   "page": "audio_import_wizard",
-   "text": "打开资源目录",
-   "card": "第 1 步 选中素材并扫描",
-   "tab": "",
-   "kind": "button",
-   "src": "runtime"
-  },
-  {
-   "page": "audio_import_wizard",
-   "text": "扫描素材",
-   "card": "第 1 步 选中素材并扫描",
-   "tab": "",
-   "kind": "button",
-   "src": "runtime"
-  },
-  {
-   "page": "audio_import_wizard",
-   "text": "撤销",
-   "card": "第 1 步 选中素材并扫描",
-   "tab": "",
-   "kind": "button",
-   "src": "runtime"
-  },
-  {
-   "page": "audio_import_wizard",
-   "text": "知道了",
-   "card": "第 1 步 选中素材并扫描",
-   "tab": "",
-   "kind": "button",
-   "src": "runtime"
-  },
-  {
-   "page": "audio_import_wizard",
-   "text": "第 1 步 选中素材并扫描",
-   "card": "第 1 步 选中素材并扫描",
-   "tab": "",
-   "kind": "card",
-   "src": "runtime"
-  },
-  {
-   "page": "audio_import_wizard",
-   "text": "素材来源",
-   "card": "第 1 步 选中素材并扫描",
-   "tab": "",
-   "kind": "label",
-   "src": "runtime"
-  },
-  {
-   "page": "audio_import_wizard",
-   "text": "选择文件夹",
-   "card": "第 1 步 选中素材并扫描",
-   "tab": "",
-   "kind": "button",
-   "src": "runtime"
-  },
-  {
-   "page": "audio_import_wizard",
-   "text": "开始导入（不覆盖已有文件）",
-   "card": "第 2 步 看清结果再导入",
-   "tab": "",
-   "kind": "button",
-   "src": "runtime"
-  },
-  {
-   "page": "audio_import_wizard",
-   "text": "第 2 步 看清结果再导入",
-   "card": "第 2 步 看清结果再导入",
    "tab": "",
    "kind": "card",
    "src": "runtime"

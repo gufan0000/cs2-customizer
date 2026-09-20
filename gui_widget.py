@@ -1199,6 +1199,8 @@ class MainWindow(QMainWindow):
             # 这三处都是**按组遍历**的，悬空按钮会从浮层里整个消失。
             ("开始", [
                 ("basic", "基础设置"),
+                # ⭐⭐⭐ RN-673：原先排在最后一组，y=765 而侧栏视口只有 0~650 —— 看不见。
+                ("audio_import_wizard", "导入资源"),
             ]),
             ("音效设置", [
                 ("kill_sound", "击杀音效"),
@@ -1227,9 +1229,7 @@ class MainWindow(QMainWindow):
                 ("utility", "道具瞄点"),
                 ("advanced", "高级设置"),
                 ("audio_health", "资源体检"),
-                # ⚠ 显示名去掉"向导"二字：它现在是拖进来就走的一步式，
-                #   而"向导"在用户那里意味着"要点好几下下一步"。
-                ("audio_import_wizard", "导入资源"),
+                # ⚠ 「导入资源」已挪到「开始」组（RN-673）。
                 ("audio_task_panel", "音频任务面板"),
                 ("audio_replay", "音频事件回放"),
                 ("config_snapshot", "软件设置快照"),

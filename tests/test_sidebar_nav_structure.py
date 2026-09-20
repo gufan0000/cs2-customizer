@@ -67,6 +67,94 @@ def test_basic_settings_is_not_buried_in_the_sound_group():
                 "准心/屏幕特效的开关也在这一页,把它放进音效组就找不到了。")
 
 
+#: 侧栏里**不滚动就必须看得见**的那几项。
+#: ⛔ 别往这张表里随手加：它越长，下面那条判据越容易因为别的改动而红，
+#:   而它要守的只是「用户第一次进来非用不可的那几步」。
+MUST_BE_ABOVE_THE_FOLD = ("basic", "audio_import_wizard")
+
+
+def _sidebar_viewport(win):
+    from PySide6.QtWidgets import QScrollArea
+
+    for sa in win.findChildren(QScrollArea):
+        if sa.objectName() == "sidebarScroll":
+            return sa
+    raise AssertionError("找不到 sidebarScroll —— 侧栏结构变了，这条判据失效了")
+
+
+def test_the_first_steps_are_not_below_the_sidebar_fold(app):
+    """⭐⭐⭐ RN-673：`isVisible()` 为真**不等于**屏幕上看得见。
+
+    侧栏是个滚动区。实测（1280×800，普通模式）：视口只有 650px 而内容 842px，
+    23 个导航项里 **5 个完全在折叠线以下**，「导入资源」就是其中之一（y=765）。
+    而底部那颗「紧凑模式 «」按钮钉在**滚动区外面**，看起来像"到底了" ——
+    于是用户翻遍侧栏也找不到那一页，只能自己开资源目录手摆文件夹。
+
+    ⚠ 这一条正是 2026-09-16 那次改动没做完的一半：那次把它从
+    `_expert_only_pages` 里挪出来，理由写的是「锁在专家模式里用户根本不知道
+    有这个页面」—— 而它换了个方式继续不可见。
+    ⭐ **同一个「看不见」有两种机制，修掉一种不等于修好。**
+
+    ⛔ 本条**不**断言「一项都不许在折叠线以下」—— 侧栏本来就该能滚，
+      低频页（账号中心 / 关于软件）滚出来完全正常。只钉首次必经的那几步。
+    """
+    import gui_widget
+
+    win = gui_widget.MainWindow(auto_background_preload=False)
+    try:
+        win.show()
+        app.processEvents()
+        win.setMinimumSize(1280, 800)
+        win.resize(1280, 800)
+        for _ in range(4):
+            app.processEvents()
+
+        scroll = _sidebar_viewport(win)
+        vp = scroll.viewport()
+        assert vp.height() > 100, (
+            f"侧栏视口只有 {vp.height()}px —— 窗口没建起来，这条断言是空的")
+
+        offenders = []
+        for pid in MUST_BE_ABOVE_THE_FOLD:
+            btn = win.nav_buttons.get(pid)
+            assert btn is not None and btn.isVisible(), (
+                f"「{pid}」在普通模式的侧栏里根本没有按钮 —— "
+                "它是不是又被挪回 `_expert_only_pages` 了？")
+            top = btn.mapTo(vp, btn.rect().topLeft()).y()
+            bottom = top + btn.height()
+            if bottom > vp.height() or top < 0:
+                offenders.append(
+                    f"{pid}「{btn.text().strip()}」y={top}~{bottom}")
+        assert not offenders, (
+            f"这些导航项要滚动才看得见（侧栏视口 0~{vp.height()}px）："
+            + "；".join(offenders)
+            + "。⭐ 它们是首次必经的一步，排在折叠线以下等于不存在。")
+    finally:
+        win.close()
+        win.deleteLater()
+        app.processEvents()
+
+
+def test_importing_resources_is_not_locked_behind_expert_mode(app):
+    """装素材不是专家操作 —— 这一页不许回到 `_expert_only_pages`。
+
+    钉住 2026-09-16 那次裁定（用户在场）：它是"把下载来的素材装进软件"的
+    唯一入口，锁在专家模式里的后果是用户根本不知道有这个页面。
+    """
+    import gui_widget
+
+    win = gui_widget.MainWindow(auto_background_preload=False)
+    try:
+        assert win._expert_only_pages, "专家页名单是空的 —— 这条断言的分母没了"
+        assert "audio_import_wizard" not in win._expert_only_pages, (
+            "「导入资源」又被锁进专家模式了。它是装素材的唯一入口，"
+            "普通模式下看不到它，用户只能自己开资源目录手摆文件夹。")
+    finally:
+        win.close()
+        win.deleteLater()
+        app.processEvents()
+
+
 def test_every_nav_group_gets_an_alt_shortcut(app):
     """分组数是会变的,Alt+N 的上限不能写死。"""
     import gui_widget
