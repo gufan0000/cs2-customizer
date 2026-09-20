@@ -62,6 +62,18 @@ def test_every_breakpoint_anchor_still_exists(revert):
     #   上游的 `scripts/revert_verify.py` 这一批已经把「不适用」和「失效」分开了
     #   （不适用不计入退出码），这支体检跟上，否则同一件事两处结论相反。
     # ⛔ 只对**文件不存在**放行；文件在而锚点对不上，仍然是腐烂，照红。
+    #
+    # ⭐⭐⭐ 2026-09-20 补第三格：**文件在，但它在这个仓里是另一份东西。**
+    #   `build_tools/make_app_icon.py` 两个仓各有一支**同名不同物**的脚本
+    #   （上游从一张位图出三个 .ico，本仓用代码画准星 —— 那张位图按法务理由
+    #   被排除）。落在它上面的断点在这里既不是腐烂也不是不存在，
+    #   而这条判据当时只有两格，只能把它判成腐烂。
+    #   ⚠ 上游给 `Revert` 加了 `upstream_only`，这支体检跟上。
+    #   ⛔ 那个标志是个**静音开关**，上游另有一条判据守着它只能落在
+    #     「归本仓所有 / 被排除」的文件上，不许拿来掩盖真腐烂。
+    subset_build = not (ROOT / "build_tools" / "oss_sync").exists()
+    if subset_build and getattr(revert, "upstream_only", False):
+        pytest.skip(f"这个文件在本仓里是另一份实现（同名不同物）：{revert.path.name}")
     if not revert.path.is_file():
         pytest.skip(f"功能子集里没有这个产品文件，本条不适用：{revert.path.name}")
     text = revert.path.read_text(encoding="utf-8")
