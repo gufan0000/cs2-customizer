@@ -17,6 +17,25 @@ from typing import Callable, Iterable, List
 from PySide6.QtCore import QEvent, QObject
 
 
+def urls_from_drop(event) -> list:
+    """从一个拖拽事件里取 URL 列表；取不到就当"没有"。
+
+    ⛔⛔ **手写 `dragEnterEvent` / `dropEvent` 一律走这个函数**，
+    不许再写 `event.mimeData().hasUrls()`：Qt 侧对象被提前回收时 PySide 会还你
+    一个光秃秃的 QObject，直接点属性就在 **Qt 的 notify 循环内部**抛
+    AttributeError（`dragEnterEvent` 那一侧连 try 都没有）。
+    ⭐ RN-674：这条防法本来只是本文件里的一段注释，而全仓另外两处手写的
+    **一处都没照做** ⇒ 抽成函数 + 配一条扫得到分母的判据。叙事见登记册。
+    """
+    mime = event.mimeData() if callable(getattr(event, "mimeData", None)) else None
+    if mime is None or not callable(getattr(mime, "hasUrls", None)) or not mime.hasUrls():
+        return []
+    try:
+        return list(mime.urls())
+    except Exception:
+        return []
+
+
 class _FileDropFilter(QObject):
     def __init__(self, widget, extensions: Iterable[str], handler: Callable[[List[str]], None],
                  accept_directories: bool = False):
@@ -30,15 +49,9 @@ class _FileDropFilter(QObject):
     def _matched_paths(self, event) -> List[str]:
         import os
 
-        mime = event.mimeData()
-        # `hasUrls` 用 getattr 取：拿到的不一定是个像样的 QMimeData(Qt 侧对象被
-        # 提前回收时 PySide 会还给你一个光秃秃的 QObject)。直接点属性会在
-        # **事件过滤器内部**抛 AttributeError——那是 Qt 的 notify 循环里,
-        # 抛上去既难查也不该发生。拿不到就当"没匹配上"。
-        if mime is None or not callable(getattr(mime, "hasUrls", None)) or not mime.hasUrls():
-            return []
+        # ⭐ 防法只有一份 —— 见 `urls_from_drop` 的 docstring（RN-674）。
         paths = []
-        for url in mime.urls():
+        for url in urls_from_drop(event):
             if not url.isLocalFile():
                 continue
             p = url.toLocalFile()

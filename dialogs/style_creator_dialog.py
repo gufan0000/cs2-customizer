@@ -171,12 +171,19 @@ class StyleCreatorDialog(QDialog):
 
     # ---------- 拖拽 ----------
 
+    # ⛔ 这两个方法**不许**再写 `event.mimeData().hasUrls()`：
+    #   那个对象可能已被 Qt 侧回收，剩一个光秃秃的 QObject，
+    #   直接点属性会在 Qt 的 notify 循环内部抛 AttributeError（RN-674）。
     def dragEnterEvent(self, event):
-        if event.mimeData().hasUrls():
+        from widgets.drop_import_mixin import urls_from_drop
+
+        if urls_from_drop(event):
             event.acceptProposedAction()
 
     def dropEvent(self, event):
-        paths = [url.toLocalFile() for url in event.mimeData().urls() if url.isLocalFile()]
+        from widgets.drop_import_mixin import urls_from_drop
+
+        paths = [url.toLocalFile() for url in urls_from_drop(event) if url.isLocalFile()]
         self._add_files(paths)
         event.acceptProposedAction()
 

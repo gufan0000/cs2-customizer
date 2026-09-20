@@ -45,9 +45,13 @@ def wizard(qapp, monkeypatch):
 
 
 def test_the_preview_box_says_what_will_appear_there(wizard):
-    assert not wizard.preview_text.toPlainText().strip(), (
-        "这条判据假设扫描前预览是空的；现在它一上来就有内容了，判据失去了对象。")
-    hint = wizard.preview_text.placeholderText()
+    # ⚠⚠ 2026-09-21 改判（RN-674）：这条判据原来量的是 `placeholderText()`，
+    #   而 `QTextEdit` 的占位文案在屏幕上**只画第一行** —— 下面这三句
+    #   （「只看不写」「也可以点上面的…」「扫描之后会列出…」）
+    #   一个像素都没出现过，这条判据却一直为它们打绿。
+    # ⭐⭐⭐ 与 RN-673 同形：**判据量的是字符串，用户看的是像素。**
+    # ⇒ 空状态改写进正文，这条判据也跟着改量正文（批 33 规矩：改钉现在的形态）。
+    hint = wizard.preview_text.toPlainText()
     assert hint.strip(), (
         "第 2 步那个 400px 高的框在扫描前什么都不说 —— "
         "而一个什么都不说的框，和一个坏掉的框长得一模一样（RN-520）。")
@@ -64,12 +68,13 @@ def test_the_preview_box_says_what_will_appear_there(wizard):
 
 def test_the_empty_hint_names_the_button_by_reading_it(wizard):
     """⭐ 提示里点名的那颗按钮，名字要从按钮读 —— 不许再抄一份（RN-519）。"""
-    assert wizard.scan_btn.text() in wizard.preview_text.placeholderText()
+    assert wizard.scan_btn.text() in wizard.preview_text.toPlainText()
 
+    # ⚠ RN-674：现在两条路都得扫 —— 占位（只画得出一行）和正文（真正看得见的那份）。
     tree = ast.parse(WIZARD.read_text(encoding="utf-8"))
     for node in ast.walk(tree):
         if (isinstance(node, ast.Call)
-                and getattr(node.func, "attr", None) == "setPlaceholderText"):
+                and getattr(node.func, "attr", None) in ("setPlaceholderText", "setPlainText")):
             for arg in node.args:
                 for piece in ast.walk(arg):
                     if isinstance(piece, ast.Constant) and isinstance(piece.value, str):

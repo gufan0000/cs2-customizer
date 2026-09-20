@@ -102,10 +102,41 @@ class AudioImportWizardPage(QWidget):
     # ---------------- 拖拽导入（对标修缮） ----------------
 
     def dragEnterEvent(self, event):
-        if event.mimeData().hasUrls():
+        # ⛔ 不许写回 `event.mimeData().hasUrls()`（RN-674，理由在 `urls_from_drop`）。
+        from widgets.drop_import_mixin import urls_from_drop
+
+        if urls_from_drop(event):
+            self._set_drop_highlight(True)
             event.acceptProposedAction()
         else:
             event.ignore()
+
+    def dragLeaveEvent(self, event):
+        # ⚠ 少这一条，高亮就留在屏上不走 —— 界面一直说「松手即可放入」而那时松手没用。
+        self._set_drop_highlight(False)
+        super().dragLeaveEvent(event)
+
+    def _set_drop_highlight(self, on: bool):
+        """把第 2 步那个大框点亮成**看得见的投放区**（RN-674，叙事见登记册）。
+
+        ⛔ 颜色每次现取，不许在 `__init__` 里算一份存着 —— 主题随时可换
+        （RN-672 那条「对话框 `setStyleSheet` 是构造时的快照」同族）。
+        """
+        box = getattr(self, "preview_text", None)
+        if box is None:
+            return
+        if not on:
+            box.setStyleSheet(getattr(self, "_preview_base_qss", ""))
+            return
+        try:
+            from theme_manager import get_color
+
+            accent = get_color("accent_primary")
+        except Exception:
+            accent = "#7C5CFF"
+        box.setStyleSheet(
+            getattr(self, "_preview_base_qss", "")
+            + "\nQTextEdit { border: 2px dashed %s; }" % accent)
 
     @staticmethod
     def _drop_noun(path):
@@ -127,13 +158,18 @@ class AudioImportWizardPage(QWidget):
             return "文件夹" if os.path.isdir(path) else "文件"
 
     def dropEvent(self, event):
+        # ⚠ 放在最外面：下面每一条出路（收下 / 不是本地文件 / 抛异常）
+        #   都得把高亮撤掉，而"每条路各写一遍"正是漏掉一条的写法。
+        self._set_drop_highlight(False)
         try:
             import os
 
             # ⭐ 一次拖进来好几个是常事（一口气选中三个下载好的包）。
             #   这个页面一次只处理一个源 —— 那没问题，**但不许不说**：
             #   默默只导第一个，用户会以为三个都进去了。
-            dropped = [url.toLocalFile() for url in event.mimeData().urls()]
+            from widgets.drop_import_mixin import urls_from_drop
+
+            dropped = [url.toLocalFile() for url in urls_from_drop(event)]
             dropped = [p for p in dropped if p and (os.path.isdir(p) or os.path.isfile(p))]
             if dropped:
                 # ⭐ 目录直接用；**文件也直接用**（多半是刚下载的 zip）。
@@ -245,25 +281,29 @@ class AudioImportWizardPage(QWidget):
         source_row.addWidget(source_label)
 
         self.source_edit = QLineEdit()
-        self.source_edit.setPlaceholderText("压缩包、文件夹，或单个素材文件 —— 也可以直接拖进来")
         self.source_edit.setMinimumHeight(34)
         source_row.addWidget(self.source_edit, 1)
+        # ⚠ 占位文案**只有一处真源**（`_source_placeholder`），且要等
+        #   `mode_combo` 建好才取得到模式名 ⇒ 在下面那一行统一设。
+
+        # ⭐ 2026-09-16：社区站下下来的是 `资源标题.zip`，而旧向导只收目录 ——
+        #   用户得先自己解压一次，那一次解压正是"导入很麻烦"的起点。
+        # ⚠ 这颗放在**源行**（和「选择文件夹」并列，同属"选什么"），不放动作行：
+        #   那一行五颗按钮在紧凑档已经装不下，UP-100 为此分过两组。
+        # ⭐⭐ RN-674：它排在「选择文件夹」**前面**，开局也由它当主按钮。
+        # ⛔ 不合并成一个入口（RN-667 已裁定：合并会重演 RN-185）。
+        # ⚠ 焦点链走**构造顺序**（`tab_order_audit.py`）⇒ 真挪到前面建，不是只调 addWidget。
+        self.browse_archive_btn = QPushButton("选择压缩包 / 文件…")
+        self.browse_archive_btn.setObjectName("secondaryButton")
+        self.browse_archive_btn.setMinimumHeight(34)
+        self.browse_archive_btn.clicked.connect(self._choose_source_archive)
+        source_row.addWidget(self.browse_archive_btn)
 
         self.browse_btn = browse_btn = QPushButton("选择文件夹")
         browse_btn.setObjectName("secondaryButton")
         browse_btn.setMinimumHeight(34)
         browse_btn.clicked.connect(self._choose_source_dir)
         source_row.addWidget(browse_btn)
-
-        # ⭐ 2026-09-16：社区站下下来的是 `资源标题.zip`，而旧向导只收目录 ——
-        #   用户得先自己解压一次，那一次解压正是"导入很麻烦"的起点。
-        # ⚠ 这颗放在**源行**（和「选择目录」并列，同属"选什么"），不放动作行：
-        #   那一行五颗按钮在紧凑档已经装不下，UP-100 为此分过两组。
-        self.browse_archive_btn = QPushButton("选择压缩包 / 文件…")
-        self.browse_archive_btn.setObjectName("secondaryButton")
-        self.browse_archive_btn.setMinimumHeight(34)
-        self.browse_archive_btn.clicked.connect(self._choose_source_archive)
-        source_row.addWidget(self.browse_archive_btn)
 
         # ⭐ 页内提示条取代弹窗：一次导入可能连着有三种话要说
         #   （认出了几类 / 有几条不会响 / 冲突跳过几个），
@@ -290,6 +330,9 @@ class AudioImportWizardPage(QWidget):
         options_row.addWidget(self.dry_run_checkbox)
         options_row.addStretch()
         controls_layout.addLayout(options_row)
+
+        # ⚠ 位置就得在这儿：`_source_placeholder()` 要读 `mode_combo`。
+        self.source_edit.setPlaceholderText(self._source_placeholder())
 
         # UP-100: 原本是一个 QHBoxLayout 平铺 5 个按钮。五个按钮的 sizeHint 合计
         # 实测 967(x1.0) / 996(x1.1) / 1062(x1.25) px，而紧凑模式（860×640）的
@@ -370,12 +413,13 @@ class AudioImportWizardPage(QWidget):
         # ⚠ 而「不用先解压」正是这一整件事要卖的那句话 ——
         #   界面上一个字都没说，等于没做。
         # ⛔ 文案里那个按钮名**从按钮读**，别抄一份（RN-519 的棘轮盯着）。
-        self.preview_text.setPlaceholderText(
-            f"把压缩包、文件夹，或单个素材文件直接拖到这里 —— 不用先解压。\n\n"
-            f"也可以点上面的「{self.browse_archive_btn.text()}」"
-            f"或「{self.browse_btn.text()}」选一个，再点「{self.scan_btn.text()}」。\n\n"
-            f"扫描之后这里会列出：能认出来的、有冲突的、没认出来的条目各多少。\n"
-            f"扫描只看不写，不会动你现有的素材。")
+        # ⭐⭐⭐ RN-674：`setPlaceholderText` 在屏幕上**只画第一行** ⇒ 空状态改写进
+        #   **正文**，占位只留那一行。（原来四行占位，后三行一个像素都没有，
+        #   而判据一直为它们打绿 —— 叙事见登记册。）
+        self.preview_text.setPlaceholderText(self._EMPTY_LEAD)
+        self._show_empty_preview()
+        # ⭐ 拖拽高亮要能**原样复原** —— 记下底样式，别用 `setStyleSheet("")` 抹。
+        self._preview_base_qss = self.preview_text.styleSheet()
         preview_layout.addWidget(self.preview_text)
 
         # 「确认无误后再导入」——那就把导入放在确认的地方。
@@ -488,21 +532,40 @@ class AudioImportWizardPage(QWidget):
     def _sync_first_step(self, has_source: bool):
         """⭐ 那一颗紫的必须是**当下的第一步**（批 44 RN-450 的裁定）。
 
-        没选源目录 ⇒ 第一步是「选择目录」（这时点扫描只会报错）；
-        选了 ⇒ 第一步是「扫描目录」（副标题写着「先选源目录，再决定导入模式」）。
-        ⚠ 两个都是**安全动作**（都不写任何文件），所以在它们之间换
-          不触碰 RN-506 那条线。
+        没选素材 ⇒ 第一步是「选择压缩包 / 文件…」（RN-674：社区站下下来的就是 zip）；
+        选了 ⇒ 是「扫描素材」。
+        ⚠ 两个都是**安全动作**（都不写任何文件），在它们之间换不触碰 RN-506 那条线。
+        ⭐⭐⭐ RN-450 当年只拿掉了「扫描」的**高亮**，没拿掉「点了报错」——
+        按钮一直可点，开局点下去弹一句「请先选择压缩包或目录」。
+        ⇒ 真没东西可做时就**禁用**，并在 tooltip 里说清为什么。
         """
         from page_theme_helper import style_as_primary_button, style_as_secondary_button
 
-        first, other = ((self.scan_btn, self.browse_btn) if has_source
-                        else (self.browse_btn, self.scan_btn))
-        style_as_primary_button(first)
-        style_as_secondary_button(other)
-        for btn in (first, other):
+        first = self.scan_btn if has_source else self.browse_archive_btn
+        buttons = (self.scan_btn, self.browse_btn, self.browse_archive_btn)
+        for btn in buttons:
+            if btn is first:
+                style_as_primary_button(btn)
+            else:
+                style_as_secondary_button(btn)
             btn.style().unpolish(btn)
             btn.style().polish(btn)
             btn.update()
+
+        # ⛔ 这两颗**一起动**：它们空点下去是同一个死胡同
+        #   （`_run_import` 没报告就自己去 `_scan_source`，撞的是同一句提示）。
+        blocked_tip = "" if has_source else "先选中素材（压缩包、文件夹，或单个素材文件），这一步才有东西可做。"
+        # ⚠⚠ 外审 S4 **3/3** 报「旁边两颗『打开…』比置灰的扫描更抢眼」——**现象是真的**：
+        #   `#secondaryButton:disabled` 是 `background-color: transparent`，禁用之后
+        #   屏幕上只剩一行灰字。⛔ 但**这里不修**：RN-150 那条判据逐字定过全站口径
+        #   （次按钮启用/禁用都是透明露底，差别在**文字色和边框色**上），
+        #   一页一页地改填充是绕开裁定；真要改是主题层的事，得单开一批带外审。
+        # ⭐ 我为此串行试了三版（低特异度选择器不生效 → 加底色 → 才发现
+        #   `ui_style_applier` 会把控件级样式整个抹掉，除非声明 `fp_keep_style`），
+        #   按 §0「同一件事三轮不稳就停」停在这里，已立案。
+        for btn in (self.scan_btn, self.import_btn):
+            btn.setEnabled(has_source)
+            btn.setToolTip(blocked_tip)
 
     def _sync_status_strip(self):
         source_dir = self.source_edit.text().strip()
@@ -775,6 +838,38 @@ class AudioImportWizardPage(QWidget):
             parts.append(f"另丢掉 {junk} 个系统临时文件")
         return "；".join(parts)
 
+    # ⚠ 第一行单独拎出来：`setPlaceholderText` 只画得出这一行，
+    #   所以占位与正文共用它，谁也不会比谁多说一句（RN-674）。
+    # ⚠⚠ 这一行**必须自成一句完整的话**，后面紧跟空行：紧凑档（860×640）里
+    #   第 2 步那张卡只露得出一行多一点，切口落在哪由字号档决定 ——
+    #   ⭐ 第一版把「扫描只看不写」另起一行，外审 S3 **3/3 报「高」**：
+    #     那一行被底栏**切成两半**，字符残缺。切口躲不掉，能选的只有
+    #     **让它落在空行上**。
+    # ⛔ 也不许把那句话并进这一行凑长度：紧挨着的第 1 步副标题**逐字说过**，
+    #   外审 S4 3/3 报「同一句话在三四处反复说教，反而淹没了操作入口」。
+    _EMPTY_LEAD = "把压缩包、文件夹，或单个素材文件直接拖到这里 —— 不用先解压。"
+
+    def _show_empty_preview(self):
+        """第 2 步那个框在扫描之前该说的话 —— 写进**正文**。
+
+        ⛔ 点名的按钮名一律**从按钮读**，不许抄一份（RN-519 的棘轮盯着）。
+        ⛔ 不许改回 `setPlaceholderText` 的多行写法：那样只有第一行看得见。
+        """
+        self.preview_text.setPlainText(
+            f"{self._EMPTY_LEAD}\n\n"
+            f"也可以点上面的「{self.browse_archive_btn.text()}」"
+            f"或「{self.browse_btn.text()}」选一个，再点「{self.scan_btn.text()}」。\n\n"
+            f"扫描之后这里会列出：能认出来的、有冲突的、没认出来的条目各多少；"
+            f"扫描只看不写，确认之前不动你现有的素材。")
+
+    def _source_placeholder(self) -> str:
+        """源输入框的占位文案 —— **唯一真源**（原来两处各写一遍）。
+
+        ⛔ RN-674：这一句**不许再自称投放区**（原文尾巴是「也可以直接拖进来」）。
+        投放区只有一个 —— 第 2 步那个框，而且它拖上去真会亮。
+        """
+        return f"压缩包、文件夹，或单个{self._mode_text()}素材文件的路径"
+
     def _current_mode(self) -> str:
         return str(self.mode_combo.currentData() or "audio")
 
@@ -785,13 +880,15 @@ class AudioImportWizardPage(QWidget):
         mode_text = self._mode_text()
         # ⚠ 这一行原来把源输入框的提示改回「请选择包含 X 资源的**根目录**」——
         #   等于一换模式就把"能拖 zip / 能选单文件"这件事又藏起来了。
-        #   ⭐ 同一句话在两处各写一遍，改了一处等于没改。
-        self.source_edit.setPlaceholderText(
-            f"压缩包、文件夹，或单个{mode_text}素材文件 —— 也可以直接拖进来")
+        #   ⭐ 同一句话在两处各写一遍，改了一处等于没改 ⇒ RN-674 抽成
+        #     `_source_placeholder()`，这里和 `_init_ui` 都只调它。
+        self.source_edit.setPlaceholderText(self._source_placeholder())
         self._invalidate_scan()
         self._last_import_result = None
         self.summary_label.setText(f"当前模式：{mode_text}。请选择目录并扫描。")
-        self.preview_text.clear()
+        # ⚠ 原来是 `clear()` —— 换个模式，那个 400px 的框就又变回一整块纯黑，
+        #   RN-520 修掉的东西原地复活（它当年只修了**开局**那一次）。
+        self._show_empty_preview()
         self._sync_status_strip()
 
     def _scan_source(self):

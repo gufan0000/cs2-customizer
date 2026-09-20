@@ -9112,6 +9112,123 @@ Revert(
         "装素材不是专家操作。这是 2026-09-16 用户在场时的裁定，"
         "而那条裁定此前只活在一句注释里 —— 注释拦不住下一次重构",
     ),
+    # ── 2026-09-21 RN-674：「导入资源」页那三条体验债（`--only IMP`）──
+    # 外审批 109 各 3/3 报的，逐条实测之后修的。
+    Revert(
+        "IMP", "开局那一颗紫的又变回「选择文件夹」",
+        "pages/audio_import_wizard_page.py",
+        "        first = self.scan_btn if has_source else self.browse_archive_btn\n",
+        "        first = self.scan_btn if has_source else self.browse_btn\n",
+        "tests/test_the_import_page_takes_what_you_actually_have.py::"
+        "test_the_opening_screen_points_at_the_archive_entry",
+        "社区站下下来的是 `资源标题.zip`，而开局唯一高亮的是「选择文件夹」——"
+        "这一页自己的注释上一行就写着这件事，界面却把压缩包那个入口排在次位、次色",
+    ),
+    Revert(
+        "IMP", "扫描/导入在没选素材时又变回可点",
+        "pages/audio_import_wizard_page.py",
+        "            btn.setEnabled(has_source)\n",
+        "            btn.setEnabled(True)\n",
+        "tests/test_the_import_page_takes_what_you_actually_have.py::"
+        "test_scan_and_import_are_off_until_there_is_a_source",
+        "⭐⭐⭐ RN-450 当年的修法是把「扫描」的**高亮**拿掉，理由逐字是"
+        "「未选目录时它却是唯一高亮，极易诱导玩家开局盲点导致报错」——"
+        "那只治了「诱导」，**没治「点了报错」**：按钮一直可点，"
+        "点下去弹一句「请先选择压缩包或目录」。"
+        "**一条教训修掉了它的一种机制，另一种机制照样活着**（RN-673 同形）",
+    ),
+    Revert(
+        "IMP", "这一页又自己去刷禁用态的样子",
+        "pages/audio_import_wizard_page.py",
+        "            btn.setEnabled(has_source)\n            btn.setToolTip(blocked_tip)\n",
+        "            btn.setEnabled(has_source)\n            btn.setToolTip(blocked_tip)\n"
+        '            btn.setStyleSheet("QPushButton:disabled { border: 1px solid #1f212c; }")\n',
+        "tests/test_the_import_page_takes_what_you_actually_have.py::"
+        "test_the_page_does_not_repaint_the_disabled_state_by_itself",
+        "⭐⭐⭐ 禁用态的样子归主题管（RN-150 定过全站口径：次按钮启用/禁用都是"
+        "透明露底，差别在文字色和边框色上）。页内覆盖有三重坑，我三版全踩过："
+        "① 选择器特异度低一档 ⇒ **设了不报错也不生效**；"
+        "② 改量「边上像素和内部不同」⇒ 深色边压深色底**数值不同而眼睛看不见**；"
+        "③ `ui_style_applier` 会把控件级样式整个抹掉（除非声明 `fp_keep_style`）"
+        "⇒ 前两版**根本没跑在产品走的那条路上**",
+    ),
+    Revert(
+        "IMP", "拖拽经过时投放区不再点亮",
+        "pages/audio_import_wizard_page.py",
+        "            self._set_drop_highlight(True)\n",
+        "            pass  # 不点亮\n",
+        "tests/test_the_import_page_takes_what_you_actually_have.py::"
+        "test_dragging_a_file_lights_up_the_drop_zone",
+        "⭐⭐ 外审报「两处拖拽区打架」，而实测机制不是打架：四处 acceptDrops 全真、"
+        "拖哪儿都能用。真毛病是**三句话在抢一个谁都没画出来的位置** ——"
+        "拖着 zip 在窗口上方晃一圈，一个像素都不变。"
+        "⛔ 这条判据量的是**渲染出来的像素**，不是 `styleSheet()` 那个字符串",
+    ),
+    Revert(
+        "IMP", "拖出去之后高亮留在屏幕上不走",
+        "pages/audio_import_wizard_page.py",
+        "        self._set_drop_highlight(False)\n        super().dragLeaveEvent(event)\n",
+        "        super().dragLeaveEvent(event)\n",
+        "tests/test_the_import_page_takes_what_you_actually_have.py::"
+        "test_the_highlight_goes_away_again",
+        "一个撤不掉的高亮 = 界面一直在说「松手即可放入」，而那时松手什么都不会发生",
+    ),
+    Revert(
+        "IMP", "高亮颜色改成写死的（不再跟主题走）",
+        "pages/audio_import_wizard_page.py",
+        '            accent = get_color("accent_primary")\n',
+        '            accent = "#7C5CFF"\n',
+        "tests/test_the_import_page_takes_what_you_actually_have.py::"
+        "test_the_highlight_colour_is_read_fresh_every_time",
+        "RN-672 那条「对话框 `setStyleSheet` 是构造时的快照」同族：主题随时可换，"
+        "颜色必须在拖拽那一刻现取",
+    ),
+    Revert(
+        "IMP", "空状态又改回「四行占位文案」的写法",
+        "pages/audio_import_wizard_page.py",
+        "        self.preview_text.setPlainText(\n            f\"{self._EMPTY_LEAD}\\n\\n\"\n",
+        "        self.preview_text.setPlaceholderText(\n            f\"{self._EMPTY_LEAD}\\n\\n\"\n",
+        "tests/test_the_import_page_takes_what_you_actually_have.py::"
+        "test_the_empty_state_is_all_on_screen",
+        "⭐⭐⭐ `QTextEdit.setPlaceholderText` 在屏幕上**只画第一行**。"
+        "那个 400px 的框原来挂着四行占位，「扫描只看不写」「也可以点上面的…」"
+        "**一个像素都没有**，而既有判据一直在为它们打绿 ——"
+        "**判据量的是字符串，用户看的是像素**（RN-673 第二次）",
+    ),
+    Revert(
+        "IMP", "源输入框又自称投放区",
+        "pages/audio_import_wizard_page.py",
+        '        return f"压缩包、文件夹，或单个{self._mode_text()}素材文件的路径"\n',
+        '        return f"压缩包、文件夹，或单个{self._mode_text()}素材文件 —— 也可以直接拖进来"\n',
+        "tests/test_the_import_page_takes_what_you_actually_have.py::"
+        "test_only_one_place_claims_to_be_the_drop_zone",
+        "两处都自称投放区，用户就得猜该往哪儿放（外审 3/3）。"
+        "投放区只留一个 —— 而且它现在拖上去真会亮",
+    ),
+    Revert(
+        "IMP", "换导入模式又把那个大框清空",
+        "pages/audio_import_wizard_page.py",
+        "        self._show_empty_preview()\n        self._sync_status_strip()\n",
+        "        self.preview_text.clear()\n        self._sync_status_strip()\n",
+        "tests/test_the_import_page_takes_what_you_actually_have.py::"
+        "test_switching_mode_does_not_blank_the_big_box",
+        "RN-520 当年只修了**开局**那一次；换个模式，那块什么都不说的纯黑框原地复活",
+    ),
+    Revert(
+        "IMP", "手写拖拽处理又直接点 `event.mimeData()`",
+        "dialogs/style_creator_dialog.py",
+        "        from widgets.drop_import_mixin import urls_from_drop\n\n"
+        "        if urls_from_drop(event):\n",
+        "        if event.mimeData().hasUrls():\n",
+        "tests/test_the_import_page_takes_what_you_actually_have.py::"
+        "test_no_handwritten_drag_handler_touches_mimedata_directly",
+        "⭐⭐⭐ 防法和那段解释在 `widgets/drop_import_mixin.py` 里躺了很久，"
+        "而全仓另外两处手写的拖拽处理**一处都没照做** —— Qt 侧对象被提前回收时"
+        "PySide 还你一个光秃秃的 QObject，直接点属性就在 Qt 的 notify 循环内部抛。"
+        "⚠ 逮到它的是批 110 新写的判据自己（测试里的 QMimeData 被回收了）。"
+        "**一条教训写在 A 文件里，B 文件照样犯** ⇒ 它得是一个调得到的函数 +"
+        "一条扫得到分母的判据，不是一段注释",
+    ),
 ]
 
 
