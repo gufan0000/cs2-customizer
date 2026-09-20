@@ -194,7 +194,8 @@ def shard_items(items: list, shard_i: int, shard_n: int) -> list:
 
 
 class Revert:
-    def __init__(self, group, name, rel_path, old, new, selector, defect):
+    def __init__(self, group, name, rel_path, old, new, selector, defect,
+                 upstream_only=False):
         self.group = group
         self.name = name
         self.path = ROOT / rel_path
@@ -202,6 +203,13 @@ class Revert:
         self.new = new
         self.selector = selector      # 传给 pytest 的 -k 或 nodeid
         self.defect = defect          # 这个断点模拟的是哪个真实缺陷
+        # ⭐⭐⭐ 第三格（RN-671）：**文件在，但它在派生仓里是另一份东西**。
+        # 原来只有两格 —— 「文件不存在 ⇒ 不适用」和「锚点对不上 ⇒ 腐烂」；
+        # 而 `build_tools/make_app_icon.py` 两个仓各有一支**同名不同物**的脚本
+        # （上游从位图出 .ico，开源版用代码画准星）⇒ 落在它上面的断点在派生仓里
+        # 既不是腐烂也不是不存在，而当时它只能被判成腐烂。
+        # ⚠ 同 RN-596：一条判据把世界分成两格，而世界有三种。
+        self.upstream_only = upstream_only
 
 
 REVERTS = [
@@ -4211,6 +4219,65 @@ REVERTS = [
         "tests/test_the_things_the_audit_left_open.py::test_the_naming_hint_sits_below_the_cards",
         "那三行提示（我上一批自己加的）顶在网格上面，把六张卡又往下推了半行。"
         "⭐ 它是「我要自己做素材」时才看的，不是进页面第一眼要看的",
+    ),
+    # ── 2026-09-20 收尾批第二段（RN-668/669）：并进 WRP 组 ──
+    Revert(
+        "WRP", "三个图标又和生成器对不上（手工改一份、另两份不知道）",
+        "build_tools/make_app_icon.py",
+        'BITMAP_FORMAT = "bmp"',
+        'BITMAP_FORMAT = "png"',
+        "tests/test_the_things_the_audit_left_open.py::"
+        "test_the_generator_is_the_source_of_truth_for_the_icons",
+        "⭐⭐⭐ 在 RN-668 之前，三个图标是三样各自为政的东西：两份假 ICO（PNG 改扩展名）"
+        "＋一份**某批为了让 Inno 认而手工重铸**的真 ICO。那个手工步骤没写在任何地方、"
+        "也没人记得它存在，而三份同源却没有任何机制保证它们同步。"
+        "⚠ BMP 帧是本项目唯一被安装器验证过的格式；批 106 我改成了 Pillow 默认的 PNG 帧，"
+        "那一档从来没进过安装器 —— 本批改回并用 CopyIcons 端到端实测过（7 档全进 exe）",
+        upstream_only=True,   # 派生仓那支 make_app_icon.py 是用代码画准星的，同名不同物
+    ),
+    Revert(
+        "WRP", "档位表又要了一个原图给不出的尺寸（Pillow 安静少档）",
+        "build_tools/make_app_icon.py",
+        "SIZES = (16, 20, 24, 32, 40, 48, 64)",
+        "SIZES = (16, 20, 24, 32, 40, 48, 64, 256)",
+        "tests/test_the_things_the_audit_left_open.py::"
+        "test_the_size_ladder_never_asks_for_more_than_the_source_has",
+        "⭐⭐⭐ Pillow 对 `sizes=` 里超过源图的档位**不报错也不生成** —— "
+        "写上 256 只会得到一个少一档的 .ico，而它看起来和写对了一模一样。"
+        "原图只有 64×64（全盘 6151 张图里像它的 14 张全是 64 且逐字节相同）",
+        upstream_only=True,   # 同上：派生仓那支不吃位图原图，档位不受原图尺寸限制
+    ),
+    Revert(
+        "WRP", "图标原图那张 AI 位图又能流进公开仓",
+        "build_tools/oss_sync/manifest.py",
+        '    "build_tools/icon_source/",\n',
+        "",
+        "tests/test_the_things_the_audit_left_open.py::"
+        "test_the_icon_source_bitmap_never_reaches_the_public_repo",
+        "⭐⭐⭐ 这张位图在 RN-668 之前**只存在于 `icon.ico` 内部**，于是它从来没有以"
+        "「一个文件」的身份出现在排除表前面 —— **一个藏在容器里的资产，不会触发任何一条"
+        "按文件名划分母的规矩**。落成真文件之后这道门才有得守",
+    ),
+    Revert(
+        "WRP", "回合页签的总音量又被包回一张卡中卡",
+        "pages/special_sound_page.py",
+        "        control_row.addWidget(self.round_volume_slider, 1)\n",
+        "",
+        "tests/test_the_things_the_audit_left_open.py::"
+        "test_the_round_volume_shares_a_row_with_the_switch",
+        "8 个回合事件、状态条写「已选 0/8」，而首屏原先第 7、8 个完全看不见。"
+        "并成一行之后溢出量降到 43px，而零素材横幅自己就占 54px ⇒ 有素材的用户全露",
+    ),
+    Revert(
+        "WRP", "静音开关落在一个没人认领的文件上（拿它掩盖真腐烂）",
+        "build_tools/oss_sync/manifest.py",
+        '    "build_tools/make_app_icon.py",\n',
+        "",
+        "tests/test_the_things_the_audit_left_open.py::"
+        "test_upstream_only_breakpoints_really_are_upstream_only",
+        "⭐⭐⭐ `upstream_only=True` 让一条断点在派生仓里从「腐烂」变成「不适用」= "
+        "**不再计入退出码**。它要守的那一格是真的（同名不同物），但同一个开关也能"
+        "拿来掩盖一条真腐烂的断点 ⇒ 打了标志的断点，目标文件必须确实归派生仓所有或被排除",
     ),
     Revert(
         "RN", "ruff.toml 替一个已删的文件留排除行",
@@ -9022,6 +9089,11 @@ def main() -> int:
     stale = []
     not_applicable = []
     for r in items:
+        # 第三格：同名不同物（见 Revert.upstream_only）。放在文件存在性之前 ——
+        # 那个文件在派生仓里**是存在的**，只是换了一份内容。
+        if subset_build and r.upstream_only:
+            not_applicable.append((r, "这个文件在派生仓里是另一份实现（同名不同物）"))
+            continue
         if not r.path.exists():
             if subset_build:
                 not_applicable.append((r, "这个检出里没有这个产品文件（功能子集）"))

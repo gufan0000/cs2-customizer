@@ -806,14 +806,6 @@
   },
   {
    "page": "special_sound",
-   "text": "回合音效音量",
-   "card": "",
-   "tab": "回合",
-   "kind": "label",
-   "src": "runtime"
-  },
-  {
-   "page": "special_sound",
    "text": "打开当前资源",
    "card": "",
    "tab": "",
@@ -882,6 +874,14 @@
    "card": "回合音效",
    "tab": "回合",
    "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "special_sound",
+   "text": "回合音效音量",
+   "card": "回合音效",
+   "tab": "回合",
+   "kind": "label",
    "src": "runtime"
   },
   {

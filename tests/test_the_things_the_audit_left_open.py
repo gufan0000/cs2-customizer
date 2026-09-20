@@ -26,6 +26,7 @@ from __future__ import annotations
 import ast
 import re
 import struct
+import sys
 from pathlib import Path
 
 import pytest
@@ -36,15 +37,19 @@ ROOT = Path(__file__).resolve().parents[1]
 # ==================== ① 打包图标必须是真 ICO ====================
 
 #: Windows 会去取的档位。16=标题栏/任务栏小图标，24/32=托盘与资源管理器，
-#: 48=大图标与快捷方式。不含 256 —— 手上最大的原图只有 64×64，
-#: 造一张放大的 256 是假分辨率，缺口记在登记册里等原始 logo。
-REQUIRED_ICON_SIZES = {16, 24, 32, 48}
+#: 48=大图标与快捷方式。不含 256 —— 手上最大的原图只有 64×64（2026-09-20 全盘
+#: 扫过 6151 张图，像它的 14 张全是 64×64 且逐字节相同），而 Pillow 对超过源图的
+#: 档位是**安静跳过**的，连假分辨率都造不出来。缺口要等一张真正更大的原图。
+REQUIRED_ICON_SIZES = {16, 24, 32, 48, 64}
 
-PACKAGED_ICONS = ("icon.ico", "myicon.ico")
+#: ⚠ 三份，不是两份。`setup_icon.ico` 以前是某一批为了让 Inno 认而**手工重铸**的
+#: 第三样东西 —— 同源却没有任何机制保证它跟前两份同步（RN-668）。
+PACKAGED_ICONS = ("icon.ico", "myicon.ico",
+                  "build_tools/installer_assets/setup_icon.ico")
 
 
 def _ico_entries(raw: bytes):
-    """读 ICONDIR，返回 [(宽, 高, 位深), ...]。不是 ICO 就返回 None。"""
+    """读 ICONDIR，返回 [(宽, 高, 位深, 帧格式), ...]。不是 ICO 就返回 None。"""
     if len(raw) < 6 or raw[:4] != b"\x00\x00\x01\x00":
         return None
     count = struct.unpack_from("<H", raw, 4)[0]
@@ -53,8 +58,10 @@ def _ico_entries(raw: bytes):
         off = 6 + i * 16
         if off + 16 > len(raw):
             return out
-        w, h, _nc, _res, _pl, bpp, _size, _doff = struct.unpack_from("<BBBBHHII", raw, off)
-        out.append((w or 256, h or 256, bpp))
+        w, h, _nc, _res, _pl, bpp, _size, doff = struct.unpack_from(
+            "<BBBBHHII", raw, off)
+        kind = "PNG" if raw[doff:doff + 8] == b"\x89PNG\r\n\x1a\n" else "BMP"
+        out.append((w or 256, h or 256, bpp, kind))
     return out
 
 
@@ -77,20 +84,166 @@ def test_the_packaged_icon_covers_the_sizes_windows_asks_for(name):
     """只打一张 64×64 的话，16/24/32/48 每一档都是现场缩出来的。"""
     entries = _ico_entries((ROOT / name).read_bytes())
     assert entries, f"{name} 里一个目录项都没有"
-    sizes = {w for w, h, _bpp in entries if w == h}
+    sizes = {w for w, h, _bpp, _k in entries if w == h}
     missing = sorted(REQUIRED_ICON_SIZES - sizes)
     assert not missing, f"{name} 缺这些档: {missing}（现有 {sorted(sizes)}）"
     # 分母守卫：这条判据要有东西可查
     assert len(REQUIRED_ICON_SIZES) >= 4
 
 
-def test_both_packaged_icons_stay_in_step():
-    """两份图标是同一张图的两个名字（发布清单里各塞了一份）——别让它们分叉。"""
+@pytest.mark.parametrize("name", PACKAGED_ICONS)
+def test_the_packaged_icon_uses_the_frame_format_the_installer_accepts(name):
+    """⚠ 帧格式必须是 BMP。
+
+    BMP 帧是本项目**唯一被安装器验证过**的格式（手工重铸那份 setup_icon.ico
+    就是 BMP 帧）。批 106 我把 icon.ico 改成真 ICO 时用了 Pillow 的默认 PNG 帧，
+    而那一档从来没有进过安装器 —— 是我引进来的未验证变更（RN-668 改回）。
+    """
+    entries = _ico_entries((ROOT / name).read_bytes())
+    kinds = {k for *_x, k in entries}
+    assert kinds == {"BMP"}, f"{name} 的帧格式是 {kinds}，要的是 BMP"
+
+
+def test_all_three_icons_stay_in_step():
+    """三份必须逐字节相同。
+
+    ⭐ `_resolve_icon_path()` 按顺序取第一个存在的，前两份分叉会让源码模式和
+    打包模式显示不同的图标；而第三份（安装器那份）以前是**手工重铸**的，
+    同源却没有任何机制保证它跟前两份同步。
+    """
     blobs = {n: (ROOT / n).read_bytes() for n in PACKAGED_ICONS}
+    assert len(blobs) == 3, "分母守卫：三个消费者一个都不能少"
     assert len(set(blobs.values())) == 1, (
-        "icon.ico 与 myicon.ico 内容不同了。`_resolve_icon_path()` 是按顺序取第一个"
-        "存在的，两者分叉会让源码模式和打包模式显示不同的图标。"
+        "三份图标的内容不一致了：\n  " +
+        "\n  ".join(f"{n}: {len(b)} 字节" for n, b in blobs.items()) +
+        "\n⇒ 跑一次 python build_tools/make_app_icon.py"
     )
+
+
+def _bitmap_generator():
+    """拿到「从位图原图出 .ico」那一支生成器；派生仓不是这一支就返回 None。
+
+    ⚠ 派生仓（开源版）有一支**同名但完全不同**的 `make_app_icon.py`：它是
+    **用代码画准星**的，不吃任何位图原图（那张 AI 鹰头位图按法务理由被排除）。
+    ⭐ 按能力判断，不按仓库名 —— **照闭源版文件集写死的断言，在子集仓里不是
+    「更严」，是「错」**（RN-453 那条同族教训）。
+    """
+    sys.path.insert(0, str(ROOT))
+    import importlib
+
+    mod = importlib.import_module("build_tools.make_app_icon")
+    if all(hasattr(mod, n) for n in ("SOURCE", "render", "ladder", "SIZES")):
+        return mod
+    return None
+
+
+def test_the_generator_is_the_source_of_truth_for_the_icons():
+    """⭐⭐ 盘上那三份必须是生成器**现在**能产出的东西。
+
+    在 RN-668 之前它们是三样各自为政的文件（两份假 ICO ＋ 一份手工重铸），
+    没有任何机制保证同步 —— 而「手工重铸」这一步没写在任何地方。
+    """
+    mod = _bitmap_generator()
+    if mod is None:
+        pytest.skip("派生仓的图标生成器是用代码画的，不吃位图原图")
+    SIZES, SOURCE, ladder, render = mod.SIZES, mod.SOURCE, mod.ladder, mod.render
+
+    assert SOURCE.exists(), f"图标原图不在了：{SOURCE}"
+    raw = render()
+    assert ladder(raw) == sorted(SIZES), "生成器产出的档位和它自己声明的对不上"
+    for name in PACKAGED_ICONS:
+        assert (ROOT / name).read_bytes() == raw, (
+            f"{name} 和生成器产出的不一致 ⇒ 跑 python build_tools/make_app_icon.py"
+        )
+
+
+def test_the_icon_source_bitmap_never_reaches_the_public_repo():
+    """⛔⛔ 图标原图是 AI 生成、仓库里没有出处记录的位图。
+
+    ⭐⭐⭐ 它在 RN-668 之前**只存在于 `icon.ico` 内部** —— 于是它从来没有以
+    「一个文件」的身份出现在同步排除表前面。**一个藏在容器里的资产，不会触发
+    任何一条按文件名划分母的规矩。** 现在它落成了真文件，这道门就必须有人守。
+
+    ⚠ 同步管道自己在开源仓里不存在（`build_tools/oss_sync/` 也在排除表里），
+    所以这条判据在派生仓里会跳过 —— 那正是它该守的地方在上游的证据。
+    """
+    manifest = ROOT / "build_tools" / "oss_sync" / "manifest.py"
+    if not manifest.exists():
+        pytest.skip("派生仓里没有同步管道（它自己也在排除表里）")
+    src = manifest.read_text(encoding="utf-8")
+    assert '"build_tools/icon_source/"' in src, (
+        "`build_tools/icon_source/` 不在 oss_sync 的排除表里了 —— "
+        "那张 AI 位图会被 --apply 推进公开仓，正是 2026-08-12 审计要防的事"
+    )
+    # 阴性对照：同族那条一直都在，两条一起丢说明我读错了文件
+    assert "splash_art_ai.png" in src, "分母守卫：连同族那条都找不到，八成读错了文件"
+
+
+def test_upstream_only_breakpoints_really_are_upstream_only():
+    """⛔ `upstream_only=True` 是个**静音开关** —— 它让一条断点在派生仓里
+    从「腐烂」变成「不适用」，也就是**不再计入退出码**。
+
+    ⭐⭐⭐ 它要守的那一格是真的（同名不同物，见 RN-671），但同一个开关也能
+    拿来掩盖一条真腐烂的断点。⇒ 打了这个标志的断点，它的目标文件必须**确实**
+    在派生仓里归对方所有或被排除；随手打一个在普通产品文件上，这条判据当场红。
+    """
+    script = ROOT / "scripts" / "revert_verify.py"
+    manifest = ROOT / "build_tools" / "oss_sync" / "manifest.py"
+    if not manifest.exists():
+        pytest.skip("派生仓里没有同步清单（它自己也在排除表里）")
+
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("_rv_under_test", script)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod
+    spec.loader.exec_module(mod)
+
+    flagged = [r for r in mod.REVERTS if getattr(r, "upstream_only", False)]
+    assert flagged, "一条都没有 ⇒ 这条判据在空转（有就该守着，没有就该删掉它）"
+
+    # ⚠⚠ 第一版是拿路径字符串去 `in manifest 源码` 里搜，**回退验证当场判它没逮住**：
+    #   `build_tools/make_app_icon.py` 在 `GENERATED`（第三张表）里也逐字出现，
+    #   于是删掉 `OWNED_BY_OSS` 那一行它照样匹配得上。
+    #   ⭐⭐⭐ **那把尺子问的是「这个字符串出现过吗」，而我要保证的是
+    #   「它在这两张表里」** —— 又一次分母划错。⇒ 真读那两张表。
+    sys.path.insert(0, str(ROOT / "build_tools" / "oss_sync"))
+    spec2 = importlib.util.spec_from_file_location("_manifest_under_test", manifest)
+    mf = importlib.util.module_from_spec(spec2)
+    sys.modules[spec2.name] = mf
+    spec2.loader.exec_module(mf)
+    claimed = list(mf.OWNED_BY_OSS) + list(mf.EXCLUDE_PREFIX)
+    assert len(claimed) > 40, f"分母守卫：只读出 {len(claimed)} 条声明，八成读错了表"
+
+    bad = []
+    for r in flagged:
+        rel = r.path.relative_to(ROOT).as_posix()
+        ok = any(rel == c or (c.endswith("/") and rel.startswith(c)) for c in claimed)
+        if not ok:
+            bad.append(rel)
+    assert not bad, (
+        "这些断点打了 upstream_only，但它们的目标文件在派生仓里既不归对方所有、"
+        f"也没被排除 —— 那就不是「同名不同物」，是拿静音开关掩盖腐烂：{bad}"
+    )
+
+
+def test_the_size_ladder_never_asks_for_more_than_the_source_has():
+    """⛔ 往 SIZES 里加超过原图的档位是**安静失效**的。
+
+    ⭐⭐⭐ Pillow 对 `sizes=` 里超过源图尺寸的项**不报错也不生成**；写上 256
+    只会得到一个「少了 256 档」的 .ico，而它看起来和写对了一模一样。
+    生成器为此显式拦了一道，这条判据守住那道拦截还在。
+    """
+    from PIL import Image
+
+    mod = _bitmap_generator()
+    if mod is None:
+        pytest.skip("派生仓的图标生成器是用代码画的，档位不受原图尺寸限制")
+    side = Image.open(mod.SOURCE).size[0]
+    assert max(mod.SIZES) <= side, (
+        f"SIZES 最大要到 {max(mod.SIZES)}，而原图只有 {side}px —— "
+        "Pillow 会安静少档。要更大的档就换原图。"
+    )
+    assert len(mod.SIZES) >= 5, "分母守卫：档位表被砍空了这条判据就没意义"
 
 
 # ==================== ② 拍图工装：页签 × 整页 ====================
@@ -360,6 +513,38 @@ def test_six_grenade_types_fit_in_two_rows_on_a_normal_window():
     columns = SpecialSoundPage._responsive_columns_for_cards(_WidthShell(1060), total)
     rows = -(-total // columns)
     assert rows <= 2, f"1060 的页宽下要排 {rows} 行，首屏放不下（列数 {columns}）"
+
+
+def test_eight_round_events_fit_in_three_rows():
+    """回合有 8 个事件、状态条写「已选 0/8」，那就不该排成四行往下掉（RN-669）。"""
+    from core.audio.special_events import events_in_group
+    from pages.special_sound_page import SpecialSoundPage
+
+    total = len(list(events_in_group("round")))
+    assert total >= 6, f"回合事件只剩 {total} 个了，这条判据的算式要重算"
+    columns = SpecialSoundPage._responsive_columns_for_cards(_WidthShell(1060), total)
+    rows = -(-total // columns)
+    assert rows <= 3, f"1060 的页宽下要排 {rows} 行（列数 {columns}）"
+
+
+def test_the_round_volume_shares_a_row_with_the_switch():
+    """总音量原先是头部卡里的一张**卡中卡**，上下内边距 + 独占一行。
+
+    ⭐ 实测：并成一行之后回合页签的溢出量从「第 7/8 张完全看不见」降到 43px，
+    而零素材横幅本身占 54px —— 有素材的用户那 8 张卡就全露了（RN-669）。
+    """
+    src = (ROOT / "pages" / "special_sound_page.py").read_text(encoding="utf-8")
+    body = src[src.index("def _create_round_tab"):src.index("def _create_round_tab") + 4000]
+    assert "control_row" in body, "回合页签没有那一行合并布局了"
+    switch_at = body.index("round_enabled_checkbox = QCheckBox")
+    slider_at = body.index("round_volume_slider = QSlider")
+    between = body[switch_at:slider_at]
+    assert "_row_card()" not in between, (
+        "总音量又被包回一张卡中卡里了 —— 那会把第 7、8 个回合事件推出首屏"
+    )
+    assert "control_row.addWidget(self.round_volume_slider" in body, (
+        "音量滑块不在那一行合并布局里"
+    )
 
 
 def test_the_naming_hint_sits_below_the_cards():

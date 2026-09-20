@@ -768,36 +768,45 @@ class SpecialSoundPage(QWidget):
             "回合音效",
             "回合开始、结束、MVP 等时刻各播一段音效。逐项选风格，音量统一由上面这一条控制。",
         )
+        # ⭐ RN-669：开关和总音量**并成一行**，音量不再单独占一张卡中卡。
+        #   这一页有 8 个回合事件，而状态条写着「已选 0/8」—— 三列排下来要三行，
+        #   实测首屏只露得出两行（第 7、8 个「半场交换 / 比赛结束」在折线外）。
+        #   卡中卡的上下内边距 + 独占一行，合起来正好是差的那一截。
+        #   ⚠ 顺带是更对的信息结构：总音量本来就属于「启不启用」那一档，
+        #     不是和八个逐项风格并列的第九件事。
+        control_row = QHBoxLayout()
+        control_row.setContentsMargins(0, 0, 0, 0)
+        control_row.setSpacing(12)
+
         self.round_enabled_checkbox = QCheckBox("启用回合音效")
         self.round_enabled_checkbox.setChecked(bool(config.round_sound_enabled))
         self.round_enabled_checkbox.toggled.connect(self._on_round_enabled_toggled)
-        header_layout.addWidget(self.round_enabled_checkbox)
+        control_row.addWidget(self.round_enabled_checkbox)
+
+        volume_label = QLabel("回合音效音量")
+        volume_label.setFont(QFont("Microsoft YaHei", 12, QFont.Bold))
+        volume_label.setMinimumWidth(140)
+        control_row.addWidget(volume_label)
+
+        self.round_volume_slider = QSlider(Qt.Horizontal)
+        self.round_volume_slider.setRange(0, 100)
+        self.round_volume_slider.setValue(int(float(config.round_sound_volume) * 100))
+        self.round_volume_slider.valueChanged.connect(self._on_round_volume_changed)
+        control_row.addWidget(self.round_volume_slider, 1)
+
+        self.round_volume_label = QLabel(f"{self.round_volume_slider.value()}%")
+        self.round_volume_label.setMinimumWidth(55)
+        self.round_volume_label.setFont(QFont("Microsoft YaHei", 12, QFont.Bold))
+        control_row.addWidget(self.round_volume_label)
+
+        header_layout.addLayout(control_row)
+
         self.round_summary_label = self._create_summary_label()
         from widgets import community_library as _cl  # RN-197 出口接线
 
         _cl.wire_stale_route(self.round_summary_label,
                              lambda: self.COMMUNITY_CATEGORY_KEY)
         header_layout.addWidget(self.round_summary_label)
-
-        volume_row, volume_layout = self._row_card()
-
-        volume_label = QLabel("回合音效音量")
-        volume_label.setFont(QFont("Microsoft YaHei", 12, QFont.Bold))
-        volume_label.setMinimumWidth(140)
-        volume_layout.addWidget(volume_label)
-
-        self.round_volume_slider = QSlider(Qt.Horizontal)
-        self.round_volume_slider.setRange(0, 100)
-        self.round_volume_slider.setValue(int(float(config.round_sound_volume) * 100))
-        self.round_volume_slider.valueChanged.connect(self._on_round_volume_changed)
-        volume_layout.addWidget(self.round_volume_slider)
-
-        self.round_volume_label = QLabel(f"{self.round_volume_slider.value()}%")
-        self.round_volume_label.setMinimumWidth(55)
-        self.round_volume_label.setFont(QFont("Microsoft YaHei", 12, QFont.Bold))
-        volume_layout.addWidget(self.round_volume_label)
-
-        header_layout.addWidget(volume_row)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
