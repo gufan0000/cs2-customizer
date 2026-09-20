@@ -253,6 +253,11 @@ def main() -> int:
              "选中「自定义」而没画过时准心一个像素都不画，"
              "而全新配置的样式是「十字」，那一屏永远拍不到那个状态。"
              "⛔ 这个开关**只给外审出图用**：基线和排版审计要的是可复现的那一档，别给它。")
+    ap.add_argument("--dialogs", action="store_true",
+                    help="RN-672：连 `dialogs/` 下的对话框一起拍。"
+                         "⭐ 送外审时**必须给** —— 这支工装原来只拍页面，于是"
+                         "「改了对话框的像素」这一整类改动，外审一张图都看不到。"
+                         "清单与样本取 `scripts/_audit_dialogs.py`（唯一真源）。")
     ap.add_argument("--music-bar", choices=("auto", "on"), default="auto",
                     help="音乐控制条拍不拍进去（RN-195）。"
                          "auto=按全新配置的样子，产品自己决定（没放过音乐⇒没有），"
@@ -388,6 +393,54 @@ def main() -> int:
             print(f"!! {pid} 异常: {exc}")
             failed.append(pid)
 
+    # —— RN-672：对话框 ——
+    # ⛔ 绝不 `exec()`（模态框在无人值守的进程里是卡死不是失败），
+    #   一律 `WA_DontShowOnScreen` + 拍控件本身。
+    # ⚠ 拍的是对话框自己，不是整窗：它就是一个独立的窗口，用户看到的就是这么大。
+    dialog_shots = 0
+    dialog_failed: list[str] = []
+    if args.dialogs:
+        from PySide6.QtWidgets import QTabWidget
+
+        import _audit_dialogs as _dlgs
+
+        for spec, dlg, err in _dlgs.build_all(win, app):
+            if dlg is None:
+                print(f"!! 对话框 {spec.key} 建不起来: {err}")
+                dialog_failed.append(spec.key)
+                continue
+            try:
+                dlg.resize(min(dlg.width(), width), min(dlg.height(), height))
+                for _ in range(3):
+                    app.processEvents()
+                if _save(dlg, out / f"{mode}_dialog_{spec.key}.png"):
+                    dialog_shots += 1
+                else:
+                    dialog_failed.append(spec.key)
+                # 有页签的对话框逐页签也拍一张 —— 同 RN-666：不拆开的话
+                # 另外几个页签一张图都进不了外审。
+                tabs = [t for t in dlg.findChildren(QTabWidget) if t.count() > 0]
+                for tw in tabs:
+                    original = tw.currentIndex()
+                    for i in range(tw.count()):
+                        tw.setCurrentIndex(i)
+                        for _ in range(2):
+                            app.processEvents()
+                        name = _safe_name(tw.tabText(i)) or str(i)
+                        if _save(dlg, out / f"{mode}_dialog_{spec.key}__tab{i}_{name}.png"):
+                            dialog_shots += 1
+                        else:
+                            dialog_failed.append(f"{spec.key}#tab{i}")
+                    tw.setCurrentIndex(original)
+                    app.processEvents()
+            except Exception as exc:      # noqa: BLE001
+                print(f"!! 对话框 {spec.key} 拍图异常: {exc}")
+                dialog_failed.append(spec.key)
+            finally:
+                dlg.close()
+                dlg.deleteLater()
+                app.processEvents()
+
     apply_font_scale(1.0)
     # RN-195：回验 —— 这一批图**全程**都在同一档可视区里拍的。
     # 少了这一步，一批"前 26 张矮 42px、后 2 张不矮"的图看起来毫无异样，
@@ -411,8 +464,22 @@ def main() -> int:
           + (f"，跳过构造即起设备的 {len(skipped)} 页: {', '.join(skipped)}" if skipped else "（全覆盖）"))
     if neutralized:
         print(f"   已中和后纳入: {neutralize_describe(neutralized)}")
-    if failed:
-        print(f"!! 失败 {len(failed)} 页: {', '.join(failed)}")
+    # RN-672：对话框的覆盖面同样**每次都报**（不给 --dialogs 时也要说一声少了什么）
+    if args.dialogs:
+        import _audit_dialogs as _dlgs
+
+        gone = _dlgs.missing_dialogs()
+        print(f"   对话框: {dialog_shots} 张"
+              f"（本检出里有 {len(_dlgs.available_dialogs())} 个，含逐页签）"
+              + (f"；功能子集里没有 {', '.join(s.key for s in gone)}" if gone else ""))
+    else:
+        print("   对话框: **没拍**（要拍加 --dialogs）—— 改了对话框的像素而不给"
+              "这个开关，外审一张图都看不到")
+    if failed or dialog_failed:
+        if failed:
+            print(f"!! 失败 {len(failed)} 页: {', '.join(failed)}")
+        if dialog_failed:
+            print(f"!! 失败 {len(dialog_failed)} 个对话框: {', '.join(dialog_failed)}")
         return 1
     return 0
 

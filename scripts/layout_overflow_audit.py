@@ -122,6 +122,11 @@ from _audit_neutralize import (  # noqa: E402
 
 enable_audit_mode()   # 必须在 import 产品模块之前
 
+# RN-672：对话框清单。`dialogs/` 下 8 个 QDialog 从建仓起不在任何一条判据的
+# 遍历范围里 —— 而本脚本的报告年年写着「覆盖面 27/27（全覆盖）」。
+# ⭐⭐⭐ **「全覆盖」的分母是页面，而界面不只有页面。** 清单与样本的纪律在那边。
+import _audit_dialogs as _dlgs  # noqa: E402
+
 # UP-100: 紧凑模式的窗口尺寸。与 `gui_widget.MainWindow.__init__`（最小尺寸）
 # 和 `_setup_window_size` 的紧凑分支（固定几何 + 居中）是同一组数——改那边请一起改。
 # 实测这一档的内容可视区只有 590px（640 - 50px 紧凑顶栏），比完整模式的 750px 少 160px。
@@ -510,6 +515,15 @@ KNOWN_COMPACT_DEBT: dict[tuple[str, str], tuple[int, str]] = {
     #   ⭐ 这次的「不再命中」和 `_split_known` 里警惕的那种不一样：
     #     那种是「换台机器就不复现」，这次**改了产品代码、说得出机制**。
     #     ⇒ 前者只提醒不删，后者该删。**两者的区别不在数上，在有没有因果。**
+    #
+    # ⚠⚠ RN-672（2026-09-20）：**这张表差点又不空了，而拦住我的是判据。**
+    #   对话框第一次被审进来，紧凑档 1.25 字号下图集生成器内容最小高 657 > 可视 640。
+    #   我照页面那边的先例把它登记成存量债 —— 而
+    #   `test_the_audit_says_which_worst_case_it_pinned` 当场红：
+    #   **这张表从批 65 起就该是空的，往里加一行就是把一条新债说成旧债。**
+    #   ⭐⭐⭐ 一条"照先例办"的处置，会在先例本身已经作废之后继续看起来很合理。
+    #   ⇒ 改成真修：给那个对话框套一层根滚动区（它没有页签，不撞 RN-177 的嵌套），
+    #     操作条留在滚动区外面。表继续空着。
 }
 
 
@@ -633,6 +647,31 @@ KNOWN_SQUASHED_DEBT: dict[tuple[str, str], tuple[int, str]] = {
     ("special_sound", "测试"): (2, "字号放大档差 2px"),
     ("switch_weapon", "刷新风格列表"): (2, "同 death_sound"),
     ("viewmodel", "启用自动切换"): (2, "字号放大档差 2px"),
+    #: —— RN-672（2026-09-20）：对话框第一次被审进来，冒出来的 12 条 ——
+    #: ⭐ 键是**对话框的 key**（见 `_audit_dialogs.DIALOGS`），不是页面 id；
+    #:   两边不会撞名，而且同一族的债只该有一张表（另起一张必然两处结论不一致）。
+    #: ⭐⭐ 这 12 条**全是差 2px、全是同一个机制**：`setFixedHeight(34/36)` /
+    #:   `setFixedSize(68,34)` 一碰上 `fp_short` 就把 QSS 的 min-height 摘成 0，
+    #:   字号放大档下文字比内容区高 2px。和上面整张表是同一件事，
+    #:   只是这一类界面以前根本没人量。⛔ 同样不动 QSS padding（342 个受管控件）。
+    #: ⚠ 真正**看得出来**的那两条已经在本批修掉，不在这张表里：
+    #:   `add_url` 的地板 700>640（拖不小）与「复制」按钮文案被裁（22px 画 28px）。
+    ("对话框:add_url", "测试"): (2, "setFixedSize(68,34) + fp_short；字号放大档差 2px"),
+    ("对话框:kill_icon_workshop", "保存播放设置"): (2, "34px 高 + fp_short"),
+    ("对话框:kill_icon_workshop", "完成"): (2, "34px 高 + fp_short"),
+    ("对话框:kill_icon_workshop", "导出图标包…"): (2, "34px 高 + fp_short"),
+    ("对话框:kill_icon_workshop", "打开素材文件夹"): (2, "34px 高 + fp_short"),
+    ("对话框:kill_icon_workshop", "高级导入 / 批量…"): (2, "34px 高 + fp_short"),
+    ("对话框:onboarding", "写入 / 校验 GSI 配置"): (2, "34px 高 + fp_short"),
+    ("对话框:onboarding", "试听击杀音效"): (2, "34px 高 + fp_short"),
+    ("对话框:onboarding", "跳过"): (2, "36px 高 + fp_short"),
+    ("对话框:onboarding", "选择 CS2 目录"): (2, "34px 高 + fp_short"),
+    ("对话框:sprite_sheet_maker", "关闭"): (2, "36px 高 + fp_short"),
+    ("对话框:sprite_sheet_maker", "另存为图集..."): (2, "36px 高 + fp_short"),
+    # ⚠ 这里一度还有一条 ("对话框:sprite_sheet_maker", "选择文件夹...")：它只在紧凑档
+    #   命中，而套上根滚动区之后不再命中了。⭐ 按这张表自己的规矩，
+    #   「改了产品代码、说得出机制」的该删，「换台机器就不复现」的才留着只提醒 ——
+    #   **区别不在数上，在有没有因果。**
 }
 
 
@@ -742,6 +781,10 @@ def main():
                          "⚠ 这一档实测有 40 处（紧凑）/ 4 处（完整）纵向缺口，"
                          "**不是阻断档** —— 展开是可逆的用户选择，"
                          "而阻断档量的是「控制条在」这个不可逆状态")
+    ap.add_argument("--no-dialogs", action="store_true",
+                    help="RN-672：跳过 `dialogs/` 那 8 个对话框。"
+                         "⚠ 跳了就在报告里少一整类界面 —— 它们此前从来没被审过，"
+                         "这个开关只给「我只想快速看页面」用，**不是给门禁用的**。")
     ap.add_argument("--require-fonts", action="store_true",
                     help="字体库为空时直接失败(退出码 2)。CI 必开：无字体环境下"
                          "文字度量全失真，跑出来的绿是**假绿**，"
@@ -857,6 +900,13 @@ def main():
     clipped = []
     uneven = []
     nested_hidden = []          # RN-177：内层滚动区藏住内容
+    #: RN-672：对话框的命中。**单独一份**，不并进上面那几张表 ——
+    #: 那几张表后面要过整页存量债棘轮（`ratchet_label` / `KNOWN_*_DEBT`），
+    #: 而那套棘轮的键是页面 id。把对话框塞进去会被折算成一个不存在的"页"，
+    #: ⭐ 而折算的代价正是「唯一能让人去复现的线索」（批 73 那条）。
+    #: 对话框这边也没有存量债可言：这一类从来没被审过，查出来的就是新账。
+    dialog_hits: list[tuple] = []
+    dialog_failed: list[tuple[str, str]] = []
     checked = 0
 
     for theme in themes:
@@ -902,6 +952,72 @@ def main():
                         uneven.append((theme, scale, pid, text, h, common))
                 except Exception as exc:
                     problems.append((theme, scale, pid, f"异常:{exc}"))
+
+            # —— RN-672：对话框，同一档主题×字号下跑一遍 ——
+            #
+            # ⚠ **必须逐主题重建**，不能建一次留着复用：`AddURLDialog.__init__`
+            #   里 `setStyleSheet(theme_manager.get_stylesheet())` 是一张**快照**，
+            #   之后换主题它不跟着变 —— 复用等于拿深色的样式冒充浅色那一档。
+            # ⚠ 字号同理：地板（`minimumSize`）在 `SetDefaultConstraint` 下由布局
+            #   算出来，字号一大它就跟着长。
+            if not args.no_dialogs:
+                for spec, dlg, err in _dlgs.build_all(win, app):
+                    if dlg is None:
+                        dialog_failed.append((spec.key, err))
+                        continue
+                    try:
+                        # 压到本档预算里再量。⭐ 上一版在"自然尺寸"下量过，
+                        # 五条判据一条都没响 —— 一个**要多少给多少**的容器，
+                        # 量不出任何容器类缺陷。
+                        dlg.resize(min(dlg.width(), width), min(dlg.height(), height))
+                        for _ in range(3):
+                            app.processEvents()
+
+                        # ⭐ 命中一律**并进页面那几张表**，不另起一套报告与棘轮：
+                        #   这五条判据在对话框上量的是同一件事，另起一套就会出现
+                        #   「同一族的债在两个地方各有一份结论」（RN-002 那一族）。
+                        # ⚠ 但名字要带前缀 —— 报告里冒出一个 `[onboarding]`，
+                        #   读的人会去页面清单里找一个叫 onboarding 的页，找不到。
+                        #   （批 73 那条：折算掉的线索要补回来。）
+                        pid = f"对话框:{spec.key}"
+
+                        # 只有「地板」没有页面版的对应物，自己一段。
+                        verdict = _dlgs.floor_verdict(dlg, COMPACT_SIZE)
+                        if verdict:
+                            dialog_hits.append((theme, scale, pid, "地板", verdict))
+
+                        # ⚠ 页签必须拆开量。`AddURLDialog` 里坐着 3 个页签，
+                        #   整体量只看得见当前那一个 —— 实测「支持平台」页的
+                        #   「复制」按钮文案被裁，**只有拆开才看得见**（RN-666 同形）。
+                        for scope_name, scope, skip in scopes_with_skip(dlg, app):
+                            label = (pid if scope_name is None
+                                     else f"{pid}/{scope_name}")
+                            checked += 1
+                            over = _overflow_of(scope, skip)
+                            if over is not None:
+                                problems.append((theme, scale, label, over))
+                            short = _vertical_clip_of(scope, height)
+                            if short is not None:
+                                clipped.append((theme, scale, label, short, height))
+                            for text, have, need in _elided_buttons(scope, skip):
+                                elided.append((theme, scale, label, text, have, need))
+                            for text, have, need in _squashed_buttons(scope, skip):
+                                squashed.append((theme, scale, pid, text, have, need))
+                            for nm, vp_h, hidden in _nested_scroll_hidden(
+                                    scope, dlg, spec.key, skip):
+                                nested_hidden.append(
+                                    (theme, scale, label, nm, vp_h, hidden))
+                        for text, h_, common in _uneven_status_chips(dlg):
+                            uneven.append((theme, scale, pid, text, h_, common))
+                    except Exception as exc:
+                        dialog_failed.append((spec.key, f"量的时候炸了：{exc}"))
+                    finally:
+                        # ⛔ 一定要收：8 个对话框 × 主题 × 字号，不收就是几十个
+                        #   活着的顶层窗口挂在父窗上，后面那些档量到的是被它们
+                        #   改过的布局。
+                        dlg.close()
+                        dlg.deleteLater()
+                        app.processEvents()
 
     apply_font_scale(1.0)
     tm.set_theme(getattr(config, "ui_theme", "dark") or "dark")
@@ -1110,6 +1226,43 @@ def main():
     else:
         print("  ✓ 无内层滚动区藏内容")
 
+    # —— RN-672：对话框这一段 ——
+    # ⭐ 覆盖面照 UP-096 的规矩**每次都报**，不是只在有跳过时报。
+    #   这一类界面此前的覆盖面是 0/8，而报告写的是「全覆盖」。
+    if args.no_dialogs:
+        print(f"  ! 对话框: 已跳过（--no-dialogs），"
+              f"**这一档少审了 {len(_dlgs.available_dialogs())} 个对话框**")
+    else:
+        have = _dlgs.available_dialogs()
+        gone = _dlgs.missing_dialogs()
+        print(f"  对话框覆盖面: {len(have) - len({k for k, _ in dialog_failed})}"
+              f"/{len(have)} 个"
+              f"（每个都跑了 {len(themes)} 主题 × {len(scales)} 字号）")
+        if gone:
+            # ⭐ 功能子集里没有的要说出来 —— 分母小了而不吭声，就是 UP-096 那一跤。
+            print(f"     ℹ 本检出里没有 {len(gone)} 个（功能子集，不计失败）: "
+                  + ", ".join(s.key for s in gone))
+        for key, err in sorted(set(dialog_failed)):
+            print(f"     ✗ [{key}] 建不起来/量不了，**这一个没有结论**: {err}")
+        if dialog_hits:
+            seen: dict[tuple[str, str, str], list[tuple[str, float]]] = {}
+            for theme, scale, label, kind, detail in dialog_hits:
+                seen.setdefault((label, kind, detail), []).append((theme, scale))
+            print(f"  ✗ 对话框 {len(seen)} 处:")
+            for (label, kind, detail), where in sorted(seen.items()):
+                # ⚠ 同一档里同一条可能命中**多个控件**（「支持平台」页有 6 个
+                #   一模一样的「复制」按钮）。把"几档"和"每档几处"分开写 ——
+                #   第一版直接打 len(where)，于是显示成「命中 6/1 个主题×字号」，
+                #   一个大于分母的分子。⭐ 读不通的数就是错的数。
+                combos = set(where)
+                each = len(where) // max(1, len(combos))
+                extra = f"，每档 {each} 处" if each > 1 else ""
+                print(f"     [{label}] {kind}: {detail} "
+                      f"(命中 {len(combos)}/{len(themes) * len(scales)} 个主题×字号"
+                      f"{extra})")
+        else:
+            print("  ✓ 对话框无溢出/截断/压扁/藏内容，地板也都装得进紧凑档")
+
     win.close()
     win.deleteLater()
     app.processEvents()
@@ -1117,9 +1270,12 @@ def main():
     # 但**变坏和新增**照样红。
     # ⚠ "已经不该在册"那一样**不红** —— 第一版让它红，CI 当场把整道门判红：
     # 那四条纵向债在 CI 的字体度量下根本不复现。像素级棘轮是一台机器的事实。
+    # RN-672：对话框的命中和建不起来**都判红**。
+    # ⛔ 「建不起来」尤其要红 —— 那正是"静默少测被读成全都覆盖了"的入口。
     return 1 if (blocking_overflow or of_fresh or of_worse
                  or blocking_clip or cl_fresh or cl_worse
-                 or elided or sq_fresh or sq_worse or uneven or nested_hidden) else 0
+                 or elided or sq_fresh or sq_worse or uneven or nested_hidden
+                 or dialog_hits or dialog_failed) else 0
 
 
 if __name__ == "__main__":

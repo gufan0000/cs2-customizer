@@ -20,7 +20,7 @@ KI-6 把"日常导入"整个搬到了设置页那块素材清单板上（拖到�
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog, QFrame,
     QHBoxLayout, QLabel, QLineEdit, QMessageBox, QProgressBar, QPushButton,
-    QSpinBox, QVBoxLayout
+    QScrollArea, QSpinBox, QVBoxLayout, QWidget
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
@@ -67,7 +67,15 @@ class SpriteSheetMaker(QDialog):
     # ------------------------------------------------------------------ UI
 
     def _init_ui(self):
-        layout = QVBoxLayout(self)
+        # ⭐⭐ RN-672：内容装进一层滚动区，**操作条留在外面**。
+        #   紧凑档 × 1.25 字号下内容最小高 657 > 可视 640，装不下且滚不动，
+        #   切掉的正好是底下那排按钮。⛔ 按钮不许跟着滚。
+        root = QVBoxLayout(self)
+        root.setSpacing(10)
+        root.setContentsMargins(0, 0, 0, 0)
+
+        content = QWidget()
+        layout = QVBoxLayout(content)
         layout.setSpacing(10)
         layout.setContentsMargins(16, 16, 16, 16)
 
@@ -235,15 +243,21 @@ class SpriteSheetMaker(QDialog):
 
         layout.addWidget(preview_frame, 1)
 
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setWidget(content)
+        root.addWidget(scroll, 1)
+
         self.progress_bar = QProgressBar()
         self.progress_bar.setFixedHeight(14)
         self.progress_bar.hide()
-        layout.addWidget(self.progress_bar)
+        root.addWidget(self.progress_bar)
 
-        # ---------------- 按钮
+        # ---------------- 按钮（在滚动区**外面**，见 `_init_ui` 开头那段）
         button_frame = QFrame()
         button_layout = QHBoxLayout(button_frame)
-        button_layout.setContentsMargins(0, 0, 0, 0)
+        button_layout.setContentsMargins(16, 0, 16, 16)
 
         self.generate_btn = QPushButton("导入到风格库")
         self.generate_btn.setFixedHeight(36)
@@ -279,7 +293,7 @@ class SpriteSheetMaker(QDialog):
         close_btn.clicked.connect(self.reject)
         button_layout.addWidget(close_btn)
 
-        layout.addWidget(button_frame)
+        root.addWidget(button_frame)
 
     def _sync_duration_enabled(self):
         self.duration_spin.setEnabled(not self.keep_source_rate.isChecked())

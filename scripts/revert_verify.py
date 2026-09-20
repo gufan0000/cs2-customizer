@@ -8989,6 +8989,96 @@ Revert(
         "⭐⭐⭐ 上一轮的沙箱测试之所以「通过」，是因为脚本直接点了那个已被隐藏的"
         "按钮 —— **能用代码点到，不等于用户点得到**",
     ),
+    # ── 2026-09-20 RN-672：对话框第一次进审计（`--only DLG`）──
+    # ⭐⭐⭐ 守的分成两半：**覆盖面别再塌回去**（前 4 条：清单、两支审计的那条路、
+    #   地板阈值别被改虚）与**这一批修掉的三条别回来**（后 3 条，都在「添加在线音乐」上）。
+    Revert(
+        "DLG", "对话框清单里又漏登记一个",
+        "scripts/_audit_dialogs.py",
+        '    DialogSpec("add_url", "AddURLDialog", _build_add_url,\n'
+        '               "添加在线音乐，三个页签 + 真实平台清单（6~7 条）", "add_url_dialog.py"),\n',
+        "",
+        "tests/test_the_dialogs_are_all_audited.py::"
+        "test_every_dialog_class_in_the_folder_is_registered",
+        "⭐⭐⭐ `dialogs/` 下 8 个 QDialog 从建仓起不在任何一条判据的遍历里，"
+        "而排版审计的报告年年写着「覆盖面 27/27（全覆盖）」。"
+        "**「全覆盖」的分母是页面，而界面不只有页面。** 漏登记的那一个不会红、"
+        "不会警告，只会让 8/8 悄悄变成 8/9",
+    ),
+    Revert(
+        "DLG", "地板体检拿不到真实地板（等于这条判据不存在）",
+        "scripts/_audit_dialogs.py",
+        "    fw, fh = floor_of(dlg)\n",
+        "    fw, fh = (0, 0)\n",
+        "tests/test_the_dialogs_are_all_audited.py::"
+        "test_the_floor_rule_actually_rejects_a_too_tall_floor",
+        "地板这一格是前五条判据**结构上看不见**的：它们量「内容 vs 可用空间」，"
+        "而这里坏在控件自己声明的下限上 —— 内容再少也没用，地板钉在那儿",
+    ),
+    Revert(
+        "DLG", "排版审计里那条通往对话框的路被改成恒假",
+        "scripts/layout_overflow_audit.py",
+        "            if not args.no_dialogs:\n",
+        "            if False:\n",
+        "tests/test_the_dialogs_are_all_audited.py::"
+        "test_the_layout_audit_really_reaches_the_dialogs",
+        "⭐⭐⭐ 同 RN-666：**判据查的是「存在」，而缺陷发生在「可达」上** —— "
+        "只查「`build_all` 在不在 AST 里」的话，`if False:` 照样绿",
+    ),
+    Revert(
+        "DLG", "挤压审计那边的对话框遍历被掏空",
+        "scripts/squeezed_label_audit.py",
+        "    for spec, dlg, err in _dlgs.build_all(win, app):\n",
+        "    for spec, dlg, err in []:\n",
+        "tests/test_the_dialogs_are_all_audited.py::"
+        "test_the_squeezed_audit_really_reaches_the_dialogs",
+        "两支审计各有一条通往对话框的路，**修好一条不等于修好一族**（RN-671 那条的翻版）",
+    ),
+    Revert(
+        "DLG", "在册的对话框存量债键打错一个字",
+        "scripts/layout_overflow_audit.py",
+        '    ("对话框:add_url", "测试"): (2, "setFixedSize(68,34) + fp_short；字号放大档差 2px"),\n',
+        '    ("对话框:add_urls", "测试"): (2, "setFixedSize(68,34) + fp_short；字号放大档差 2px"),\n',
+        "tests/test_the_dialogs_are_all_audited.py::"
+        "test_every_dialog_debt_key_names_a_registered_dialog",
+        "打错一个字的后果不是红，是**那条债从此对不上账**：它既不再命中"
+        "（于是只提醒不红），也不会拦住同一处的新债",
+    ),
+    Revert(
+        "DLG", "「添加在线音乐」又把地板钉回 700×700",
+        "dialogs/add_url_dialog.py",
+        "        self.resize(750, 620)\n",
+        "        self.setMinimumSize(700, 700)\n        self.resize(750, 750)\n",
+        "tests/test_the_dialogs_are_all_audited.py::"
+        "test_the_add_url_floor_fits_the_compact_window",
+        "⭐⭐ 地板 700 比产品自己承诺的紧凑档窗口 860×640 还高 —— 不是「有点挤」，"
+        "是**拖不小、也滚不动**：底下那 60px 连同「添加 / 取消」被屏幕切掉。"
+        "而那 700 也不是内容要的数，布局自己的最小高只有 584",
+    ),
+    Revert(
+        "DLG", "「复制」按钮又被钉死宽度",
+        "dialogs/add_url_dialog.py",
+        '            copy_btn = QPushButton("复制")\n',
+        '            copy_btn = QPushButton("复制")\n            copy_btn.setFixedWidth(60)\n',
+        "tests/test_the_dialogs_are_all_audited.py::"
+        "test_the_add_url_copy_buttons_show_their_whole_label",
+        "60px 减掉 QSS 的左右 padding 只剩 22px，而「复制」两个字要 28px"
+        "（1.25 字号档 36px）。布局完全放得下 —— **只是字被打了省略号**",
+    ),
+    Revert(
+        "DLG", "平台卡又可以被压扁（而不是让滚动条出来）",
+        "dialogs/add_url_dialog.py",
+        "            platform_frame.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)\n",
+        "",
+        # ⚠ 钉的是**机制级**那一条，不是行为那一条：行为版在 pytest 进程里
+        #   三轮都压不出来（字号缩放的表现和审计进程不同），理由写在它的 docstring 里。
+        "tests/test_the_dialogs_are_all_audited.py::"
+        "test_the_platform_cards_declare_themselves_unshrinkable",
+        "⭐⭐ 这一处是**被上一条盖住的**：旧版开局 750px 高正好压不到，"
+        "而那 750 本身就是毛病。**一个缺陷可以一直替另一个缺陷挡着，"
+        "直到前一个被修好。** 机制是 Qt 的坑：`QScrollArea` 的内层控件不是顶层窗口，"
+        "`SetDefaultConstraint` 不给它设 minimumSize ⇒ 视口一小就压扁而不是滚",
+    ),
 ]
 
 
