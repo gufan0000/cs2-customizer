@@ -413,7 +413,164 @@ def test_switching_mode_does_not_blank_the_big_box(page, qapp):
         "换了导入模式，第 2 步又变回一整块什么都不说的黑框（RN-520 只修了开局那一次）。")
 
 
-# ---------------------------------------- ⑤ 分母守卫
+# ------------------- ⑤ RN-675：没导进去的东西，必须说出来（端到端逮到的）
+
+
+class _FakeGroup:
+    def __init__(self, *paths):
+        self.paths = list(paths)
+
+
+def _pack(tmp_path):
+    """一个**带现实杂物**的素材文件夹：5 条规范的 + 1 个散落在根上的。"""
+    root = tmp_path / "下载的包"
+    (root / "kill_sounds" / "测试风格").mkdir(parents=True)
+    for i in range(1, 6):
+        (root / "kill_sounds" / "测试风格" / f"{i}.wav").write_bytes(b"RIFF0000WAVE")
+    (root / "随手录的.wav").write_bytes(b"RIFF0000WAVE")
+    return root
+
+
+def _answer_dialog(monkeypatch, pick: bool):
+    """替用户应答那个「这些素材是什么？」——`pick=False` 就是**不选就确认**。
+
+    ⛔ 一律 `WA_DontShowOnScreen`：这个框是真模态的，忘了设它会在跑测试时
+    **弹到用户屏幕上**（CLAUDE.md §3；写这一批时真发生过一次，卡了 45 秒）。
+    """
+    from dialogs.resource_import_decision_dialog import ResourceImportDecisionDialog
+
+    def fake_exec(self):
+        self.setAttribute(Qt.WA_DontShowOnScreen, True)
+        if pick:
+            for row in getattr(self, "_rows", []):
+                combo = row["combo"]
+                for i in range(combo.count()):
+                    if combo.itemData(i):
+                        combo.setCurrentIndex(i)
+                        break
+                row["style"].setText("判据风格")
+        return 1                      # QDialog.Accepted
+
+    monkeypatch.setattr(ResourceImportDecisionDialog, "exec", fake_exec)
+
+
+def test_a_group_you_skipped_in_the_dialog_is_named_on_screen(page, qapp, monkeypatch, tmp_path):
+    """⭐⭐⭐ 端到端实测逮到的：5 条认得出 + 1 个散落文件，在确认框里不选就确认 ⇒
+    那个文件**既没导入、也不在「未识别」里、整屏也找不到它的名字**。
+    而用户会以为整包都进去了。⭐ 悄悄扔掉别人的文件，和悄悄把垃圾导进来一样不该。
+    """
+    _answer_dialog(monkeypatch, pick=False)
+    page.source_edit.setText(str(_pack(tmp_path)))
+    page._scan_source()
+    qapp.processEvents()
+
+    assert (page._scan_report or {}).get("summary", {}).get("recognized_count") == 5, (
+        "阳性对照：这一包本该有 5 条认得出来 —— 没有的话这条判据量的就不是"
+        "「有东西可导时也要提被跳过的那一组」")
+    on_screen = page.notice_bar.label.text() + page.preview_text.toPlainText()
+    assert "随手录的" in on_screen, (
+        "确认框里跳过的那一组，屏幕上一个字都没提 —— "
+        f"它既没导入也不在未识别里（RN-675）。提示条：{page.notice_bar.label.text()!r}")
+
+
+def test_nothing_to_import_says_the_real_reason(page, qapp, monkeypatch, tmp_path):
+    """⛔⛔ 这句话原来无条件是「这个包里没有认得出来的资源文件」，而它被复用在
+    三种情形里，**其中两种是假的**。⭐ 三种原因产品手上全都有。
+
+    ⚠⚠ 第一版这条判据只测 `_nothing_to_import_reason()` 这个方法本身 ——
+    回退验证当场证明它**逮不住真缺陷**：把**调用处**改回硬编码的那句话，
+    方法还在、判据照样绿。⭐ **断点改调用处，判据量被调的方法 ⇒ 两者擦肩而过。**
+    ⇒ 先走一遍真链路（这才是缺陷发生的地方），再补两条单元断言。
+    """
+    # ── ① 真链路：拿「视觉」模式扫一个音频包，看它给用户看的是哪句话
+    shown = []
+    monkeypatch.setattr(QMessageBox, "information",
+                        lambda *a, **k: shown.append(str(a[2] if len(a) > 2 else "")) or 0)
+    _answer_dialog(monkeypatch, pick=False)
+    page.mode_combo.setCurrentIndex(1)            # 视觉
+    qapp.processEvents()
+    page.source_edit.setText(str(_pack(tmp_path)))
+    page._scan_source()
+    qapp.processEvents()
+    assert shown, "阳性对照：这一屏本该弹一句「没有可导入的内容」"
+    assert "不属于这一类" in shown[-1], (
+        "拿「视觉」扫一个满是音频的包，它告诉用户「这个包里没有认得出来的资源文件」——"
+        f"而包里全是认得出的音频。这句话是假的（RN-675）。实际说的是：{shown[-1]!r}")
+
+    # ── ② 两条单元断言（保留：它们说清了每一种原因该说什么）
+    page._skipped_unsure = [_FakeGroup("/x/随手录的.wav")]
+    page._domain_skipped = []
+    said = page._nothing_to_import_reason()
+    assert "随手录的.wav" in said and "没有选类别" in said, said
+    assert "没有认得出来的资源文件" not in said, (
+        "跳过一组 ≠ 包里没有认得出来的东西 —— 这句话是假的")
+
+    page._skipped_unsure = []
+    page._domain_skipped = [object()]
+    said = page._nothing_to_import_reason()
+    assert "不属于这一类" in said and page._mode_text() in said, said
+    assert "没有认得出来的资源文件" not in said, (
+        "模式挡掉了 ≠ 包里没有认得出来的东西 —— 这句话也是假的")
+
+
+def test_the_generic_sentence_survives_when_it_is_actually_true(page):
+    """⭐ 阳性对照：**真的**一个都不认得时，那句通用的话必须还在 ——
+    否则上面那条判据可以靠"把这句话删掉"作弊过关。"""
+    page._skipped_unsure = []
+    page._domain_skipped = []
+    assert "没有认得出来的资源文件" in page._nothing_to_import_reason()
+
+
+def test_cancelling_the_dialog_is_not_a_silent_no_op(page, qapp, monkeypatch, tmp_path):
+    """⭐ 点了取消之后界面一个字都不变，和"点了没反应"长得一模一样。"""
+    from dialogs.resource_import_decision_dialog import ResourceImportDecisionDialog
+
+    def cancel(self):
+        self.setAttribute(Qt.WA_DontShowOnScreen, True)
+        return 0                      # QDialog.Rejected
+
+    monkeypatch.setattr(ResourceImportDecisionDialog, "exec", cancel)
+    page.source_edit.setText(str(_pack(tmp_path)))
+    page._scan_source()
+    qapp.processEvents()
+    assert page._scan_report is None, "取消之后不许留下一份半截的报告"
+    assert page.notice_bar.label.text().strip(), "点了取消，界面上一个字都没变"
+    assert page.scan_btn.text() in page.notice_bar.label.text(), (
+        "那句话点名了按钮却没从按钮读（RN-519）")
+
+
+def test_the_skipped_list_is_reset_exactly_once(page):
+    """⛔ 归零只许写一次，且在任何 `return` 之前。
+
+    ⭐ `_decide_groups` 有**四条出路**，「每条路各清一遍」正是漏掉一条的写法 ——
+    漏掉的那条会把**上一次**跳过的那几组算到这一次头上。
+    """
+    tree = ast.parse(WIZARD.read_text(encoding="utf-8"))
+    fn = next(n for n in ast.walk(tree)
+              if isinstance(n, ast.FunctionDef) and n.name == "_decide_groups")
+    def is_reset(node):
+        return (isinstance(node, ast.Assign)
+                and any(getattr(t, "attr", None) == "_skipped_unsure" for t in node.targets)
+                and isinstance(node.value, ast.List) and not node.value.elts)
+
+    # ⚠⚠ 第一版只比行号（「归零要在第一条 return 之前」）—— 回退验证当场证明
+    #   它逮不住：把归零挪进 `if not prepared["groups"]:` 里面，行号照样在前，
+    #   而另外三条出路全带着上一次的残留跑。
+    #   ⭐ **量位置不等于量作用域。** ⇒ 改量「它是不是函数体的直属语句」。
+    top = [n for n in fn.body if is_reset(n)]
+    everywhere = [n for n in ast.walk(fn) if is_reset(n)]
+    assert len(everywhere) == 1, (
+        f"`_skipped_unsure = []` 出现了 {len(everywhere)} 次，该只有 1 次 —— "
+        "「每条出路各清一遍」正是漏掉一条的写法")
+    assert len(top) == 1, (
+        "归零被塞进了某个分支里（不是函数体的直属语句）—— "
+        "没走那条分支的出路会带着上一次跳过的那几组跑")
+    returns = [n.lineno for n in ast.walk(fn) if isinstance(n, ast.Return)]
+    assert top[0].lineno < min(returns), (
+        f"归零写在第 {top[0].lineno} 行，而第一条 `return` 在第 {min(returns)} 行")
+
+
+# ---------------------------------------- ⑥ 分母守卫
 
 
 def test_the_widgets_these_judges_watch_are_all_here(page):

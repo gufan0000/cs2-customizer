@@ -9214,6 +9214,54 @@ Revert(
         "test_switching_mode_does_not_blank_the_big_box",
         "RN-520 当年只修了**开局**那一次；换个模式，那块什么都不说的纯黑框原地复活",
     ),
+    # ── 2026-09-21 RN-675：端到端实测逮到的（用户问「功能跑过测试了吗」）──
+    Revert(
+        "IMP", "确认框里跳过的那一组又静默消失",
+        "pages/audio_import_wizard_page.py",
+        "            unanswered = self._unanswered_notice()\n",
+        '            unanswered = ""\n',
+        "tests/test_the_import_page_takes_what_you_actually_have.py::"
+        "test_a_group_you_skipped_in_the_dialog_is_named_on_screen",
+        "⭐⭐⭐ 5 条认得出 + 1 个散落文件，在「这些素材是什么？」里不选就确认 ⇒"
+        "那个文件**既没导入、也不在「未识别」里、整屏也找不到它的名字**，"
+        "而用户会以为整包都进去了。⭐ 悄悄扔掉别人的文件，"
+        "和悄悄把垃圾导进资源库一样不该。⚠ 逮到它的是端到端实跑，不是判据",
+    ),
+    Revert(
+        "IMP", "「一个都没导」又变回一句硬编码的假说明",
+        "pages/audio_import_wizard_page.py",
+        "                self, \"没有可导入的内容\", self._nothing_to_import_reason())\n",
+        "                self, \"没有可导入的内容\",\n"
+        "                \"这个包里没有认得出来的资源文件。\")\n",
+        "tests/test_the_import_page_takes_what_you_actually_have.py::"
+        "test_nothing_to_import_says_the_real_reason",
+        "⭐⭐⭐ 那句话被复用在三种情形里，**其中两种它是假的**："
+        "① 用户在确认框里没选类别（包里明明认得出）；"
+        "② 导入模式选错，拿「视觉」扫音频包（包里全是认得出的音频）。"
+        "**同一句话解释三件事，其中两件必然是错的** —— 而三种原因产品手上全都有",
+    ),
+    Revert(
+        "IMP", "在确认框里点取消又变回一句 return（点了没反应）",
+        "pages/audio_import_wizard_page.py",
+        "                self.notice_bar.show_message(\n"
+        "                    \"已取消，这一次没有改动你的素材。",
+        "                pass  # 什么都不说\n                _ = (\n"
+        "                    \"已取消，这一次没有改动你的素材。",
+        "tests/test_the_import_page_takes_what_you_actually_have.py::"
+        "test_cancelling_the_dialog_is_not_a_silent_no_op",
+        "点了取消之后界面一个字都不变，和「点了没反应」长得一模一样"
+        "（同 RN-674 里那条「拒绝要看得见」）",
+    ),
+    Revert(
+        "IMP", "跳过清单改成「每条出路各清一遍」（漏掉一条）",
+        "pages/audio_import_wizard_page.py",
+        "        self._skipped_unsure = []\n        if not prepared[\"groups\"]:\n",
+        "        if not prepared[\"groups\"]:\n            self._skipped_unsure = []\n",
+        "tests/test_the_import_page_takes_what_you_actually_have.py::"
+        "test_the_skipped_list_is_reset_exactly_once",
+        "⭐ `_decide_groups` 有**四条出路**，「每条路各清一遍」正是漏掉一条的写法 ——"
+        "漏掉的那条会把**上一次**跳过的那几组算到这一次头上",
+    ),
     Revert(
         "IMP", "手写拖拽处理又直接点 `event.mimeData()`",
         "dialogs/style_creator_dialog.py",

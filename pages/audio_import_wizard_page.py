@@ -733,6 +733,9 @@ class AudioImportWizardPage(QWidget):
         #   选「视觉」照样把音频整包导进去。⭐ 不起作用的控件比没有还糟。
         prepared = prepare_decisions(source, self._current_mode())
         self._domain_skipped = list(prepared.get("skipped_by_domain") or [])
+        # ⚠ 归零**只写这一次**，而且写在任何 `return` 之前 —— 这个方法有四条出路，
+        #   「每条路各清一遍」正是漏掉一条的写法（RN-674 端到端实测的教训）。
+        self._skipped_unsure = []
         if not prepared["groups"]:
             return []
         decided = prepared["decided"]
@@ -750,6 +753,13 @@ class AudioImportWizardPage(QWidget):
         if dialog.exec() != QDialog.Accepted:
             return None
         picked = dialog.decisions()
+        # ⭐⭐⭐ RN-675：框里**没选类别的那几组**必须记下来 —— 不记就等于
+        #   悄悄把别人的文件扔了（它们既不导入、也不进「未识别」）。
+        # ⚠ 按「这一组是哪几个文件」对，不按下标：`decisions()` 会跳过没选的行。
+        answered = {tuple(str(p) for p in (d.get("paths") or [])) for d in picked}
+        self._skipped_unsure = [g for g in unsure
+                                if tuple(str(p) for p in (getattr(g, "paths", None) or ()))
+                                not in answered]
         # ⭐ 记下这一次的选择：同样结构的素材下次不再问。
         #   ⚠ 只记问过的那几组（`unsure`），顺序与对话框里的一一对应。
         remember_decisions(unsure, picked)
@@ -781,11 +791,15 @@ class AudioImportWizardPage(QWidget):
         try:
             decisions = self._decide_groups(source)
             if decisions is None:      # 用户在确认框里取消
+                # ⭐ RN-675：取消也说一句。原来是一句 `return` ——
+                #   点了取消之后界面一个字都不变，和"点了没反应"长得一样。
+                self.notice_bar.show_message(
+                    "已取消，这一次没有改动你的素材。再点一次「%s」会重新问你。"
+                    % self.scan_btn.text())
                 return
             if not decisions:
                 QMessageBox.information(
-                    self, "没有可导入的内容",
-                    "这个包里没有认得出来的资源文件。")
+                    self, "没有可导入的内容", self._nothing_to_import_reason())
                 return
             report = plan_from_decisions(source, decisions, self.resources_root)
             self._scan_report = report
@@ -793,6 +807,10 @@ class AudioImportWizardPage(QWidget):
             self._last_import_result = None
             self._render_report(report)
             warnings = [str(line) for line in (report.get("warnings") or [])]
+            # ⭐ RN-675：有东西可导时**也**得提被跳过的那几组（实测那时一个字都没有）。
+            unanswered = self._unanswered_notice()
+            if unanswered:
+                warnings.insert(0, unanswered)
             skipped = len(getattr(self, "_domain_skipped", []) or [])
             if skipped:
                 # ⭐ 被「导入模式」挡掉的也要说：用户看到"成功 0"而不知道为什么，
@@ -815,6 +833,40 @@ class AudioImportWizardPage(QWidget):
             # ⚠ 报告里存的是**绝对路径**，指向临时解压目录 ——
             #   所以清理必须等到真正落盘之后，见 `_run_import`。
             self._pending_source = source
+
+    def _unanswered_notice(self) -> str:
+        """确认框里**没选类别**的那几组，说一句（RN-675）。
+
+        ⛔ 不许省：那几组既不导入、也不进「未识别」，不说就是悄悄扔了别人的文件。
+        """
+        groups = getattr(self, "_skipped_unsure", None) or []
+        if not groups:
+            return ""
+        files = [str(p) for g in groups for p in (getattr(g, "paths", None) or ())]
+        shown = "、".join(os.path.basename(p) or p for p in files[:3])
+        more = f"等 {len(files)} 个文件" if len(files) > 3 else ""
+        return (f"{shown}{more} 你刚才没有选类别，这一次没有导入 —— "
+                f"再点一次「{self.scan_btn.text()}」会重新问你")
+
+    def _nothing_to_import_reason(self) -> str:
+        """一个都没导的时候，说**真正的**原因（RN-675，叙事见登记册）。
+
+        ⛔⛔ 不许改回那句硬编码的「这个包里没有认得出来的资源文件」：它被复用在
+        三种情形里，**其中两种是假的**（没选类别 / 模式选错）——
+        ⭐ **同一句话解释三件事，其中两件必然是错的**，而三种原因这里全都有。
+        """
+        parts = []
+        unanswered = self._unanswered_notice()
+        if unanswered:
+            parts.append(unanswered)
+        skipped = len(getattr(self, "_domain_skipped", []) or [])
+        if skipped:
+            parts.append(
+                f"当前模式是「{self._mode_text()}」，包里有 {skipped} 组素材"
+                f"不属于这一类 —— 把模式切到「全部」再扫一次就能导")
+        if not parts:
+            parts.append("这个包里没有认得出来的资源文件。")
+        return "；".join(parts)
 
     @staticmethod
     def _aside_notice(source) -> str:
