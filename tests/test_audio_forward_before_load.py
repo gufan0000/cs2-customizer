@@ -148,3 +148,21 @@ def test_play_voice_cold_key_is_forwarded(am):
     forwarded = am._recorder.calls[0][0]
     played = am.kill_voice_channel.played[-1]
     assert forwarded is played, "转发出去的不是本地实际播放的那个 Sound 对象"
+
+
+def test_a_sound_the_policy_drops_is_not_forwarded(am, monkeypatch):
+    """策略层判「丢弃」、本地没播的声音，队友也不许听到（VOX 2026-09-23）。
+
+    ⛔ 以前转发写在策略判断**之前**：本地被判丢弃（同通道正被更高优先级占着）
+       或拿不到通道的声音，照样按下开麦键写进了虚拟麦 —— 本地一片安静，
+       队友却听到了。淡入那条路补转发时定的规矩是「本地真播了才转发」，
+       这条路不守就是一条路守、一条路不守。
+    """
+    import core.audio.audio_manager as am_mod
+
+    monkeypatch.setattr(am_mod, "decide_channel_action",
+                        lambda *a, **k: types.SimpleNamespace(action="drop", reason="test"))
+    played = am.play_sound("kill-CF-1", channel_type="kill_sound")
+
+    assert played is False, "前提：策略层应当判丢弃"
+    assert am._recorder.calls == [], "本地被判丢弃的声音还是转发给了队友"

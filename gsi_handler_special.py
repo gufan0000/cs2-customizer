@@ -243,8 +243,10 @@ class GSIHandlerSpecial:
     def _process_grenade_throw(self, data):
         """处理投掷物检测逻辑 - 基于手持状态和数量变化"""
         player_data = data.get("player", {})
-        current_weapons = player_data.get("weapons", {})
-        
+        # ⛔ `or {}`：GSI 会发显式 `"weapons": null`（kills/sounds 都防了）；只防第一个循环，
+        #    第二个循环照样 AttributeError ⇒ 同一帧后面的 C4 / 血量 / 回合 / MVP 全被跳过。
+        current_weapons = player_data.get("weapons") or {}
+
         # 1. 检测当前手持武器
         active_weapon = None
         

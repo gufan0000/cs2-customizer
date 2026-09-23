@@ -1161,16 +1161,23 @@ class MusicPage(QWidget):
         )
         
         if files:
+            added = 0
             for file_path in files:
                 try:
-                    self.player.add_track(file_path)
+                    # ⛔ add_track 收的是曲目字典；以前直接传路径字符串 ⇒ 每首都 TypeError 被吞，
+                    #    而下面照样报「已添加 N 个」。断点 `--only SWEEP`。
+                    self.player.add_track({"type": "local", "path": file_path})
+                    added += 1
                     self.logger.info(f"添加音乐: {file_path}")
                 except Exception as e:
                     self.logger.error(f"添加音乐失败: {file_path}, 错误: {e}")
-            
+
             # 刷新显示
             self.refresh_playlist_display()
-            QMessageBox.information(self, "成功", f"已添加 {len(files)} 个音乐文件!")
+            if added == len(files):
+                QMessageBox.information(self, "成功", f"已添加 {added} 个音乐文件!")
+            else:
+                QMessageBox.warning(self, "部分失败", f"已添加 {added} 个，{len(files) - added} 个没加进去（详见日志）。")
     
     
     def _delete_selected(self):

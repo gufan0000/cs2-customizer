@@ -75,7 +75,7 @@ def _delivered_name(script_rel: str) -> str | None:
     """
     tree = ast.parse((REPO / script_rel).read_text(encoding="utf-8-sig"))
     for node in ast.walk(tree):
-        # ⭐ `deliver()` = 打完就 `os._exit`；`announce()` = 只打、还要跑收尾。
+        # ⭐ `deliver()` = 打完就结束进程；`announce()` = 只打、还要跑收尾。
         #   两者都是**同一条裁定通道**，判据认名字必须两个都认 ——
         #   只认一个的话，用另一个的脚本就成了「CI 读得到、判据看不见」。
         if (isinstance(node, ast.Call)

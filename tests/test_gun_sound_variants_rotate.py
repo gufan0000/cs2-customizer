@@ -17,7 +17,9 @@ from threading import Lock
 import pygame
 import pytest
 
-from core.audio.audio_manager import MAX_GUN_SOUND_VARIANTS, AudioManager
+from core.audio.audio_manager import AudioManager
+# ⚠ RN-676：搬去 `gun_sound_profiles` 了（见那边的注释）。从新家取。
+from core.gun_sound_profiles import MAX_GUN_SOUND_VARIANTS
 
 ROOT = Path(__file__).resolve().parent.parent
 

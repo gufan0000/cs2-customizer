@@ -67,6 +67,32 @@ def deliver(name: str, rc: int) -> None:
         print(f"{VERDICT_PREFIX} rc={rc}", flush=True)
     sys.stdout.flush()
     sys.stderr.flush()
+    _exit_without_dll_teardown(rc)
+
+
+def _exit_without_dll_teardown(rc: int) -> None:
+    """退出，且**不跑任何 DLL 的卸载例程** —— 退出码只能是 `rc`。
+
+    ⭐⭐ RN-194 那句「`os._exit` 没挡住」的机制（2026-09-23 实测）：Windows 上
+    `os._exit` → `ExitProcess`，照样给每个 DLL 发 `DLL_PROCESS_DETACH`。而它**跳过了
+    Python 收尾** ⇒ `QApplication` 和整窗控件都还活着，`Qt6Gui.dll` 就在卸载时析构
+    全局对象 → 访问违例（向量化异常处理器抓到的出错模块：`Qt6Gui.dll`，其次
+    `shiboken6`）。排版审计完整/紧凑两档实测 **100% 退出码 139、裁定行 rc=0**。
+    ⚠ 先关掉 QApplication 再 `os._exit` 只修好 1/3 —— Python 还攥着别的 Qt 对象。
+    ⇒ `TerminateProcess` 自己：不发 DETACH，退出码就是传进去的那个数。
+      输出已在上面 flush；审计进程没有别的要落盘的东西。判据
+      `tests/test_the_layout_audit_exit_code_is_its_verdict.py`。
+    """
+    if sys.platform == "win32":
+        try:
+            import ctypes
+
+            k32 = ctypes.WinDLL("kernel32")
+            k32.GetCurrentProcess.restype = ctypes.c_void_p
+            k32.TerminateProcess.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+            k32.TerminateProcess(k32.GetCurrentProcess(), rc & 0xFFFFFFFF)
+        except Exception:
+            pass  # 拿不到就退回 os._exit —— 至少不比原来差
     os._exit(rc)
 
 
@@ -100,6 +126,7 @@ def parse_verdict(text: str, name: str) -> int | None:
     **3 次退出码是 127，而同一次输出里的裁定行是 `RESULT layout rc=0`**，
     且裁定行打在 `os._exit` 之前 —— 也就是说它执行到了，退出码还是被改写了。
     ⇒ **退出码在这条路上不可信这件事，比 `os._exit` 能不能修它更根本。**
+    （2026-09-23：机制查实并修掉，见 `_exit_without_dll_teardown`；裁定照旧以这一行为准。）
     """
     got = None
     pattern = re.compile(rf"^{re.escape(VERDICT_PREFIX)}\s+{re.escape(name)}\s+rc=(-?\d+)\s*$")

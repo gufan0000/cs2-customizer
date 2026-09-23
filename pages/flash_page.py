@@ -23,8 +23,11 @@ from widgets.flash_preview_widget import FlashPreviewWidget
 from widgets.page_header import PageHeader
 from widgets.page_action_bar import PageActionBar
 from widgets.settings_card import SettingsCard
+from widgets.overlay_requirement import make_overlay_requirement_label
 import os
 
+#: RN-429：闪光白屏画在游戏画面上（独立进程里的置顶分层窗口）。
+DRAWS_OVER_THE_GAME = True
 
 #: RN-519：卡片说明要点名这颗按钮，而说明比按钮先建 —— 名字只留一份。
 REFRESH_STYLES_BUTTON_TEXT = "刷新样式列表"
@@ -300,14 +303,15 @@ class FlashPage(QWidget):
             #   开关负责「启用」，这颗按钮负责「启动后台监听」——
             #   它们本来就是两件事（`flash_enabled` 与 `process_manager.is_running`），
             #   只是以前被 `_enable_and_start` 合成了一颗按钮，看上去像同一件事。
-            # ⚠ 没启用之前把它置灰而不是藏掉：藏掉的话用户不知道开完之后还有一步。
+            # ⚖ 2026-09-23：开关打开就直接启动监听（`on_master_switch_synced`），「开完还有一步」
+            #   不存在了 ⇒ 关着时底栏**不再摆**那颗灰按钮（它就是外审 6/6 说的第二个入口）；
+            #   只有「开着却没在跑」（启动失败）时，它作为补救入口出现。
             running = getattr(getattr(self, "process_manager", None), "is_running", False)
             enabled = bool(getattr(config, "flash_enabled", False))
             if not running:
-                self.action_bar.configure_primary("启动监听", self._enable_and_start, visible=True)
-                self.action_bar.primary_btn.setEnabled(enabled)
-                self.action_bar.primary_btn.setToolTip(
-                    "" if enabled else "先打开总开关，再点这里启动后台监听")
+                self.action_bar.configure_primary("启动监听", self._enable_and_start, visible=enabled)
+                self.action_bar.primary_btn.setEnabled(True)
+                self.action_bar.primary_btn.setToolTip("")
             else:
                 self.action_bar.configure_primary("前往效果预览", self._open_preview_tab, visible=True)
                 self.action_bar.primary_btn.setEnabled(True)
@@ -323,7 +327,19 @@ class FlashPage(QWidget):
 
         ⭐ 全仓统一的钩子名（`widgets/master_switch_link` 调它）。
         少了这一下，开关动了而徽章不动 —— 同屏两处说法不一致（RN-107 族）。
+
+        ⛔ 开关就是启动：以前拨开只写 config，后台监听要么等下次启动软件、要么再点底栏
+        「启动监听」—— 外审三次（RN-192 6/6、RN-644、这次 6/6）都判「两个入口不知道点哪个」，
+        前两次改的是按钮和词，根因是开关没做完它该做的事。关掉时正在显示的白屏也当场清掉
+        （GSI 那头关了就不再处理，白屏会停在屏幕上直到断流看门狗）。断点 `--only SWEEP`。
         """
+        manager = getattr(self, "process_manager", None)
+        if manager is not None:
+            enabled = bool(getattr(config, "flash_enabled", False))
+            if enabled and not manager.is_running:
+                self._init_flash_process()
+            elif not enabled and manager.is_running:
+                manager.force_clear_flash()
         self._sync_overview_status()
 
     def _sync_overview_status(self, *_args):
@@ -457,6 +473,9 @@ class FlashPage(QWidget):
         status_header.addWidget(self.status_badge_label, 1)
         status_header.addStretch()
         status_card_layout.addLayout(status_header)
+        # RN-429：闪光白屏也是画在游戏画面上的窗口，独占全屏下出不来 —— 本页以前对此一字不提
+        #   （判据的两跳 import 探测够不到独立进程里的 pygame 窗口）。
+        status_card_layout.addWidget(make_overlay_requirement_label("闪光白屏"))
 
         # ⚠ RN-009：这里原来有一个 `self.summary_label` —— 建出来就 `hide()`，
         # 全仓没有任何一处让它显示回来，而每次状态同步还照给它 `setText` 十行详情。

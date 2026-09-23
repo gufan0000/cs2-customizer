@@ -1,10 +1,17 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 from __future__ import annotations
 
+import difflib
+import os
 from dataclasses import dataclass
 
 
 DISABLED_GUN_SOUND_STYLES = {"", "0", "none", "off", "disabled", "不启用", "未启用"}
+
+#: 一个枪声风格最多装几个取样。与枪声通道池同数（5 条轮转）；再多只是吃缓存预算。
+#: ⭐ 住在这个纯模块而不是 `audio_manager`：设置页也要说出这个数，而 import
+#: audio_manager 会把 pygame 一起拖进来。唯一真源，两边都从这里取。
+MAX_GUN_SOUND_VARIANTS = 5
 
 
 @dataclass(frozen=True)
@@ -463,6 +470,50 @@ SUPPORTED_GUN_SOUND_TAB_GROUPS = tuple(
     if any(weapon_type in SUPPORTED_GUN_SOUND_WEAPON_TYPES for weapon_type in weapon_types)
 )
 LEGACY_GUN_SOUND_ENABLED_KEYS = tuple(profile.legacy_enabled_key for profile in GUN_SOUND_PROFILE_LIST)
+
+
+def unrecognised_gun_dirs(gun_sounds_dir: str) -> list[tuple[str, str]]:
+    """枪声根目录下「装着素材、而目录名不是任何一把枪」的那些 ⇒ `[(目录名, 最像的代号)]`。
+
+    RN-676（叙事在档案）：代号拼错是静默失败。⛔ 空目录不报（那是噪音）。
+    「有素材」认两种形状，因为两种都同样不会响：直接摆着音频（少了风格那一层）、
+    子目录里有音频（层数对、代号错）。
+    """
+    if not gun_sounds_dir or not os.path.isdir(gun_sounds_dir):
+        return []
+    known = set(SUPPORTED_GUN_SOUND_WEAPON_TYPES)
+    found: list[tuple[str, str]] = []
+    for name in sorted(os.listdir(gun_sounds_dir)):
+        if name.lower() in known:
+            continue
+        path = os.path.join(gun_sounds_dir, name)
+        if not os.path.isdir(path):
+            continue
+        entries = _safe_listdir(path)   # 读不动就是空 ⇒ 下面 has_media 为假、照样跳过
+        has_media = any(
+            _looks_like_audio(entry)
+            or (os.path.isdir(os.path.join(path, entry))
+                and any(_looks_like_audio(sub)
+                        for sub in _safe_listdir(os.path.join(path, entry))))
+            for entry in entries
+        )
+        if not has_media:
+            continue
+        # ⚠ 用 difflib 默认 cutoff：给不出就给空串，⛔ 不许瞎猜（猜错的比不给更糟）。
+        near = difflib.get_close_matches(name.lower(), sorted(known), n=1)
+        found.append((name, near[0] if near else ""))
+    return found
+
+
+def _safe_listdir(path: str) -> list[str]:
+    try:
+        return os.listdir(path)
+    except OSError:
+        return []
+
+
+def _looks_like_audio(name: str) -> bool:
+    return str(name).lower().endswith((".mp3", ".wav", ".ogg"))
 
 
 def resolve_gun_sound_style(style) -> str:

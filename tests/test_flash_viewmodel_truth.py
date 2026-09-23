@@ -193,19 +193,22 @@ def test_flash_bottom_bar_primary_actually_changes_something(qapp, monkeypatch):
     #   `flash_enabled` 与 `process_manager.is_running`）。
     assert getattr(page, "master_switch_row", None) is not None, (
         "flash 页没有就地总开关 —— 那「启用」这件事就又只能挂回底栏了（RN-189）")
-    assert label != "前往效果预览", (
-        f"总开关关着时底栏主按钮是「{label}」—— 那只是切页签的导航动作，"
-        "不能拿它当「下一步该做什么」（RN-079）。")
-    assert not page.action_bar.primary_btn.isEnabled(), (
-        f"总开关还关着，底栏「{label}」却是亮的 —— 一屏两个开启入口，"
-        "外审 6/6 判「不知道点哪个才算真正生效」（RN-192）。")
+    # ⚖ 2026-09-23：开关打开即启动监听 ⇒ 关着时底栏**不摆**任何「启动」按钮 ——
+    #   那颗灰按钮就是外审三次（RN-192 6/6 / RN-644 / 这次 6/6）判的「第二个入口」。
+    assert page.action_bar.primary_btn.isHidden(), (
+        f"总开关还关着，底栏却摆着「{label}」—— 一屏两个开启入口，"
+        "外审 6/6 判「不知道点哪个才算真正生效」。开关就是启动，关着时不该有第二颗。")
 
-    # 反面：总开关一开，那颗「启动」必须变得可点 —— 否则就是把入口删没了。
+    # 反面：开着但监听没起来（启动失败）时，补救入口必须在、可点、且不是纯导航（RN-079）。
     monkeypatch.setattr(page, "_init_flash_process", lambda: None)
     monkeypatch.setattr(config, "flash_enabled", True, raising=False)
+    page.process_manager.is_running = False
     page._sync_action_bar()
-    assert page.action_bar.primary_btn.isEnabled(), (
-        "总开关开了，底栏「启动」还是灰的 —— 用户没有任何办法启动后台监听。")
+    btn = page.action_bar.primary_btn
+    assert not btn.isHidden() and btn.isEnabled(), (
+        "总开关开了、监听却没起来，底栏没有可点的补救入口 —— 用户没有任何办法重新启动。")
+    assert btn.text() != "前往效果预览", (
+        f"开着没在跑时主按钮是「{btn.text()}」—— 那只是切页签的导航动作（RN-079）。")
 
 
 def test_the_home_switch_card_is_actually_readable_from_elsewhere():

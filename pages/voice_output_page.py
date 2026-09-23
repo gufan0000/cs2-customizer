@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QFont
 import keyboard
+import os
 import threading
 
 from config import config
@@ -59,6 +60,12 @@ def _download_to_file(url: str, dest: str, timeout: int = 30,
     return written
 
 
+#: ⛔ 旧文案叫用户换模式防回声 —— 假说明：转发的 mode 钉死「覆盖」（play_pygame_sound_to_voice），
+#: 模式下拉框对它不起作用。改那一行就得改这句，判据两边都绑着，断点 `--only VOX`。
+SFX_FORWARD_MODE_NOTE = (
+    "ℹ️ 转发的音效总是按「覆盖」播出，和上面选的「模式」无关：音效响的那几秒，队友听不到你说话。")
+
+
 class VoiceOutputPage(QWidget):
     """语音输出页面"""
     
@@ -73,6 +80,10 @@ class VoiceOutputPage(QWidget):
     ptt_key_set_signal = Signal(str)  # (key) - PTT键设置完成
     _status_signal = Signal(str)  # 跨线程安全的状态更新
     _status_clear_signal = Signal(int)  # 跨线程安全的延迟清除状态
+    # ⛔ status_label 实测落在整页坐标 y≈1009，而视口只有 746 —— 它在滚动区
+    #    折叠线**以下 200 多像素**，`isVisible()` 为真而用户根本看不见（RN-673
+    #    同形，第二次）。⇒ 播不出去这种事必须另走一条浮在界面上的路。
+    _toast_error_signal = Signal(str)
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -115,6 +126,7 @@ class VoiceOutputPage(QWidget):
         self.ptt_key_set_signal.connect(self._on_ptt_key_set)
         self._status_signal.connect(self._set_status_text)
         self._status_clear_signal.connect(lambda ms: QTimer.singleShot(ms, self._clear_status))
+        self._toast_error_signal.connect(self._toast_playback_failure)
         
         # 加载配置
         self._load_config()
@@ -273,6 +285,10 @@ class VoiceOutputPage(QWidget):
         少了这一下，开关动了而徽章不动 —— 同屏两处说法不一致（RN-107 族）。
         """
         self._sync_overview_status()
+        # ⛔ 热键跟着总开关走：以前只有 showEvent 重注册 ⇒ 页面建过之后在首页（或本页）关掉，
+        #    音板键照样放声、照样吞键，直到下次进这一页。断点 `--only SWEEP`。
+        if hasattr(self, "_register_hotkeys_func"):
+            self._register_hotkeys_func()
 
     def _sync_overview_status(self):
         if not hasattr(self, "status_badge_label"):
@@ -875,7 +891,7 @@ class VoiceOutputPage(QWidget):
         layout.addWidget(options_group)
         
         # 提示信息
-        warning_label = QLabel("⚠️ 注意：音效转发建议在\"覆盖\"或\"自动\"模式下使用，\"混音\"模式可能会有回声。")
+        warning_label = QLabel(SFX_FORWARD_MODE_NOTE)
         warning_label.setWordWrap(True)
         warning_label.setFont(QFont("Microsoft YaHei", 10))
         layout.addWidget(warning_label)
@@ -1187,6 +1203,39 @@ class VoiceOutputPage(QWidget):
                 self._save_config()
                 self.logger.info(f"槽位 #{slot_id + 1} 选择音频: {file_path}")
     
+    def _toast_playback_failure(self, reason: str):
+        """播不出去时弹一条浮层提示（主线程）。
+
+        ⛔ 不能只写 status_label —— 它在滚动区折叠线以下，用户按下快捷键时
+           眼睛根本不在那儿（多半还在游戏里）。断点 `--only VOX` 第 7 条。
+        """
+        try:
+            from ui_toast import toast_error
+
+            toast_error(f"音板没播出去：{reason}", 6000)
+        except Exception:
+            self.logger.exception("弹播放失败提示出错（不影响播放本身）")
+
+    def _playback_refusal_reason(self, audio_path: str) -> str:
+        """`play_audio_with_ptt_protocol` 返回 False 时，替用户把原因翻成人话。
+
+        按**由外到内**的顺序问，先报用户能动手解决的那一个。
+        ⚠ 返回 True 不代表真的出声了 —— 那一层只保证"线程起来了"，解码和写设备
+          都在线程里、失败只落日志。别把它当成播放成功的证明。
+        """
+        try:
+            if not getattr(self.voice_manager, "is_initialized", False):
+                return "没检测到 VB-Cable 虚拟声卡，先装好驱动再用"
+            if not audio_path:
+                return "这个槽位还没选音频文件"
+            if not os.path.isfile(audio_path):
+                return f"音频文件不在了：{os.path.basename(audio_path)}"
+        except OSError:
+            # ⚠ 只吞 OSError（路径太长、盘符不在）。`except Exception` 会把我自己
+            #   写错的代码也吞成一句"详情见日志" —— 正是本批在修的那个形状。
+            pass
+        return "语音输出模块拒绝了这次播放，详情见日志"
+
     def _preview_audio(self, slot_id):
         """预览音频"""
         slot = self.soundboard_slots.get(slot_id)
@@ -1202,7 +1251,7 @@ class VoiceOutputPage(QWidget):
                 duration = self.voice_manager.get_sound_duration(slot["audio"])
                 
                 # 播放音频（本地预览，不使用PTT）
-                self.voice_manager.play_audio_with_ptt_protocol(
+                ok = self.voice_manager.play_audio_with_ptt_protocol(
                     audio_path=slot["audio"],
                     volume=final_volume,
                     mode="覆盖",
@@ -1210,7 +1259,17 @@ class VoiceOutputPage(QWidget):
                     ptt_key=None,  # 预览不使用PTT
                     ptt_delay=0
                 )
-                
+                # 同 _trigger_slot：返回值以前被丢掉，试听失败也显示"预览成功"。
+                # 试听正是用户用来判断"驱动装好没有"的那个动作，它撒谎的代价最大。
+                if not ok:
+                    reason = self._playback_refusal_reason(slot["audio"])
+                    self.status_label.setText(f"✗ 试听没出声：{reason}")
+                    self._toast_playback_failure(reason)    # 本方法在主线程，直接弹
+                    self._sync_overview_status()
+                    self.logger.warning(f"预览槽位 #{slot_id + 1} 未能播放：{reason}")
+                    QTimer.singleShot(8000, self._clear_status)
+                    return
+
                 # 更新状态
                 self.status_label.setText(f"🔊 预览: {slot['name']}")
                 self._sync_overview_status()
@@ -2137,7 +2196,7 @@ class VoiceOutputPage(QWidget):
                 # 播放音频到游戏语音
                 # 本方法由 keyboard 钩子线程调用：读 config 缓存值而非 Qt 控件
                 # （控件与 config 由 _update_play_mode/_update_also_local 保持同步）
-                self.voice_manager.play_audio_with_ptt_protocol(
+                ok = self.voice_manager.play_audio_with_ptt_protocol(
                     audio_path=slot["audio"],
                     volume=final_volume,
                     mode=getattr(config, "voice_output_mode", "覆盖"),
@@ -2145,6 +2204,16 @@ class VoiceOutputPage(QWidget):
                     ptt_key=ptt_key_to_use,
                     ptt_delay=self.ptt_delay
                 )
+                # ⛔ 这个返回值以前直接丢掉、无条件 emit「▶ 播放」。而未初始化时它是
+                #    同步 `return False` 不抛异常，外面的 try/except 接不到。
+                #    断点 `--only VOX` 第 5 条。
+                if not ok:
+                    reason = self._playback_refusal_reason(slot["audio"])
+                    self._status_signal.emit(f"✗ 没播出去：{reason}")
+                    self._toast_error_signal.emit(reason)   # 状态栏在折叠线以下
+                    self.logger.warning(f"[语音输出] 槽位 #{slot_id + 1} 未能播放：{reason}")
+                    self._status_clear_signal.emit(8000)
+                    return
 
                 # 通过信号更新状态（线程安全）
                 self._status_signal.emit(f"▶ 播放: {slot['name']}")

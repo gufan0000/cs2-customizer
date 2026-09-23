@@ -3344,6 +3344,12 @@ class MainWindow(QMainWindow):
 
         # （Phase1-1.4：hud_color_enabled 已是 hud_rules_enabled 的 property 别名，
         #   原"兼容旧字段"手工镜像不再需要）
+        # ⛔ 关掉动态 HUD 要当场写回默认色：cs2customizer.cfg 不重编 ⇒ 移动/开火键仍在 exec 运行时 cfg，
+        #    里面停着关之前那一帧（低血量红 / 击杀闪色）⇒ HUD 卡在那个色直到退出。断点 `--only SWEEP`。
+        if config_key == "hud_rules_enabled" and not checked:
+            hud_handler = (getattr(self, "gsi_handlers", None) or {}).get("hud_color")
+            if hud_handler is not None and hasattr(hud_handler, "stop"):
+                hud_handler.stop()
 
         # 特殊处理：死亡刷短视频总开关（开了就预热备好窗口，关了立刻收掉浏览器进程）
         if config_key == "fun_afterlife_enabled":
@@ -4678,6 +4684,15 @@ class MainWindow(QMainWindow):
         if callable(reset):
             reset()
 
+    def _release_voice_output_on_close(self):
+        """松开语音输出按下的开麦键。模块没导入过 ⇒ 这次运行从没按过键 ⇒ 无事可做
+        （别为了清理去 import 它 —— 那会拉起 sounddevice/pygame 并枚举设备）。"""
+        import sys as _sys
+        mod = _sys.modules.get("voice_output_manager")
+        manager = mod.peek_voice_output_manager() if mod is not None else None
+        if manager is not None:
+            manager.shutdown()
+
     def _run_shutdown_steps(self):
         """按表执行退出清理：每步独立 try + 计时，慢步骤（>1s)记 warning。
 
@@ -4697,6 +4712,10 @@ class MainWindow(QMainWindow):
             #   而漏掉它的代价不在本进程内：整块屏幕留在放大状态。
             try:
                 self._reset_screen_magnification()
+            except Exception:
+                pass
+            try:
+                self._release_voice_output_on_close()     # 同一类：漏了麦就一直开着
             except Exception:
                 pass
             try:
@@ -4723,6 +4742,8 @@ class MainWindow(QMainWindow):
             # 前面隔着关外部进程这类会卡的步骤 —— 15s 看门狗一开火就 os._exit(0)，跑不到。
             # ⭐ 退出清理的顺序该按「漏掉的代价」排，不是按模块归属排。叙事见登记册 RN-657。
             ("复位屏幕放大", self._reset_screen_magnification),
+            # 漏掉的代价：游戏里麦一直开着（os._exit 之后没人再发抬起）。断点 `--only VOX`。
+            ("松开语音开麦键", self._release_voice_output_on_close),
             ("保存音乐进度", self._save_music_progress_on_close),
             ("恢复GSI游戏内状态", self._cleanup_gsi_handlers_on_close),
             ("停止GSI服务器", lambda: self.gsi_server.stop() if getattr(self, 'gsi_server', None) else None),

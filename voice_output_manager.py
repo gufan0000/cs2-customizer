@@ -34,10 +34,15 @@ class VoiceOutputManager:
         self.ptt_lock = threading.Lock()
         self.mixer_sample_rate: Optional[int] = None
 
-        # --- START: 新增部分 (智能兜底机制) ---
-        self.robust_release_timer: Optional[threading.Timer] = None
-        self.robust_release_lock = threading.Lock()
-        # --- END: 新增部分 ---
+        # 开麦键的保持尾巴（见 press_ptt_key 上方的说明）
+        self._ptt_gen = 0
+        self._ptt_tail_timer: Optional[threading.Timer] = None
+        self._ptt_held_key: Optional[str] = None
+        self._ptt_shutdown = False
+        self._ptt_tail_mute = False       # 尾巴期间替麦克风直通持有的那份静音
+        # 按组取消：同组里后来的一段取消前一段（回合音效）
+        self._group_cancel = {}
+        self._group_lock = threading.Lock()
 
         # 麦克风静音引用计数：重叠转发时 B 路结束不能把仍在转发的 A 路
         # 提前解除静音（布尔标志会互相抢跑），归零才真正 unmute
@@ -104,14 +109,14 @@ class VoiceOutputManager:
                     'output_channels': device['max_output_channels'],
                     'samplerate': device['default_samplerate']
                 }
-                
+
                 if self.vb_cable_device_id is None and 'CABLE Input' in device_name and device['max_output_channels'] > 0:
                     supported_rate = self.test_vb_cable_sample_rates(idx)
                     if supported_rate:
                         self.vb_cable_device_id = idx
                         self.vb_cable_rate = supported_rate
                         self.logger.info(f"[初始化] 已锁定VB-Cable设备: {device_name} (ID: {idx}) @ {self.vb_cable_rate}Hz")
-                
+
                 if device['max_output_channels'] > 0 and 'CABLE' not in device_name:
                     if idx == default_output_id:
                         self.default_speaker_id = idx
@@ -130,7 +135,7 @@ class VoiceOutputManager:
                         self.default_microphone_id = idx
                     elif self.default_microphone_id is None:
                         self.default_microphone_id = idx
-            
+
             # QA-017: 给"本地监听"挑一个能**跟随系统默认输出**的目标。
             # PortAudio 在进程内只枚举一次设备（全仓也没有 _terminate/_initialize），
             # 所以 default_speaker_id 是启动那一刻冻结下来的**具体物理设备**索引。
@@ -478,16 +483,20 @@ class VoiceOutputManager:
             self.mute_microphone = mute
         self.logger.info(f"[麦克风] 麦克风已设置为: {'静音' if mute else '取消静音'}")
 
-    # --- START: 修改部分 ---
-    def play_audio_with_ptt_protocol(self, audio_path: Optional[str] = None, sound_obj: Optional[pygame.mixer.Sound] = None, 
+    def play_audio_with_ptt_protocol(self, audio_path: Optional[str] = None, sound_obj: Optional[pygame.mixer.Sound] = None,
                                      volume: float = 1.0, mode: str = "覆盖", also_local: bool = True,
                                      ptt_key: Optional[str] = None, ptt_delay: int = 500,
-                                     allow_overlap: bool = False, use_robust_release: bool = False) -> bool:
+                                     allow_overlap: bool = False, use_robust_release: bool = False,
+                                     group: Optional[str] = None) -> bool:
+        """核心播放协议：按住开麦键 → 写 VB-Cable →（保持尾巴后）松开。
+
+        ptt_delay：**按下开麦键之后**、音频开始之前等多少毫秒（给游戏开麦的时间）。
+          只在这一次是真的新按下时才等；键已经按着（别的音效在播、或在保持尾巴里）
+          就不等 —— 麦已经开了。
+        group：同一组里后来的一段会取消前一段（回合音效在本地共用一个通道，
+          语音这边照同样的规矩来，否则胜利和 MVP 会在队友耳朵里叠成一团）。
+        use_robust_release：旧参数，保留只为兼容调用方；松键统一由保持尾巴负责。
         """
-        核心播放协议方法，处理所有类型的播放请求。
-        新增 allow_overlap 和 use_robust_release 参数。
-        """
-    # --- END: 修改部分 ---
         if not self.is_initialized:
             self.logger.warning("[播放协议] 系统未初始化")
             return False
@@ -510,6 +519,12 @@ class VoiceOutputManager:
         cancel_event = threading.Event()
         if not allow_overlap:
             self._current_cancel_event = cancel_event
+        if group:
+            with self._group_lock:
+                previous = self._group_cancel.get(group)
+                self._group_cancel[group] = cancel_event
+            if previous is not None:
+                previous.set()
 
         def playback_worker():
             thread_id = threading.current_thread().ident
@@ -536,24 +551,31 @@ class VoiceOutputManager:
 
                 self.logger.info(f"[播放协议] 线程{thread_id} 开始播放，时长={duration:.2f}秒, mode={mode}, PTT key={ptt_key}, allow_overlap={allow_overlap}")
 
-                # --- START: 修改部分 (取消旧兜底计时器) ---
-                if ptt_key and use_robust_release:
-                    self.cancel_robust_release() # 如果有新的转发请求，取消旧的兜底
-                # --- END: 修改部分 ---
-
-                if ptt_key and ptt_delay > 0:
-                    time.sleep(ptt_delay / 1000.0)
                 if ptt_key:
-                    self.press_ptt_key(ptt_key)
-                    ptt_acquired = True
-                
+                    status = self.press_ptt_key(ptt_key)
+                    ptt_acquired = status != self.PTT_FAILED
+                    # ⛔ 延迟必须在按键**之后**：旧代码是先睡再按、按下立刻就播，
+                    #    游戏开麦要的那段时间照样吃掉音频开头，延迟等于白等。
+                    if status == self.PTT_PRESSED and ptt_delay > 0:
+                        cancel_event.wait(ptt_delay / 1000.0)
+                if cancel_event.is_set():
+                    return
+
                 # --- START: 修改部分 (强制覆盖模式静音) ---
                 # 覆盖和自动模式都应该在播放时静音麦克风
                 should_mute = mode in ["覆盖", "自动"]
                 if mode == "混音":
-                    self._play_with_mix_data(audio_data, sample_rate, also_local, cancel_event=cancel_event)
-                    # 混音模式需要等待，因为音频是异步播放的
-                    if duration > 0:
+                    handed_off = self._play_with_mix_data(
+                        audio_data, sample_rate, also_local, cancel_event=cancel_event)
+                    if not handed_off:
+                        # 没人消费 ⇒ 自己直写，否则这一段既不出声也不报错。
+                        # auto_mode=False：混音模式本来就不该静音麦克风。
+                        self._play_file_data(
+                            audio_data, sample_rate, also_local,
+                            auto_mode=False, cancel_event=cancel_event,
+                        )
+                    elif duration > 0:
+                        # 混音模式需要等待，因为音频是异步播放的
                         wait_time = duration + 0.2
                         deadline = time.time() + wait_time
                         while time.time() < deadline:
@@ -570,21 +592,13 @@ class VoiceOutputManager:
             except Exception as e:
                 self.logger.error(f"[播放协议] 线程{thread_id} 播放协议出错: {e}")
             finally:
-                self.logger.info(f"[播放协议] 线程{thread_id} 播放结束，准备释放PTT键，use_robust_release={use_robust_release}")
-                time.sleep(0.1)
+                self.logger.info(f"[播放协议] 线程{thread_id} 播放结束，归还开麦租约")
                 if ptt_key and ptt_acquired:
                     self.release_ptt_key(ptt_key)
-
-                    # --- START: 修改部分 (根据类型选择兜底机制) ---
-                    if use_robust_release:
-                        # 音效转发使用新的智能兜底
-                        self.logger.info(f"[播放协议] 线程{thread_id} 安排智能兜底释放")
-                        self.schedule_robust_release(ptt_key)
-                    else:
-                        # 音板播放使用旧的独立兜底
-                        self.logger.info(f"[播放协议] 线程{thread_id} 启动独立兜底释放")
-                        self.start_robust_release_protocol(ptt_key, independent=True)
-                    # --- END: 修改部分 ---
+                if group:
+                    with self._group_lock:
+                        if self._group_cancel.get(group) is cancel_event:
+                            del self._group_cancel[group]
 
         playback_thread = threading.Thread(target=playback_worker, daemon=True, name="VoicePlayback")
         if not allow_overlap:
@@ -592,12 +606,13 @@ class VoiceOutputManager:
         playback_thread.start()
         return True
 
-    # --- START: 修改部分 (为音效转发创建专用入口) ---
-    def play_pygame_sound_to_voice(self, sound_obj: pygame.mixer.Sound, volume: float = 1.0) -> bool:
-        """
-        播放pygame音效到语音频道 (供AudioManager调用)，强制使用覆盖模式和零延迟。
-        这是专门为音效转发设计的入口。
-        支持快速连续音效：新音效会自动刷新PTT释放时间，不会重复按键。
+    def play_pygame_sound_to_voice(self, sound_obj: pygame.mixer.Sound, volume: float = 1.0,
+                                   group: Optional[str] = None) -> bool:
+        """把一段 pygame 音效转发进语音（供 AudioManager 调用），覆盖模式、零延迟。
+
+        连续音效复用同一次开麦：上一段结束后键会保持 PTT_HOLD_TAIL_S 秒，
+        这期间来的新音效直接用，不会「松开 → 再按下」。
+        group 见 play_audio_with_ptt_protocol。
         """
         from config import config
         # v2.1.1: 检查"语音播放"主开关 — 此前用户在 UI 上关闭"语音播放"
@@ -618,129 +633,130 @@ class VoiceOutputManager:
             ptt_key=config.voice_output_ptt_key if config.voice_output_ptt_enabled else None,
             ptt_delay=0,  # 强制零延迟
             allow_overlap=True,  # 允许与其他音效共存，不会互相打断
-            use_robust_release=True  # 使用智能兜底：自动刷新释放时间，避免冲突
+            group=group,
         )
         self.logger.info(f"[音效转发] play_audio_with_ptt_protocol 返回: {result}")
         return result
-    # --- END: 修改部分 ---
 
-    def press_ptt_key(self, ptt_key):
+    # ── 开麦键：一个租约计数 + 一条保持尾巴 ─────────────────────────
+    # ⛔ 以前是「租约归零立刻松键」+ 两套事后兜底计时器（1 秒的智能兜底、
+    #    0.2×3 的独立兜底）。兜底只在键**还按着**时才动手，而正常路径早已松开 ——
+    #    所以它们从来没起到「刷新释放时间」的作用，文档里那句「连续音效不会重复
+    #    按键」是假的。实测两段音效隔 0.19 秒：松开 → 再按下（用户原话「他会等
+    #    关上再开麦」，游戏每次重新开麦都要吞掉一截开头）。断点 `--only VOX`。
+    #    ⇒ 现在只有一条路：租约归零后键再保持 PTT_HOLD_TAIL_S 秒才松，这期间
+    #      来的新音效直接复用；每次取租约都作废正在等的松键（代次号 _ptt_gen）。
+    PTT_PRESSED, PTT_REUSED, PTT_FAILED = "pressed", "reused", "failed"
+    PTT_HOLD_TAIL_S = 0.5
+
+    def press_ptt_key(self, ptt_key) -> str:
+        """取一份开麦租约。返回 PTT_PRESSED（这次真按下了）/ PTT_REUSED / PTT_FAILED。"""
         with self.ptt_lock:
+            if self._ptt_shutdown:
+                # 退出清理已经松过键了，再按下去就没人松了（进程随后 os._exit）
+                return self.PTT_FAILED
+            self._ptt_gen += 1                       # 作废正在等的松键
+            self._cancel_ptt_tail_locked()
+            self._drop_tail_mute_locked()            # 新的一段自己决定静不静音
             self.ptt_lease_counter += 1
-            if not self.ptt_key_pressed:
-                try:
-                    keyboard.press(ptt_key)
-                    self.ptt_key_pressed = True
-                    self.logger.info(f"[PTT] ✓ 按下开麦键: {ptt_key} (租约数: {self.ptt_lease_counter})")
-                except Exception as e:
-                    self.logger.error(f"[PTT] ✗ 按下开麦键失败: {e}")
-                    self.ptt_lease_counter -= 1
-            else:
-                self.logger.info(f"[PTT] 键已按下，复用会话 (租约数: {self.ptt_lease_counter}) ← 快速连续音效")
+            if self.ptt_key_pressed:
+                self.logger.info(f"[PTT] 键已按下，复用 (租约数: {self.ptt_lease_counter})")
+                return self.PTT_REUSED
+            try:
+                keyboard.press(ptt_key)
+            except Exception as e:
+                self.ptt_lease_counter -= 1
+                self.logger.error(f"[PTT] ✗ 按下开麦键失败: {e}")
+                return self.PTT_FAILED
+            self.ptt_key_pressed = True
+            self._ptt_held_key = ptt_key
+            self.logger.info(f"[PTT] ✓ 按下开麦键: {ptt_key} (租约数: {self.ptt_lease_counter})")
+            return self.PTT_PRESSED
 
     def release_ptt_key(self, ptt_key):
+        """归还一份租约。归零后不立刻松键，而是保持 PTT_HOLD_TAIL_S 秒。"""
         with self.ptt_lock:
             if self.ptt_lease_counter > 0:
                 self.ptt_lease_counter -= 1
-            self.logger.info(f"[PTT] 释放租约 (剩余: {self.ptt_lease_counter})")
-            if self.ptt_lease_counter == 0 and self.ptt_key_pressed:
-                try:
-                    keyboard.release(ptt_key)
-                    self.ptt_key_pressed = False
-                    self.logger.info(f"[PTT] ✓ 释放开麦键: {ptt_key}")
-                except Exception as e:
-                    self.logger.error(f"[PTT] ✗ 释放开麦键失败: {e}")
-                    self.ptt_key_pressed = False
+            self.logger.info(f"[PTT] 归还租约 (剩余: {self.ptt_lease_counter})")
+            if self.ptt_lease_counter > 0 or not self.ptt_key_pressed:
+                return
+            self._ptt_gen += 1
+            gen = self._ptt_gen
+            tail = float(self.PTT_HOLD_TAIL_S)
+            if tail <= 0:
+                self._release_now_locked(ptt_key)
+                return
+            # ⛔ 尾巴期间麦克风直通必须静音：键还被软件按着、音频已经播完，不静音
+            #    就是把用户房间里的声音额外播给队友半秒（开了「混音/自动」的用户）。
+            if self.microphone_passthrough_active and not self._ptt_tail_mute:
+                self._ptt_tail_mute = True
+                self._acquire_mic_mute()
+            timer = threading.Timer(tail, self._release_if_still_idle, args=(ptt_key, gen))
+            timer.daemon = True
+            self._cancel_ptt_tail_locked()
+            self._ptt_tail_timer = timer
+            timer.start()
+
+    def _release_if_still_idle(self, ptt_key, gen):
+        with self.ptt_lock:
+            if gen != self._ptt_gen or self.ptt_lease_counter > 0:
+                return                                # 尾巴期间有新音效接上了
+            self._ptt_tail_timer = None
+            self._release_now_locked(ptt_key)
+
+    def _drop_tail_mute_locked(self):
+        if self._ptt_tail_mute:
+            self._ptt_tail_mute = False
+            self._release_mic_mute()
+
+    def _release_now_locked(self, ptt_key):
+        self._drop_tail_mute_locked()
+        if not self.ptt_key_pressed:
+            return
+        # 松**当初按下的那个键**：尾巴期间用户改了开麦键设置，按新键去松会让旧键卡住
+        key = self._ptt_held_key or ptt_key
+        try:
+            keyboard.release(key)
+            self.logger.info(f"[PTT] ✓ 松开开麦键: {key}")
+        except Exception as e:
+            self.logger.error(f"[PTT] ✗ 松开开麦键失败: {e}")
+        self.ptt_key_pressed = False
+        self._ptt_held_key = None
+
+    def _cancel_ptt_tail_locked(self):
+        timer, self._ptt_tail_timer = self._ptt_tail_timer, None
+        if timer is not None:
+            timer.cancel()
 
     def force_release_ptt_key(self, ptt_key: Optional[str] = None):
         self.logger.info("[PTT] 正在强制释放PTT键并重置状态...")
         from config import config
         key_to_release = ptt_key if ptt_key else config.voice_output_ptt_key
         with self.ptt_lock:
-            if self.ptt_key_pressed:
-                try:
-                    keyboard.release(key_to_release)
-                    self.logger.info(f"[PTT] 强制释放开麦键: {key_to_release}")
-                except Exception as e:
-                    self.logger.error(f"[PTT] 强制释放开麦键失败: {e}")
+            self._ptt_gen += 1
+            self._cancel_ptt_tail_locked()
+            self._release_now_locked(key_to_release)
             self.ptt_key_pressed = False
             self.ptt_lease_counter = 0
 
-    # --- START: 修改部分 (新的智能兜底机制实现) ---
-    def _robust_release_worker(self, ptt_key):
-        """智能兜底协议的工作函数 (由计时器触发)。"""
-        self.logger.info("[PTT] [智能兜底] 计时器触发，开始执行释放协议...")
-        try:
-            for i in range(3):
-                time.sleep(0.3)
-                with self.ptt_lock:
-                    if self.ptt_lease_counter > 0:
-                        self.logger.info("[PTT] [智能兜底] 检测到新的播放租约，中止释放协议。")
-                        return
-                    if not self.ptt_key_pressed:
-                        self.logger.info("[PTT] [智能兜底] 键已释放，无需兜底。")
-                        return
-                    # release 必须在锁内执行：若在锁外，新音效刚 press 并递增租约后，
-                    # 兜底仍可能误放刚按下的键（竞态）
-                    keyboard.release(ptt_key)
-                    # 物理键已弹起，状态必须同步清掉：否则清状态前来的新转发
-                    # 会走"复用会话"分支不再补按，音效带着关闭的麦克风播出
-                    self.ptt_key_pressed = False
-            self.logger.info("[PTT] [智能兜底] 协议执行完毕。")
-        except Exception as e:
-            self.logger.error(f"[PTT] [智能兜底] 执行过程中发生错误: {e}")
+    def _play_with_mix_data(self, audio_data: np.ndarray, sample_rate: int, also_local: bool, cancel_event=None) -> bool:
+        """把音频交给麦克风穿透线程去混音播出。
 
-    def schedule_robust_release(self, ptt_key):
-        """安排（或重置）智能兜底释放计时器。"""
-        with self.robust_release_lock:
-            # 如果已有计时器，先取消
-            if self.robust_release_timer and self.robust_release_timer.is_alive():
-                self.robust_release_timer.cancel()
-                self.logger.info("[PTT] [智能兜底] ⟳ 刷新释放时间：取消旧计时器")
-            
-            # 创建并启动新的计时器，1秒后执行
-            self.robust_release_timer = threading.Timer(1.0, self._robust_release_worker, args=[ptt_key])
-            self.robust_release_timer.daemon = True
-            self.robust_release_timer.start()
-            self.logger.info("[PTT] [智能兜底] ⏰ 安排新的释放计时器（1秒后执行）")
+        返回 True = 确实交出去了；False = **没有任何人会消费它**，调用方必须自己兜底。
 
-    def cancel_robust_release(self):
-        """取消待执行的智能兜底释放计时器。"""
-        with self.robust_release_lock:
-            if self.robust_release_timer and self.robust_release_timer.is_alive():
-                self.robust_release_timer.cancel()
-                self.logger.info("[PTT] [智能兜底] 新的播放请求已取消释放计时器。")
-
-    def start_robust_release_protocol(self, ptt_key, independent=False):
-        """启动独立的守护线程来执行兜底释放协议。"""
-        if not independent:
-            return # 这个函数现在只给音板用
-            
-        def _independent_worker():
-            try:
-                # 缩短延迟：3次释放，每次间隔0.2秒，总共0.6秒
-                for i in range(3):
-                    time.sleep(0.2)
-                    with self.ptt_lock:
-                        # 有新租约说明有新的播放正按着键，中止兜底避免误放
-                        if self.ptt_lease_counter > 0:
-                            self.logger.info("[PTT] [独立兜底] 检测到新的播放租约，中止释放协议。")
-                            return
-                        keyboard.release(ptt_key)
-                        # 同智能兜底：物理弹起立即同步状态，防"复用会话"不补按
-                        self.ptt_key_pressed = False
-                self.logger.info("[PTT] [独立兜底] 协议执行完毕。")
-            except Exception as e:
-                self.logger.error(f"[PTT] [独立兜底] 执行过程中发生错误: {e}")
-        
-        release_thread = threading.Thread(target=_independent_worker, daemon=True, name="VoiceKeyRelease")
-        release_thread.start()
-    # --- END: 修改部分 ---
-
-    def _play_with_mix_data(self, audio_data: np.ndarray, sample_rate: int, also_local: bool, cancel_event=None):
+        ⛔ 这条路自己不写 VB-Cable，只把数据放进 `self.current_mix_audio`，而全仓
+           唯一的读者是 `passthrough_worker`（AST 核实）。断点 `--only VOX` 第 4 条。
+        """
         try:
             target_rate = self.vb_cable_rate
             if target_rate is None: raise Exception("混音目标采样率未知")
+            if not self.microphone_passthrough_active:
+                # ⚠ 先检查再赋值：先设上再返回 False 会留下永不清理的残留
+                self.logger.warning(
+                    "[混音播放] 麦克风穿透未在运行，没有任何线程会消费混音数据 —— "
+                    "改走直写 VB-Cable，避免这一段被静默丢弃")
+                return False
             if sample_rate != target_rate:
                 audio_data = self.resample_audio(audio_data, sample_rate, target_rate)
             with self.mix_lock:
@@ -748,8 +764,10 @@ class VoiceOutputManager:
                 self.mix_position = 0
             if also_local:
                 self._play_data_locally(audio_data, target_rate, cancel_event=cancel_event)
+            return True
         except Exception as e:
             self.logger.error(f"[混音播放] 混音播放数据失败: {e}")
+            return False
 
     def _play_data_locally(self, audio_data, sample_rate, cancel_event=None):
         def _write_all(device_id):
@@ -785,6 +803,7 @@ class VoiceOutputManager:
                     if threading.current_thread() in self.local_playback_threads:
                         self.local_playback_threads.remove(threading.current_thread())
         thread = threading.Thread(target=play_local_thread, daemon=True, name="VoiceLocalPlay")
+        thread.cancel_event = cancel_event   # stop_playback 只等它自己取消的那一路
         with self.local_playback_threads_lock:
             self.local_playback_threads.append(thread)
         thread.start()
@@ -842,8 +861,16 @@ class VoiceOutputManager:
             # 如果写入很快完成，说明数据还在缓冲区，需要等待
             remaining_time = actual_duration - write_time
             if remaining_time > 0:
+                # ⛔ 这段等待必须可取消：remaining_time 按**整首歌**算，写循环 break
+                #    不会让它变短 ⇒ 旧的裸 sleep 会扣住 PTT 租约和 vb_stream 直到
+                #    曲终（= 热麦）。断点 `--only VOX` 第 1 条有实测数。
                 self.logger.info(f"[播放数据] 等待缓冲区播放完成，剩余时间={remaining_time:.2f}秒")
-                time.sleep(remaining_time + 0.1)
+                deadline = time.time() + remaining_time + 0.1
+                while time.time() < deadline:
+                    if cancel_event is not None and cancel_event.is_set():
+                        self.logger.info("[播放数据] 等待期间收到取消，立即收尾")
+                        break
+                    time.sleep(min(0.02, max(0.0, deadline - time.time())))
         except Exception as e:
             self.logger.error(f"[播放数据] 播放数据失败: {e}")
         finally:
@@ -868,20 +895,31 @@ class VoiceOutputManager:
         with self.mix_lock:
             self.current_mix_audio = None
             self.mix_position = 0
-        # 全停路径：静音引用计数一并清零再解除静音
+        # ⛔ 本函数只取消**独占播放**那一路（上面挑 _current_cancel_event 就是这个
+        #    语义），所以不许清所有路共用的静音引用 —— 各路 _play_file_data 的
+        #    finally 会自己 _release_mic_mute()。断点 `--only VOX` 第 3 条。
+        #    ⚠ 读计数和解除静音必须在同一把锁里：读到 0 之后、解除之前，另一路
+        #      转发恰好 _acquire_mic_mute —— 分开写就会把它刚加上的静音强行解除。
         with self._mute_lock:
-            self._mute_refcount = 0
-        self.set_microphone_mute(False)
+            still_held = self._mute_refcount
+            if still_held == 0:
+                self.set_microphone_mute(False)
+        if still_held:
+            self.logger.info(f"[播放控制] 仍有 {still_held} 路转发持有麦克风静音，不解除")
         while not self.playback_queue.empty():
             try: self.playback_queue.get_nowait()
             except queue.Empty: break
+        # ⛔ 只等被取消的那一路：没取消的转发会播到完，挨个 join 就是音板每按一下卡 0.1×N 秒；
+        #    也不许 clear() —— 清掉的是仍在播的别人，退出清理再也等不到它们。断点 `--only VOX`。
         with self.local_playback_threads_lock:
             threads_copy = self.local_playback_threads[:]
         for thread in threads_copy:
-            if thread.is_alive():
+            if (current_cancel is not None and thread.is_alive()
+                    and getattr(thread, "cancel_event", None) is current_cancel):
                 thread.join(timeout=0.1)
         with self.local_playback_threads_lock:
-            self.local_playback_threads.clear()
+            self.local_playback_threads[:] = [
+                t for t in self.local_playback_threads if t.is_alive()]
         if self.current_playback_protocol_thread and self.current_playback_protocol_thread.is_alive():
             self.current_playback_protocol_thread.join(timeout=0.5)
         with self.current_playback_lock:
@@ -889,7 +927,39 @@ class VoiceOutputManager:
             self.stop_playback_flag = False
         self.logger.info("[播放控制] 播放已停止")
     
+    def shutdown(self, lock_timeout: float = 1.0):
+        """退出清理：**先松开麦键**，再停播放和麦克风直通。
+
+        ⛔ 以前没有任何退出步骤碰语音输出（`cleanup()` 全仓零调用），而退出链路
+           末尾是 `os._exit(0)`、连 atexit 都不跑。程序在开麦那一刻被关掉，
+           `keyboard.press` 发出去的按下就再也没有配对的抬起 —— 游戏里麦一直开着。
+        之后到来的 press 一律拒绝（进程马上就没了，按下去就没人松了）。
+        ⚠ 拿锁带超时：看门狗（15 秒必退的最后保险）也调这里，要是主线程正卡在
+          这把锁里，不带超时看门狗就永远走不到 os._exit。拿不到锁就直接尽力松键。
+        """
+        got = self.ptt_lock.acquire(timeout=lock_timeout)
+        try:
+            self._ptt_shutdown = True
+            if got:
+                self._ptt_gen += 1
+                self._cancel_ptt_tail_locked()
+                self._release_now_locked(self._ptt_held_key or "")
+                self.ptt_lease_counter = 0
+            elif self._ptt_held_key:
+                try:
+                    keyboard.release(self._ptt_held_key)
+                except Exception:
+                    pass
+        finally:
+            if got:
+                self.ptt_lock.release()
+        try:
+            self.stop_playback()
+        finally:
+            self.stop_microphone_passthrough()
+
     def cleanup(self):
+        self.force_release_ptt_key()
         self.stop_playback()
         self.stop_microphone_passthrough()
         if self.current_playback_protocol_thread and self.current_playback_protocol_thread.is_alive():
@@ -910,4 +980,9 @@ def get_voice_output_manager() -> VoiceOutputManager:
     global _voice_output_manager
     if _voice_output_manager is None:
         _voice_output_manager = VoiceOutputManager()
+    return _voice_output_manager
+
+
+def peek_voice_output_manager() -> Optional[VoiceOutputManager]:
+    """只看、不建。退出清理用：没建过就说明从没按过开麦键，不必为了清理去枚举设备。"""
     return _voice_output_manager

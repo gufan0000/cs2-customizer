@@ -578,9 +578,8 @@ def test_the_card_holding_the_switch_is_never_de_emphasised(
 #: ⭐ 顺带记账：**公开仓 CI 这一次又逮到了本机三样门禁全绿的东西**
 #:   —— 那正是 RN-418 差点被我判死的那条依赖。
 DISABLED_BY_THE_PAGE_ITSELF = {
-    "flash": (("primaryButton",),
-              "flash_page.py:303 `_sync_action_bar` 里 `primary_btn.setEnabled(enabled)`"
-              "——「启动闪光」在总开关关着时点了也起不来，是**动作按钮**不是参数"),
+    # ⚠ "flash" 那一行 2026-09-23 撤了：开关就是启动之后，关着时底栏那颗「启动监听」**不摆**了
+    #   （外审第三次 6/6「两个入口」），不再有被置灰的东西。
     "screen_effects": (("checkBox", "comboBox", "primaryButton", "secondaryButton"),
                        "screen_effects_page.py:370-374：子开关本体由总开关决定"
                        "（RN-011 那一轮就是这么定的）；另外三类由 `edge_enabled` 决定"

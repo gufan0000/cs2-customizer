@@ -172,13 +172,15 @@ class ResourceImportDecisionDialog(QDialog):
         # ⭐ 改成按类别换内容的一格：回合事件 / 武器 / 投掷物各用各的候选。
         round_combo = QComboBox()
         round_combo.currentIndexChanged.connect(self._sync_ok)
-        self._bucket_label = QLabel("回合事件：")
-        form.addRow(self._bucket_label, round_combo)
+        # ⛔ 每张卡一个，放进 row —— 以前是 `self._bucket_label`，建完最后一张卡就只剩它，
+        #    改前面任何一张的类别，换字的都是最后一张。断点 `--only SWEEP`。
+        bucket_label = QLabel("回合事件：")
+        form.addRow(bucket_label, round_combo)
 
         layout.addLayout(form)
         row = {
             "group": group, "combo": combo, "style": style_edit,
-            "round": round_combo, "form": form,
+            "round": round_combo, "form": form, "bucket_label": bucket_label,
         }
         self._rows.append(row)
         combo.currentIndexChanged.connect(lambda _i, r=row: self._sync_row(r))
@@ -226,7 +228,7 @@ class ResourceImportDecisionDialog(QDialog):
             combo.blockSignals(False)
         if needed:
             label = NEEDS_BUCKET.get(spec_key, "分类")
-            self._bucket_label.setText(f"{label}：")
+            row["bucket_label"].setText(f"{label}：")
         row["form"].setRowVisible(2, needed)
 
     def _sync_ok(self, *_args):

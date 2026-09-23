@@ -96,6 +96,10 @@ SERIAL_TAIL = [
     #   ⭐⭐⭐ **间歇红的门禁比一直红更贵**：一直红会被修，
     #   间歇红会被当成「再跑一次就好了」—— 而下一个**真红**也会被这么对待。
     "test_the_sandbox_does_not_remember_yesterday.py",
+    # VOX（2026-09-22 社区报障）：`test_cancelled_playback_stops_within_a_beat...`
+    #   量的是「播放被取消后多久收尾」—— 阈值 2 秒，而被测的等待循环本身
+    #   就是按墙钟走的。6 路抢 CPU 时这个数说明不了代码好坏。RN-518 同类。
+    "test_voice_ptt_release_and_mix_fallback.py",
     # RN-624（批 87）：`test_the_exit_retry_budget_is_bounded_and_it_says_so`
     #   量的是「退出时同步重试有没有超预算」—— 预算只有 3 × (0.2 + 1.0) 秒，
     #   而它跑的是真的 `os.replace` 失败 + `time.sleep`。6 路抢 CPU 时这个阈值会假红。

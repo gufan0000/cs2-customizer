@@ -33,6 +33,7 @@ RN-617 立案时写的是「快照恢复与防抖保存之间没有共享锁 ⇒
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 from pathlib import Path
@@ -40,6 +41,11 @@ from pathlib import Path
 import pytest
 
 import config as C
+
+
+#: 单例排着的防抖保存会落进本用例目录 —— 冲刷挪到了共用件，conftest 每个用例前调一次。
+#: ⚠ `self.config_file` 是判据自己挂的属性，产品不读它；产品只认 `get_config_path()`。
+from _config_isolation import flush_config_singletons_pending_save as _flush_the_singletons_pending_save  # noqa: E402
 
 
 @pytest.fixture
@@ -62,25 +68,78 @@ class _ReplaceThatFailsNTimes:
 
     ⚠ 打的是 `core.io_validation` 里那个 `os` —— `replace_with_retry` 就住在那儿；
     打 `config.os` 没用（`config.py` 是 `from core.io_validation import replace_with_retry`）。
+
+    `landed`：真的 replace 成功落到 `target` 上时置位。判据等它，**不去轮询盘上的文件**。
+    ⛔ 以前是 `_wait_until(lambda: _on_disk(cfg)...)` 每 20ms 打开一次**产品正在
+       os.replace 的那个文件** —— Windows 上两边互撞：读句柄开着时 replace 被拒
+       （扰动了被测对象），replace 进行时读又被拒（判据自己红）。
+       并行 6 路连跑 120 次复现 9 次 PermissionError（2026-09-23，全在轮询那一行）。
     """
 
-    def __init__(self, n, real):
+    def __init__(self, n, real, target=None, owner=None):
+        self.owner = owner
         self.left = n
         self.real = real
         self.attempts = 0
+        self.target = os.path.normcase(os.path.abspath(target)) if target else None
+        self.landed = threading.Event()
+        self.log = []          # 每一次 replace：哪个线程、带的是什么值、结果 —— 红了时贴出来
 
     def __call__(self, src, dst):
+        writer = _which_config_is_writing(self.owner)
+        entry = {"thread": threading.current_thread().name, "value": _peek(src), "writer": writer}
+        self.log.append(entry)
+        if self.owner is not None and writer != _OWNER:
+            # 别的写者：不许吃判据造的失败、也不许冒充「被测对象落盘了」，照实放行并记账
+            entry["result"] = "foreign, passed through"
+            return self.real(src, dst)
         self.attempts += 1
         if self.left > 0:
             self.left -= 1
+            entry["result"] = "injected failure"
             raise PermissionError(13, "拒绝访问（判据造的）")
-        return self.real(src, dst)
+        try:
+            result = self.real(src, dst)
+        except OSError as e:
+            entry["result"] = f"real {type(e).__name__}"
+            raise
+        entry["result"] = "ok"
+        if self.target is None or os.path.normcase(os.path.abspath(dst)) == self.target:
+            self.landed.set()
+        return result
 
 
-def _install_failing_replace(monkeypatch, fail_times):
+def _peek(src):
+    try:
+        return json.loads(Path(src).read_text(encoding="utf-8")).get("kill_sound_enabled")
+    except Exception as e:                       # 诊断用，读不到也别影响被测路径
+        return f"<unreadable {type(e).__name__}>"
+
+
+_OWNER = "被测 cfg"
+
+
+def _which_config_is_writing(owner):
+    """沿调用栈找正在写盘的那个 Config 实例（`_do_save_config` 帧里的 self）。"""
+    import sys
+
+    f = sys._getframe(1)
+    while f is not None:
+        if f.f_code.co_name == "_do_save_config":
+            obj = f.f_locals.get("self")
+            if owner is not None and obj is owner:
+                return _OWNER
+            if obj is getattr(C, "config", None):
+                return "模块单例 config.config"
+            return f"别的 Config id={id(obj)}"
+        f = f.f_back
+    return "不是 _do_save_config"
+
+
+def _install_failing_replace(monkeypatch, fail_times, target=None, owner=None):
     import core.io_validation as io_val
 
-    fake = _ReplaceThatFailsNTimes(fail_times, io_val.os.replace)
+    fake = _ReplaceThatFailsNTimes(fail_times, io_val.os.replace, target=target, owner=owner)
     monkeypatch.setattr(io_val.os, "replace", fake)
     return fake
 
@@ -95,7 +154,27 @@ def _wait_until(pred, timeout=12.0):
 
 
 def _on_disk(cfg):
+    """⚠ 只在**没有写盘正在进行**时调（见 _ReplaceThatFailsNTimes.landed）。"""
     return json.loads(Path(cfg.config_file).read_text(encoding="utf-8"))
+
+
+def _on_disk_after_landing(cfg, fake, timeout=12.0):
+    """等产品那次真的 replace 落盘，再读**一次**盘上的值。
+
+    落盘之后不会再有并发写，所以这一次读不和被测对象互撞。仍给外部扫描程序
+    （杀软/索引）留 1 秒有界重试 —— 那是判据控制不了的；超过 1 秒照样抛出，
+    不会把一个持续打不开的文件读成「没问题」。
+    """
+    assert fake.landed.wait(timeout), (
+        f"{timeout}s 内产品没有一次成功的 replace 落到 {cfg.config_file} —— 重试没把值写进去")
+    deadline = time.monotonic() + 1.0
+    while True:
+        try:
+            return _on_disk(cfg)
+        except OSError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.05)
 
 
 #: `replace_with_retry` 自己会试 5 次；再多失败一次就把退避用尽。
@@ -106,7 +185,8 @@ def test_a_write_that_exhausts_the_backoff_is_retried_and_eventually_lands(
     cfg, monkeypatch
 ):
     """退避用尽 ⇒ 必须排一次「过一会儿再来」，而且那一次要真的把值写进去。"""
-    _install_failing_replace(monkeypatch, _EXHAUSTS_THE_BACKOFF)
+    fake = _install_failing_replace(
+        monkeypatch, _EXHAUSTS_THE_BACKOFF, target=cfg.config_file, owner=cfg)
 
     cfg.kill_sound_enabled = not _on_disk(cfg)["kill_sound_enabled"]
     want = cfg.kill_sound_enabled
@@ -118,9 +198,10 @@ def test_a_write_that_exhausts_the_backoff_is_retried_and_eventually_lands(
         "⭐ `replace_with_retry` 只把「一次就放弃」变成「五次才放弃」，"
         "放弃那一格要由这里兜住。")
 
-    assert _wait_until(lambda: _on_disk(cfg)["kill_sound_enabled"] == want), (
-        f"重试排了，但值始终没落盘（盘上仍是 "
-        f"{_on_disk(cfg)['kill_sound_enabled']}，想写的是 {want}）")
+    landed = _on_disk_after_landing(cfg, fake)["kill_sound_enabled"]
+    assert landed == want, (
+        f"重试写盘了，但落下的不是这次的改动（盘上是 {landed}，想写的是 {want}）\n"
+        f"每次 replace 的账：{fake.log}")
 
 
 def test_without_the_retry_the_change_would_simply_be_gone(cfg, monkeypatch):
@@ -165,11 +246,12 @@ def test_the_retry_budget_is_bounded(cfg, monkeypatch):
 
 def test_a_successful_write_restores_the_budget(cfg, monkeypatch):
     """写成功要把额度还原 —— 否则第二次遇到扫描窗口时就没有重试了。"""
-    _install_failing_replace(monkeypatch, _EXHAUSTS_THE_BACKOFF)
+    fake = _install_failing_replace(
+        monkeypatch, _EXHAUSTS_THE_BACKOFF, target=cfg.config_file, owner=cfg)
     cfg.kill_sound_enabled = not cfg.kill_sound_enabled
     want = cfg.kill_sound_enabled
     cfg._do_save_config()
-    assert _wait_until(lambda: _on_disk(cfg)["kill_sound_enabled"] == want)
+    assert _on_disk_after_landing(cfg, fake)["kill_sound_enabled"] == want
     assert _wait_until(
         lambda: cfg._save_retries_left == C._SAVE_RETRIES_ON_FAILURE), (
         f"写成功之后额度还是 {cfg._save_retries_left}，没还原")
@@ -192,6 +274,52 @@ def test_the_retry_does_not_deadlock_on_the_save_lock(cfg, monkeypatch):
     assert done.wait(8), (
         "`_do_save_config` 的失败分支没在 8 秒内返回 —— 极可能是把 "
         "`_save_lock` 又要了一遍（它不可重入）")
+
+
+def test_the_singletons_pending_save_cannot_land_in_this_tests_directory(tmp_path, monkeypatch):
+    """模块单例排着的防抖保存，不许在 setenv 之后到点、写进用例的目录。
+
+    ⭐ 夹具里 `_flush_the_singletons_pending_save()` 守的就是这件事；去掉它，
+      第一个用例只会**偶尔**红（取决于单例的 0.5s 定时器赶没赶上）—— 回退验证
+      证不了一件偶尔发生的事，所以这里把时序钉死：先排一个保存，再切目录，
+      等过防抖时长，看它落没落进来。
+    """
+    C.config.save_config()                      # 单例排一个 0.5s 的防抖保存
+    _flush_the_singletons_pending_save()
+    monkeypatch.setenv("CS2C_CONFIG_DIR", str(tmp_path))
+    time.sleep(1.2)                             # 比防抖时长多出一倍余量
+    assert not (tmp_path / "config.json").exists(), (
+        "单例的防抖保存在切目录之后到点，把它的状态写进了本用例的 config.json —— "
+        "_do_save_config 写的是 get_config_path()（调用时读环境变量），不是 self.config_file")
+
+
+def test_no_poll_here_opens_the_file_the_product_is_replacing():
+    """判据自己的轮询不许打开产品正在 os.replace 的那个文件。
+
+    ⭐ 这份判据量的正是「句柄开着 ⇒ os.replace 被拒」（见下一条）—— 而它自己的
+      `_wait_until(lambda: _on_disk(cfg)...)` 就是那样一个句柄：轮询时两边互撞，
+      判据间歇红（并行 6 路 120 次里 9 次），还顺手扰动了被测的重试。
+    ⇒ 等写盘用 `fake.landed`，落盘后再读一次（`_on_disk_after_landing`）。
+    """
+    import ast
+    import inspect
+    import sys
+
+    tree = ast.parse(inspect.getsource(sys.modules[__name__]))
+    offenders, scanned = [], 0
+    for call in ast.walk(tree):
+        if not (isinstance(call, ast.Call) and getattr(call.func, "id", "") == "_wait_until"):
+            continue
+        scanned += 1
+        for arg in call.args[:1]:
+            if any(isinstance(n, ast.Call) and getattr(n.func, "id", "") == "_on_disk"
+                   for n in ast.walk(arg)):
+                offenders.append(call.lineno)
+    # 分母：本文件还有两处 _wait_until（等额度，不碰盘）。一处都没扫到 = 扫描器坏了，别算通过
+    assert scanned >= 2, f"只扫到 {scanned} 处 _wait_until —— 扫描器没看见东西，下面的「没有」不算数"
+    assert not offenders, (
+        f"第 {offenders} 行在 _wait_until 里轮询 _on_disk —— 读句柄会和产品的 "
+        "os.replace 互撞（判据间歇红 + 扰动被测对象）。改用 fake.landed。")
 
 
 def test_load_config_holding_the_file_open_is_what_makes_this_reachable():

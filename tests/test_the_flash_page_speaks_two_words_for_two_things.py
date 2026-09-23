@@ -53,6 +53,9 @@ class _DummyProcessManager:
     def stop_process(self):
         self.is_running = False
 
+    def force_clear_flash(self):
+        self.calls.append(("force_clear",))
+
     def preview_flash(self, intensity, duration):
         self.calls.append(("preview", intensity, duration))
 
@@ -135,15 +138,16 @@ def test_the_effect_chip_uses_the_switch_rows_own_word(qapp, tmp_path, monkeypat
 
 
 def test_the_button_names_the_second_step_and_points_at_the_first(qapp, tmp_path, monkeypatch):
-    """没启动时主按钮叫「启动监听」；没开开关时它置灰，tooltip 点名总开关并说明先后。"""
+    """开着没在跑（启动失败）时补救按钮叫「启动监听」；没开开关时底栏**不摆**它。
+
+    ⚖ 2026-09-23 改：以前关着时摆一颗灰的「启动监听」、tooltip 说「先开总开关再点这里」——
+    外审第三次 6/6 仍判「两个入口」。根因是开关没做完它该做的事：现在拨开开关就启动监听
+    （下一条判据），那句「先…再…」描述的第二步已经不存在了。
+    """
     page = _make_page(qapp, tmp_path, monkeypatch, enabled=False, running=False)
     try:
-        btn = page.action_bar.primary_btn
-        assert btn.text() == "启动监听"
-        assert not btn.isEnabled()
-        tip = btn.toolTip()
-        assert "总开关" in tip and "先" in tip and "再" in tip, (
-            f"置灰的按钮没告诉用户先做哪一步：{tip!r}")
+        assert page.action_bar.primary_btn.isHidden(), (
+            f"总开关关着，底栏还摆着「{page.action_bar.primary_btn.text()}」—— 第二个入口")
     finally:
         page.deleteLater()
         qapp.processEvents()
@@ -152,6 +156,34 @@ def test_the_button_names_the_second_step_and_points_at_the_first(qapp, tmp_path
     try:
         btn = page.action_bar.primary_btn
         assert btn.text() == "启动监听" and btn.isEnabled() and btn.toolTip() == ""
+    finally:
+        page.deleteLater()
+        qapp.processEvents()
+
+
+def test_the_switch_itself_starts_and_clears_the_listener(qapp, tmp_path, monkeypatch):
+    """⭐ 开关就是启动：拨开 ⇒ 后台监听起来；拨关 ⇒ 正在显示的白屏当场清掉。
+
+    以前拨开只写 config —— 界面说「已开启」，游戏里没闪光，直到用户发现还得点底栏
+    「启动监听」或重启软件。外审三次判「两个入口」，前两次都只改了按钮和词。
+    """
+    page = _make_page(qapp, tmp_path, monkeypatch, enabled=False, running=False)
+    try:
+        monkeypatch.setattr(config, "flash_enabled", True, raising=False)
+        page.on_master_switch_synced()        # 首页或本页那颗开关拨完，走的就是这一下
+        assert page.process_manager.is_running, (
+            "总开关拨开了，后台监听没起来 —— 界面说已开启，游戏里却没有闪光")
+        assert page.action_bar.primary_btn.text() == "前往效果预览"
+
+        page.process_manager.calls.clear()
+        monkeypatch.setattr(config, "flash_enabled", False, raising=False)
+        page.on_master_switch_synced()
+        assert ("force_clear",) in page.process_manager.calls, (
+            "总开关关了，正在显示的白屏没清 —— GSI 那头关了就不再处理，它会停在屏幕上")
+        # 关掉只清屏、不停进程（改前也是这样）⇒ 底栏回到「前往效果预览」这颗导航；
+        # 要守的是**不出现第二个开启入口**，不是底栏必须空着。
+        btn = page.action_bar.primary_btn
+        assert btn.isHidden() or btn.text() != "启动监听", "总开关关着，底栏又摆出了「启动监听」"
     finally:
         page.deleteLater()
         qapp.processEvents()

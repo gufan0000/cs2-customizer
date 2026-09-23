@@ -1604,11 +1604,12 @@ class CrosshairPage(QWidget):
                 if button.property("style_value") == "custom":
                     button.setChecked(True)
                     break
-            
-            # 更新预览
+
+            # ⛔ 已经是「自定义」时 setChecked 不发 toggled ⇒ 游戏里还是旧图案。直接推一次。断点 `--only SWEEP`。
+            self._update_crosshair_system()
             self._update_preview()
             self._sync_overview_status()
-            
+
             QMessageBox.information(self, "成功", "自定义准心已保存并应用")
             self.logger.info("自定义准心已保存")
     
@@ -1694,11 +1695,11 @@ class CrosshairPage(QWidget):
                 if button.property("style_value") == "custom":
                     button.setChecked(True)
                     break
-            
-            # 更新预览
+
+            self._update_crosshair_system()   # 同上：已是「自定义」时不会经信号推
             self._update_preview()
             self._sync_overview_status()
-            
+
             QMessageBox.information(self, "成功", "准心已加载并应用")
             self.logger.info(f"准心已加载: {file_name}")
         except ValueError as e:

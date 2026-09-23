@@ -22,6 +22,7 @@
       "GUN_SOUND_PROFILE_LIST",
       "GUN_SOUND_TAB_GROUPS",
       "GUN_SOUND_WEAPON_TYPES",
+      "MAX_GUN_SOUND_VARIANTS",
       "MAX_SHOTS_PER_PACKET",
       "SEMI_AUTO_GUN_TYPES",
       "STALE_PACKET_SECONDS",
@@ -35,7 +36,8 @@
       "is_gun_sound_burst",
       "is_gun_sound_master_enabled",
       "resolve_gun_sound_style",
-      "sync_legacy_gun_sound_flags"
+      "sync_legacy_gun_sound_flags",
+      "unrecognised_gun_dirs"
     ],
     "core.hud.__init__": [],
     "core.hud.rule_compiler": [
@@ -65,7 +67,7 @@
       "write_magnifier_runtime_cfg"
     ]
   },
-  "contract_total": 49,
+  "contract_total": 51,
   "external_use": {
     "core.cfg_compiler": {
       "files": [
@@ -113,7 +115,9 @@
         "tests/test_gun_sound_cache_budget.py",
         "tests/test_gun_sound_chain_after_the_in_game_test.py",
         "tests/test_gun_sound_profiles.py",
+        "tests/test_gun_sound_variants_rotate.py",
         "tests/test_gun_special_sound_truth.py",
+        "tests/test_the_gun_page_admits_what_it_read.py",
         "tests/test_what_we_write_is_what_the_product_reads.py"
       ],
       "names": {
@@ -125,20 +129,22 @@
         "GUN_SOUND_PROFILE_LIST": 4,
         "GUN_SOUND_TAB_GROUPS": 2,
         "GUN_SOUND_WEAPON_TYPES": 4,
+        "MAX_GUN_SOUND_VARIANTS": 5,
         "MAX_SHOTS_PER_PACKET": 2,
         "SEMI_AUTO_GUN_TYPES": 1,
         "STALE_PACKET_SECONDS": 2,
         "SUPPORTED_GUN_SOUND_PROFILES": 3,
         "SUPPORTED_GUN_SOUND_PROFILE_LIST": 11,
         "SUPPORTED_GUN_SOUND_TAB_GROUPS": 3,
-        "SUPPORTED_GUN_SOUND_WEAPON_TYPES": 3,
+        "SUPPORTED_GUN_SOUND_WEAPON_TYPES": 4,
         "_profile": 1,
         "build_gun_sound_duck_plan": 3,
         "gun_sound_style_enabled": 2,
         "is_gun_sound_burst": 3,
         "is_gun_sound_master_enabled": 4,
         "resolve_gun_sound_style": 3,
-        "sync_legacy_gun_sound_flags": 2
+        "sync_legacy_gun_sound_flags": 2,
+        "unrecognised_gun_dirs": 2
       }
     },
     "core.hud.__init__": {
@@ -196,6 +202,7 @@
     "core.magnifier_sensitivity": {
       "files": [
         "pages/magnifier_page.py",
+        "tests/test_magnifier_chain_after_the_audit.py",
         "tests/test_magnifier_sensitivity.py"
       ],
       "names": {
@@ -204,7 +211,7 @@
         "format_sensitivity_value": 2,
         "get_keyboard_key_for_sync": 2,
         "get_magnifier_runtime_cfg_path": 1,
-        "write_magnifier_runtime_cfg": 2
+        "write_magnifier_runtime_cfg": 3
       }
     }
   },
@@ -213,12 +220,12 @@
   "loc": {
     "core.cfg_compiler": 255,
     "core.crosshair_reset": 286,
-    "core.gun_sound_profiles": 572,
+    "core.gun_sound_profiles": 623,
     "core.hud.__init__": 24,
     "core.hud.rule_compiler": 147,
     "core.hud.rule_model": 449,
     "core.hud.runtime_engine": 382,
-    "core.magnifier_sensitivity": 68
+    "core.magnifier_sensitivity": 99
   },
   "reexport_only_modules": [],
   "surface": {
@@ -289,6 +296,7 @@
         "GUN_SOUND_TAB_GROUPS",
         "GUN_SOUND_WEAPON_TYPES",
         "LEGACY_GUN_SOUND_ENABLED_KEYS",
+        "MAX_GUN_SOUND_VARIANTS",
         "MAX_SHOTS_PER_PACKET",
         "SEMI_AUTO_GUN_TYPES",
         "STALE_PACKET_SECONDS",
@@ -302,13 +310,16 @@
       "functions": [
         "_clamp_ratio",
         "_clamp_time_ms",
+        "_looks_like_audio",
         "_profile",
+        "_safe_listdir",
         "build_gun_sound_duck_plan",
         "gun_sound_style_enabled",
         "is_gun_sound_burst",
         "is_gun_sound_master_enabled",
         "resolve_gun_sound_style",
-        "sync_legacy_gun_sound_flags"
+        "sync_legacy_gun_sound_flags",
+        "unrecognised_gun_dirs"
       ]
     },
     "core.hud.__init__": {
@@ -390,6 +401,7 @@
         "format_sensitivity_value",
         "get_keyboard_key_for_sync",
         "get_magnifier_runtime_cfg_path",
+        "render_magnifier_runtime_cfg",
         "write_magnifier_runtime_cfg"
       ]
     }

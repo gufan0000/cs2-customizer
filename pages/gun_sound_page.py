@@ -23,16 +23,22 @@ from PySide6.QtWidgets import (
 )
 
 from config import config, get_app_data_dir
-from core.audio.audio_file_utils import DEFAULT_AUDIO_EXTENSIONS, list_style_dirs_with_audio
+from core.audio.audio_file_utils import (
+    DEFAULT_AUDIO_EXTENSIONS,
+    list_audio_files,
+    list_style_dirs_with_audio,
+)
 from core.audio.runtime_audio import get_runtime_audio_manager
 from core.gun_sound_series import find_series, group_style_series
 from core.gun_sound_profiles import (
     GUN_SOUND_PROFILES,  # noqa: F401  本文件未直接用，但测试经 gun_sound_page.GUN_SOUND_PROFILES 访问
+    MAX_GUN_SOUND_VARIANTS,
     SUPPORTED_GUN_SOUND_PROFILE_LIST,
     SUPPORTED_GUN_SOUND_PROFILES,  # noqa: F401  测试经 gun_sound_page.SUPPORTED_GUN_SOUND_PROFILES 访问
     SUPPORTED_GUN_SOUND_TAB_GROUPS,
     is_gun_sound_master_enabled,
     resolve_gun_sound_style,
+    unrecognised_gun_dirs,
 )
 from core.utils.logger import get_logger
 from core.utils.format_utils import format_percent
@@ -57,6 +63,14 @@ class GunSoundPage(QWidget):
 
     DISABLED_STYLE_TEXT = "不启用"
     APPLY_ALL_PLACEHOLDER = "选一套…"
+
+    # ⭐⭐ 类级空默认，不是给「好看」用的：`_scan_gun_sounds` 才是填它们的地方，
+    # 而**那个方法可能压根没被调**（三条既有判据自己接管了扫描那一步，实测当场
+    # AttributeError）。RN-675 的 `_skipped_unsure` 教训再进一格：那次学到的是
+    # 「只写一次、要在任何 return 之前」，这次是「**写在方法里还不够，方法本身
+    # 可能不跑**」。⇒ 只读方 `_style_label` / `_unknown_dir_hint` 永远有东西可读。
+    style_sample_counts: dict = {}
+    unknown_weapon_dirs: list = []
 
     @property
     def SAVES_AUTOMATICALLY(self) -> bool:  # noqa: N802  共用回执按这个名字读（master_switch_effect）
@@ -351,7 +365,7 @@ class GunSoundPage(QWidget):
         style_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         style_combo.addItem(self.DISABLED_STYLE_TEXT, "0")
         for style in styles:
-            style_combo.addItem(style, style)
+            style_combo.addItem(self._style_label(weapon_type, style), style)
         style_combo.currentIndexChanged.connect(
             lambda _index, weapon=weapon_type, combo=style_combo: self._on_weapon_style_changed(
                 weapon, combo.currentData()
@@ -452,8 +466,37 @@ class GunSoundPage(QWidget):
         }
         return card
 
+    def _style_label(self, weapon_type: str, style: str) -> str:
+        """下拉里那一项的文字：风格名 + 取样数（RN-676，叙事在档案）。
+
+        ⭐ 落点是下拉**选项**，不是卡片上新加一行 —— RN-049 刚删掉「每张卡一句」
+        （全新安装 18 句一字不差）。⛔ 1 个取样不标：那是默认情形，标了就是 18 份噪音。
+        """
+        count = int((self.style_sample_counts.get(weapon_type) or {}).get(style, 0))
+        if count <= 1:
+            return style
+        if count <= MAX_GUN_SOUND_VARIANTS:
+            return f"{style} · {count} 个取样"
+        return f"{style} · {count} 个取样（只用前 {MAX_GUN_SOUND_VARIANTS} 个）"
+
+    def _unknown_dir_hint(self) -> str:
+        """「装着素材但代号不对」的目录 ⇒ 屏幕上那一句。没有就空串。"""
+        unknown = getattr(self, "unknown_weapon_dirs", None) or []
+        if not unknown:
+            return ""
+        shown = "、".join(name for name, _near in unknown[:2])
+        more = f" 等 {len(unknown)} 个" if len(unknown) > 2 else ""
+        fixes = [f"{name} 大概想写 {near}" for name, near in unknown[:2] if near]
+        tail = ("；" + "、".join(fixes)) if fixes else ""
+        return (f"资源目录里的 {shown}{more} 装着素材，但它不是任何一把枪的代号，"
+                f"所以这一页读不到、进游戏也不会响{tail}。"
+                "目录名必须用武器代号（例如 ak47、m4a1_silencer），"
+                "点「打开音频资源」可以对照现有目录改名。")
+
     def _scan_gun_sounds(self):
         self.weapon_styles = {}
+        self.style_sample_counts = {}
+        self.unknown_weapon_dirs = []
         gun_sounds_dir = getattr(self.audio_manager, "gun_sounds_dir", "")
         if not gun_sounds_dir:
             from resource_manager import ResourceManager
@@ -468,13 +511,23 @@ class GunSoundPage(QWidget):
         for profile in SUPPORTED_GUN_SOUND_PROFILE_LIST:
             weapon_dir = os.path.join(gun_sounds_dir, profile.gun_type)
             styles = []
+            counts = {}
             if os.path.exists(weapon_dir):
                 styles = list_style_dirs_with_audio(
                     weapon_dir,
                     extensions=DEFAULT_AUDIO_EXTENSIONS,
                     sort=True,
                 )
+                for style in styles:
+                    counts[style] = len(list_audio_files(
+                        os.path.join(weapon_dir, style),
+                        extensions=DEFAULT_AUDIO_EXTENSIONS,
+                        sort=False,
+                    ))
             self.weapon_styles[profile.gun_type] = styles
+            self.style_sample_counts[profile.gun_type] = counts
+
+        self.unknown_weapon_dirs = unrecognised_gun_dirs(gun_sounds_dir)
 
     def _refresh_style_catalog(self):
         self._scan_gun_sounds()
@@ -493,7 +546,7 @@ class GunSoundPage(QWidget):
                 style_combo.clear()
                 style_combo.addItem(self.DISABLED_STYLE_TEXT, "0")
                 for style in self.weapon_styles.get(weapon_type, []):
-                    style_combo.addItem(style, style)
+                    style_combo.addItem(self._style_label(weapon_type, style), style)
                 index = style_combo.findData(self._get_profile_style(profile))
                 style_combo.setCurrentIndex(index if index >= 0 else 0)
                 style_combo.blockSignals(False)
@@ -826,8 +879,11 @@ class GunSoundPage(QWidget):
         for gun_type, style in targets.items():
             row = self.weapon_rows.get(gun_type) or {}
             combo = row.get("style_combo")
-            if combo is not None:
-                combo.setCurrentText(style)   # 经既有信号走落盘
+            # ⛔ 按 data 找，不按文字：RN-676 之后多取样的项写成「风格 · N 个取样」，
+            #    setCurrentText(风格) 对不上就静默不动 ⇒ 确认框说配了、一把都没配。断点 `--only SWEEP`。
+            index = combo.findData(style) if combo is not None else -1
+            if index >= 0:
+                combo.setCurrentIndex(index)   # 经既有信号走落盘
             else:
                 self._on_weapon_style_changed(gun_type, style)
         # 动作做完 ⇒ 下拉回到占位：留着「离子 · 9 把」选着，它又成了一个像状态的东西。
@@ -1003,6 +1059,16 @@ class GunSoundPage(QWidget):
         else:
             configured_level = "success" if selected_count else "info"
 
+        unknown_hint = self._unknown_dir_hint()
+        # RN-035：分级收进 `resource_badge()` 一份 —— 七个音效页原先各抄一遍那段，
+        # 七份都把"素材目录还没建"（全新安装的样子）报成**红色异常**。
+        resource = resource_badge(health)
+        if unknown_hint:
+            # ⭐⭐⭐ 外审改后复跑逮到的、**我自己引进来的**：提示行说有个目录读不到，
+            # 而这颗徽章还写「资源 · 正常」—— 同屏两处说法不一致（RN-107 族），
+            # 且改前没有这个矛盾（那时两处都不说）。⛔ 不改共用函数（七页共用），本页降级。
+            resource = ("warn", f"资源 · {len(self.unknown_weapon_dirs)} 个目录读不到")
+
         badges = [
             ("success" if enabled else "warn", f"开关 · {'已开启' if enabled else '未开启'}"),
             (configured_level, configured_text),
@@ -1010,9 +1076,7 @@ class GunSoundPage(QWidget):
                 "success" if current_count else "info",
                 f"分类 · {self._compact_text(current_tab_name)} {current_count}/{len(current_weapon_types)}",
             ),
-            # RN-035：分级收进 `resource_badge()` 一份 —— 七个音效页原先各抄一遍
-            # 这段，七份都把"素材目录还没建"（全新安装的样子）报成**红色异常**。
-            resource_badge(health),
+            resource,
         ]
 
         current_profiles = [self.weapon_configs[weapon] for weapon in current_weapon_types if weapon in self.weapon_configs]
@@ -1034,9 +1098,15 @@ class GunSoundPage(QWidget):
         if detail_tooltip:
             detail_lines.append(detail_tooltip)
 
+        if unknown_hint:
+            detail_lines.append(unknown_hint)   # 屏幕那一行是择一的，详情永远写全
+
         summary_text = "\n".join(detail_lines)
-        # 屏幕上那一行：失效 > 资源状态。两者都没有就整行隐藏，不留空白。
-        if stale_names:
+        # 屏幕上那一行：代号不对 > 失效 > 资源状态。都没有就整行隐藏，不留空白。
+        # ⭐ 代号不对排最前（「你以为装好了」）；压掉的「失效」在徽章里有 warn 色，不会静默。
+        if unknown_hint:
+            hint = unknown_hint
+        elif stale_names:
             shown = "、".join(stale_names[:3])
             more = f" 等 {len(stale_names)} 把" if len(stale_names) > 3 else ""
             from widgets import community_library as _cl  # RN-197

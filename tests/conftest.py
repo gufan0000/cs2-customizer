@@ -189,6 +189,24 @@ def qapp():
 
 
 @pytest.fixture(autouse=True)
+def _no_real_flash_window(monkeypatch):
+    """⛔ 测试进程里一律不起真闪光进程（它是全屏置顶窗口，CLAUDE.md §3）。
+
+    2026-09-23 起拨开「自定闪光」总开关就会启动监听 —— 而好几条判据会在主窗口里
+    逐页把总开关关了又开。靠每个夹具记得中和一定会漏一个，所以在这里统一挡。
+    ⚠ 只挡真进程；测闪光页行为的判据自己换 `FlashProcessManager` 替身，不受影响。
+    """
+    try:
+        import flash_process_manager as _fpm
+    except Exception:
+        yield
+        return
+    monkeypatch.setattr(_fpm.FlashProcessManager, "start_process",
+                        lambda self, *a, **k: None)
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _config_singleton_is_not_swapped():
     """每个用例跑完后确认 `config.config` 还是同一个对象。
 
@@ -208,6 +226,15 @@ def _config_singleton_is_not_swapped():
     需要 reload 的用例请照 `test_qa_non_ui_r12._load_config_module` 的写法把单例还原。
     """
     import config as config_mod
+
+    # 上一个用例留下的防抖保存先落进它自己的目录，别等本用例 setenv 之后再到点
+    # （tests/_config_isolation.py）。⛔ 清理设施不许让用例跑不起来 ⇒ 吞异常。
+    try:
+        from _config_isolation import flush_config_singletons_pending_save
+
+        flush_config_singletons_pending_save()
+    except Exception:
+        pass
 
     original = config_mod.config
     yield

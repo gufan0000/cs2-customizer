@@ -556,6 +556,9 @@ KNOWN_EXPANDED_DEBT_COMPACT: dict[tuple[str, str], tuple[int, str]] = {
     ("reload_sound", "clip"): (79, "同 kill_sound"),
     ("switch_weapon", "clip"): (79, "同 kill_sound"),
     ("magnifier", "clip"): (52, "整页无页签，靠一层滚动区；展开档下它的最小高顶穿可视区"),
+    # ⚖ 2026-09-23 新记一页（报过用户）：闪光白屏跟游戏走副屏那次，本页第一次说出 RN-429 的
+    #   独占全屏前提（状态卡 +1 行，紧凑宽度下折两行）。默认档 rc=0；只有控制条展开时「样式设置」页签差 40px。
+    ("flash", "clip"): (40, "状态卡补了独占全屏前提那一行；只在控制条展开 + 紧凑档出现"),
 }
 
 #: 完整档 1280×800 的同一件事。只剩音效家族四页，且只差 10~11px。

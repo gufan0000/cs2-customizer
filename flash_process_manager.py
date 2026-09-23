@@ -22,6 +22,18 @@ def _set_spawn_method():
         # 如果已经设置过，可能会抛出异常，可以忽略
         pass
 
+
+def _game_monitor_device():
+    """CS2 所在显示器的 GDI 设备名，认不出返回 None（子进程退回主屏）。
+    认窗口 / 认屏只许用准心那一份实现，不另写。"""
+    try:
+        from crosshair_overlay import game_screen_device_name
+
+        return game_screen_device_name()
+    except Exception:
+        return None
+
+
 class FlashProcessManager:
     """管理闪光效果进程 - 增强版"""
 
@@ -418,7 +430,7 @@ class FlashProcessManager:
             return False
             
         # 清空队列中的旧闪光值更新命令，避免堆积
-        self._clear_pending_flash_updates()
+        dropped = self._clear_pending_flash_updates() or {}
         
         # 检测闪光开始事件（从0变为非0）
         flash_starting = (value > 0 and self.current_flash_value == 0)
@@ -445,11 +457,14 @@ class FlashProcessManager:
         self._last_flash_update_time = time.time()  # v2.2.1: 供断流看门狗判定
 
         # 发送新的闪光值更新命令
+        command = {"type": "update_flash", "value": value}
+        if flash_starting:
+            # ⛔ 闪光开始那一下带上游戏所在屏（实测 0.3ms）；子进程按它挪窗口。断点 `--only SWEEP`。
+            command["monitor"] = _game_monitor_device()
+        elif "monitor" in dropped:
+            command["monitor"] = dropped["monitor"]   # 开始那条没被取走就被清掉了 ⇒ 屏幕信息转到这条上
         try:
-            self.command_queue.put({
-                "type": "update_flash",
-                "value": value
-            })
+            self.command_queue.put(command)
             logger.info(f"已发送闪光值更新: {value}")
             return True
         except Exception as e:
@@ -519,13 +534,14 @@ class FlashProcessManager:
             })
     
     def _clear_pending_flash_updates(self):
-        """清除队列中待处理的闪光值更新命令"""
+        """清除队列中待处理的闪光值更新命令；返回被清掉的那几条里带的屏幕信息（`{"monitor": …}` 或 `{}`）。"""
         if not self.is_running or not self.command_queue:
-            return
-            
+            return {}
+
         # v2.2.1: 临时存储改用普通list——旧实现每次新建 multiprocessing.Queue
         # （会创建feeder线程+管道），高频闪光更新下开销显著
         kept_commands = []
+        dropped = {}
 
         # 清空当前队列，只保留非闪光值更新命令
         try:
@@ -533,6 +549,8 @@ class FlashProcessManager:
                 cmd = self.command_queue.get(block=False)
                 if cmd["type"] != "update_flash":
                     kept_commands.append(cmd)
+                elif "monitor" in cmd:
+                    dropped["monitor"] = cmd["monitor"]
         except Exception:
             pass
 
@@ -542,7 +560,8 @@ class FlashProcessManager:
                 self.command_queue.put(cmd)
         except Exception:
             pass
-            
+        return dropped
+
     def force_clear_flash(self):
         """强制清除闪光效果"""
         if not self.is_running or not self.command_queue:

@@ -2577,8 +2577,9 @@ REVERTS = [
         "RN", "flash 底栏主按钮又变回纯导航",
         "pages/flash_page.py",
         # ⚠ RN-192：「启用」归总开关、按钮只管「启动」，那颗按钮已经改名。
-        '                self.action_bar.configure_primary("启动监听", self._enable_and_start, visible=True)',
-        '                self.action_bar.configure_primary("前往效果预览", self._open_preview_tab, visible=True)',
+        # ⚠ 2026-09-23：开关就是启动之后，这颗按钮只在「开着却没在跑」时出现（visible=enabled）。
+        '                self.action_bar.configure_primary("启动监听", self._enable_and_start, visible=enabled)',
+        '                self.action_bar.configure_primary("前往效果预览", self._open_preview_tab, visible=enabled)',
         "tests/test_flash_viewmodel_truth.py::"
         "test_flash_bottom_bar_primary_actually_changes_something",
         "RN-079：主按钮只切页签、不改任何状态，而胶囊常年「效果·未启用 / 运行·待启动」，"
@@ -3256,8 +3257,8 @@ REVERTS = [
     Revert(
         "RN", "flash 的启动入口被空库引导顶掉",
         "pages/flash_page.py",
-        # ⚠ RN-192：同上，按钮改名成「启动」。
-        '                self.action_bar.configure_primary("启动监听", self._enable_and_start, visible=True)',
+        # ⚠ RN-192：同上，按钮改名成「启动」。2026-09-23：开关就是启动之后它只在开着没跑时出现。
+        '                self.action_bar.configure_primary("启动监听", self._enable_and_start, visible=enabled)',
         '                self._guide_empty_library(True, "去社区拿一套自定闪光", "打开图片文件夹", self._open_flash_images_folder, "刷新样式列表")',
         "tests/test_empty_library_covers_every_page.py::"
         "test_flash_only_guides_on_the_two_asset_tabs",
@@ -3688,6 +3689,77 @@ REVERTS = [
         "tests/test_gun_sound_variants_rotate.py::test_every_file_in_a_style_folder_is_loaded_as_a_variant",
         "批 101：竞品每发 `PickRandomAudio`，它的「离子AK」5 个 wav 是真不同的取样；"
         "我方原来只取第一个，另外四个白放，扫射就是同一个声音复读",
+    ),
+    Revert(
+        "GUN", "下拉又只写风格名、不说放了几个取样",
+        "pages/gun_sound_page.py",
+        "        if count <= MAX_GUN_SOUND_VARIANTS:\n"
+        "            return f\"{style} · {count} 个取样\"\n",
+        "        if count <= MAX_GUN_SOUND_VARIANTS:\n"
+        "            return style\n",
+        "tests/test_the_gun_page_admits_what_it_read.py::"
+        "test_a_style_with_several_samples_says_how_many",
+        "RN-676：「最多用前 5 个」逐字写在帮助面板第 2 条 —— 而放素材的人不会为了放素材去翻帮助。"
+        "⚠ 这一刀只砍 2~5 那一档，>5 那档还留着 ⇒ 若判据只量了「放多了」那条，它看不见这一刀",
+    ),
+    Revert(
+        "GUN", "放超过上限又不说「只用前 N 个」",
+        "pages/gun_sound_page.py",
+        "        return f\"{style} · {count} 个取样（只用前 {MAX_GUN_SOUND_VARIANTS} 个）\"\n",
+        "        return f\"{style} · {count} 个取样\"\n",
+        "tests/test_the_gun_page_admits_what_it_read.py::"
+        "test_too_many_samples_says_only_the_first_few_count",
+        "RN-676：放了 7 个只用 5 个，而屏幕上写「7 个取样」= 说谎。"
+        "⭐ 这一刀留着「说数字」那半边，逼判据去量「上限那句在不在」而不是「有没有数字」",
+    ),
+    Revert(
+        "GUN", "下拉的 data 又被显示文字污染（风格存进配置就解析不出来）",
+        "pages/gun_sound_page.py",
+        "                    style_combo.addItem(self._style_label(weapon_type, style), style)\n",
+        "                    style_combo.addItem(self._style_label(weapon_type, style),\n"
+        "                                        self._style_label(weapon_type, style))\n",
+        "tests/test_the_gun_page_admits_what_it_read.py::"
+        "test_the_combo_still_carries_the_bare_style_name_as_data",
+        "RN-676 最重的一条：整条存取链认的是 `currentData()`。带后缀的名字落进配置 ⇒ "
+        "这把枪彻底哑掉，而设置页里看起来配得好好的。⭐ 改显示文字最容易顺手把 data 一起改",
+    ),
+    Revert(
+        "GUN", "枪代号拼错又变回静默失败",
+        "pages/gun_sound_page.py",
+        "        self.unknown_weapon_dirs = unrecognised_gun_dirs(gun_sounds_dir)\n",
+        "        self.unknown_weapon_dirs = []\n",
+        "tests/test_the_gun_page_admits_what_it_read.py::"
+        "test_a_misspelled_weapon_dir_is_named_on_screen",
+        "RN-676：`AK-47/我的风格/1.wav` —— 目录在、文件在，按代号 join 找不到就当没有，"
+        "页面上连影子都没有、全程零提示。RN-675 同族（静默失败）",
+    ),
+    Revert(
+        "GUN", "提示行说目录读不到，徽章又回去说「资源 · 正常」",
+        "pages/gun_sound_page.py",
+        "            resource = (\"warn\", f\"资源 · {len(self.unknown_weapon_dirs)} 个目录读不到\")\n",
+        "            pass\n",
+        "tests/test_the_gun_page_admits_what_it_read.py::"
+        "test_the_resource_badge_does_not_say_normal_while_a_dir_is_unreadable",
+        "RN-676：⭐ 外审改后复跑逮到的、我自己引进来的同屏矛盾（RN-107 族）——"
+        "改前两处都不说，加了提示行才让「资源 · 正常」和「有个目录读不到」并排站着",
+    ),
+    Revert(
+        "GUN", "空的野目录又被报上来（噪音把真话淹掉）",
+        "core/gun_sound_profiles.py",
+        "        if not has_media:\n            continue\n",
+        "        if False:\n            continue\n",
+        "tests/test_the_gun_page_admits_what_it_read.py::"
+        "test_an_empty_stray_dir_is_not_reported",
+        "RN-676：用户随手建一个空目录不是缺陷。RN-049 的账：噪音一旦上屏，真话就没人读了",
+    ),
+    Revert(
+        "GUN", "认不出的目录又瞎猜一个代号建议",
+        "core/gun_sound_profiles.py",
+        "        near = difflib.get_close_matches(name.lower(), sorted(known), n=1)\n",
+        "        near = difflib.get_close_matches(name.lower(), sorted(known), n=1, cutoff=0.0)\n",
+        "tests/test_the_gun_page_admits_what_it_read.py::"
+        "test_no_suggestion_is_better_than_a_wrong_one",
+        "RN-676：猜错的代号比不给建议更糟 —— 用户会照着改，改完还是不响",
     ),
     Revert(
         "GUN", "同一把枪自己带的两个近名又被并成一套",
@@ -9276,6 +9348,568 @@ Revert(
         "⚠ 逮到它的是批 110 新写的判据自己（测试里的 QMimeData 被回收了）。"
         "**一条教训写在 A 文件里，B 文件照样犯** ⇒ 它得是一个调得到的函数 +"
         "一条扫得到分母的判据，不是一段注释",
+    ),
+    # ── 2026-09-22 社区报障（社区创作者）：音乐盒无法触发 / 语音触发很奇怪 ──
+    # 这一组 `--only VOX` 单独跑。他那句「左下角应该是一直开麦然后播放我的音乐盒的」
+    # 是破案点：截图里左下角**没有**开麦图标 ⇒ 麦根本没开，不是音频没写出去。
+    # ⇒ 要量的是 keyboard.press/release 的事件序列，不是有没有字节进 VB-Cable。
+    Revert(
+        "VOX", "播放被取消后还要睡满整首歌才放开麦键",
+        "voice_output_manager.py",
+        "                deadline = time.time() + remaining_time + 0.1\n"
+        "                while time.time() < deadline:\n"
+        "                    if cancel_event is not None and cancel_event.is_set():\n"
+        '                        self.logger.info("[播放数据] 等待期间收到取消，立即收尾")\n'
+        "                        break\n"
+        "                    time.sleep(min(0.02, max(0.0, deadline - time.time())))",
+        "                time.sleep(remaining_time + 0.1)",
+        "tests/test_voice_ptt_release_and_mix_fallback.py::"
+        "test_cancelled_playback_stops_within_a_beat_not_the_whole_track",
+        "⭐⭐⭐ 写循环每 chunk 都查 cancel_event，**紧接着那段 sleep 却不查** —— "
+        "而 remaining_time 是按完整数组长度算的，不会因为循环 break 而变短。"
+        "于是「取消」只让声音停了，线程、PTT 租约、VB-Cable 流三样都还扣着："
+        "一首 3 分钟的音乐盒被停掉 = 3 分钟热麦。实测 6 秒音频第 2 秒打断，"
+        "旧流滞后 2.13 秒才关、麦多开 3.2 秒。**半条取消路径比没有更难查**，"
+        "因为用户听到声音确实停了，会以为停干净了",
+    ),
+    Revert(
+        "VOX", "连续音效之间开麦键先松后按（「他会等关上再开麦」）",
+        "voice_output_manager.py",
+        "    PTT_HOLD_TAIL_S = 0.5\n",
+        "    PTT_HOLD_TAIL_S = 0.0\n",
+        "tests/test_voice_ptt_release_and_mix_fallback.py::"
+        "test_back_to_back_sounds_share_one_press",
+        "⭐⭐⭐ 2026-09-23 第二轮：旧代码租约一归零就立刻松键，两套「兜底」计时器"
+        "只在键**还按着**时才动手，而那时早就松了 ⇒ 它们从没起到「刷新释放时间」的作用，"
+        "文档里那句「连续音效不会重复按键」是假的。旧代码实测「0.00 按 → 0.51 松 → 0.60 又按」。"
+        "⚠ 上一轮（09-22）场景 3 的时间线里就摆着「松开 → 0.19 秒后又按下」，我读成了"
+        "「2 按 2 松，正常」—— **我拿「计数对得上」当了验收，而用户说的是「中间断了」**。"
+        "⇒ 两套兜底整体换成一条保持尾巴",
+    ),
+    Revert(
+        "VOX", "stop_playback 把别人持有的麦克风静音引用清零",
+        "voice_output_manager.py",
+        "        with self._mute_lock:\n"
+        "            still_held = self._mute_refcount\n"
+        "            if still_held == 0:\n"
+        "                self.set_microphone_mute(False)\n"
+        "        if still_held:\n"
+        '            self.logger.info(f"[播放控制] 仍有 {still_held} 路转发持有麦克风静音，不解除")',
+        "        with self._mute_lock:\n"
+        "            self._mute_refcount = 0\n"
+        "        self.set_microphone_mute(False)",
+        "tests/test_voice_ptt_release_and_mix_fallback.py::"
+        "test_stop_playback_leaves_a_concurrent_forwards_mute_alone",
+        "⭐ 引用计数是**专门**为了防「B 路结束不能把仍在转发的 A 路提前解除静音」"
+        "才引进来的（`__init__` 里写着），而 stop_playback 单方面清零正好把它绕过去。"
+        "⇒ 一个防抢跑的机制，被另一条路径从外面清零就等于没有",
+    ),
+    Revert(
+        "VOX", "混音模式在没人消费时把音频丢进一个没人读的槽",
+        "voice_output_manager.py",
+        "            if not self.microphone_passthrough_active:",
+        "            if False:",
+        "tests/test_voice_ptt_release_and_mix_fallback.py::"
+        "test_mix_mode_does_not_drop_audio_into_a_slot_nobody_reads",
+        "⭐⭐⭐ `_play_with_mix_data` 自己不写 VB-Cable，只把数据放进 current_mix_audio，"
+        "而全仓唯一的读者是 passthrough_worker（AST 核实：读 4 处全在它里面）。"
+        "穿透没在跑时这段音频**既不会被读走也不会被清空** —— 不报错、不出声。"
+        "而穿透是选「混音/自动」时自动启动的，启动失败只写在状态栏里、模式不回退，"
+        "于是正好落进这个口子。**静默丢弃和「按了没反应」长得一模一样**",
+    ),
+    Revert(
+        "VOX", "驱动没装时音板照样显示「▶ 播放」",
+        "pages/voice_output_page.py",
+        "                if not ok:\n"
+        '                    reason = self._playback_refusal_reason(slot["audio"])\n'
+        '                    self._status_signal.emit(f"✗ 没播出去：{reason}")',
+        "                if False:\n"
+        '                    reason = self._playback_refusal_reason(slot["audio"])\n'
+        '                    self._status_signal.emit(f"✗ 没播出去：{reason}")',
+        "tests/test_voice_ptt_release_and_mix_fallback.py::"
+        "test_soundboard_does_not_claim_to_play_without_the_driver",
+        "⭐⭐ `play_audio_with_ptt_protocol` 未初始化时是同步 `return False` **不抛异常**，"
+        "而调用处把返回值直接丢掉、外面那层 try/except 自然也接不到 ⇒ 界面照常"
+        "「▶ 播放」。用户报的「音乐盒还是无法触发」就是这个形状 —— 他不但没听到声音，"
+        "还拿不到任何指向驱动的线索。AST 扫出来同族共 4 处丢返回值（另两处在 "
+        "audio_manager 的转发路上，那两处改走事件台账记账）",
+    ),
+    Revert(
+        "VOX", "自动转发被拒绝时台账里一点痕迹都没有",
+        "core/audio/audio_manager.py",
+        "            forwarded = get_voice_output_manager()"
+        ".play_pygame_sound_to_voice(obj, volume, **extra)\n",
+        "            forwarded = True\n"
+        "            get_voice_output_manager()"
+        ".play_pygame_sound_to_voice(obj, volume, **extra)\n",
+        "tests/test_voice_ptt_release_and_mix_fallback.py::"
+        "test_a_refused_forward_leaves_a_trace_in_the_timeline",
+        "⭐ 同族共 4 处丢返回值（AST 扫出来的），音板那 2 处修了、转发这 2 处不修的话，"
+        "排障时「队友没听到」和「根本没转发」在事件台账里**长得一模一样**。"
+        "⇒ 修一半和不修在排障价值上是一样的",
+    ),
+    Revert(
+        "VOX", "播不出去的提示只写在折叠线以下的状态栏里",
+        "pages/voice_output_page.py",
+        "                    self._toast_error_signal.emit(reason)   # 状态栏在折叠线以下\n",
+        "",
+        "tests/test_voice_ptt_release_and_mix_fallback.py::"
+        "test_soundboard_does_not_claim_to_play_without_the_driver",
+        "⭐⭐⭐ RN-673 同形，**第二次**：`status_label` 实测映射到整页坐标 y≈1009，"
+        "而滚动区视口只有 746 —— 它在折叠线**以下 200 多像素**，而 `isVisible()` 返回 "
+        "True、`isHidden()` 返回 False，两个都骗人。⇒ 我这一批把「没播出去 + 原因」"
+        "写进那个标签，对用户等于没写：他按下快捷键时眼睛多半还在游戏里，更不会滚到"
+        "页底去找。⚠ 逮到它的不是判据，是**外审拍图时三张图 md5 一模一样** —— "
+        "拍图本来只是走个流程，结果它是这一批里唯一发现这件事的手段",
+    ),
+    # ── 2026-09-23 第二轮：开麦键换成保持尾巴 + 回合音效转发 + 退出松键 ──
+    Revert(
+        "VOX", "保持尾巴到点了却不松键（麦一直开着）",
+        "voice_output_manager.py",
+        "            self._ptt_tail_timer = None\n"
+        "            self._release_now_locked(ptt_key)\n",
+        "            self._ptt_tail_timer = None\n",
+        "tests/test_voice_ptt_release_and_mix_fallback.py::"
+        "test_the_key_goes_up_after_the_tail",
+        "⭐ 保持尾巴修的是「松得太早」，它最容易长出来的反面是「永远不松」—— "
+        "而后者在任何只数「按下几次」的判据上都是绿的。这条专门守反面",
+    ),
+    Revert(
+        "VOX", "开麦延迟又放回按键前面（先等再按、按下立刻出声）",
+        "voice_output_manager.py",
+        "                        cancel_event.wait(ptt_delay / 1000.0)\n",
+        "                        pass\n",
+        "tests/test_voice_ptt_release_and_mix_fallback.py::"
+        "test_the_lead_in_comes_after_the_press",
+        "⭐⭐ 从 2.0 基线起就是 `sleep(delay)` → `press` → 立刻出声：延迟放在按键前面"
+        "什么都换不到，游戏开麦要的那段时间照样吃掉音频开头。旧代码实测按键被往后拖 0.40s",
+    ),
+    Revert(
+        "VOX", "同组的新一段不再取消旧一段（胜负和 MVP 在语音里叠成一团）",
+        "voice_output_manager.py",
+        "            if previous is not None:\n"
+        "                previous.set()\n",
+        "            if previous is not None:\n"
+        "                pass\n",
+        "tests/test_voice_ptt_release_and_mix_fallback.py::"
+        "test_a_newer_sound_in_the_same_group_cancels_the_older",
+        "回合音效本地共用一个 round_sound 通道、后来的顶掉先来的；语音转发以前"
+        "根本没有回合音效，补上之后必须照同样的规矩，否则本地听到一段、队友听到两段",
+    ),
+    Revert(
+        "VOX", "回合音效又不转发了（「回合音效」勾选框变回假开关）",
+        "core/audio/audio_manager.py",
+        "        self._forward_to_voice(\n"
+        "            config, key, channel_type, str(event_type or channel_type), info,\n"
+        "            group=channel_type,\n"
+        "        )\n",
+        "",
+        "tests/test_voice_ptt_release_and_mix_fallback.py::"
+        "test_round_sounds_reach_the_voice_channel",
+        "⭐⭐⭐ **报障「音乐盒无法触发」的根因**：转发只写在 play_sound 里，而 8 个回合事件"
+        "（开局/行动/胜/负/MVP/比赛开始/比赛结束/半场）全部 fade=True、走 play_sound_with_fade，"
+        "那条路一行转发都没有 —— 页面上的「回合音效」勾选框是假的。AST 扫 3 个出声入口只有它漏。"
+        "⚠ 上一轮（09-22）我审了 voice_output_manager 和音板页，**没往上游问一句「哪些声音会进"
+        "这条链」**，于是最直接的那条根因整轮都不在视野里",
+    ),
+    Revert(
+        "VOX", "淡入播放成功却返回 None（日志写「未播出」）",
+        "core/audio/audio_manager.py",
+        "        #    ⇒ 每次回合音效真播出来了，日志却写「未播出」。\n"
+        "        return True\n",
+        "        #    ⇒ 每次回合音效真播出来了，日志却写「未播出」。\n",
+        "tests/test_voice_ptt_release_and_mix_fallback.py::"
+        "test_round_sounds_reach_the_voice_channel",
+        "调用方 _play_event 拿返回值判成败：真播出来了，日志却写「未播出」 —— "
+        "排障时日志说的和发生的正好相反",
+    ),
+    Revert(
+        "VOX", "退出步骤表里没有松开麦键",
+        "gui_widget.py",
+        '            ("松开语音开麦键", self._release_voice_output_on_close),\n',
+        "",
+        "tests/test_voice_ptt_release_and_mix_fallback.py::"
+        "test_exit_lets_go_of_the_talk_key",
+        "⭐⭐ `VoiceOutputManager.cleanup()` 全仓零调用，而退出链路末尾是 `os._exit(0)`、"
+        "连 atexit 都不跑 ⇒ 程序在开麦那一刻被关掉，`keyboard.press` 发出去的按下再也没有"
+        "配对的抬起，游戏里麦一直开着。漏掉的代价在本进程之外（RN-657 同一类）",
+    ),
+    Revert(
+        "VOX", "退出清理之后播放线程还能把键按下去",
+        "voice_output_manager.py",
+        "            if self._ptt_shutdown:\n"
+        "                # 退出清理已经松过键了，再按下去就没人松了（进程随后 os._exit）\n"
+        "                return self.PTT_FAILED\n",
+        "",
+        "tests/test_voice_ptt_release_and_mix_fallback.py::"
+        "test_exit_lets_go_of_the_talk_key",
+        "退出清理松了键，但还在加载音频的播放线程随后照样 press —— 进程马上 os._exit，"
+        "那一下没有人会再松",
+    ),
+    Revert(
+        "VOX", "保持尾巴期间麦克风直通没静音（房间声音播给队友）",
+        "voice_output_manager.py",
+        "                self._ptt_tail_mute = True\n"
+        "                self._acquire_mic_mute()\n",
+        "                self._ptt_tail_mute = False\n",
+        "tests/test_voice_ptt_release_and_mix_fallback.py::"
+        "test_the_room_mic_stays_muted_while_the_tail_holds_the_key",
+        "⭐⭐ **新设计自己带进来的风险**：尾巴里键还被软件按着、音频已经播完，"
+        "开了「混音/自动」的用户每播完一段就把房间声音额外播给队友半秒。"
+        "写完尾巴回头审「它会不会引入新问题」时想到的，不是哪条判据逮到的",
+    ),
+    Revert(
+        "VOX", "stop_playback 读引用计数与解除静音分在两把锁外（抢掉并发转发的静音）",
+        "voice_output_manager.py",
+        "        with self._mute_lock:\n"
+        "            still_held = self._mute_refcount\n"
+        "            if still_held == 0:\n"
+        "                self.set_microphone_mute(False)\n",
+        "        with self._mute_lock:\n"
+        "            still_held = self._mute_refcount\n"
+        "        if still_held == 0:\n"
+        "            self.set_microphone_mute(False)\n",
+        "tests/test_voice_ptt_release_and_mix_fallback.py::"
+        "test_stop_playback_unmutes_only_under_the_refcount_lock",
+        "⭐⭐ **上一轮修③时我自己引进来的**，第二轮派 auditor 对抗审查才逮到：读到 0 之后、"
+        "解除之前另一路转发恰好加上静音，就被这里强行解除。⇒ 修一条竞态的补丁本身就是一条新竞态",
+    ),
+    Revert(
+        "VOX", "退出清理不带超时地拿开麦键锁（看门狗会被挡死）",
+        "voice_output_manager.py",
+        "        got = self.ptt_lock.acquire(timeout=lock_timeout)\n",
+        "        got = self.ptt_lock.acquire()\n",
+        "tests/test_voice_ptt_release_and_mix_fallback.py::"
+        "test_shutdown_does_not_wait_forever_on_a_held_ptt_lock",
+        "看门狗是「15 秒必退」的最后保险，本批给它加了松键这一步 —— 要是主线程正卡在"
+        "这把锁里，不带超时看门狗就永远走不到 os._exit。**给最后保险加步骤，那一步自己"
+        "不许能卡住**（auditor 对抗审查逮到）",
+    ),
+    Revert(
+        "VOX", "策略层判丢弃的声音照样转发给队友",
+        "core/audio/audio_manager.py",
+        "            volume = self._resolve_play_volume(config, channel_type, info)\n"
+        "            info.sound.set_volume(volume)\n",
+        "            self._forward_to_voice(config, key, channel_type, resolved_event_type, info)\n"
+        "            volume = self._resolve_play_volume(config, channel_type, info)\n"
+        "            info.sound.set_volume(volume)\n",
+        "tests/test_audio_forward_before_load.py::"
+        "test_a_sound_the_policy_drops_is_not_forwarded",
+        "⭐ 转发以前写在策略判断**之前**：本地被判丢弃 / 拿不到通道的声音照样按下开麦键写进"
+        "虚拟麦，本地一片安静、队友却听到了。本批给淡入那条路定的规矩是「本地真播了才转发」，"
+        "而 play_sound 不守 —— **我自己定的规矩只落在了我正在改的那条路上**（auditor 逮到）",
+    ),
+    # ── 2026-09-23：配置写盘重试那份判据自己间歇红（`--only CFG` 单独跑）──
+    Revert(
+        "CFG", "写盘成功后不还原重试额度",
+        "config.py",
+        "                self._save_retries_left = _SAVE_RETRIES_ON_FAILURE  # 写成功，额度还原\n",
+        "",
+        "tests/test_a_failed_config_write_is_retried_not_dropped.py::"
+        "test_a_successful_write_restores_the_budget",
+        "额度不还原 ⇒ 第二次撞上扫描窗口时就没有重试了。⚠ 这条判据此前**没有任何断点**，"
+        "而它恰好是间歇红的那一条 —— 修它的间歇红时才发现它守的东西从没被证过能红",
+    ),
+    Revert(
+        "CFG", "判据又在轮询里打开产品正在 replace 的文件",
+        "tests/test_a_failed_config_write_is_retried_not_dropped.py",
+        '    assert _on_disk_after_landing(cfg, fake)["kill_sound_enabled"] == want\n'
+        "    assert _wait_until(\n",
+        '    assert _wait_until(lambda: _on_disk(cfg)["kill_sound_enabled"] == want)\n'
+        "    assert _wait_until(\n",
+        "tests/test_a_failed_config_write_is_retried_not_dropped.py::"
+        "test_no_poll_here_opens_the_file_the_product_is_replacing",
+        "⭐⭐ **观察者和被测对象抢同一个文件**：判据每 20ms 打开产品正在 os.replace 的"
+        "config.json —— 读被拒时判据红，读句柄开着时产品的 replace 被拒（扰动了它要量的重试）。"
+        "并行 6 路连跑 120 次复现 6 次。⚠ 而这份判据的文档里就写着「句柄开着 ⇒ replace 必然"
+        " WinError 5」—— **它量的那条规律，它自己也在犯**",
+    ),
+    Revert(
+        "CFG", "模块单例排着的保存又能落进用例目录",
+        "tests/_config_isolation.py",
+        "    if timer is None:\n"
+        "        return\n"
+        "    single.save_config_now()\n",
+        "    if True:\n"
+        "        return\n"
+        "    single.save_config_now()\n",
+        "tests/test_a_failed_config_write_is_retried_not_dropped.py::"
+        "test_the_singletons_pending_save_cannot_land_in_this_tests_directory",
+        "⭐⭐⭐ 间歇红的**第二个**来源，任务单里的假设（扫描程序锁文件）两个都不是："
+        "`_do_save_config` 写 `get_config_path()`（调用时读 CS2C_CONFIG_DIR；"
+        "`config_file` 是判据自己挂的属性，产品不读）⇒ 用例 setenv 之后，模块单例排下的 0.5s 防抖保存到点，"
+        "把单例的状态写进用例的 config.json，还吃掉判据造的第 6 次失败。"
+        "旧的轮询版碰巧容忍了它（继续轮询等到被测对象自己的重试落盘），于是它量的"
+        "根本不是它声称的那个场景。**是判据账本上的「写者」一栏把它认出来的**",
+    ),
+    Revert(
+        "CFG", "冲刷只修在一份判据里，conftest 没接上",
+        "tests/conftest.py",
+        "        flush_config_singletons_pending_save()\n"
+        "    except Exception:\n",
+        "        pass\n"
+        "    except Exception:\n",
+        "tests/test_the_previous_tests_config_save_does_not_land_in_the_next_one.py",
+        "⭐ 同形的另两份判据（退出写盘、闪光参数）也是先 setenv 再读盘 —— 冲刷第一版只写在"
+        "重试那一份的夹具里。**一条教训写在 A 文件里，B 文件照样犯** ⇒ 挪进共用件、由 conftest "
+        "每个用例前调一次；这一对判据量的是接线本身（第一条故意留下一个排着的保存）",
+    ),
+    # ── 2026-09-23 第三轮：语音输出收尾（`--only VOX` 一起跑）──
+    Revert(
+        "VOX", "音板一按就挨个等还在播的转发",
+        "voice_output_manager.py",
+        "            if (current_cancel is not None and thread.is_alive()\n"
+        '                    and getattr(thread, "cancel_event", None) is current_cancel):\n',
+        "            if thread.is_alive():\n",
+        "tests/test_voice_ptt_release_and_mix_fallback.py::"
+        "test_stop_playback_neither_waits_on_nor_forgets_a_forward_still_playing",
+        "stop_playback 只取消独占那一路，却对表里每一个本地播放线程 join 0.1s —— 转发的没被"
+        "取消、会一直播到完，每多一路音板那一下就多卡 0.1s",
+    ),
+    Revert(
+        "VOX", "stop_playback 把还在播的转发从表里抹掉",
+        "voice_output_manager.py",
+        "            self.local_playback_threads[:] = [\n"
+        "                t for t in self.local_playback_threads if t.is_alive()]\n",
+        "            self.local_playback_threads.clear()\n",
+        "tests/test_voice_ptt_release_and_mix_fallback.py::"
+        "test_stop_playback_neither_waits_on_nor_forgets_a_forward_still_playing",
+        "clear() 抹掉的是仍在写设备的别人 —— 退出清理（cleanup）再也等不到它们",
+    ),
+    Revert(
+        "VOX", "转发说明又叫用户去换一个对转发不起作用的模式",
+        "pages/voice_output_page.py",
+        '    "ℹ️ 转发的音效总是按「覆盖」播出，和上面选的「模式」无关：音效响的那几秒，队友听不到你说话。")\n',
+        '    "⚠️ 注意：音效转发建议在\\"覆盖\\"或\\"自动\\"模式下使用，\\"混音\\"模式可能会有回声。")\n',
+        "tests/test_voice_ptt_release_and_mix_fallback.py::"
+        "test_the_forwarding_note_does_not_send_users_to_a_switch_that_does_nothing",
+        "⭐ 假说明：转发走 play_pygame_sound_to_voice，mode 钉死「覆盖」，页面上的模式下拉框"
+        "对它一个字节都不影响 —— 照着那句话去换模式的用户什么也换不到",
+    ),
+    # ── 2026-09-23：排版审计「RESULT rc=0 → 退出码 139」（`--only DELIVER`）──
+    Revert(
+        "DELIVER", "裁定交付又走回 os._exit（进程关闭路径）",
+        "scripts/_audit_verdict.py",
+        "    sys.stderr.flush()\n"
+        "    _exit_without_dll_teardown(rc)\n",
+        "    sys.stderr.flush()\n"
+        "    os._exit(rc)\n",
+        "tests/test_the_layout_audit_exit_code_is_its_verdict.py::"
+        "test_deliver_does_not_walk_the_process_shutdown_path",
+        "⭐⭐ `os._exit` 在 Windows 上是 ExitProcess：跳过 Python 收尾、却照样给每个 DLL 发卸载 ⇒ "
+        "QApplication 还活着时 Qt6Gui 析构全局对象撞访问违例，排版审计两档 100% 退出码 139。"
+        "⚠ 端到端那条是竞态（修复前 pytest 里只 1/3 红）⇒ 断点挂在确定性的机制判据上",
+    ),
+    Revert(
+        "DELIVER", "结束进程时把红的裁定洗成 0",
+        "scripts/_audit_verdict.py",
+        "            k32.TerminateProcess(k32.GetCurrentProcess(), rc & 0xFFFFFFFF)\n",
+        "            k32.TerminateProcess(k32.GetCurrentProcess(), 0)\n",
+        "tests/test_the_layout_audit_exit_code_is_its_verdict.py::"
+        "test_deliver_passes_a_red_verdict_through_unchanged",
+        "修退出码的时候最容易修成「一律 0」—— 那是 QA 台账里「门禁非零被洗成 0」的假绿，更致命",
+    ),
+    # ── 2026-09-23：全功能扫一遍（`--only SWEEP`）──
+    Revert(
+        "SWEEP", "「添加音乐」又把路径字符串直接传给 add_track",
+        "pages/music_page.py",
+        '                    self.player.add_track({"type": "local", "path": file_path})\n',
+        "                    self.player.add_track(file_path)\n",
+        "tests/test_the_sweep_bugs_stay_fixed.py::"
+        "test_adding_local_music_files_really_puts_them_in_the_playlist",
+        "add_track 只收曲目字典：`track[\"path\"]` 对字符串抛 TypeError、逐文件被吞 ⇒ 一首都加不进去",
+    ),
+    Revert(
+        "SWEEP", "添加音乐的成功提示又无条件弹",
+        "pages/music_page.py",
+        "            if added == len(files):\n",
+        "            if True:\n",
+        "tests/test_the_sweep_bugs_stay_fixed.py::"
+        "test_a_file_that_failed_to_add_is_not_reported_as_added",
+        "静默失败的另一半：0/N 被报成「已添加 N 个」，用户以为加进去了",
+    ),
+    Revert(
+        "SWEEP", "投掷物检测又挡不住 weapons 显式 null",
+        "gsi_handler_special.py",
+        '        current_weapons = player_data.get("weapons") or {}\n',
+        '        current_weapons = player_data.get("weapons", {})\n',
+        "tests/test_the_sweep_bugs_stay_fixed.py::"
+        "test_a_null_weapons_frame_does_not_swallow_the_round_sounds",
+        "`.get(k, {})` 只防缺键不防 null；抛出来的 AttributeError 把同一帧的 C4/血量/回合/MVP 一起带走",
+    ),
+    Revert(
+        "SWEEP", "HUD 引擎又挡不住 weapons 显式 null",
+        "core/hud/runtime_engine.py",
+        '        weapons = (data.get("player") or {}).get("weapons") or {}  # GSI 会发显式 null\n',
+        '        weapons = data.get("player", {}).get("weapons", {})\n',
+        "tests/test_the_sweep_bugs_stay_fixed.py::"
+        "test_the_hud_engine_survives_a_null_weapons_frame",
+        "同一格：HUD 颜色那一帧整帧不算",
+    ),
+    Revert(
+        "SWEEP", "导入确认框的分类标签又存回 self 上",
+        "dialogs/resource_import_decision_dialog.py",
+        '            row["bucket_label"].setText(f"{label}：")\n',
+        '            self._rows[-1]["bucket_label"].setText(f"{label}：")\n',
+        "tests/test_the_sweep_bugs_stay_fixed.py::"
+        "test_each_import_card_relabels_its_own_bucket_row",
+        "标签只剩最后一张卡的那个 ⇒ 改第一张卡的类别，换字的是最后一张，第一张还写着「回合事件」",
+    ),
+    # 第二轮（同日，最后一次扫）
+    Revert(
+        "SWEEP", "「应用到全部武器」又按文字找下拉项",
+        "pages/gun_sound_page.py",
+        "            index = combo.findData(style) if combo is not None else -1\n"
+        "            if index >= 0:\n"
+        "                combo.setCurrentIndex(index)   # 经既有信号走落盘\n",
+        "            index = 0 if combo is not None else -1\n"
+        "            if index >= 0:\n"
+        "                combo.setCurrentText(style)   # 经既有信号走落盘\n",
+        "tests/test_the_sweep_bugs_stay_fixed.py::"
+        "test_apply_to_all_really_applies_a_style_that_has_several_samples",
+        "RN-676 之后多取样项的文字是「风格 · N 个取样」，setCurrentText(风格) 对不上就静默不动 ⇒ 确认了一把都没配",
+    ),
+    Revert(
+        "SWEEP", "再导入自定义准心又只靠单选框信号推给渲染端",
+        "pages/crosshair_page.py",
+        "            self._update_crosshair_system()   # 同上：已是「自定义」时不会经信号推\n",
+        "",
+        "tests/test_the_sweep_bugs_stay_fixed.py::"
+        "test_reloading_a_custom_crosshair_reaches_the_overlay",
+        "已经是「自定义」时 setChecked 不发 toggled ⇒ 报「已加载并应用」，游戏里还是旧图案",
+    ),
+    Revert(
+        "SWEEP", "音板热键又不跟总开关走",
+        "pages/voice_output_page.py",
+        "直到下次进这一页。断点 `--only SWEEP`。\n"
+        '        if hasattr(self, "_register_hotkeys_func"):\n'
+        "            self._register_hotkeys_func()\n",
+        "直到下次进这一页。断点 `--only SWEEP`。\n"
+        "        pass\n",
+        "tests/test_the_sweep_bugs_stay_fixed.py::"
+        "test_the_soundboard_hotkeys_follow_the_master_switch",
+        "只有 showEvent 重注册 ⇒ 关了「语音播放」音板键照样放声、照样吞键",
+    ),
+    Revert(
+        "SWEEP", "关掉动态 HUD 又不写回默认色",
+        "gui_widget.py",
+        '        if config_key == "hud_rules_enabled" and not checked:\n',
+        "        if False:\n",
+        "tests/test_the_sweep_bugs_stay_fixed.py::"
+        "test_turning_dynamic_hud_off_puts_the_default_color_back",
+        "cs2customizer.cfg 不重编 ⇒ 移动/开火键仍 exec 运行时 cfg，HUD 卡在关之前那一帧（低血量红/击杀闪色）",
+    ),
+    # 闪光白屏跟着游戏走（副屏，同日用户点名）
+    Revert(
+        "SWEEP", "闪光开始又不带游戏所在屏",
+        "flash_process_manager.py",
+        '            command["monitor"] = _game_monitor_device()\n',
+        "            pass\n",
+        "tests/test_the_sweep_bugs_stay_fixed.py::"
+        "test_a_flash_start_tells_the_flash_process_which_monitor_the_game_is_on",
+        "闪光窗口钉在 (0,0)、只盖主屏 ⇒ 游戏在副屏时白屏盖在另一块屏上",
+    ),
+    Revert(
+        "SWEEP", "「只留最新一帧」又把屏幕信息一起清掉",
+        "flash_process_manager.py",
+        '            command["monitor"] = dropped["monitor"]',
+        "            pass",
+        "tests/test_the_sweep_bugs_stay_fixed.py::"
+        "test_a_flash_start_tells_the_flash_process_which_monitor_the_game_is_on",
+        "开始那条没被子进程取走就被下一帧清掉 ⇒ 这一次闪光又画回主屏（高频更新时的竞态）",
+    ),
+    Revert(
+        "SWEEP", "闪光进程又不理会屏幕信息",
+        "flash_process.py",
+        '                    flash_effect.request_monitor(command.get("monitor"))\n',
+        "                    pass\n",
+        "tests/test_the_sweep_bugs_stay_fixed.py::"
+        "test_the_flash_process_moves_its_window_to_the_game_monitor",
+        "父进程说了、子进程没听 —— 两端协议只接了一半",
+    ),
+    Revert(
+        "SWEEP", "闪光主循环又不去挪窗口",
+        "flash_process.py",
+        "            self._apply_pending_monitor()\n",
+        "",
+        "tests/test_the_sweep_bugs_stay_fixed.py::"
+        "test_the_flash_process_moves_its_window_to_the_game_monitor",
+        "命令线程记下了、没人去挪（挪窗口只许在主循环线程做）",
+    ),
+    Revert(
+        "SWEEP", "认不出游戏在哪块屏时不再退回主屏",
+        "flash_process.py",
+        "if device_name and name == device_name), primary)",
+        "if device_name and name == device_name), None)",
+        "tests/test_the_sweep_bugs_stay_fixed.py::"
+        "test_the_flash_process_moves_its_window_to_the_game_monitor",
+        "游戏没开 / 设备名对不上时必须是改前的行为（主屏），不能不知道画到哪",
+    ),
+    Revert(
+        "SWEEP", "换屏那一下又会激活白屏窗口",
+        "flash_process.py",
+        "                              win32con.SWP_SHOWWINDOW | win32con.SWP_NOACTIVATE)\n",
+        "                              win32con.SWP_SHOWWINDOW)\n",
+        "tests/test_the_sweep_bugs_stay_fixed.py::"
+        "test_the_flash_process_moves_its_window_to_the_game_monitor",
+        "不带 SWP_NOACTIVATE 的 SetWindowPos 会激活窗口 —— 打游戏中途被闪的那一刻抢走 CS2 的焦点（外审 S5 3/3）",
+    ),
+    Revert(
+        "SWEEP", "同一块屏上也挪窗口 / 重建画布",
+        "flash_process.py",
+        '            if target != getattr(self, "_window_device", primary):\n',
+        "            if True:\n",
+        "tests/test_the_sweep_bugs_stay_fixed.py::"
+        "test_the_flash_process_moves_its_window_to_the_game_monitor",
+        "单屏玩家 4:3 拉伸打独占全屏会切显示模式、矩形跟着变 ⇒ 按矩形比就会在被闪那一刻重建画布（外审 S5 复跑 1/3）",
+    ),
+    # 收尾那三件（同日）
+    Revert(
+        "SWEEP", "闪光总开关拨开又不启动监听",
+        "pages/flash_page.py",
+        "            if enabled and not manager.is_running:\n"
+        "                self._init_flash_process()\n",
+        "            if enabled and not manager.is_running:\n"
+        "                pass\n",
+        "tests/test_the_flash_page_speaks_two_words_for_two_things.py::"
+        "test_the_switch_itself_starts_and_clears_the_listener",
+        "界面说已开启、游戏里没闪光，得再点底栏「启动监听」或重启软件 —— 外审三次判「两个入口」的根因",
+    ),
+    Revert(
+        "SWEEP", "闪光总开关关掉又不清白屏",
+        "pages/flash_page.py",
+        "                manager.force_clear_flash()\n",
+        "                pass\n",
+        "tests/test_the_flash_page_speaks_two_words_for_two_things.py::"
+        "test_the_switch_itself_starts_and_clears_the_listener",
+        "GSI 那头关了就不再处理 ⇒ 正在显示的白屏停在屏幕上，直到断流看门狗",
+    ),
+    Revert(
+        "SWEEP", "闪光总开关关着时底栏又摆出「启动监听」",
+        "pages/flash_page.py",
+        '                self.action_bar.configure_primary("启动监听", self._enable_and_start, visible=enabled)\n',
+        '                self.action_bar.configure_primary("启动监听", self._enable_and_start, visible=True)\n',
+        "tests/test_the_flash_page_speaks_two_words_for_two_things.py::"
+        "test_the_button_names_the_second_step_and_points_at_the_first",
+        "开关就是启动之后，那颗按钮就是外审 6/6 说的第二个入口",
+    ),
+    Revert(
+        "SWEEP", "闪光进程启动时那次定位又会抢焦点",
+        "flash_process.py",
+        "            win32con.SWP_SHOWWINDOW | win32con.SWP_NOACTIVATE\n        )",
+        "            win32con.SWP_SHOWWINDOW\n        )",
+        "tests/test_the_sweep_bugs_stay_fixed.py::"
+        "test_every_flash_window_placement_leaves_the_game_focused",
+        "健康监控重启闪光进程时玩家可能正在游戏里 ⇒ 全屏置顶窗口被激活、CS2 丢焦点",
+    ),
+    Revert(
+        "SWEEP", "云同步又裸写 config.json",
+        "core/cloud/config_sync.py",
+        '            with open(tmp, "w", encoding="utf-8") as f:\n',
+        '            with open(path, "w", encoding="utf-8") as f:\n',
+        "tests/test_cloud_config_sync.py::"
+        "test_a_cloud_pull_that_fails_mid_write_leaves_the_config_intact",
+        "open('w') 先截断再写 ⇒ 写到一半出错 / 断电，整份配置就没了",
     ),
 ]
 

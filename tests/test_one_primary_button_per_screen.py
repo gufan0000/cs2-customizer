@@ -145,7 +145,11 @@ KNOWN_DUPLICATE_PRIMARIES: dict[str, tuple[str, int]] = {}
 #:   此刻隐身」的那一颗也算进来（`fp_pending` 非 None）。
 #:   ⇒ 加名单是把「判据看不见它了」记成「这一页没有它」——
 #:   **而那两件事在这张表上长得一模一样。**
-KNOWN_NO_PRIMARY = {"magnifier", "preset_center", "utility"}
+#:   · `flash`（2026-09-23 加入）：拨开总开关就启动监听之后，关着时底栏那颗「启动监听」
+#:     **不再摆出来** —— 外审三次（RN-192 6/6 / RN-644 / 这次 6/6）判它是「第二个开启入口」。
+#:     第一步就是状态卡里那颗总开关（同 `magnifier`）。⚠ 不是 RN-504 那种「没内容时隐身」：
+#:     开关开着但监听没起来时它会回来当补救入口，关着时它**真的没有事可做**。
+KNOWN_NO_PRIMARY = {"flash", "magnifier", "preset_center", "utility"}
 
 #: 产品注册的 28 个页面 id → 它的实现文件名（2026-08-30 批 31 加）。
 #:

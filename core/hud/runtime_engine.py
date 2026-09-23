@@ -362,7 +362,7 @@ class RuntimeHudEngine:
         return main
 
     def _get_active_weapon(self, data):
-        weapons = data.get("player", {}).get("weapons", {})
+        weapons = (data.get("player") or {}).get("weapons") or {}  # GSI 会发显式 null
         for w in weapons.values():
             if isinstance(w, dict) and w.get("state") == "active":
                 return w.get("name", "")

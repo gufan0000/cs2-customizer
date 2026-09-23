@@ -18,7 +18,8 @@
     ],
     "core.cloud.config_sync": [
       "CloudConfigSyncController",
-      "CloudSyncState"
+      "CloudSyncState",
+      "build_default_controller"
     ],
     "core.cloud.resource_provenance": [
       "ProvenanceStore",
@@ -53,7 +54,7 @@
       "parse_get_changelog_payload"
     ]
   },
-  "contract_total": 38,
+  "contract_total": 39,
   "external_use": {
     "account_auth_client": {
       "files": [
@@ -92,11 +93,13 @@
     },
     "core.cloud.config_sync": {
       "files": [
-        "tests/test_cloud_config_sync.py"
+        "tests/test_cloud_config_sync.py",
+        "tests/test_the_sweep_bugs_stay_fixed.py"
       ],
       "names": {
         "CloudConfigSyncController": 1,
-        "CloudSyncState": 1
+        "CloudSyncState": 1,
+        "build_default_controller": 1
       }
     },
     "core.cloud.resource_provenance": {
@@ -168,7 +171,7 @@
     "account_auth_client": 255,
     "account_help": 30,
     "account_session_store": 217,
-    "core.cloud.config_sync": 406,
+    "core.cloud.config_sync": 418,
     "core.cloud.resource_provenance": 80,
     "service_urls": 52,
     "update_runtime": 477

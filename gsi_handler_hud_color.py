@@ -159,7 +159,9 @@ class GSIHandlerHudColor:
             cfg_path = self._get_cfg_path()
             if cfg_path:
                 default_color = get_initial_runtime_color(config)
-                write_runtime_cfg(cfg_path, default_color)
+                with self._write_lock:
+                    write_runtime_cfg(cfg_path, default_color)
+                    self.current_color = default_color   # 再开时同色不重写，要记住盘上是什么
                 self.logger.info("[HUD规则] 已恢复默认HUD颜色")
         except Exception as e:
             self.logger.warning(f"[HUD规则] 恢复默认颜色失败: {e}")

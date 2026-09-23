@@ -129,34 +129,19 @@ class FlashEffectProcess:
             pygame.NOFRAME | pygame.SRCALPHA
         )
         pygame.display.set_caption("Flash_Effect")
-        
-        # 获取窗口句柄并设置属性
-        hwnd = pygame.display.get_wm_info()["window"]
-        
-        # 设置扩展窗口样式
-        ex_style = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
-        win32gui.SetWindowLong(
-            hwnd, 
-            win32con.GWL_EXSTYLE, 
-            ex_style | win32con.WS_EX_LAYERED | win32con.WS_EX_TRANSPARENT | win32con.WS_EX_TOOLWINDOW
-        )
-        
-        # 设置透明颜色
-        user32 = windll.user32
 
-        def RGB(r, g, b):
-            return r | (g << 8) | (b << 16)
+        hwnd = self._style_window()
 
-        user32.SetLayeredWindowAttributes(hwnd, RGB(0, 0, 0), 0, win32con.LWA_COLORKEY)
-        
         # 明确设置窗口大小和位置到完整屏幕
+        # ⛔ SWP_NOACTIVATE：这里不只在开软件时跑 —— 健康监控重启闪光进程时玩家可能正在游戏里，
+        #    不带它会激活这个全屏窗口、抢走 CS2 的焦点（同换屏那一下，外审 S5）。断点 `--only SWEEP`。
         win32gui.SetWindowPos(
-            hwnd, 
-            win32con.HWND_TOPMOST, 
+            hwnd,
+            win32con.HWND_TOPMOST,
             0, 0, screen_width, screen_height,
-            win32con.SWP_SHOWWINDOW
+            win32con.SWP_SHOWWINDOW | win32con.SWP_NOACTIVATE
         )
-        
+
         # 验证窗口位置和大小
         rect = win32gui.GetWindowRect(hwnd)
         print(f"闪光窗口位置和大小: 左={rect[0]}, 上={rect[1]}, 右={rect[2]}, 下={rect[3]}")
@@ -165,6 +150,58 @@ class FlashEffectProcess:
         self.is_running = True
         print("闪光效果窗口初始化完成")
         
+    def _style_window(self):
+        """点击穿透 + 黑色透明 + 不进任务栏。换屏重建画布之后要再来一遍。"""
+        hwnd = pygame.display.get_wm_info()["window"]
+        ex_style = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
+        win32gui.SetWindowLong(
+            hwnd,
+            win32con.GWL_EXSTYLE,
+            ex_style | win32con.WS_EX_LAYERED | win32con.WS_EX_TRANSPARENT | win32con.WS_EX_TOOLWINDOW
+        )
+        # 透明色：RGB(0, 0, 0)
+        windll.user32.SetLayeredWindowAttributes(hwnd, 0, 0, win32con.LWA_COLORKEY)
+        return hwnd
+
+    def request_monitor(self, device_name):
+        """命令线程只记下「挪到哪块屏」；真正挪窗口在主循环里做（同 `shutdown` 那条：
+        pygame 显示操作不许跨线程）。`None` = 主屏。"""
+        self._pending_monitor = (device_name,)
+
+    def _apply_pending_monitor(self):
+        """⛔ 游戏开在副屏时闪光要盖在副屏上 —— 准心 / 击杀图标早就按游戏所在屏画了，
+        闪光是被落下的那一个（以前钉在 (0,0)，只盖主屏）。断点 `--only SWEEP`。"""
+        pending = getattr(self, "_pending_monitor", None)
+        if pending is None:
+            return
+        self._pending_monitor = None
+        try:
+            monitors = _list_monitors()
+            primary = next((name for name, _rect, is_primary in monitors if is_primary), None)
+            target = pending[0] if any(name == pending[0] for name, _r, _p in monitors) else primary
+            # ⛔ 只认「换了哪块屏」，不认「这块屏的矩形变没变」：4:3 拉伸打独占全屏会切显示模式，
+            #    矩形跟着变 —— 按矩形比就会在同一块屏上重建画布，单屏用户也中招（外审 S5 复跑 1/3）。
+            #    ⇒ 单屏用户永远是同一块屏，窗口一步不动 = 改前行为。断点 `--only SWEEP`。
+            if target != getattr(self, "_window_device", primary):
+                self._move_to(monitor_rect(target, monitors))
+                self._window_device = target
+        except Exception as e:   # 认屏失败就留在原地（= 改前的行为），绝不能把主循环带走
+            print(f"闪光窗口换屏失败，留在原处: {e}")
+
+    def _move_to(self, rect):
+        x, y, w, h = rect
+        if (w, h) != (self.screen_width, self.screen_height):
+            # 那块屏分辨率不同 ⇒ 画布按它重建（缓存画布按尺寸自己重建，图片不按屏幕缩放）
+            self.overlay_win = pygame.display.set_mode((w, h), pygame.NOFRAME | pygame.SRCALPHA)
+            self.screen_width, self.screen_height = w, h
+        hwnd = self._style_window()
+        # ⛔ SWP_NOACTIVATE：这一下发生在**打游戏中途、被闪的那一刻**；不带它 SetWindowPos 会激活窗口，
+        #    把焦点从 CS2 抢走（独占全屏下可能直接被最小化）。外审 S5 3/3 指出。断点 `--only SWEEP`。
+        win32gui.SetWindowPos(hwnd, win32con.HWND_TOPMOST, x, y, w, h,
+                              win32con.SWP_SHOWWINDOW | win32con.SWP_NOACTIVATE)
+        self.needs_redraw = True
+        print(f"闪光窗口挪到游戏所在屏: {rect}")
+
     def load_image(self, image_path):
         """加载闪光图片，强制控制尺寸"""
         print(f"尝试加载图片: {image_path}")
@@ -347,7 +384,8 @@ class FlashEffectProcess:
         
         while self.is_running:
             current_time = time.time()
-            
+            self._apply_pending_monitor()
+
             # 检测闪光值变化
             if self.flash_value != last_flash_value:
                 # 闪光开始 - 从0变为非0
@@ -941,6 +979,24 @@ class FlashEffectProcess:
         self.is_running = False
 
 
+def _list_monitors():
+    """[(GDI 设备名, (x, y, w, h) 物理像素, 是否主屏)]。本进程是 Per-Monitor DPI 感知，坐标即物理像素。"""
+    import win32api
+
+    out = []
+    for handle, _dc, _rect in win32api.EnumDisplayMonitors():
+        info = win32api.GetMonitorInfo(handle)
+        left, top, right, bottom = info.get("Monitor")
+        out.append((info.get("Device"), (left, top, right - left, bottom - top), bool(info.get("Flags", 0) & 1)))
+    return out
+
+
+def monitor_rect(device_name, monitors):
+    """按设备名认屏；认不出（游戏没开 / 名字对不上）一律退回主屏 —— 即改前的行为。"""
+    primary = next((rect for _name, rect, is_primary in monitors if is_primary), None)
+    return next((rect for name, rect, _p in monitors if device_name and name == device_name), primary)
+
+
 #: 每积累这么多次「队列空」就查一次父进程还在不在。
 #: 0.05s 超时 × 20 ≈ 1 秒查一次，父进程被强杀后约 1s 内本进程自行退出。
 _PARENT_CHECK_EVERY_EMPTIES = 20
@@ -993,6 +1049,8 @@ def process_commands(command_queue, flash_effect):
             # 闪光值更新命令，高优先级处理
             elif command.get("type") == "update_flash":
                 flash_value = command.get("value", 0)
+                if "monitor" in command:
+                    flash_effect.request_monitor(command.get("monitor"))
 
                 if flash_value > 0 and flash_effect.flash_value == 0:
                     flash_effect.is_fading_in = True

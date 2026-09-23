@@ -180,6 +180,9 @@ _PAGE_IDS = {
     "screen_effects_page": "screen_effects",
     "advanced_page": "advanced",
     "fun_page": "fun_afterlife",
+    # 2026-09-23：闪光白屏跟游戏走副屏那次，flash_process_manager 开始 import 准心的认屏实现，
+    # 两跳探测才第一次够到这一页 —— 它一直画在游戏上，一直没表态。
+    "flash_page": "flash",
 }
 
 

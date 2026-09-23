@@ -34,6 +34,7 @@ from core.audio.special_events import (
     styles_attr,
 )
 from core.gun_sound_profiles import (
+    MAX_GUN_SOUND_VARIANTS,
     SUPPORTED_GUN_SOUND_PROFILE_LIST,
     gun_sound_style_enabled,
     is_gun_sound_master_enabled,
@@ -42,9 +43,8 @@ from core.audio.audio_event_timeline import AudioEvent, get_audio_event_timeline
 from core.audio.audio_playback_policy import PlaybackRequest, decide_channel_action, resolve_priority
 from core.utils.logger import get_logger
 
-#: 一个枪声风格最多装几个取样（含第一个）。与枪声通道池同数：5 条通道轮转，
-#: 5 个取样已经保证连续两发不同、五发内不重样；再多只是吃 `_max_sounds` 的预算。
-MAX_GUN_SOUND_VARIANTS = 5
+#: `MAX_GUN_SOUND_VARIANTS` 已挪去 `core/gun_sound_profiles.py`（设置页要说出这个数，
+#: 而它 import 这里就会把 pygame 一起拖进来）。此处 re-export，旧调用方不受影响。
 
 #: 抬缓存上限时给高基数那一层（击杀音/语音/切枪/换弹）留的格数。
 #: 50 是 `_max_sounds` 的老值、也是那一层在本机实测的量级（UP-060 注释里的 36~50）。
@@ -450,6 +450,40 @@ class AudioManager:
         }
         return mapping.get(channel_type)
 
+    def _forward_to_voice(self, config, key, channel_type, event_type, info, group=None):
+        """按「音效转发」开关把这一段也送进游戏语音。
+
+        ⛔ 以前这段只写在 play_sound 里，而回合音效走的是 play_sound_with_fade ——
+           8 个回合事件（含 MVP、比赛结束）一个都没转发，页面上「回合音效」那个
+           勾选框是假的。收成一个函数，两条出声路径都调它。断点 `--only VOX`。
+        """
+        if not getattr(config, "sfx_forwarding_enabled", False):
+            return
+        sfx_type = self._map_channel_to_sfx_type(channel_type)
+        if not (sfx_type and getattr(config, "sfx_forwarding_options", {}).get(sfx_type, False)):
+            return
+        obj = info.sound if info.loaded else None
+        if not obj:
+            self._record_timeline_event(
+                action="forward", key=key, channel_type=channel_type,
+                event_type=event_type, reason="not_loaded", success=False,
+            )
+            return
+        volume = self._resolve_play_volume(config, channel_type, info)
+        try:
+            from voice_output_manager import get_voice_output_manager
+
+            extra = {"group": group} if group else {}
+            forwarded = get_voice_output_manager().play_pygame_sound_to_voice(obj, volume, **extra)
+            if not forwarded:
+                # 总开关关着 / VB-Cable 没装时它是 `return False`（只留一行 debug）
+                self._record_timeline_event(
+                    action="forward", key=key, channel_type=channel_type,
+                    event_type=event_type, reason="voice_output_refused", success=False,
+                )
+        except Exception as e:
+            self.logger.error(f"Forward failed: {e}")
+
     def _resolve_play_volume(self, config, channel_type: str, info=None) -> float:
         """计算最终播放音量。
 
@@ -649,7 +683,6 @@ class AudioManager:
         allow_preempt: bool | None = None,
     ) -> bool:
         from config import config
-        from voice_output_manager import get_voice_output_manager
 
         resolved_event_type = str(event_type or channel_type or "default")
         profile = str(getattr(config, "audio_policy_profile", "kill_preempt_v1") or "kill_preempt_v1")
@@ -684,30 +717,6 @@ class AudioManager:
                 success=False,
             )
             return False
-
-        if getattr(config, "sfx_forwarding_enabled", False):
-            sfx_type = self._map_channel_to_sfx_type(channel_type)
-            if sfx_type and getattr(config, "sfx_forwarding_options", {}).get(sfx_type, False):
-                obj = info.sound if info.loaded else None
-                if obj:
-                    volume = self._resolve_play_volume(config, channel_type, info)
-                    try:
-                        # 注意保持这一步在 self._playback_lock **之外**：
-                        # play_pygame_sound_to_voice 会按 PTT 键并写 VB-Cable，
-                        # 挪进锁里会把所有播放串行化，表现成卡顿/掉声。
-                        get_voice_output_manager().play_pygame_sound_to_voice(obj, volume)
-                    except Exception as e:
-                        self.logger.error(f"Forward failed: {e}")
-                else:
-                    # 以前这里既不加载也不记账，日志里查不到任何痕迹
-                    self._record_timeline_event(
-                        action="forward",
-                        key=key,
-                        channel_type=channel_type,
-                        event_type=resolved_event_type,
-                        reason="not_loaded",
-                        success=False,
-                    )
 
         from config import config
         try:
@@ -794,6 +803,11 @@ class AudioManager:
                 success=True,
                 meta={"priority": resolved_priority, "profile": profile},
             )
+            # 本地真的开播了才转发 —— 以前转发写在策略层判断**之前**，本地被判「丢弃」
+            # 或拿不到通道的声音队友照样听得到（与 play_sound_with_fade 同一条规矩）。
+            # 注意保持在 self._playback_lock **之外**：转发会按 PTT 键并写 VB-Cable，
+            # 挪进锁里会把所有播放串行化，表现成卡顿/掉声。
+            self._forward_to_voice(config, key, channel_type, resolved_event_type, info)
             return True
         except Exception as e:
             self._notify_error(f"Play failed {key}: {e}")
@@ -892,7 +906,15 @@ class AudioManager:
                 obj = info.sound if info.loaded else None
                 if obj:
                     try:
-                        get_voice_output_manager().play_pygame_sound_to_voice(obj, getattr(config, "volume", self._volume))
+                        forwarded = get_voice_output_manager().play_pygame_sound_to_voice(obj, getattr(config, "volume", self._volume))
+                        if not forwarded:
+                            # 同 play_sound：拒绝转发也要记一笔，否则排障时
+                            # 「队友没听到」和「根本没转发」在台账里长得一样。
+                            self._record_timeline_event(
+                                action="forward", key=key, channel_type="kill_voice",
+                                event_type="kill_voice",
+                                reason="voice_output_refused", success=False,
+                            )
                     except Exception as e:
                         self.logger.error(f"Voice forward failed: {e}")
                 else:
@@ -952,7 +974,15 @@ class AudioManager:
             channel.play(info.sound)
         except Exception as e:
             self.logger.error(f"Fade start failed {key}: {e}")
-            return
+            return False
+
+        # 本地真的开播了才转发（被策略层拒掉的不转发，队友听到的 = 自己听到的）。
+        # group=channel_type：回合音效本地共用一个通道、后来的顶掉先来的，
+        # 语音那边照同样的规矩，否则胜利和 MVP 会在队友耳朵里叠成一团。
+        self._forward_to_voice(
+            config, key, channel_type, str(event_type or channel_type), info,
+            group=channel_type,
+        )
 
         # QA-016: 登记这次播放对通道的归属。
         # 五个回合音效（start/action/win/lose/mvp）共用同一个 round_sound 通道，
@@ -1020,6 +1050,9 @@ class AudioManager:
         th = threading.Thread(target=fade_in, name="AudioFadeIn", daemon=True)
         self.fade_threads[(key, channel)] = th
         th.start()
+        # ⛔ 以前这里没有 return（落到函数末尾 = None），调用方 _play_event 拿它判成败
+        #    ⇒ 每次回合音效真播出来了，日志却写「未播出」。
+        return True
 
     def _clear_fade_effect(self, key: str, channel):
         t = self.fade_timers.pop((key, channel), None)

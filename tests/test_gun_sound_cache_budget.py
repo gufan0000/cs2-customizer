@@ -21,10 +21,15 @@ from pathlib import Path
 
 from core.audio.audio_manager import (
     GUN_SOUND_CACHE_HEADROOM,
-    MAX_GUN_SOUND_VARIANTS,
     AudioManager,
 )
-from core.gun_sound_profiles import SUPPORTED_GUN_SOUND_PROFILE_LIST
+# ⚠ RN-676：`MAX_GUN_SOUND_VARIANTS` 搬到 `gun_sound_profiles` 了（设置页要说出这个数，
+#   而 import audio_manager 会把 pygame 一起拖进来）。从**新家**取，别从 re-export 取 ——
+#   否则 X7 的契约快照会一直把它算成 audio_manager 的对外面。
+from core.gun_sound_profiles import (
+    MAX_GUN_SOUND_VARIANTS,
+    SUPPORTED_GUN_SOUND_PROFILE_LIST,
+)
 
 REPO = Path(__file__).resolve().parents[1]
 
