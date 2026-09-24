@@ -72,7 +72,15 @@ def record() -> dict:
     real_timer_start = QTimer.start
     real_single_shot = QTimer.singleShot
 
+    started_ids: set[int] = set()
+
     def timer_start(self, *a):
+        # ⚠ 批 116：**同一个定时器重启不是新定时器**。窗口构造期间被挪一下，moveEvent 会在
+        # 500ms 后重启「玩家 ID 检查」那个 3 秒定时器 —— 挪没挪取决于时序，于是常驻数 3/4 来回跳
+        # （实测 4 次里 2 次是 4），而总纲 §8 管的是「常驻了几个」，不是「start 了几次」。
+        if id(self) in started_ids:
+            return real_timer_start(self, *a)
+        started_ids.add(id(self))
         seen["定时器"].append(
             {"间隔ms": (a[0] if a else self.interval()), "单次": bool(self.isSingleShot())})
         return real_timer_start(self, *a)

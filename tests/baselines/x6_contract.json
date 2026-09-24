@@ -34,10 +34,15 @@
     "gsi_server": [
       "GSIServer",
       "PACKET_RECV_KEY",
-      "get_active_port"
+      "_listening_pid",
+      "data_queue",
+      "describe_port_owner",
+      "flask_app",
+      "get_active_port",
+      "get_receive_stats"
     ]
   },
-  "contract_total": 16,
+  "contract_total": 21,
   "external_use": {
     "gsi_handler_flash": {
       "files": [
@@ -61,10 +66,11 @@
     "gsi_handler_hud_color": {
       "files": [
         "main_widget.py",
-        "scripts/gsi_full_sim.py"
+        "scripts/gsi_full_sim.py",
+        "tests/test_the_sweep_bugs_stay_fixed.py"
       ],
       "names": {
-        "GSIHandlerHudColor": 2
+        "GSIHandlerHudColor": 3
       }
     },
     "gsi_handler_kills": {
@@ -76,11 +82,12 @@
         "tests/test_kill_feedback_channels_are_independent.py",
         "tests/test_kill_sound_loss_fixes.py",
         "tests/test_kill_weapon_survives_a_quick_switch.py",
+        "tests/test_kills_that_are_not_gunfire.py",
         "tests/test_kills_tracking_evict.py",
         "tests/test_melee_kill_config_actually_applies.py"
       ],
       "names": {
-        "GSIHandlerKills": 30,
+        "GSIHandlerKills": 31,
         "audio_manager": 1,
         "time": 5
       }
@@ -102,6 +109,7 @@
       "files": [
         "main_widget.py",
         "scripts/gsi_full_sim.py",
+        "tests/test_community_ticket_fixes.py",
         "tests/test_full_auto_guns_are_heard_every_shot.py",
         "tests/test_gsi_audio_handlers.py",
         "tests/test_gsi_replay_pipeline.py",
@@ -111,7 +119,7 @@
         "Controller": 1,
         "DEATH_SOUND_HOLD_DURATION": 1,
         "DEATH_SOUND_PEAK_MS": 1,
-        "GSIHandlerSounds": 20,
+        "GSIHandlerSounds": 23,
         "GUN_SOUND_PROFILES": 1
       }
     },
@@ -122,11 +130,14 @@
         "tests/test_gsi_audio_handlers.py",
         "tests/test_gsi_edge_loss_fixes.py",
         "tests/test_gsi_replay_pipeline.py",
-        "tests/test_special_sound_events.py"
+        "tests/test_kills_that_are_not_gunfire.py",
+        "tests/test_special_sound_events.py",
+        "tests/test_the_sweep_bugs_stay_fixed.py",
+        "tests/test_you_can_tell_where_the_game_link_breaks.py"
       ],
       "names": {
-        "GSIHandlerSpecial": 11,
-        "threading": 2
+        "GSIHandlerSpecial": 14,
+        "threading": 3
       }
     },
     "gsi_handler_stats": {
@@ -153,12 +164,18 @@
         "main_widget.py",
         "pages/about_page.py",
         "tests/test_about_diagnostics_gsi.py",
-        "tests/test_gun_sound_chain_after_the_in_game_test.py"
+        "tests/test_gun_sound_chain_after_the_in_game_test.py",
+        "tests/test_you_can_tell_where_the_game_link_breaks.py"
       ],
       "names": {
         "GSIServer": 2,
         "PACKET_RECV_KEY": 2,
-        "get_active_port": 1
+        "_listening_pid": 2,
+        "data_queue": 2,
+        "describe_port_owner": 1,
+        "flask_app": 2,
+        "get_active_port": 1,
+        "get_receive_stats": 2
       }
     }
   },
@@ -166,15 +183,15 @@
   "internal_only_modules": [],
   "loc": {
     "gsi_handler_flash": 141,
-    "gsi_handler_fun": 161,
-    "gsi_handler_hud_color": 189,
-    "gsi_handler_kills": 1093,
-    "gsi_handler_music": 278,
-    "gsi_handler_sounds": 593,
-    "gsi_handler_special": 722,
-    "gsi_handler_stats": 147,
+    "gsi_handler_fun": 158,
+    "gsi_handler_hud_color": 191,
+    "gsi_handler_kills": 1157,
+    "gsi_handler_music": 277,
+    "gsi_handler_sounds": 646,
+    "gsi_handler_special": 721,
+    "gsi_handler_stats": 148,
     "gsi_handler_utility": 736,
-    "gsi_server": 246
+    "gsi_server": 306
   },
   "reexport_only_modules": [],
   "surface": {
@@ -279,18 +296,23 @@
         "_drop_stats_lock",
         "_dropped_packets",
         "_last_drop_report",
+        "_receive_stats",
         "_startup_error",
         "data_queue",
         "flask_app",
         "logger"
       ],
       "functions": [
+        "_count_post",
+        "_listening_pid",
         "_persist_port_change",
         "_port_bindable",
         "_record_drop",
         "_select_port",
+        "describe_port_owner",
         "game_state_update",
         "get_active_port",
+        "get_receive_stats",
         "run_flask"
       ]
     }

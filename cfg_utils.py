@@ -150,6 +150,17 @@ def _iter_steam_library_paths(steam_root: str):
             yield path
 
 
+def _installdir_from_manifest(library_root: str) -> str:
+    """Steam 库里 CS2（appid 730）的 installdir；读不到返回空串。"""
+    manifest = os.path.join(library_root, "steamapps", "appmanifest_730.acf")
+    try:
+        with open(manifest, "r", encoding="utf-8", errors="replace") as f:
+            m = re.search(r'"installdir"\s*"([^"]+)"', f.read())
+    except OSError:
+        return ""
+    return m.group(1).strip() if m else ""
+
+
 def find_cs2_install_dir():
     """Find CS2 install directory across Steam default and library folders."""
     steam_roots = []
@@ -180,6 +191,13 @@ def find_cs2_install_dir():
 
     for steam_root in ordered_roots:
         for library_root in _iter_steam_library_paths(steam_root):
+            # 批 116：先问 Steam 自己记的目录名（appmanifest_730.acf 的 installdir），
+            # 猜名字只作兜底 —— 装在改过名的目录里时，猜名字永远找不到。
+            installdir = _installdir_from_manifest(library_root)
+            if installdir:
+                cs2_dir = os.path.join(library_root, "steamapps", "common", installdir)
+                if os.path.isdir(cs2_dir):
+                    return cs2_dir
             for game_folder in game_folder_candidates:
                 cs2_dir = os.path.join(library_root, "steamapps", "common", game_folder)
                 if os.path.isdir(cs2_dir):

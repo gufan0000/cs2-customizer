@@ -82,10 +82,11 @@ def test_system_status_strip_render_smoke(qapp, monkeypatch):
     gui_widget.MainWindow._refresh_system_status_strip(dummy)
     text = dummy.system_status_label.text()
     assert "联动服务已就绪" in text
-    assert dummy.basic_gsi_badge.text() == "GSI · 运行中"
+    # 批 116：「服务在跑」不再说成「运行中」（那和游戏推没推数据无关）；没有收包信息 ⇒ 等游戏
+    assert dummy.basic_gsi_badge.text() == "GSI · 等游戏"
     assert dummy.basic_audio_badge.text() == "音频 · 正常"
     chips = _visible_audio_status_chip_texts(dummy.basic_status_badge_label)
-    assert "GSI · 运行中" in chips
+    assert "GSI · 等游戏" in chips
     assert "音频 · 正常" in chips
 
     _dispose_widgets(

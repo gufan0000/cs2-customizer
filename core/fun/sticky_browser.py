@@ -25,6 +25,7 @@ import win32con
 import win32gui
 import win32process
 
+from core.foreground_game import PROCESSENTRY32 as _PROCESSENTRY32, TH32CS_SNAPPROCESS
 from core.utils.logger import get_logger
 
 logger = get_logger("StickyBrowser")
@@ -52,23 +53,6 @@ MONITOR_DEFAULTTOPRIMARY = 1
 WM_APPCOMMAND = 0x0319
 APPCOMMAND_MEDIA_PLAY = 46
 APPCOMMAND_MEDIA_PAUSE = 47
-
-TH32CS_SNAPPROCESS = 0x00000002
-
-
-class _PROCESSENTRY32(ctypes.Structure):
-    _fields_ = [
-        ("dwSize", ctypes.c_ulong),
-        ("cntUsage", ctypes.c_ulong),
-        ("th32ProcessID", ctypes.c_ulong),
-        ("th32DefaultHeapID", ctypes.POINTER(ctypes.c_ulong)),
-        ("th32ModuleID", ctypes.c_ulong),
-        ("cntThreads", ctypes.c_ulong),
-        ("th32ParentProcessID", ctypes.c_ulong),
-        ("pcPriClassBase", ctypes.c_long),
-        ("dwFlags", ctypes.c_ulong),
-        ("szExeFile", ctypes.c_char * 260),
-    ]
 
 
 def process_tree_pids(root_pid):

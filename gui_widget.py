@@ -34,7 +34,7 @@ from screen_effect_overlay import ScreenEffectOverlayManager
 from core.audio.audio_resource_health import collect_audio_resource_health
 from core.gun_sound_profiles import sync_legacy_gun_sound_flags
 from core.page_traits import DEVICE_OWNING_PAGES
-from core.runtime.system_status_service import collect_runtime_status
+from core.runtime.system_status_service import GSI_LINK_TEXT, collect_runtime_status
 from pages.audio_status_badge import create_badge_label, render_badges
 from source_backup_manager import run_startup_source_backup
 
@@ -480,20 +480,15 @@ class MainWindow(QMainWindow):
             audio_ok = bool(audio.get("ok"))
             config_dirty = bool(status.config_dirty)
 
+            # 批 116：徽章说的是「断在哪一环」，不再是「处理线程活着」（那句和游戏推没推数据无关）
+            gsi_link = str(getattr(status, "gsi_link", "") or ("no_game" if gsi_running else "stopped"))
+            link_word, link_level, link_fix = GSI_LINK_TEXT.get(gsi_link, GSI_LINK_TEXT["stopped"])
+            gsi_error = str(gsi.get("startup_error") or "")
             if gsi_badge is not None:
-                # 对标修缮：GSI 启动失败（如端口被占）必须可见且带原因——
-                # 此前 startup_error 已被采集但无任何 UI 消费，用户只见"未运行"。
-                gsi_error = str(gsi.get("startup_error") or "")
-                if gsi_error:
-                    self._set_badge_label_state(gsi_badge, "GSI · 启动失败", "danger")
-                    gsi_badge.setToolTip(f"{gsi_error}\n处理后在高级设置重选 CS2 目录或重启软件即可恢复。")
-                else:
-                    self._set_badge_label_state(
-                        gsi_badge,
-                        "GSI · 运行中" if gsi_running else "GSI · 未运行",
-                        "positive" if gsi_running else "info",
-                    )
-                    gsi_badge.setToolTip("")
+                self._set_badge_label_state(gsi_badge, f"GSI · {link_word}", link_level)
+                # 对标修缮：GSI 启动失败（如端口被占）必须可见且带原因
+                gsi_badge.setToolTip(
+                    f"{gsi_error}\n处理后在高级设置重选 CS2 目录或重启软件即可恢复。" if gsi_error else link_fix)
 
             if audio_badge is not None:
                 audio_text = "音频 · 正常" if audio_ok else (
@@ -514,6 +509,8 @@ class MainWindow(QMainWindow):
 
             if status.level == "error" and status.last_error:
                 runtime_summary = f"系统状态异常：{status.last_error}。"
+            elif gsi_link in ("silent", "cfg_missing", "cfg_port"):
+                runtime_summary = link_fix
             elif not audio_ok:
                 # ⭐⭐ RN-531（批 59）：原先只报数不说去哪 ——
                 #   外审 6 发以上反复是同一句「开屏即告警却无一键修复入口，
@@ -529,14 +526,13 @@ class MainWindow(QMainWindow):
                     runtime_summary = f"音频资源需要检查 —— {fix_hint}"
             elif config_dirty:
                 runtime_summary = "检测到未保存的配置修改，确认无误后记得保存。"
-            elif gsi_running:
-                runtime_summary = "系统状态正常，联动服务已就绪。"
             else:
-                runtime_summary = "系统状态正常，未进入游戏时 GSI 未运行属于正常情况。"
+                # 旧句「未进入游戏时 GSI 未运行属于正常情况」把软件自己的服务和游戏混成一件事
+                runtime_summary = link_fix or "系统状态正常。"
 
             detail_text = " | ".join(
                 [
-                    "GSI: 运行中" if gsi_running else "GSI: 未运行",
+                    f"GSI: {link_word}",
                     "音频: 正常" if audio_ok else (
                         f"音频: 异常{audio_issue_count}" if audio_issue_count else "音频: 异常"
                     ),
@@ -592,7 +588,7 @@ class MainWindow(QMainWindow):
             return
         runtime_summary = str(getattr(self, "_basic_runtime_summary", "") or "").strip()
         if not runtime_summary:
-            runtime_summary = "状态会在这里同步更新，未进入游戏时 GSI 未运行属于正常情况。"
+            runtime_summary = "状态会在这里同步更新。"
         status_label.setText(runtime_summary)
         detail_text = str(getattr(self, "_basic_runtime_status_detail", "") or "").strip()
         status_label.setToolTip(detail_text or runtime_summary)
@@ -2030,7 +2026,7 @@ class MainWindow(QMainWindow):
         self._set_badge_label_state(self.basic_config_badge, "配置 · 待刷新", "info")
         self.basic_config_badge.hide()
 
-        self.system_status_label = QLabel("状态会在这里同步更新，未进入游戏时 GSI 未运行属于正常情况。")
+        self.system_status_label = QLabel("状态会在这里同步更新。")
         self.system_status_label.setObjectName("hintLabel")
         self.system_status_label.setWordWrap(True)
         status_layout.addWidget(self.system_status_label)

@@ -71,10 +71,14 @@ class GSIHandlerSpecial:
         
         # 初始化连续帧计数器
         self.frame_counter = 0
-        self.debug_mode = bool(getattr(config, "gsi_debug_mode", False))
-        
+
         self.logger.info("[特殊音效] GSI处理器已初始化")
     
+    @property
+    def debug_mode(self):
+        """跟高级设置的「调试模式」走（批 116：原来读从未定义的 `gsi_debug_mode`，两处调试日志永远不出）。"""
+        return bool(getattr(config, "debug_mode", False))
+
     def process_data(self, data):
         """处理GSI数据"""
         self.frame_counter += 1

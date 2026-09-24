@@ -178,6 +178,16 @@ class Logger:
         else:
             self.info("[日志] 文件日志级别 = INFO（如需音频事件审计请开启 debug_file_log）")
 
+    def set_file_debug(self, enabled: bool) -> None:
+        """运行中切换文件日志级别（批 116：高级设置的「调试模式」以前开了什么都不变）。"""
+        self._debug_file_log = bool(enabled)
+        for handler in self.logger.handlers:
+            if isinstance(handler, RotatingFileHandler):
+                handler.setLevel(logging.DEBUG if enabled else logging.INFO)
+        # 与启动时同一行：audio_event_audit.py 靠它判断这份日志从哪儿起是 DEBUG 级
+        self.info("[日志] 文件日志级别 = DEBUG（排障模式）" if enabled
+                  else "[日志] 文件日志级别 = INFO（如需音频事件审计请开启 debug_file_log）")
+
     def start_maintenance(self):
         """显式启动日志维护（清理过期文件）。
 

@@ -12,6 +12,10 @@ def test_collect_runtime_status_warn_when_audio_unhealthy(monkeypatch):
         "collect_audio_resource_health",
         lambda: {"summary": {"ok": False, "missing_directories": 1, "invalid_config_refs": 2, "empty_style_dirs": 0}},
     )
+    # 批 116：联动链路的告警排在音频前面；这条量的是音频，把链路钉在「配置装好、游戏没开」
+    monkeypatch.setattr(system_status_service, "check_gsi_cfg", lambda *_a: {"status": "ok"})
+    import core.foreground_game
+    monkeypatch.setattr(core.foreground_game, "game_is_running", lambda *_a: False)  # 跑测试时开着 CS2 也不变
     page = SimpleNamespace(_dirty=True)
     main_window = SimpleNamespace(
         gsi_server=SimpleNamespace(_running=True, flask_thread=None, startup_error="", handlers=[1, 2]),

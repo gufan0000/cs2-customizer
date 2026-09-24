@@ -91,6 +91,51 @@ def game_is_in_foreground(process_names=GAME_PROCESS_NAMES) -> bool:
     return name in {str(item).lower() for item in process_names}
 
 
+TH32CS_SNAPPROCESS = 0x00000002
+
+
+class PROCESSENTRY32(ctypes.Structure):
+    """Toolhelp32 进程快照的一条（整活浏览器的进程树也用这一份）。"""
+    _fields_ = [
+        ("dwSize", ctypes.c_ulong),
+        ("cntUsage", ctypes.c_ulong),
+        ("th32ProcessID", ctypes.c_ulong),
+        ("th32DefaultHeapID", ctypes.POINTER(ctypes.c_ulong)),
+        ("th32ModuleID", ctypes.c_ulong),
+        ("cntThreads", ctypes.c_ulong),
+        ("th32ParentProcessID", ctypes.c_ulong),
+        ("pcPriClassBase", ctypes.c_long),
+        ("dwFlags", ctypes.c_ulong),
+        ("szExeFile", ctypes.c_char * 260),
+    ]
+
+
+def game_is_running(process_names=GAME_PROCESS_NAMES):
+    """游戏进程在不在（不管在不在前台）。**判断不出来返回 None** —— 调用方别把它当成「没开」。
+
+    批 116：用来分「CS2 没开」和「CS2 开着却没推数据」—— 后者才是要修的断点。
+    """
+    wanted = {str(item).lower() for item in process_names}
+    try:
+        kernel32 = _kernel32()
+        snapshot = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+        if snapshot in (-1, 0xFFFFFFFF, None):
+            return None
+        try:
+            entry = PROCESSENTRY32()
+            entry.dwSize = ctypes.sizeof(PROCESSENTRY32)
+            ok = kernel32.Process32First(snapshot, ctypes.byref(entry))
+            while ok:
+                if entry.szExeFile.decode("mbcs", "replace").lower() in wanted:
+                    return True
+                ok = kernel32.Process32Next(snapshot, ctypes.byref(entry))
+        finally:
+            kernel32.CloseHandle(snapshot)
+        return False
+    except Exception:
+        return None
+
+
 def reset_cache() -> None:
     """判据用：把 pid→名字的缓存清空，免得一条判据的替身喂给下一条。"""
     _pid_name_cache.clear()

@@ -766,7 +766,7 @@ REVERTS = [
     Revert(
         'QA', '关于页 GSI 状态又去 import 不存在的名字',
         'pages/about_page.py',
-        '            from core.runtime.system_status_service import collect_gsi_status\n'
+        # 批 116：上面多 import 了链路判定那几个名字 ⇒ 锚点只留 get_active_port 起的两行
         '            from gsi_server import get_active_port\n'
         '\n'
         '            status = collect_gsi_status(self.window())',
@@ -7299,8 +7299,10 @@ REVERTS = [
     Revert(
         "RN", "导入向导第 2 步又变回一块什么都不说的黑框",
         "pages/audio_import_wizard_page.py",
-        "        self.preview_text.setPlaceholderText(",
-        "        _unused_placeholder = (",
+        # 批 116 整套回退验证逮到：RN-674 把空状态从占位挪进了正文、判据改量正文，
+        # 这条断点还在拆 setPlaceholderText ⇒ 拆了正文照在，**空转**。锚点跟到正文那一处。
+        "        self.preview_text.setPlainText(\n            f\"{self._EMPTY_LEAD}\\n\\n\"\n",
+        "        self.preview_text.setPlainText(\"\") or (\n            f\"{self._EMPTY_LEAD}\\n\\n\"\n",
         "tests/test_expert_audio_pages_catch_you_when_empty.py::test_the_preview_box_says_what_will_appear_there",
         "RN-520：扫描之前那是一整块 400px 高的纯黑框，外审 4/6 报「易误以为卡死」。"
         "⭐ **一个什么都不说的框，和一个坏掉的框长得一模一样。**",
@@ -10078,6 +10080,119 @@ Revert(
         "        own_steamid = current_steamid\n",
         "tests/test_kills_that_are_not_gunfire.py::test_the_first_remembered_steamid_comes_from_provider",
         "开软件时恰好在观战 ⇒ 把队友记成「我」并落盘，之后每局都认错",
+    ),
+    # ============================================ 批 116：「软件没反应」时看得出断在哪一环
+    Revert(
+        "LINK", "收包不计数",
+        "gsi_server.py",
+        "    _count_post(isinstance(data, dict))\n",
+        "",
+        "tests/test_you_can_tell_where_the_game_link_breaks.py::test_posts_are_counted_and_garbage_is_counted_separately",
+        "状态又只能看「处理线程活着」—— 和 CS2 推没推数据无关",
+    ),
+    Revert(
+        "LINK", "收包计数没进状态取值点",
+        "core/runtime/system_status_service.py",
+        "            status.update(server_module.get_receive_stats())\n",
+        "            pass\n",
+        "tests/test_you_can_tell_where_the_game_link_breaks.py::test_the_status_carries_the_receive_counters",
+        "服务端数了、首页和诊断拿不到 —— 等于没数",
+    ),
+    Revert(
+        "LINK", "服务在跑就说已连接",
+        "core/runtime/system_status_service.py",
+        '        return "connected"\n',
+        '        return "connected"\n    return "connected"\n',
+        "tests/test_you_can_tell_where_the_game_link_breaks.py::test_the_first_broken_link_is_named",
+        "旧的「GSI · 运行中」换了个词：全无反应时状态仍说一切正常（gsi_server.py 自己写下的事故形状）",
+    ),
+    Revert(
+        "LINK", "不看 CS2 开没开",
+        "core/runtime/system_status_service.py",
+        '    return "silent" if game_running else "no_game"\n',
+        '    return "no_game"\n',
+        "tests/test_you_can_tell_where_the_game_link_breaks.py::test_the_first_broken_link_is_named",
+        "「CS2 开着却没推」和「还没开游戏」说成同一句 —— 真正要修的那一格（代理 / 没重启）永远不出现",
+    ),
+    Revert(
+        "LINK", "不看游戏里的配置装没装",
+        "core/runtime/system_status_service.py",
+        '    if cfg_status in ("not_configured", "missing", "unreadable"):\n        return "cfg_missing"\n',
+        "",
+        "tests/test_you_can_tell_where_the_game_link_breaks.py::test_the_first_broken_link_is_named",
+        "配置没装上时让用户去查代理 —— 指错了断点",
+    ),
+    Revert(
+        "LINK", "游戏里的配置写着旧端口也算装好",
+        "core/runtime/system_status_service.py",
+        "    if active_port and port and int(port) != int(active_port):\n",
+        "    if False:\n",
+        "tests/test_you_can_tell_where_the_game_link_breaks.py::test_the_game_side_config_is_checked_for_existence_and_port",
+        "端口顺延到 3001、游戏还往 3000 推（QA-003 那条事故）⇒ 状态说「装好了」",
+    ),
+    Revert(
+        "LINK", "首页徽章又只看服务线程",
+        "gui_widget.py",
+        '                self._set_badge_label_state(gsi_badge, f"GSI · {link_word}", link_level)\n',
+        '                self._set_badge_label_state(gsi_badge, "GSI · 运行中" if gsi_running else "GSI · 未运行", link_level)\n',
+        "tests/test_you_can_tell_where_the_game_link_breaks.py::test_the_home_badge_follows_the_link_state",
+        "取值点算对了、首页没用上",
+    ),
+    Revert(
+        "LINK", "联动断了排在缺音频后面",
+        "gui_widget.py",
+        '            elif gsi_link in ("silent", "cfg_missing", "cfg_port"):\n                runtime_summary = link_fix\n',
+        "",
+        "tests/test_you_can_tell_where_the_game_link_breaks.py::test_the_home_badge_follows_the_link_state",
+        "音频也有点小毛病时，那一句只说音频 —— 用户去补音频，真正的断点（没收到数据）没人提",
+    ),
+    Revert(
+        "LINK", "诊断信息里没有收包数",
+        "pages/about_page.py",
+        "                        f\" | 收包 {status.get('posts', 0)}\"\n",
+        "",
+        "tests/test_you_can_tell_where_the_game_link_breaks.py::test_the_diagnostics_line_tells_support_whether_cs2_is_pushing",
+        "客服拿到的那一行又看不出 CS2 推没推",
+    ),
+    Revert(
+        "LINK", "调试模式又是死开关",
+        "pages/advanced_page.py",
+        "        get_logger().set_file_debug(enabled)\n",
+        "",
+        "tests/test_you_can_tell_where_the_game_link_breaks.py::test_the_debug_mode_actually_turns_on_debug_file_logging",
+        "输完密码弹「已启用」，日志一个字都不多（报告 §3.3 的第三条缺陷）",
+    ),
+    Revert(
+        "LINK", "GSI 调试转储又读一个不存在的键",
+        "gsi_handler_special.py",
+        '        return bool(getattr(config, "debug_mode", False))\n',
+        '        return bool(getattr(config, "gsi_debug_mode", False))\n',
+        "tests/test_you_can_tell_where_the_game_link_breaks.py::test_the_special_handler_debug_dumps_follow_the_same_switch",
+        "`gsi_debug_mode` 从未定义 ⇒ 两处调试日志永远不出",
+    ),
+    Revert(
+        "LINK", "查端口占用者会闪黑窗",
+        "gsi_server.py",
+        '    no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)   # §3：打包后别闪黑窗\n',
+        "    no_window = 0\n",
+        "tests/test_you_can_tell_where_the_game_link_breaks.py::test_the_port_owner_is_named",
+        "打包成窗口程序后 netstat / tasklist 各闪一个控制台（CLAUDE.md §3）",
+    ),
+    Revert(
+        "LINK", "CS2 目录又只靠猜名字",
+        "cfg_utils.py",
+        "            installdir = _installdir_from_manifest(library_root)\n",
+        '            installdir = ""\n',
+        "tests/test_you_can_tell_where_the_game_link_breaks.py::test_the_cs2_folder_is_found_by_what_steam_recorded",
+        "装在改过名的目录里 ⇒ 永远找不到，只能手选",
+    ),
+    Revert(
+        "LINK", "EcoQoS 没点名执行速度",
+        "core/runtime/process_power.py",
+        "            PROCESS_POWER_THROTTLING_CURRENT_VERSION, PROCESS_POWER_THROTTLING_EXECUTION_SPEED, 0)\n",
+        "            PROCESS_POWER_THROTTLING_CURRENT_VERSION, 0, 0)\n",
+        "tests/test_you_can_tell_where_the_game_link_breaks.py::test_eco_qos_is_switched_off_without_touching_priority",
+        "ControlMask 为 0 = 什么都没接管，调用成功却不起作用 —— 这种「返回成功但没生效」最难查",
     ),
 ]
 

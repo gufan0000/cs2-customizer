@@ -904,10 +904,20 @@ class AdvancedPage(QWidget):
     def _toggle_debug_mode(self):
         """切换调试模式（开源版：无口令，直接开关）。"""
         self.debug_mode = not self.debug_mode
-        config.debug_mode = self.debug_mode
-        config.save_config()
+        self._apply_debug_logging(self.debug_mode)
         self._update_debug_status()
         self.logger.info(f"调试模式已{'启用' if self.debug_mode else '关闭'}")
+
+    @staticmethod
+    def _apply_debug_logging(enabled: bool) -> None:
+        """批 116：「调试模式」以前只存一个没人读的 `debug_mode`（死开关），
+        真正管日志级别的是 logger 读的 `debug_file_log` —— 两者接上，并当场生效。"""
+        from core.utils.logger import get_logger
+
+        config.debug_mode = bool(enabled)
+        config.debug_file_log = bool(enabled)
+        config.save_config()
+        get_logger().set_file_debug(enabled)
 
     def _update_debug_status(self):
         """更新调试状态显示"""

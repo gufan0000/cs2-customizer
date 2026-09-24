@@ -338,15 +338,27 @@ class AboutPage(QWidget):
             # 诊断信息里最该看的一行永远是空的。实例改从主窗口拿（main_widget.py 挂的），
             # 运行态走 collect_gsi_status 统一取，属性名不再在这里手写第二遍。
             # gsi_server 保持方法内局部 import：提到模块顶层会把 flask 拖进启动路径。
-            from core.runtime.system_status_service import collect_gsi_status
+            from core.foreground_game import game_is_running
+            from core.runtime.system_status_service import (
+                GSI_LINK_TEXT, check_gsi_cfg, collect_gsi_status, gsi_link_state)
             from gsi_server import get_active_port
 
             status = collect_gsi_status(self.window())
             if not status.get("available"):
                 lines.append("GSI: 未初始化")
             else:
-                state = "运行中" if status.get("running") else "未运行"
-                line = f"GSI: {state} | 端口 {get_active_port()}"
+                # 批 116：客服最该看的是「断在哪一环」和「CS2 到底推没推」，不是「线程活着」
+                cfg = check_gsi_cfg(getattr(config, "csgo_dir", ""), get_active_port())
+                running = game_is_running()
+                link = gsi_link_state(status, cfg, running)
+                age = status.get("last_post_age_s")
+                line = (f"GSI: {GSI_LINK_TEXT[link][0]}"
+                        f" | 服务 {'运行中' if status.get('running') else '未运行'} | 端口 {get_active_port()}"
+                        f" | 收包 {status.get('posts', 0)}"
+                        f" | 最近 {'从未' if age is None else f'{age:.0f}s 前'}"
+                        f" | 解析失败 {status.get('parse_errors', 0)} | 丢包 {status.get('dropped', 0)}"
+                        f" | 游戏内配置 {cfg.get('status')}"
+                        f" | CS2 进程 {'在' if running else ('不在' if running is False else '未知')}")
                 err = str(status.get("startup_error") or "")
                 if err:
                     line += f" | 启动错误: {err}"

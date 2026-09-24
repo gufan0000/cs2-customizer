@@ -108,11 +108,35 @@ _last_drop_report = 0.0
 _drop_stats_lock = threading.Lock()
 
 
+#: 批 116：「CS2 真的在推吗」—— 以前状态只看处理线程活没活，和游戏有没有推数据无关，
+#: 「全无反应而状态显示运行中」正是上面 QA-003 那段写下的事故形状。
+_receive_stats = {"posts": 0, "last_post": None, "parse_errors": 0, "dropped": 0}
+
+
+def get_receive_stats() -> dict:
+    """收包计数的快照：posts / last_post_age_s（从没收到过 = None）/ parse_errors / dropped。"""
+    with _drop_stats_lock:
+        stats = dict(_receive_stats)
+    last = stats.pop("last_post")
+    stats["last_post_age_s"] = None if last is None else max(0.0, time.monotonic() - last)
+    return stats
+
+
+def _count_post(ok: bool) -> None:
+    with _drop_stats_lock:
+        if ok:
+            _receive_stats["posts"] += 1
+            _receive_stats["last_post"] = time.monotonic()
+        else:
+            _receive_stats["parse_errors"] += 1
+
+
 def _record_drop():
     global _dropped_packets, _last_drop_report
     # Flask threaded=True 下多个请求线程并发进入，计数读改写需要加锁
     with _drop_stats_lock:
         _dropped_packets += 1
+        _receive_stats["dropped"] += 1
         now = time.time()
         if _last_drop_report == 0.0:
             # 首个丢包只启动统计窗口，避免把"1个"误报成一分钟累计
@@ -133,7 +157,8 @@ PACKET_RECV_KEY = "_cs2customizer_recv_monotonic"
 
 @flask_app.route('/', methods=['POST'])
 def game_state_update():
-    data = request.get_json()
+    data = request.get_json(silent=True)
+    _count_post(isinstance(data, dict))
     if data:
         try:
             data[PACKET_RECV_KEY] = time.monotonic()
@@ -153,6 +178,39 @@ def game_state_update():
                 _record_drop()
     return jsonify({'status': 'success'})
 
+def _listening_pid(netstat_text: str, port: int):
+    """从 `netstat -ano -p tcp` 的输出里找监听 `port` 的 PID；没有返回 None。"""
+    for line in netstat_text.splitlines():
+        cols = line.split()
+        if len(cols) >= 5 and cols[0].upper() == "TCP" and cols[1].endswith(f":{port}"):
+            if cols[3].upper() == "LISTENING" and cols[4].isdigit():
+                return int(cols[4])
+    return None
+
+
+def describe_port_owner(port: int) -> str:
+    """「谁占着这个端口」—— 只在端口全被占的失败路径上调（netstat 在连接多的机器上要几百毫秒）。
+
+    批 116：以前只说「请关闭占用程序」却不说是哪个，用户只能猜。查不到就返回空串，不影响原报错。
+    """
+    import subprocess
+
+    no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)   # §3：打包后别闪黑窗
+    try:
+        out = subprocess.run(["netstat", "-ano", "-p", "tcp"], capture_output=True, text=True,
+                             timeout=5, creationflags=no_window, errors="replace").stdout
+        pid = _listening_pid(out, port)
+        if pid is None:
+            return ""
+        row = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+                             capture_output=True, text=True, timeout=5, creationflags=no_window,
+                             errors="replace").stdout.strip()
+        name = row.split('","')[0].strip('"') if row.startswith('"') else ""
+        return f"{name or '未知程序'}（PID {pid}）"
+    except Exception:
+        return ""
+
+
 def run_flask():
     global _startup_error, _active_port
     # 探测可绑定与真正 bind 之间存在 TOCTOU 窗口（第三方进程可抢占端口），
@@ -161,7 +219,9 @@ def run_flask():
     for _attempt in range(3):
         port = _select_port(exclude=attempted)
         if port < 0:
-            _startup_error = "GSI服务器端口 3000-3010 全部被占用，请关闭占用程序后重启软件"
+            owner = describe_port_owner(_PORT_CANDIDATE_RANGE[0])
+            _startup_error = ("GSI服务器端口 3000-3010 全部被占用，请关闭占用程序后重启软件"
+                              + (f"（3000 端口被 {owner} 占着）" if owner else ""))
             logger.error(_startup_error)
             return
         attempted.add(port)

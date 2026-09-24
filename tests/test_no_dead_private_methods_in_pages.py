@@ -180,17 +180,22 @@ def test_the_scan_actually_sees_a_dead_method(tmp_path, monkeypatch):
     于是探针被自己的断言"救活"，判据报"看不见"。
     ⇒ **判据自己也是被扫的语料。** 凡是拿全仓文本当证据的判据，
       都要先问一句：我写下的这句话会不会变成它要找的证据？
+
+    ⚠⚠⚠ 探针**不许写进真的 `pages/`**（批 116 全量实测）：全量是并行跑的，
+    `test_page_copy_is_user_facing` 恰好在探针被删的那一刻去数 `pages/*.py` ⇒ FileNotFoundError，
+    红因与被测代码无关。⇒ 探针放 tmp，把扫描的页目录和语料都指过去。
     """
+    import sys
+    mod = sys.modules[__name__]
     name = "_never" + "_called" + "_probe" + "_method"      # 见上面第二条 ⚠
-    probe = PAGES / "_dead_probe_tmp_page.py"
-    assert not probe.exists(), f"探针文件已存在，先删掉：{probe}"
+    probe = tmp_path / "_dead_probe_tmp_page.py"
     probe.write_text(f"class ProbePage:\n    def {name}(self):\n        return 1\n",
                      encoding="utf-8")
-    try:
-        names = {c for _, _, c, _ in find_dead_private_methods()}
-        assert name in names, "扫描看不见刚放进去的死方法 —— 它现在什么都逮不住"
-    finally:
-        probe.unlink()
+    real_corpus = _corpus()
+    monkeypatch.setattr(mod, "PAGES", tmp_path)
+    monkeypatch.setattr(mod, "_corpus", lambda: real_corpus + [probe])
+    names = {c for _, _, c, _ in find_dead_private_methods()}
+    assert name in names, "扫描看不见刚放进去的死方法 —— 它现在什么都逮不住"
 
 
 def test_a_method_called_only_by_a_subclass_is_not_dead():

@@ -616,6 +616,10 @@ def main():
     logger.info("=" * 60)
 
     _set_windows_app_user_model_id()
+    if os.name == "nt":
+        # 批 116：CS2 全屏时 CS2 Customizer 一直在后台，别让 Win11 EcoQoS 把它降到能效核限频（不提优先级）
+        from core.runtime.process_power import opt_out_of_eco_qos
+        opt_out_of_eco_qos()
 
     # 显示层加固：必须在 QApplication 构造前——高DPI取整策略/软件渲染属性
     # 只有构造前设置才生效。返回是否处于兼容模式（含上次渲染崩溃后的自愈）。
