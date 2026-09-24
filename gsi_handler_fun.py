@@ -13,6 +13,7 @@
 import time
 
 from config import config
+from core.gsi.identity import resolve_self_steamid
 from core.utils.logger import get_logger
 
 logger = get_logger("GSIHandlerFun")
@@ -75,12 +76,8 @@ class GSIHandlerFun:
     # ---- 内部 ----
 
     def _self_steamid(self, data):
-        """本机玩家 steamid。provider 节点不受观战切换影响，优先用它。"""
-        provider = data.get("provider") or {}
-        sid = str(provider.get("steamid", "") or "").strip()
-        if sid:
-            return sid
-        return str(getattr(config, "player_steamid", "") or "").strip()
+        """本机玩家 steamid。provider 节点不受观战切换影响，优先用它（口径见 core/gsi/identity）。"""
+        return resolve_self_steamid(data, getattr(config, "player_steamid", "") or "")
 
     def _own_player_state(self, data):
         """只在这一帧确实是"本人"时返回 state，观战别人时返回 None。"""

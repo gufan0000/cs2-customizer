@@ -8,6 +8,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 import time
 
+from core.gsi.identity import is_self
+from core.gsi.kill_attribution import BombKillFilter
 from core.hud.rule_model import (
     HUD_STATE_KEYS,
     normalize_hud_rules,
@@ -72,6 +74,9 @@ class RuntimeHudEngine:
         self.previous_active_weapon = ""
         self.player_alive = True
         self.team_side = ""
+        #: RN-683：炸弹炸死的人头不闪「击杀 / 连杀」色（与击杀音效同一个判定）
+        self._bomb_filter = BombKillFilter()
+        self._bomb_kill_offset = 0          # 本回合被炸弹记走的人头（连杀门槛按真实击杀算）
 
         self._event_until = {}
         self._event_triggered_at = {}
@@ -92,9 +97,8 @@ class RuntimeHudEngine:
         # 跳过观战他人的视角：观战时 player.steamid 变成被观战者，而
         # activity 仍是 "playing"（旧判定被 activity 条件短路，观战数据会
         # 驱动 HUD 并污染 previous_* 边沿检测）。provider.steamid 恒为本机。
-        provider_steamid = data.get("provider", {}).get("steamid")
-        player_steamid = player.get("steamid")
-        if provider_steamid and player_steamid and player_steamid != provider_steamid:
+        # RN-685：口径收进 core/gsi/identity（这里不给 config 兜底 —— 引擎不读 config，与原行为一致）。
+        if not is_self(data):
             return RuntimeOutput(None)
 
         state = player.get("state", {})
@@ -116,6 +120,9 @@ class RuntimeHudEngine:
         elif isinstance(bomb_data, str):
             bomb_state = bomb_data
 
+        # ⚠ 上面那个 bomb_state 只读 `bomb` 组件、给配色候选用，**原样保留**；
+        # 炸弹击杀过滤看的是 `round.bomb` 优先（kill_attribution.bomb_state），两者别合并。
+        self._bomb_filter.observe(data, now)
         self._detect_events(
             now=now,
             health=health,
@@ -123,6 +130,7 @@ class RuntimeHudEngine:
             round_killhs=round_killhs,
             round_phase=round_phase,
             round_info=round_info,
+            bomb_kill=self._bomb_filter.is_bomb_kill(now),
         )
 
         # 更新前序状态
@@ -167,12 +175,21 @@ class RuntimeHudEngine:
         self._state_triggered_at[key] = now
         self._state_until[key] = self._duration_to_until(now, duration_ms)
 
-    def _detect_events(self, now, health, round_kills, round_killhs, round_phase, round_info):
+    def _detect_events(self, now, health, round_kills, round_killhs, round_phase, round_info,
+                       bomb_kill=False):
         event_rules = self._rules.get("event_rules", {})
         state_rules = self._rules.get("state_rules", {})
 
+        # RN-683：炸弹炸死的人头 —— 计数照常同步（evaluate 末尾），但不算「击杀 / 连杀」。
+        # 引擎没有开火推断，爆炸后 1 秒内的一切人头都按炸弹算；回合末补枪的那一闪是可接受的代价。
+        if round_kills < self.previous_round_kills:
+            self._bomb_kill_offset = 0
+        if bomb_kill and round_kills > self.previous_round_kills:
+            self._bomb_kill_offset += round_kills - self.previous_round_kills
+            round_kills = self.previous_round_kills
+
         # 连杀
-        if round_kills >= 3 and round_kills > self.previous_round_kills:
+        if round_kills - self._bomb_kill_offset >= 3 and round_kills > self.previous_round_kills:
             rule = event_rules.get("multi_kill", {})
             if rule.get("enabled", False):
                 self._trigger_event("multi_kill", now, rule.get("duration_ms", 0))

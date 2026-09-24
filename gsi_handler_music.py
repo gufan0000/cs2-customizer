@@ -3,6 +3,7 @@ import threading
 import time
 
 from config import config
+from core.gsi.identity import is_self, provider_steamid
 from core.utils.logger import get_logger
 from music_player import get_music_player
 
@@ -127,19 +128,17 @@ class GSIHandlerMusic:
         player_data = data.get("player", {})
         current_steamid = player_data.get("steamid", "")
 
-        if not config.player_steamid and current_steamid:
-            config.player_steamid = current_steamid
+        # RN-685：provider 恒为本机，优先记它；第一帧在观战也不会记成别人
+        own_steamid = provider_steamid(data) or current_steamid
+        if not config.player_steamid and own_steamid:
+            config.player_steamid = own_steamid
             config.save_config()
-            logger.info(f"[音乐播放器] 记录玩家SteamID: {current_steamid}")
+            logger.info(f"[音乐播放器] 记录玩家SteamID: {own_steamid}")
 
         # 音乐联动只关心"本人"的死活：死亡后观战时 GSI 的 player 会切成被观战者
         # （activity 仍为 playing 且 health>0），不按 steamid 过滤会被误判为"复活"
         # 而错误暂停/恢复音乐。与 HUD 引擎的观战排除逻辑一致，不依赖观战静音开关。
-        if (
-            current_steamid
-            and config.player_steamid
-            and current_steamid != config.player_steamid
-        ):
+        if not is_self(data, config.player_steamid):
             return
 
         is_active = self._is_player_active(data)

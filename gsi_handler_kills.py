@@ -3,6 +3,8 @@ import time
 import os
 from core.audio.audio_file_utils import DEFAULT_AUDIO_EXTENSIONS, find_audio_by_stem
 from core.audio.runtime_audio import get_runtime_audio_manager
+from core.gsi.identity import is_self, provider_steamid, resolve_self_steamid
+from core.gsi.kill_attribution import BombKillFilter, GrenadeKillTracker
 from config import config
 from core.utils.logger import get_logger
 
@@ -61,6 +63,17 @@ class GSIHandlerKills:
         #: 加上切枪动画与网络抖动，1.2s 足够覆盖而又不至于把几秒后的另一次击杀算进来。
         self.kill_weapon_switch_grace = 1.2
 
+        #: 批 115（RN-683/684）：计数涨了但不是枪 —— 炸弹炸的、投掷物炸/烧的。
+        #: 判定在 core/gsi/kill_attribution.py（HUD 引擎用同一个炸弹过滤器）。
+        self.bomb_kill_filter = BombKillFilter()
+        self.grenade_tracker = GrenadeKillTracker()
+        self._grenade_tracker_steamid = ""
+        #: 本回合被炸弹记走的人头数。连杀等级按「真实击杀 = round_kills − 它」算，
+        #: 否则炸死两人之后回合末补一枪会播成「三杀」。
+        self.bomb_kill_offset = {}
+        #: 本帧认定的「我」（provider 优先，RN-685）。
+        self._frame_self_steamid = ""
+
         # 记录每个玩家已播放的击杀等级，与武器无关
         self.played_kill_levels = {}  # {steamid: set(1, 2, 3...)}
         
@@ -110,7 +123,7 @@ class GSIHandlerKills:
             self.previous_round_kills, self.previous_total_kills, self.previous_match_kills,
             self.played_sounds_this_round, self.new_round_start_time, self.await_round_kill_reset,
             self.played_kill_levels, self.previous_round_killhs,
-            self.await_reset_since, self.await_reset_baseline,
+            self.await_reset_since, self.await_reset_baseline, self.bomb_kill_offset,
         ]
         if max((len(d) for d in dicts), default=0) <= self.MAX_TRACKED_STEAMIDS:
             return
@@ -141,15 +154,27 @@ class GSIHandlerKills:
             if not self.frame_inferred_fire_weapon.startswith("weapon_knife") and self.frame_inferred_fire_weapon != "weapon_taser":
                 self.last_non_knife_weapon = self.frame_inferred_fire_weapon
 
-        # 首次记录玩家ID
-        if not config.player_steamid and current_steamid:
-            config.player_steamid = current_steamid
-            config.save_config()
-            self.logger.info(f"记录玩家SteamID: {current_steamid}")
+        # 批 115：投掷物与炸弹的逐帧观察（与本帧是不是本人无关，先喂进去）
+        frame_now = time.time()
+        if current_steamid != self._grenade_tracker_steamid:
+            self.grenade_tracker.reset()          # 观战切人：上一个人的投掷记录不作数
+            self._grenade_tracker_steamid = current_steamid
+        self.grenade_tracker.observe(player_data.get("weapons"), frame_now)
+        if self.frame_inferred_fire_weapon:
+            self.grenade_tracker.note_gun_fired()
+        self.bomb_kill_filter.observe(data, frame_now)
 
-        # 观战模式静音检查 - 新增
-        if config.spectator_mode_mute and current_steamid and current_steamid != config.player_steamid:
-            self.logger.debug(f"观战模式静音: 当前玩家 {current_steamid} != 本人 {config.player_steamid}")
+        # 首次记录玩家ID（RN-685：provider 恒为本机，优先记它；第一帧在观战也不会记成别人）
+        own_steamid = provider_steamid(data) or current_steamid
+        if not config.player_steamid and own_steamid:
+            config.player_steamid = own_steamid
+            config.save_config()
+            self.logger.info(f"记录玩家SteamID: {own_steamid}")
+        self._frame_self_steamid = resolve_self_steamid(data, config.player_steamid)
+
+        # 观战模式静音检查
+        if config.spectator_mode_mute and current_steamid and not is_self(data, config.player_steamid):
+            self.logger.debug(f"观战模式静音: 当前玩家 {current_steamid} != 本人 {self._frame_self_steamid}")
             return  # 不是玩家本人，且开启了观战静音，直接返回
 
         # 检查玩家是否活动
@@ -186,6 +211,8 @@ class GSIHandlerKills:
                 # 重置当前回合数据
                 self.previous_round_kills[steamid] = 0
                 self.previous_round_killhs[steamid] = 0  # 重置爆头击杀数
+                self.bomb_kill_offset[steamid] = 0
+                self.grenade_tracker.reset()
                 self.previous_round = current_round
                 self.last_kill_sound_time = 0
                 self.played_sounds_this_round[steamid] = set()
@@ -293,7 +320,8 @@ class GSIHandlerKills:
             # 已是足够强的信号，直接放行。
             # 注意：上游 steamid 拦截仅在 spectator_mode_mute 开启时生效；静音关闭时
             # 切换观战目标会带来从未见过的 steamid + 残留 round_kills，降级信号只对本人可靠。
-            if not self.match_stats_ever_seen and (not config.player_steamid or steamid == config.player_steamid):
+            own = self._frame_self_steamid or config.player_steamid
+            if not self.match_stats_ever_seen and (not own or steamid == own):
                 self.logger.info(
                     f"回合结束击杀放行(降级模式,无match_stats组件): round_kills增量 {prev_round_kills}->{current_round_kills}"
                 )
@@ -411,14 +439,21 @@ class GSIHandlerKills:
             return fallback
         return weapon_name
 
-    def _resolve_kill_weapon(self, current_time=None):
+    def _resolve_kill_weapon(self, current_time=None, is_headshot=False):
         current_time = current_time if current_time is not None else time.time()
         weapon = ""
         weapon_source = "unresolved"
+        # RN-684：本帧没开火、刚扔过致死投掷物、又不是爆头 ⇒ 归给投掷物。
+        # 必须排在「此刻举着的枪」之前 —— 扔雷后切枪是标准操作，旧逻辑就栽在这里
+        # （社区用户报「投掷物丢出后的击杀会触发 21 冠音效」，见下方 _get_weapon_kill_sound_key 的诊断日志）。
+        grenade = "" if self.frame_inferred_fire_weapon else self.grenade_tracker.claim(current_time, is_headshot)
 
         if self.frame_inferred_fire_weapon:
             weapon = self.frame_inferred_fire_weapon
             weapon_source = "frame_inferred_fire_weapon"
+        elif grenade:
+            weapon = grenade
+            weapon_source = "recent_lethal_grenade"
         elif self.frame_active_weapon:
             weapon = self.frame_active_weapon
             weapon_source = "frame_active_weapon"
@@ -1002,6 +1037,7 @@ class GSIHandlerKills:
                     )
                     self.played_kill_levels[steamid] = set()
                     self.played_sounds_this_round[steamid] = set()
+                    self.bomb_kill_offset[steamid] = 0
 
                     if config.mode == "3. 死斗模式" and current_round_kills > 0:
                         self.logger.debug(
@@ -1035,12 +1071,28 @@ class GSIHandlerKills:
                 if current_round_kills > self.previous_round_kills.get(steamid, 0):
                     prev_kills = self.previous_round_kills.get(steamid, 0)
                     prev_killhs = self.previous_round_killhs.get(steamid, 0)
-                    self.last_kill_weapon = self._resolve_kill_weapon(current_time)
-                    
-                    # 判断是否是爆头击杀（合包场景采用保守策略）
+
+                    # RN-683：炸弹炸死的人头 —— 只同步计数、记进偏移，不给任何击杀反馈
+                    # （音效 / 语音 / 图标 / 击杀回调都不走）。本帧推断出开火的仍算枪杀。
+                    if self.bomb_kill_filter.is_bomb_kill(
+                        current_time, fired=bool(self.frame_inferred_fire_weapon)
+                    ):
+                        self.bomb_kill_offset[steamid] = (
+                            self.bomb_kill_offset.get(steamid, 0) + current_round_kills - prev_kills
+                        )
+                        self.previous_round_kills[steamid] = current_round_kills
+                        self.previous_round_killhs[steamid] = current_round_killhs
+                        self.logger.info(
+                            f"[击杀诊断] 炸弹炸死的人头不算击杀: round_kills {prev_kills}->{current_round_kills}，"
+                            f"本回合炸弹累计 {self.bomb_kill_offset[steamid]}"
+                        )
+                        return
+
+                    # 判断是否是爆头击杀（合包场景采用保守策略）——先算它，投掷物归属要用
                     is_headshot = self._compute_is_headshot(
                         prev_kills, current_round_kills, prev_killhs, current_round_killhs
                     )
+                    self.last_kill_weapon = self._resolve_kill_weapon(current_time, is_headshot)
                     if current_round_kills - prev_kills > 1:
                         self.logger.debug(
                             f"检测到击杀合包: kills {prev_kills}->{current_round_kills}, "
@@ -1083,20 +1135,22 @@ class GSIHandlerKills:
                                         f"kill_level={kill_level}, key={used_key}")
                                 self.logger.debug(f"死斗模式: 播放了 {current_round_kills} 杀的音效，使用等级 {kill_level}")
                     else:
-                        # 非死斗模式：按击杀级别(1-5)去重
-                        if 0 < current_round_kills <= 5:
-                            if current_round_kills not in self.played_kill_levels[steamid]:
+                        # 非死斗模式：按击杀级别(1-5)去重。
+                        # 级别 = 真实击杀数（扣掉本回合炸弹记走的，RN-683）
+                        own_kills = current_round_kills - self.bomb_kill_offset.get(steamid, 0)
+                        if 0 < own_kills <= 5:
+                            if own_kills not in self.played_kill_levels[steamid]:
                                 played, used_key = self._emit_kill_feedback(
-                                    current_round_kills, is_headshot, current_time
+                                    own_kills, is_headshot, current_time
                                 )
                                 if played:
-                                    self.played_kill_levels[steamid].add(current_round_kills)
+                                    self.played_kill_levels[steamid].add(own_kills)
                                 else:
                                     self.logger.debug(
                                         f"竞技/自定义本次击杀无任何反馈: steamid={steamid}, "
-                                        f"kills={current_round_kills}, key={used_key}")
+                                        f"kills={own_kills}, key={used_key}")
 
-                        elif current_round_kills > 5:
+                        elif own_kills > 5:
                             pass  # previous_round_kills 已在上方统一更新
 
     # v2.2.1: 删除死代码 _check_fast_kill / _resolve_kill_weapon_legacy——

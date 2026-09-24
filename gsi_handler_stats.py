@@ -42,15 +42,16 @@ class GSIHandlerStats:
         """处理GSI数据 - 使用最简单的逻辑"""
         # 获取玩家数据
         player_data = data.get("player", {})
-        current_steamid = player_data.get("steamid", "")
         
         # 检查是否是玩家本人：会话统计只认本人，与观战静音开关解耦。
         # 死亡观战时 player 会切成被观战者（activity 仍是 playing），
         # 旧逻辑在静音关闭时会把对方的击杀/死亡累进自己的统计。
         from config import config
-        self_steamid = data.get("provider", {}).get("steamid", "") or config.player_steamid
-        if current_steamid and self_steamid and current_steamid != self_steamid:
+        from core.gsi.identity import is_self
+        if not is_self(data, config.player_steamid):   # RN-685：口径同其余处理器
             return
+        # ⚠ RN-683：炸弹炸死的人头**这里有意照记** —— 这是会话统计（记账），
+        # 要跟游戏计分板对得上；不记的是「击杀反馈」（音效 / 图标 / HUD 闪色）。
             
         # 检查玩家是否在游戏中
         if player_data.get("activity") != "playing":

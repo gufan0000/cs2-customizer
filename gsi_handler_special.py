@@ -3,6 +3,8 @@ import threading
 import time
 from core.audio.runtime_audio import get_runtime_audio_manager
 from core.audio.special_events import get_event, sound_key
+from core.gsi.identity import is_self as _frame_is_self, resolve_self_steamid
+from core.gsi.kill_attribution import grenade_counts, thrown_grenade
 from config import config
 from core.utils.logger import get_logger
 
@@ -107,18 +109,16 @@ class GSIHandlerSpecial:
         player_data = data.get("player", {})
         current_steamid = player_data.get("steamid", "")
         
+        # 「哪一个是我」：provider 优先、config 兜底（RN-685，core/gsi/identity）
+        is_self = _frame_is_self(data, config.player_steamid)
+
         # 观战模式静音检查
-        if config.spectator_mode_mute and current_steamid and current_steamid != config.player_steamid:
+        if config.spectator_mode_mute and current_steamid and not is_self:
             return  # 不是玩家本人，且开启了观战静音，直接返回
 
         # 玩家个人事件（血量/手雷/MVP）只对"本人"数据有效：死亡观战时 GSI 的
         # player 会切成被观战者，若不区分会把队友的低血量/投掷/MVP 当成自己的。
         # C4 与回合胜负是全局事件，不受此限制。
-        is_self = (
-            not current_steamid
-            or not config.player_steamid
-            or current_steamid == config.player_steamid
-        )
 
         # activity 在实战中会偶发抖动，避免因此丢失C4/回合事件
         is_active = self._is_player_active(data)
@@ -190,7 +190,7 @@ class GSIHandlerSpecial:
         `allplayers_match_stats` 在 GSI cfg 里是开着的（cfg_utils.CFG_TEMPLATE），
         所以按 steamid 取自己是有数据支撑的；取不到时才退回旧路径。
         """
-        steamid = getattr(config, "player_steamid", "") or ""
+        steamid = resolve_self_steamid(data, getattr(config, "player_steamid", "") or "")  # RN-685
 
         allplayers = data.get("allplayers")
         if steamid and isinstance(allplayers, dict):
@@ -243,9 +243,9 @@ class GSIHandlerSpecial:
     def _process_grenade_throw(self, data):
         """处理投掷物检测逻辑 - 基于手持状态和数量变化"""
         player_data = data.get("player", {})
-        # ⛔ `or {}`：GSI 会发显式 `"weapons": null`（kills/sounds 都防了）；只防第一个循环，
-        #    第二个循环照样 AttributeError ⇒ 同一帧后面的 C4 / 血量 / 回合 / MVP 全被跳过。
-        current_weapons = player_data.get("weapons") or {}
+        # ⛔ 显式 `"weapons": null` 只由共用的 `grenade_counts` 挡（批 115：这里原来的 `or {}` 与它叠成两道、
+        #    拆一道不红 ⇒ 只留一处）。挡不住 ⇒ AttributeError 把同一帧的 C4 / 血量 / 回合 / MVP 全带走。
+        current_weapons = player_data.get("weapons")
 
         # 1. 检测当前手持武器
         active_weapon = None
@@ -256,28 +256,21 @@ class GSIHandlerSpecial:
                     active_weapon = weapon_data.get("name", "")
                     break
         
-        # 2. 统计当前各投掷物数量
-        current_grenade_counts = {grenade_type: 0 for grenade_type in self.grenade_types.keys()}
-        
-        # 统计投掷物数量
-        for weapon_key, weapon_data in current_weapons.items():
-            weapon_name = weapon_data.get("name", "")
-            if weapon_name in self.grenade_types:
-                # 尝试使用ammo_reserve字段，如果不存在则默认为1
-                reserve_count = weapon_data.get("ammo_reserve", 1)
-                current_grenade_counts[weapon_name] += reserve_count
-        
-        # 3. 检测投掷动作: 如果之前手持的是手雷，且该手雷数量减少，判定为投掷
-        if self.previous_active_weapon in self.grenade_types:
-            previous_count = self.previous_grenade_counts.get(self.previous_active_weapon, 0)
-            current_count = current_grenade_counts.get(self.previous_active_weapon, 0)
-            
-            if current_count < previous_count:
-                grenade_type = self.grenade_types.get(self.previous_active_weapon)
-                self.logger.info(f"[投掷检测] 检测到投掷: {grenade_type} (数量从 {previous_count} 变为 {current_count})")
-                
-                # 播放对应音效
-                self._play_grenade_sound(grenade_type)
+        # 2. 统计当前各投掷物数量（ammo_reserve，缺字段按 1 个算）
+        current_grenade_counts = grenade_counts(current_weapons, tuple(self.grenade_types))
+
+        # 3. 检测投掷动作：上一帧举着的投掷物这一帧少了一个。
+        #    判定与击杀处理器的投掷物归属共用一条（core/gsi/kill_attribution.thrown_grenade，批 115）
+        thrown = thrown_grenade(
+            self.previous_active_weapon or "", self.previous_grenade_counts, current_grenade_counts)
+        if thrown:
+            grenade_type = self.grenade_types.get(thrown)
+            self.logger.info(
+                f"[投掷检测] 检测到投掷: {grenade_type} (数量从 "
+                f"{self.previous_grenade_counts.get(thrown, 0)} 变为 {current_grenade_counts.get(thrown, 0)})")
+
+            # 播放对应音效
+            self._play_grenade_sound(grenade_type)
         
         # 当前手持的是手雷时，记录手雷类型
         if active_weapon in self.grenade_types:
@@ -626,7 +619,7 @@ class GSIHandlerSpecial:
         `team_side` 会跟着被观战者跑，胜/负音效直接反过来。
         """
         old_team = self.team_side
-        steamid = getattr(config, "player_steamid", "") or ""
+        steamid = resolve_self_steamid(data, getattr(config, "player_steamid", "") or "")  # RN-685
         resolved = None
 
         allplayers = data.get("allplayers")
