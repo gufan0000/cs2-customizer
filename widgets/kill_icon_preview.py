@@ -36,6 +36,12 @@ class KillIconPreview(QWidget):
     预览要让用户盯着看，播一次就没了等于逼他反复点按钮。
     """
 
+    #: RN-682：空着的时候这块框就是导入区 —— 点它选文件（拖 zip 进来走页面的拖放）。
+    import_requested = Signal()
+
+    #: 导入区中间那个「＋」的边长，与它和占位文字之间让出的高度。
+    PLUS_SIZE = 18
+
     def __init__(self, parent=None, box=(200, 140)):
         super().__init__(parent)
         self._box = box
@@ -43,6 +49,7 @@ class KillIconPreview(QWidget):
         self._fps = 30
         self._index = 0
         self._elapsed = 0.0
+        self._import_zone = False
         self._placeholder = "选择风格后在这里预览"
         self.setMinimumSize(box[0], box[1])
 
@@ -103,6 +110,29 @@ class KillIconPreview(QWidget):
     @property
     def has_frames(self) -> bool:
         return bool(self._frames)
+
+    def set_import_zone(self, on: bool):
+        """空状态下变导入区（虚线框 +「＋」+ 可点）。不加文字：空库一屏只许一句指路（RN-682）。"""
+        self._import_zone = bool(on)
+        self.setCursor(Qt.PointingHandCursor if on else Qt.ArrowCursor)
+        self.setToolTip("点这里选图标包或素材文件，也可以把 zip 直接拖进来" if on else "")
+        self.update()
+
+    def is_import_zone(self) -> bool:
+        return self._import_zone and not self._frames
+
+    def border_pen(self) -> QPen:
+        """边框怎么画 —— `paintEvent` 与判据读同一份决策。"""
+        if self.is_import_zone():
+            return QPen(QColor(255, 255, 255, 110), 1.5, Qt.DashLine)
+        return QPen(QColor(255, 255, 255, 40), 1)
+
+    def mouseReleaseEvent(self, event):
+        if (self.is_import_zone() and event.button() == Qt.LeftButton
+                and self.rect().contains(event.position().toPoint())):
+            self.import_requested.emit()
+            return
+        super().mouseReleaseEvent(event)
 
     # -------------------------------------------------------------- 内部
 
@@ -165,6 +195,8 @@ class KillIconPreview(QWidget):
         全量红**，而且红的理由是"一个像素都没画出来"，跟缺陷本身无关。
         """
         box = self.placeholder_box(rect)
+        if self.is_import_zone():
+            box = box.adjusted(0, self.PLUS_SIZE + 8, 0, 0)   # 上面让给「＋」
         return (box, Qt.AlignCenter | Qt.TextWordWrap,
                 self.placeholder_for_box(box.width(), box.height()))
 
@@ -174,12 +206,18 @@ class KillIconPreview(QWidget):
         painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
 
         rect = self.rect().adjusted(0, 0, -1, -1)
-        painter.setPen(QPen(QColor(255, 255, 255, 40), 1))
+        painter.setPen(self.border_pen())
         painter.setBrush(QColor(0, 0, 0, 40))
         painter.drawRoundedRect(QRectF(rect), 6, 6)
 
         if not self._frames:
             box, flags, text = self.placeholder_draw_spec(rect)
+            if self.is_import_zone():
+                half = self.PLUS_SIZE // 2
+                cx, cy = rect.center().x(), box.center().y() - self.PLUS_SIZE - 6
+                painter.setPen(QPen(QColor(200, 200, 200), 2))
+                painter.drawLine(cx - half, cy, cx + half, cy)
+                painter.drawLine(cx, cy - half, cx, cy + half)
             painter.setPen(QColor(160, 160, 160))
             painter.drawText(box, flags, text)
             painter.end()

@@ -248,6 +248,7 @@ class KillIconPage(QWidget):
         # "正常"：不溢出、不报错、判据全绿，是渲染成图肉眼看才发现的。
         self.hero_preview.setMinimumWidth(0)
         self.hero_preview.setMinimumHeight(120)
+        self.hero_preview.import_requested.connect(self._choose_file_to_import)
         # RN-407 第③件：图照常播，旁边一句话说清楚游戏里看不看得到。
         from widgets.master_switch_effect import make_preview_effect_caption
 
@@ -897,6 +898,8 @@ class KillIconPage(QWidget):
                 else ("这套风格还没有素材，拖一个图标包进来" if style
                       else "先导入一套风格"),
             )
+            # RN-682：没得播的时候，这块框本身就是导入区（外审 S4 3/3）。
+            self.hero_preview.set_import_zone(animation is None)
         if animation is not None and hasattr(self, "position_map"):
             self.position_map.set_target(
                 getattr(config, "kill_icon_offset_x", 0),

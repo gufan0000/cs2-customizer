@@ -558,3 +558,57 @@ def test_the_import_card_sits_evenly_inside_the_style_strip(empty_page, qapp):
     assert abs(top - bottom) <= 2, (
         f"「＋ 导入」卡上下留白差 {abs(top - bottom)}px（上 {top} / 下 {bottom}）"
         " —— 贴着一边就会被读成「戳出去了」")
+
+
+# ============================================ RN-682：空着的大预览框本身就是导入区
+
+def test_the_empty_preview_is_itself_an_import_zone(empty_page, monkeypatch):
+    """外审 S4 3/3：「大灰框没有点击上传 / 拖拽的交互提示，拿到 zip 不知从哪导入」。
+
+    ⚠ 不许靠再加一句话修：空库这一屏只许一句指路（上面那条判据）。
+    ⇒ 靠形状：虚线框 + 「＋」+ 手型光标，而且**真点得动** —— 点了弹选文件。
+    """
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    asked = []
+
+    class _Dialog:
+        @staticmethod
+        def getOpenFileName(*args, **kwargs):
+            asked.append(args)
+            return "", ""
+
+    monkeypatch.setattr(page_module, "QFileDialog", _Dialog)
+    preview = empty_page.hero_preview
+    assert preview.is_import_zone(), "空库时大预览没变成导入区"
+    assert preview.border_pen().style() == Qt.DashLine, "空库时边框还是实线 —— 看不出能往里放东西"
+    assert preview.cursor().shape() == Qt.PointingHandCursor, "空库时光标不是手型 —— 看不出能点"
+    QTest.mouseClick(preview, Qt.LeftButton)
+    assert len(asked) == 1, f"点空着的大预览没弹选文件（弹了 {len(asked)} 次）"
+
+
+def test_a_preview_that_is_playing_is_not_an_import_zone(qapp):
+    """反面：有东西在播的时候，点它不许弹选文件，边框回实线。"""
+    from types import SimpleNamespace
+
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QImage
+    from PySide6.QtTest import QTest
+
+    from widgets.kill_icon_preview import KillIconPreview
+
+    preview = KillIconPreview(box=(212, 136))
+    preview.resize(212, 136)
+    preview.set_import_zone(True)
+    fired = []
+    preview.import_requested.connect(lambda: fired.append(1))
+    frame = QImage(20, 20, QImage.Format_ARGB32)
+    frame.fill(0xFFFFFFFF)
+    preview.set_animation(SimpleNamespace(frames=(frame,), frame_width=20,
+                                          frame_height=20, fps=30))
+    assert not preview.is_import_zone(), "在播的预览还当自己是导入区"
+    assert preview.border_pen().style() != Qt.DashLine
+    QTest.mouseClick(preview, Qt.LeftButton)
+    assert not fired, "点正在播的预览也弹了选文件"
+    preview.stop()

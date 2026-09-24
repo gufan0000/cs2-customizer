@@ -1441,7 +1441,7 @@ REVERTS = [
         # 我自己 73 条 KI-7 判据一条都没覆盖。断点退回"有多长画多长"。
         "KI", "预览框里的占位文字又有多长画多长",
         "widgets/kill_icon_preview.py",
-        "        box = self.placeholder_box(rect)\n"
+        # RN-682 在 box 与 return 之间插了「导入区让出＋」两行 ⇒ 锚点只留 return 那两行。
         "        return (box, Qt.AlignCenter | Qt.TextWordWrap,\n"
         "                self.placeholder_for_box(box.width(), box.height()))",
         "        return rect, Qt.AlignCenter, self._placeholder",
@@ -9954,6 +9954,31 @@ Revert(
         """            f'<span style="font-weight:400"></span>')\n""",
         "tests/test_overlay_pages_state_their_requirement.py::test_the_action_is_its_own_bigger_line",
         "拆层级最顺手的写法是只留动作 —— 那会把 RN-429 裁定过的「否则会怎样」一起删没",
+    ),
+    # RN-682（2026-09-24）
+    Revert(
+        "SWEEP", "空着的击杀图标预览框点了没反应",
+        "pages/kill_icon_page.py",
+        "        self.hero_preview.import_requested.connect(self._choose_file_to_import)\n",
+        "",
+        "tests/test_kill_icon_empty_library_guidance.py::test_the_empty_preview_is_itself_an_import_zone",
+        "画成了导入区、手型光标也有，点下去什么都不发生 —— 比不画更糟",
+    ),
+    Revert(
+        "SWEEP", "空着的击杀图标预览框从不变成导入区",
+        "pages/kill_icon_page.py",
+        "            self.hero_preview.set_import_zone(animation is None)\n",
+        "            self.hero_preview.set_import_zone(False)\n",
+        "tests/test_kill_icon_empty_library_guidance.py::test_the_empty_preview_is_itself_an_import_zone",
+        "外审 S4 3/3：大灰框没有点击上传 / 拖拽提示，拿到 zip 不知从哪导入",
+    ),
+    Revert(
+        "SWEEP", "在播的预览也当自己是导入区",
+        "widgets/kill_icon_preview.py",
+        "        return self._import_zone and not self._frames\n",
+        "        return self._import_zone\n",
+        "tests/test_kill_icon_empty_library_guidance.py::test_a_preview_that_is_playing_is_not_an_import_zone",
+        "只在空的时候开 —— 素材装上后点预览弹选文件，会把「看效果」变成「又要导入」",
     ),
 ]
 
