@@ -90,7 +90,10 @@ def _make_page(qapp, tmp_path, monkeypatch, *, enabled: bool, running: bool):
 
 
 def _state_lines(page) -> dict[str, str]:
-    """芯片与详情里关于「开关」「监听」的四行，键 → 那一行的状态词。"""
+    """芯片与详情里关于「开关」「监听」的四行，键 → 那一行的状态词。
+
+    ⚖ 2026-09-23：总开关关着时「运行」芯片不出（开关就是启动，关着时它悬空）⇒ 那时只有三行。
+    """
     lines = {}
     for text in _chips(page.status_badge_label):
         head, _, word = text.partition(" · ")
@@ -100,8 +103,10 @@ def _state_lines(page) -> dict[str, str]:
         head, _, word = raw.partition("：")
         if head in ("总开关", "监听"):
             lines[f"详情·{head}"] = word.strip()
-    assert set(lines) == {"芯片·效果", "芯片·运行", "详情·总开关", "详情·监听"}, (
-        f"四行没齐（判据锚点失效）：{lines}")
+    want = {"芯片·效果", "详情·总开关", "详情·监听"}
+    if bool(getattr(config, "flash_enabled", False)):
+        want.add("芯片·运行")
+    assert set(lines) == want, f"该有的几行没对上（判据锚点失效，或关着时又冒出了「运行」）：{lines}"
     return lines
 
 
@@ -114,8 +119,9 @@ def test_only_two_pairs_of_words_are_on_the_card(qapp, tmp_path, monkeypatch, en
                  or v not in SWITCH_WORDS | LISTENER_WORDS}
         assert not stray, f"这几行用了第三种词（RN-644）：{stray}"
         assert lines["芯片·效果"] == lines["详情·总开关"], "同一件事（开关）两处说法不同"
-        assert lines["芯片·运行"] == lines["详情·监听"], "同一件事（监听）两处说法不同"
-        assert lines["芯片·效果"] in SWITCH_WORDS and lines["芯片·运行"] in LISTENER_WORDS
+        assert lines["芯片·效果"] in SWITCH_WORDS and lines["详情·监听"] in LISTENER_WORDS
+        if "芯片·运行" in lines:
+            assert lines["芯片·运行"] == lines["详情·监听"], "同一件事（监听）两处说法不同"
     finally:
         page.deleteLater()
         qapp.processEvents()
@@ -184,6 +190,40 @@ def test_the_switch_itself_starts_and_clears_the_listener(qapp, tmp_path, monkey
         # 要守的是**不出现第二个开启入口**，不是底栏必须空着。
         btn = page.action_bar.primary_btn
         assert btn.isHidden() or btn.text() != "启动监听", "总开关关着，底栏又摆出了「启动监听」"
+    finally:
+        page.deleteLater()
+        qapp.processEvents()
+
+
+def test_a_switched_off_page_does_not_dangle_a_listener_state(qapp, tmp_path, monkeypatch):
+    """关着时，屏幕上三处都不说「运行 · 未启动」—— 开关就是启动之后，那句话后面没有按钮可接。
+
+    外审（撤掉灰按钮那一轮）S4 3/3：「写着运行·未启动却没有启动按钮，不知道开了开关够不够」。
+    ⭐ 反面两格都钉：预览中（关着也在发生）照说；开着照说 —— 否则就是把信息整个删没了。
+    """
+    def said(page):
+        chips = _chips(page.status_badge_label)
+        return {
+            "芯片": any(t.startswith("运行") for t in chips),
+            "概览": "运行" in page.basic_overview_hint_label.text(),
+            "底栏": "运行状态" in page.action_bar.message_label.text(),
+        }
+
+    page = _make_page(qapp, tmp_path, monkeypatch, enabled=False, running=False)
+    try:
+        quiet = said(page)
+        assert not any(quiet.values()), (
+            f"总开关关着，屏幕上还在说「运行 · 未启动」：{quiet}")
+        page._set_preview_status("预览中…")
+        assert said(page)["芯片"], "关着但正在预览 —— 那件事真在发生，芯片该说"
+    finally:
+        page.deleteLater()
+        qapp.processEvents()
+
+    page = _make_page(qapp, tmp_path, monkeypatch, enabled=True, running=False)
+    try:
+        on = said(page)
+        assert all(on.values()), f"开着时「运行」少了几处：{on}"
     finally:
         page.deleteLater()
         qapp.processEvents()

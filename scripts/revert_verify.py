@@ -9911,6 +9911,33 @@ Revert(
         "test_a_cloud_pull_that_fails_mid_write_leaves_the_config_intact",
         "open('w') 先截断再写 ⇒ 写到一半出错 / 断电，整份配置就没了",
     ),
+    # 下一批收尾（2026-09-24）
+    Revert(
+        "SWEEP", "闪光总开关关着又说「运行 · 未启动」",
+        "pages/flash_page.py",
+        '        return self._current_runtime_text()[0] not in ("未启动", "已启动")\n',
+        "        return True\n",
+        "tests/test_the_flash_page_speaks_two_words_for_two_things.py::"
+        "test_a_switched_off_page_does_not_dangle_a_listener_state",
+        "开关就是启动之后，关着时那句话后面没有按钮可接 —— 外审 S4 3/3「不知道开了开关够不够」",
+    ),
+    Revert(
+        "SWEEP", "关着时连「预览中」也不说了",
+        "pages/flash_page.py",
+        '        return self._current_runtime_text()[0] not in ("未启动", "已启动")\n',
+        "        return False\n",
+        "tests/test_the_flash_page_speaks_two_words_for_two_things.py::"
+        "test_a_switched_off_page_does_not_dangle_a_listener_state",
+        "撤悬空那句时最顺手的写法是关着一律不说 —— 那会把关着也在发生的预览 / 异常一起删没",
+    ),
+    Revert(
+        "SWEEP", "改了被断点锚住的一行、断点没跟着改",
+        "flash_process.py",
+        '                    flash_effect.request_monitor(command.get("monitor"))\n',
+        '                    flash_effect.request_monitor(command.get("monitor") or None)\n',
+        "tests/test_revert_verify_registry.py::test_every_breakpoint_anchor_still_exists",
+        "这条体检以前只有开源仓有 ⇒ 上游只跑 `--only 组` 时别组的旧锚点腐烂零报警（09-23 同步当场红过一次）",
+    ),
 ]
 
 

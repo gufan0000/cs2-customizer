@@ -157,6 +157,14 @@ class FlashPage(QWidget):
             return "已启动", "success"
         return "未启动", "warn"
 
+    def _runtime_worth_saying(self) -> bool:
+        """总开关关着时，「运行 · 未启动 / 已启动」不说 —— 开关就是启动之后，关着时它悬空：
+        外审 3/3「写着未启动却没有启动按钮，不知道开了开关够不够」。
+        ⭐ 预览中 / 启动中 / 异常照说：那几件事关着时也在发生。断点 `--only SWEEP`。"""
+        if bool(getattr(config, "flash_enabled", False)):
+            return True
+        return self._current_runtime_text()[0] not in ("未启动", "已启动")
+
     def _set_preview_status(self, text):
         if hasattr(self, "preview_status_label"):
             self.preview_status_label.setText(text)
@@ -250,6 +258,7 @@ class FlashPage(QWidget):
 
         current_tab = self._current_tab_text()
         runtime_text, _runtime_level = self._current_runtime_text()
+        runtime_part = f" · 运行状态 {runtime_text}" if self._runtime_worth_saying() else ""
         style_text = self._current_style_text()
         media_text = self._current_media_text()
 
@@ -258,7 +267,7 @@ class FlashPage(QWidget):
             self.action_bar.configure_primary("打开图片文件夹", self._open_flash_images_folder, visible=True)
             action_message = (
                 f"当前页面：{current_tab} · 图片样式 {self._current_image_style_text()} / 媒体 {media_text}"
-                f" · 运行状态 {runtime_text}。"
+                f"{runtime_part}。"
             )
             # RN-165：一张图都没有的时候，「打开图片文件夹」点开是个空目录。
             if self._guide_empty_library(self._image_library_is_empty(),
@@ -272,7 +281,7 @@ class FlashPage(QWidget):
             self.action_bar.configure_primary("打开音频文件夹", self._open_flash_audio_folder, visible=True)
             action_message = (
                 f"当前页面：{current_tab} · 音频 {'已启用' if bool(getattr(config, 'flash_audio_enabled', False)) else '未启用'}"
-                f" / {self._current_audio_style_text()} · 运行状态 {runtime_text}。"
+                f" / {self._current_audio_style_text()}{runtime_part}。"
             )
             if self._guide_empty_library(self._audio_library_is_empty(),
                                          "去社区拿一套自定闪光",
@@ -318,7 +327,7 @@ class FlashPage(QWidget):
                 self.action_bar.primary_btn.setToolTip("")
             action_message = (
                 f"当前页面：{current_tab} · 闪光样式 {style_text} / 媒体 {media_text}"
-                f" · 运行状态 {runtime_text}。"
+                f"{runtime_part}。"
             )
         self.action_bar.set_message(action_message)
 
@@ -359,8 +368,10 @@ class FlashPage(QWidget):
             ("info", f"样式 · {self._compact_text(style_text)}"),
             ("info" if media_text == "纯背景" else "success", f"媒体 · {self._compact_text(media_text, '纯背景', 8)}"),
             ("info", f"页面 · {self._compact_text(current_tab, '未分组', 8)}"),
-            (runtime_level, f"运行 · {runtime_text}"),
         ]
+        runtime_shown = self._runtime_worth_saying()
+        if runtime_shown:
+            badges.append((runtime_level, f"运行 · {runtime_text}"))
 
         bg_color_text = self._current_bg_color_text()
         opacity = int(round(float(getattr(config, "flash_max_opacity", 0.75)) * 100))
@@ -402,7 +413,8 @@ class FlashPage(QWidget):
             image_text = self._current_image_style_text()
             audio_text = self._current_audio_style_text() if audio_enabled else "关闭"
             self.basic_overview_hint_label.setText(
-                f"图片 {image_text} · 音频 {audio_text} · 状态 {preview_text} · 运行 {runtime_text}"
+                f"图片 {image_text} · 音频 {audio_text} · 状态 {preview_text}"
+                + (f" · 运行 {runtime_text}" if runtime_shown else "")
             )
         self._sync_action_bar()
 
