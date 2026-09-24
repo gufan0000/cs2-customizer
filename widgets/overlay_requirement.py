@@ -40,6 +40,9 @@ RN-409 的证据格里留着一句警告：「批 10 已证过**文案救不了�
 """
 from __future__ import annotations
 
+import html
+
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QLabel
 
 #: 这句话挂的 objectName —— 判据与出图都按它找。
@@ -71,6 +74,13 @@ def overlay_requirement_text(thing: str, *, exclusive_now: bool = False) -> str:
     )
 
 
+def overlay_requirement_rich(text: str) -> str:
+    """RN-681：动作单独一行放大、后果换行正常字重 —— 拆层级，字一个不改（RN-429 原话）。"""
+    head, _, rest = text.partition("，")
+    return (f"<big>{html.escape(head)}</big><br>"
+            f'<span style="font-weight:400">{html.escape(rest)}</span>')
+
+
 def make_overlay_requirement_label(thing: str) -> QLabel:
     """建那句话。⚠ 调用方负责把它放进**参数区之前**能看到的位置。
 
@@ -80,8 +90,9 @@ def make_overlay_requirement_label(thing: str) -> QLabel:
     """
     from core.cs2_video_mode import overlay_is_invisible_now
 
-    label = QLabel(overlay_requirement_text(
-        thing, exclusive_now=overlay_is_invisible_now()))
+    label = QLabel(overlay_requirement_rich(overlay_requirement_text(
+        thing, exclusive_now=overlay_is_invisible_now())))
+    label.setTextFormat(Qt.TextFormat.RichText)
     label.setObjectName(OVERLAY_HINT_OBJECT_NAME)
     label.setWordWrap(True)
     return label

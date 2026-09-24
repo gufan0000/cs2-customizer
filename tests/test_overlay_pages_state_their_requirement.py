@@ -329,3 +329,61 @@ def test_the_declaration_has_not_quietly_emptied_itself():
             f"阳性对照 {control} 不在声明清单里 —— "
             "少了它，判据 ② 就只能证明「我改过的页面被我改过了」。"
         )
+
+
+def test_the_action_is_its_own_bigger_line(main_window, qapp):
+    """⑤ RN-681：那句前提的**动作**单独成第一行、字号比后果那行大；字一个不少。
+
+    整圈边框 + 加粗之后外审 S4 仍 5/6 说「前提淹没在长句里、会被跳过」——
+    动作和后果同一个字重、同一段。量的是 Qt 解析出来的文档，不是源码里的标签。
+    """
+    from PySide6.QtGui import QTextDocument
+
+    from widgets.overlay_requirement import (overlay_requirement_label,
+                                             overlay_requirement_text)
+
+    checked = []
+    for path in _declared_pages(True):
+        page_id = _PAGE_IDS[path.stem]
+        main_window.ensure_page_loaded(page_id)
+        main_window.show_page(page_id, animated=False, force=True)
+        qapp.processEvents()
+        label = overlay_requirement_label(main_window.pages.get(page_id))
+        if label is None:          # advanced 用自己的话写的
+            continue
+        doc = QTextDocument()
+        doc.setDefaultFont(label.font())
+        doc.setHtml(label.text())
+        lines = doc.toPlainText().split("\n")
+        assert len(lines) == 2 and all(lines), (
+            f"{page_id}：动作和后果没分成两行：{doc.toPlainText()!r}")
+        head, rest = lines
+        assert "无边框窗口" in head and "独占全屏" not in head, (
+            f"{page_id}：第一行必须只是动作：{head!r}")
+        thing = rest.split("才画得到", 1)[0]
+        assert head + "，" + rest in (overlay_requirement_text(thing, exclusive_now=e)
+                                     for e in (False, True)), (
+            f"{page_id}：拆行时丢了字 / 改了字（RN-429 的原话不许动）：{head!r} / {rest!r}")
+        # ⚠ 不量几何：行高被「⚠」的备用字体撑高（去掉放大照样「高」，回退验证逮到的假绿）；
+        #   而 pytest 环境里汉字排出来宽度是 0（字库里没有中文字形）。
+        #   ⇒ 量 Qt 解析后每段字的字号级别（`<big>` = +1）—— 读的是解析结果，不是源码里的标签。
+        head_level = _size_level(doc, "显")
+        rest_level = _size_level(doc, "画")
+        assert head_level > rest_level, (
+            f"{page_id}：动作那行字号级别 {head_level} 没比后果那行 {rest_level} 大 —— "
+            "又是一整段同字号")
+        checked.append(page_id)
+    assert len(checked) >= 4, f"只量到 {checked} —— 分母塌了"
+
+
+def _size_level(doc, char: str) -> int:
+    """含 `char` 的那一段字，Qt 解析出来的字号调整级别。"""
+    from PySide6.QtGui import QTextFormat
+
+    it = doc.begin().begin()
+    while not it.atEnd():
+        frag = it.fragment()
+        if char in frag.text():
+            return frag.charFormat().intProperty(QTextFormat.Property.FontSizeAdjustment)
+        it += 1
+    raise AssertionError(f"文档里找不到「{char}」")

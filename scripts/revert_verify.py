@@ -9938,6 +9938,23 @@ Revert(
         "tests/test_revert_verify_registry.py::test_every_breakpoint_anchor_still_exists",
         "这条体检以前只有开源仓有 ⇒ 上游只跑 `--only 组` 时别组的旧锚点腐烂零报警（09-23 同步当场红过一次）",
     ),
+    # RN-681（2026-09-24）
+    Revert(
+        "SWEEP", "独占全屏前提的动作那行没放大",
+        "widgets/overlay_requirement.py",
+        '    return (f"<big>{html.escape(head)}</big><br>"\n',
+        '    return (f"{html.escape(head)}<br>"\n',
+        "tests/test_overlay_pages_state_their_requirement.py::test_the_action_is_its_own_bigger_line",
+        "整圈边框 + 加粗之后外审 S4 仍 5/6「前提淹没在长句里」—— 动作和后果同一个字号",
+    ),
+    Revert(
+        "SWEEP", "拆行时把后果那半句丢了",
+        "widgets/overlay_requirement.py",
+        """            f'<span style="font-weight:400">{html.escape(rest)}</span>')\n""",
+        """            f'<span style="font-weight:400"></span>')\n""",
+        "tests/test_overlay_pages_state_their_requirement.py::test_the_action_is_its_own_bigger_line",
+        "拆层级最顺手的写法是只留动作 —— 那会把 RN-429 裁定过的「否则会怎样」一起删没",
+    ),
 ]
 
 
