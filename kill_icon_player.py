@@ -66,6 +66,15 @@ KILL_LEVELS = tuple(range(1, 6))
 HEADSHOT_VARIANT = "hs"
 
 
+def with_user_opacity(fade_opacity: float) -> float:
+    """淡入淡出的透明度 × 用户设的不透明度（批 118：素材太亮太实会挡视线，以前唯一能调的只有大小）。"""
+    try:
+        user = max(0.3, min(1.0, float(getattr(config, "kill_icon_opacity", 1.0))))
+    except (TypeError, ValueError):
+        user = 1.0
+    return float(fade_opacity) * user
+
+
 class LevelInfo(NamedTuple):
     """一个击杀等级的元数据。**故意不含像素**——见 `KillIconPlayer._catalog`。"""
 
@@ -268,12 +277,12 @@ class KillIconPlayer(QObject):
 
     # ============================================================ 素材装载
 
-    def _target_size_for(self, animation):
+    def _target_size_for(self, animation, scale=None):
         return compute_scaled_size(
             animation.frame_width,
             animation.frame_height,
             getattr(config, "kill_icon_base_width", 350),
-            getattr(config, "kill_icon_scale", 1.0),
+            getattr(config, "kill_icon_scale", 1.0) if scale is None else scale,
         )
 
     def _load_worker(self, style_name, token):
@@ -283,13 +292,18 @@ class KillIconPlayer(QObject):
         用途就是被缩放一次，留着它等于常驻一份完整副本（见 `_catalog` 的说明）。
         """
         try:
+            from kill_icon_overlay import effective_scale
+
+            # 批 117：整套风格超内存预算时整体等比压小（设置页如实写「实际按 N% 显示」）
+            scale = effective_scale(style_name, getattr(config, "kill_icon_base_width", 350),
+                                    getattr(config, "kill_icon_scale", 1.0))
             assets = {}
             for kills in KILL_LEVELS:
                 for variant in ("", HEADSHOT_VARIANT):
                     animation = load_level_animation(style_name, kills, variant)
                     if animation is None:
                         continue
-                    width, height = self._target_size_for(animation)
+                    width, height = self._target_size_for(animation, scale)
                     assets[(kills, variant)] = (
                         LevelInfo(animation.frame_count, animation.fps,
                                   animation.frame_width, animation.frame_height,
@@ -424,6 +438,7 @@ class KillIconPlayer(QObject):
             return
 
         index, opacity = state
+        opacity = with_user_opacity(opacity)
         # 帧号和不透明度都没变就别重绘：透明置顶窗每次重绘都要走一遍合成。
         key = (index, round(opacity * 100))
         if key == self._last_paint_key:

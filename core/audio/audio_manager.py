@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 import random
+import re
 import sys
 import threading
 import time
@@ -900,6 +901,15 @@ class AudioManager:
             info = self._get_info(key)
         if not info:
             return
+        picked = self._pick_gun_sound_variant(key)     # 批 119：一档多条随机（play_sound 早就这么挑）
+        if picked != key and self._get_info(picked):
+            key, info = picked, self._get_info(picked)
+
+        # 批 119：语音以前**不过策略层、不进时间线** —— 新一杀顶不掉上一杀的语音，
+        # 回放页上也看不见语音发生过。策略表里 kill_voice=95 那一档一直在，只是没人用。
+        # 先问准入再转发：被拒掉的不转发，队友听到的 = 自己听到的（同淡入淡出那条路）。
+        if not self._admit_playback(key, self.kill_voice_channel, "kill_voice", event_type="kill_voice"):
+            return
 
         if getattr(config, "sfx_forwarding_enabled", False):
             if getattr(config, "sfx_forwarding_options", {}).get("kill_voice", False):
@@ -926,6 +936,10 @@ class AudioManager:
         try:
             info.sound.set_volume(self._resolve_play_volume(config, "kill_voice", info))
             self.kill_voice_channel.play(info.sound)
+            self._record_timeline_event(
+                action="play", key=key, channel_type="kill_voice", event_type="kill_voice",
+                reason="played", success=True,
+            )
         except Exception as e:
             self.logger.error(f"Play voice failed {key}: {e}")
 
@@ -965,7 +979,9 @@ class AudioManager:
 
         self._clear_fade_effect(key, channel)
 
-        target = getattr(config, "round_sound_volume", self._volume) if channel_type == "round_sound" else getattr(config, "volume", self._volume)
+        # 批 119：以前这里直接取配置音量，**不含响度归一**（淡入淡出这条路是回合音效唯一走的路）。
+        # 回合音效跳过分类倍率是有意的（独立滑块，防双重缩放）—— `_resolve_play_volume` 本就照这个规矩。
+        target = self._resolve_play_volume(config, channel_type, info)
         fade_in_s = max(0.01, fade_in_ms / 1000.0)
         fade_out_s = max(0.01, fade_out_ms / 1000.0)
 
@@ -1288,7 +1304,31 @@ class AudioManager:
         path = find_audio_by_stem(base_dir, stem, extensions=DEFAULT_AUDIO_EXTENSIONS)
         if not path:
             return False
-        return self.load_sound(key, path, category, weapon_id=weapon_id, style=style)
+        ok = self.load_sound(key, path, category, weapon_id=weapon_id, style=style)
+        if ok and category in ("kill_sound", "kill_voice"):
+            self._load_numbered_variants(base_dir, stem, key, category, weapon_id, style)
+        return ok
+
+    def _load_numbered_variants(self, base_dir, stem, key, category, weapon_id=None, style=None):
+        """批 119：同一档放几条、播时随机挑 —— `3.mp3` 是主文件，`3-2.mp3`、`3-3.mp3` 是同档的另几条
+        （爆头同理 `3-headshot-2.mp3`）。登记进枪声那张变体表，`play_sound` / `play_voice` 自动随机、不连播同一条。
+        以前一档只能一个文件：一局响几十次的击杀音听腻了只能换整套。上限同枪声（前 5 条）。"""
+        pattern = re.compile(rf"^{re.escape(stem)}-(\d+)$", re.IGNORECASE)
+        numbered = []
+        for path in list_audio_paths(base_dir, extensions=DEFAULT_AUDIO_EXTENSIONS, sort=True):
+            m = pattern.match(os.path.splitext(os.path.basename(path))[0])
+            if m:
+                numbered.append((int(m.group(1)), path))
+        variants = [key]
+        for _n, path in sorted(numbered)[: MAX_GUN_SOUND_VARIANTS - 1]:
+            variant_key = f"{key}#{len(variants)}"
+            if self.load_sound(variant_key, path, category, weapon_id=weapon_id, style=style):
+                variants.append(variant_key)
+        with self._lock:
+            if len(variants) > 1:
+                self._variant_table()[key] = tuple(variants)
+            else:
+                self._variant_table().pop(key, None)
 
     def _load_range(self, base_dir: str, key_builder: Callable[[int], str], category: str, weapon_id=None, style=None, headshot: bool = False, index: int = None):
         loaded = False

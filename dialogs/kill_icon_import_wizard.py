@@ -48,6 +48,7 @@ KIND_LABELS = {
     "animation": "动图",
     "sequence": "PNG 帧序列",
     "spritesheet": "图集",
+    "video": "视频",
 }
 
 

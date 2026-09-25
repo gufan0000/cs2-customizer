@@ -165,7 +165,21 @@ class GSIHandlerSpecial:
         # 发生（埋包 MVP 是最典型的例子）。改由 _update_mvp_status 内部按 steamid
         # 从 allplayers 里认自己，认不出来才退回 player 块。
         self._update_mvp_status(data)
-    
+        self._update_assist_status(data)
+
+    def _update_assist_status(self, data):
+        """批 119：助攻（本人 match_stats.assists 涨了）。照 MVP：按 steamid 认自己、首帧只播种。
+        ⚠ 播种不受总开关管 —— 关着时计数照涨，一打开就会把攒下的当成一次助攻。"""
+        current = self._read_own_match_stat(data, "assists")
+        if current is None:
+            return
+        previous = getattr(self, "previous_assists_count", None)
+        self.previous_assists_count = current
+        if previous is None or current <= previous:
+            return                                # 首帧播种 / 换局回落
+        if getattr(config, "round_sound_enabled", False):
+            self._play_event("round", "assist")
+
     def _is_player_active(self, data):
         """检查玩家是否处于活动状态"""
         is_active = (
@@ -180,7 +194,10 @@ class GSIHandlerSpecial:
         return is_active
     
     def _read_own_mvp_count(self, data):
-        """读取**本人**的 MVP 计数，读不到返回 None。
+        return self._read_own_match_stat(data, "mvps")
+
+    def _read_own_match_stat(self, data, stat):
+        """读取**本人**的某项 match_stats（mvps / assists），读不到返回 None。
 
         优先从 `allplayers` 里按 steamid 找自己，其次才用 `player` 块——顺序
         不能反，这是"死了就拿不到 MVP 音效"那个缺陷的根子：
@@ -205,8 +222,8 @@ class GSIHandlerSpecial:
                 if str(entry.get("steamid", "")) != str(steamid):
                     continue
                 stats = entry.get("match_stats") or {}
-                if "mvps" in stats:
-                    return int(stats["mvps"])
+                if stat in stats:
+                    return int(stats[stat])
 
         player = data.get("player") or {}
         player_steamid = str(player.get("steamid", "") or "")
@@ -214,8 +231,8 @@ class GSIHandlerSpecial:
         is_self = (not steamid) or (not player_steamid) or player_steamid == steamid
         if is_self:
             stats = player.get("match_stats") or {}
-            if "mvps" in stats:
-                return int(stats["mvps"])
+            if stat in stats:
+                return int(stats[stat])
         return None
 
     def _update_mvp_status(self, data):

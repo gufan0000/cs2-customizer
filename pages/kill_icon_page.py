@@ -249,6 +249,7 @@ class KillIconPage(QWidget):
         self.hero_preview.setMinimumWidth(0)
         self.hero_preview.setMinimumHeight(120)
         self.hero_preview.import_requested.connect(self._choose_file_to_import)
+        self.hero_preview.set_opacity(float(getattr(config, "kill_icon_opacity", 1.0)))
         # RN-407 第③件：图照常播，旁边一句话说清楚游戏里看不看得到。
         from widgets.master_switch_effect import make_preview_effect_caption
 
@@ -341,6 +342,10 @@ class KillIconPage(QWidget):
         self.scale_slider, self.scale_value_label = self._make_slider_row(
             sliders, "图标大小:", 50, 200, int(getattr(config, "kill_icon_scale", 1.0) * 100),
             self._on_scale_changed, format_percent(getattr(config, "kill_icon_scale", 1.0), hi=2.0))
+        # 批 118：素材是用户导的，做得太亮太实会挡视线，而以前唯一能调的只有大小
+        opacity = int(round(float(getattr(config, "kill_icon_opacity", 1.0)) * 100))
+        self.opacity_slider, self.opacity_value_label = self._make_slider_row(
+            sliders, "不透明度:", 30, 100, opacity, self._on_opacity_changed, f"{opacity}%")
 
         reset_btn = QPushButton("重置位置和大小")
         reset_btn.setObjectName("secondaryButton")
@@ -398,6 +403,7 @@ class KillIconPage(QWidget):
 
         self.style_strip = KillIconStyleStrip()
         self.style_strip.style_selected.connect(self._on_style_selected)
+        self.style_strip.style_menu_requested.connect(self._show_style_menu)
         self.style_strip.import_requested.connect(self._choose_file_to_import)
 
         # 卡片是固定宽的，风格多了要能横着滚，不能把整页撑宽
@@ -421,7 +427,7 @@ class KillIconPage(QWidget):
         card_layout.addWidget(strip_scroll)
 
         drop_hint = QLabel(
-            "把图标包(.zip)、动图或图片拖到这一页上就能导入；"
+            "把图标包(.zip)、动图、图片或视频拖到这一页上就能导入；"
             "推荐 WebP 动图 / APNG / PNG 帧序列——边缘干净，GIF 的透明是 1-bit 的，会有硬白边。"
         )
         drop_hint.setObjectName("hintLabel")
@@ -440,15 +446,13 @@ class KillIconPage(QWidget):
         notice_layout.addWidget(self.notice_label, 1)
         self.undo_btn = QPushButton("撤销")
         self.undo_btn.setObjectName("secondaryButton")
-        self.undo_btn.setFixedHeight(26)
         self.undo_btn.clicked.connect(self._undo_last_delete)
         self.undo_btn.hide()
-        notice_layout.addWidget(self.undo_btn)
+        notice_layout.addWidget(self.undo_btn, 0, Qt.AlignRight | Qt.AlignVCenter)
         dismiss_btn = QPushButton("知道了")
         dismiss_btn.setObjectName("secondaryButton")
-        dismiss_btn.setFixedHeight(26)
         dismiss_btn.clicked.connect(self._clear_notice)
-        notice_layout.addWidget(dismiss_btn)
+        notice_layout.addWidget(dismiss_btn, 0, Qt.AlignRight | Qt.AlignVCenter)
         self.notice_frame.hide()
         card_layout.addWidget(self.notice_frame)
 
@@ -465,9 +469,8 @@ class KillIconPage(QWidget):
         progress_layout.addWidget(self.progress_bar, 1)
         self.cancel_btn = QPushButton("取消")
         self.cancel_btn.setObjectName("secondaryButton")
-        self.cancel_btn.setFixedHeight(26)
         self.cancel_btn.clicked.connect(self._import_task.cancel)
-        progress_layout.addWidget(self.cancel_btn)
+        progress_layout.addWidget(self.cancel_btn, 0, Qt.AlignRight | Qt.AlignVCenter)
         self.progress_frame.hide()
         card_layout.addWidget(self.progress_frame)
 
@@ -558,8 +561,9 @@ class KillIconPage(QWidget):
         ⭐ 这个条件有 5 处要问它，所以**它得有名字**（RN-138 的教训：
         RN-133 把一个同样的条件写成就地的 `getattr`，指向那块内容的另外
         三处一处都没跟上）。
+        ⚠ 批 118：看**全部**风格，不看风格条上可见的（藏起来的也是库里有的）。
         """
-        return not self.available_icon_styles
+        return not getattr(self, "all_icon_styles", self.available_icon_styles)
 
     @staticmethod
     def _icon_library_url() -> str:
@@ -818,7 +822,13 @@ class KillIconPage(QWidget):
 
     def _scan_icon_styles(self):
         """扫描可用的图标风格"""
-        self.available_icon_styles = ResourceManager.list_kill_icon_styles()
+        from core.kill_icon_prefs import ordered_styles
+
+        # 批 118：以前就是 os.listdir 的顺序。现在最近用过的在前、其余按名字；藏起来的不上条
+        self.all_icon_styles = list(ResourceManager.list_kill_icon_styles() or [])
+        self.available_icon_styles = ordered_styles(
+            self.all_icon_styles, getattr(config, "kill_icon_recent_styles", []),
+            getattr(config, "kill_icon_hidden_styles", []), keep=getattr(config, "kill_icon_style", ""))
         if not self.available_icon_styles:
             self.logger.warning("未扫描到任何击杀图标风格")
         self.logger.info(f"扫描到的击杀图标风格: {self.available_icon_styles}")
@@ -980,8 +990,11 @@ class KillIconPage(QWidget):
 
     def _on_import_finished(self, result):
         self.progress_frame.hide()
-        self._reload_after_import(
-            result.get("style") if isinstance(result, dict) else None)
+        style = result.get("style") if isinstance(result, dict) else None
+        if isinstance(result, dict) and "packs" in result:     # 批量：落到最后一个装好的风格
+            done = [r for r in result["packs"] if "style" in r]
+            style = done[-1]["style"] if done else None
+        self._reload_after_import(style)
         self._show_notice(self._describe_result(result))
 
     def _on_import_failed(self, message):
@@ -995,6 +1008,20 @@ class KillIconPage(QWidget):
     def _describe_result(self, result):
         if not isinstance(result, dict):
             return "导入完成。"
+
+        if "packs" in result:         # 批 117：一次拖进好几个包 ⇒ 逐包成败
+            lines = []
+            for r in result["packs"]:
+                if "pack_failed" in r:
+                    lines.append(f"✗ {r['pack_failed']}：{r['reason'].splitlines()[0]}")
+                else:
+                    lines.append(f"✓ 「{r.get('style')}」{len(r.get('levels') or [])} 个等级"
+                                 + (f"（作者 {r['author']}）" if r.get("author") else ""))
+            if result.get("cancelled"):
+                lines.append("已取消剩下的；上面打 ✓ 的已经装好了。")
+            if result.get("skipped_assets"):
+                lines.append(f"另有 {result['skipped_assets']} 个单独的素材没导入 —— 图标包和单个素材请分开拖。")
+            return "\n".join(lines)
 
         if "imported" in result:      # 图标包
             levels = "、".join(f"{k}{'（爆头）' if v else ''} 杀"
@@ -1031,10 +1058,28 @@ class KillIconPage(QWidget):
 
         packs = [p for p in paths if str(p).lower().endswith(".zip")]
         if packs:
-            def _work(progress, cancel):
-                return import_pack(packs[0], progress=progress, cancel=cancel)
+            # 批 117：以前只装 packs[0]，第 2 个起连同混在里面的单个素材**既不导入也不提示**
+            skipped = len(paths) - len(packs)
 
-            self._run_import(_work, "正在装入图标包…")
+            def _work(progress, cancel):
+                import os
+
+                from core.kill_icon_import import KillIconImportCancelled, KillIconImportError
+
+                if len(packs) == 1 and not skipped:
+                    return import_pack(packs[0], progress=progress, cancel=cancel)
+                results, cancelled = [], False
+                for path in packs:
+                    try:
+                        results.append(import_pack(path, progress=progress, cancel=cancel))
+                    except KillIconImportCancelled:
+                        cancelled = True      # 前面装好的已经进库 ⇒ 不能再说「什么都没改」
+                        break
+                    except KillIconImportError as exc:
+                        results.append({"pack_failed": os.path.basename(str(path)), "reason": str(exc)})
+                return {"packs": results, "skipped_assets": skipped, "cancelled": cancelled}
+
+            self._run_import(_work, f"正在装入 {len(packs)} 个图标包…" if len(packs) > 1 else "正在装入图标包…")
             return True
 
         assets = [p for p in paths if p not in packs]
@@ -1079,13 +1124,17 @@ class KillIconPage(QWidget):
     def _choose_file_to_import(self):
         path, _filter = QFileDialog.getOpenFileName(
             self, "选择图标包或素材", "",
-            "图标包与素材 (*.zip *.gif *.webp *.png *.apng *.avif *.jpg *.jpeg *.bmp);;"
+            "图标包与素材 (*.zip *.gif *.webp *.png *.apng *.avif *.jpg *.jpeg *.bmp *.mp4 *.webm *.mov *.mkv);;"
             "图标包 (*.zip);;所有文件 (*.*)")
         if path:
             self._import_paths([path])
 
     def _reload_after_import(self, style=None):
         """导入之后把风格库、播放器、预览一起刷新。"""
+        hidden = list(getattr(config, "kill_icon_hidden_styles", []) or [])
+        if style and style in hidden:          # 批 118：重新导进来的就是想用的，别还藏着
+            config.kill_icon_hidden_styles = [s for s in hidden if s != style]
+            config.save_config()
         self._scan_icon_styles()
         self._loading = True
         try:
@@ -1167,9 +1216,17 @@ class KillIconPage(QWidget):
         if not style or style == self._current_style():
             return
 
+        from core.kill_icon_prefs import remember_recent
+
+        previous = self._current_style()
+        if previous:
+            self._remember_layout(previous, save=False)   # 切走前存下 —— 否则切回来拿到的是别人的位置
         self._selected_style = style
         self.style_strip.set_selected(style)
         config.kill_icon_style = style
+        config.kill_icon_recent_styles = remember_recent(
+            getattr(config, "kill_icon_recent_styles", []), style)
+        self._apply_style_layout(style)
         config.save_config()
         self.logger.info(f"击杀图标风格更新: {style}")
 
@@ -1178,8 +1235,78 @@ class KillIconPage(QWidget):
         self._schedule_preview_refresh()
         self._sync_status_strip()
 
+    # ------------------------------------------------------------ 风格条右键：藏起来（批 118）
+
+    def _style_menu_actions(self, style):
+        """右键菜单里有哪几项：`[(文案, 动作)]`。单独拎出来是为了判据不用真弹菜单（§3）。"""
+        from core.kill_icon_prefs import can_hide
+
+        hidden = list(getattr(config, "kill_icon_hidden_styles", []) or [])
+        actions = []
+        if can_hide(getattr(self, "all_icon_styles", self.available_icon_styles), hidden, style,
+                    current=self._current_style()):
+            actions.append((f"在这一行里藏起「{style}」（不删素材）", lambda: self._set_hidden(hidden + [style])))
+        if hidden:
+            actions.append((f"显示已隐藏的 {len(hidden)} 套", lambda: self._set_hidden([])))
+        return actions
+
+    def _show_style_menu(self, style, global_pos):
+        from PySide6.QtWidgets import QMenu
+
+        actions = self._style_menu_actions(style)
+        if not actions:
+            return
+        menu = QMenu(self)
+        for text, fn in actions:
+            menu.addAction(text).triggered.connect(fn)
+        menu.exec(global_pos)
+
+    def _set_hidden(self, hidden):
+        config.kill_icon_hidden_styles = list(dict.fromkeys(hidden))
+        config.save_config()
+        self._reload_after_import(self._current_style())
+
+    # ------------------------------------------------------------ 位置/大小按风格记（批 118）
+
+    def _remember_layout(self, style=None, save=True):
+        from core.kill_icon_prefs import with_layout
+
+        style = style or self._current_style()
+        if not style:
+            return
+        config.kill_icon_style_layouts = with_layout(
+            getattr(config, "kill_icon_style_layouts", {}), style,
+            getattr(config, "kill_icon_offset_x", 0), getattr(config, "kill_icon_offset_y", 0),
+            getattr(config, "kill_icon_scale", 1.0))
+        if save:
+            config.save_config()
+
+    def _apply_style_layout(self, style):
+        """换了风格：换成它记着的位置/大小（没记过就沿用当前的 —— 老用户调好的不丢）。
+        以前 14 个 kill_icon_* 键里只有风格名是按风格的：换一套素材就得重调，换回去再调一遍。"""
+        from core.kill_icon_prefs import layout_of
+
+        current = {"x": getattr(config, "kill_icon_offset_x", 0), "y": getattr(config, "kill_icon_offset_y", 0),
+                   "scale": getattr(config, "kill_icon_scale", 1.0)}
+        layout = layout_of(getattr(config, "kill_icon_style_layouts", {}), style, current)
+        config.kill_icon_offset_x, config.kill_icon_offset_y = int(layout["x"]), int(layout["y"])
+        config.kill_icon_scale = float(layout["scale"])
+        for slider, value in ((self.x_slider, config.kill_icon_offset_x), (self.y_slider, config.kill_icon_offset_y),
+                              (self.scale_slider, round(config.kill_icon_scale * 100))):
+            slider.blockSignals(True)
+            slider.setValue(int(value))
+            slider.blockSignals(False)
+        self.x_value_label.setText(f"{config.kill_icon_offset_x} px")
+        self.y_value_label.setText(f"{config.kill_icon_offset_y} px")
+        self.scale_value_label.setText(f"{round(config.kill_icon_scale * 100)}%")
+        if self.kill_icon_player:
+            self.kill_icon_player.update_position_offset(config.kill_icon_offset_x, config.kill_icon_offset_y)
+            self.kill_icon_player.update_scale(config.kill_icon_scale)
+        self._sync_position_map()
+
     def _on_x_position_changed(self, value):
         config.kill_icon_offset_x = value
+        self._remember_layout(save=False)
         config.save_config()
         self.x_value_label.setText(f"{value} px")
         if self.kill_icon_player:
@@ -1187,9 +1314,11 @@ class KillIconPage(QWidget):
                 config.kill_icon_offset_x, config.kill_icon_offset_y)
         self._sync_position_map()
         self._sync_status_strip()
+        self._replay_while_adjusting()
 
     def _on_y_position_changed(self, value):
         config.kill_icon_offset_y = value
+        self._remember_layout(save=False)
         config.save_config()
         self.y_value_label.setText(f"{value} px")
         if self.kill_icon_player:
@@ -1197,21 +1326,66 @@ class KillIconPage(QWidget):
                 config.kill_icon_offset_x, config.kill_icon_offset_y)
         self._sync_position_map()
         self._sync_status_strip()
+        self._replay_while_adjusting()
 
     def _on_scale_changed(self, value):
         scale = value / 100.0
         config.kill_icon_scale = scale
+        self._remember_layout(save=False)
         config.save_config()
         self.scale_value_label.setText(f"{value}%")
         if self.kill_icon_player:
             self.kill_icon_player.update_scale(scale)
         self._sync_position_map()
         self._sync_status_strip()
+        self._say_if_scale_is_capped(scale)
+        self._replay_while_adjusting()
+
+    def _say_if_scale_is_capped(self, scale):
+        """批 117：超内存预算时播放器会整体压小 —— 如实说，别让用户以为滑条坏了。"""
+        from kill_icon_overlay import effective_scale
+
+        style = self._current_style()
+        if not style:
+            return
+        actual = effective_scale(style, getattr(config, "kill_icon_base_width", 350), scale)
+        if actual < scale - 1e-6:
+            self._show_notice(f"这套图标帧多，{round(scale * 100)}% 太占内存，游戏里实际按 "
+                              f"{round(actual * 100)}% 显示。")
+
+    def _on_opacity_changed(self, value):
+        config.kill_icon_opacity = max(0.3, min(1.0, value / 100.0))
+        config.save_config()
+        self.opacity_value_label.setText(f"{value}%")
+        if getattr(self, "hero_preview", None) is not None:
+            self.hero_preview.set_opacity(config.kill_icon_opacity)
+
+    def _replay_while_adjusting(self):
+        """批 118：调位置最费事的是「播完就没了，得再点一次」。拖位置 / 大小时，图标没在播就再弹一发。
+
+        ⛔ 不加开关：这一页可操作控件封顶 10 个（KI-7「只回答三件事」）。去抖 300ms，
+        等上一发**真的播完**才弹下一发（等状态，不等固定时长）。
+        """
+        timer = getattr(self, "_replay_timer", None)
+        if timer is None:
+            timer = self._replay_timer = QTimer(self)
+            timer.setSingleShot(True)
+            timer.setInterval(300)
+            timer.timeout.connect(self._replay_tick)
+        timer.start()
+
+    def _replay_tick(self):
+        player = self.kill_icon_player
+        if player is None or not self.isVisible():      # 离开这一页 / 最小化就不弹
+            return
+        if not player.is_playing:
+            self._test_current()
 
     def _reset_position_and_scale(self):
         config.kill_icon_offset_x = 0
         config.kill_icon_offset_y = 0
         config.kill_icon_scale = 1.0
+        self._remember_layout(save=False)
         config.save_config()
 
         self.x_slider.setValue(0)

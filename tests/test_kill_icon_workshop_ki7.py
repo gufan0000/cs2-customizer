@@ -221,10 +221,13 @@ def test_exporting_a_pack_runs_in_the_background(workshop, monkeypatch):
 
     monkeypatch.setattr(workshop_module.QFileDialog, "getSaveFileName",
                         staticmethod(lambda *a, **k: ("C:/tmp/classic.zip", "")))
+    # 批 117：没记作者的风格导出前问一句署名 —— 判据里拦住，不许真弹（§3）
+    monkeypatch.setattr(workshop_module.QInputDialog, "getText",
+                        staticmethod(lambda *a, **k: ("  我自己  ", True)))
     seen = {}
 
-    def _fake_export(style, path, progress=None):
-        seen.update(style=style, path=path, has_progress=progress is not None)
+    def _fake_export(style, path, author=None, progress=None):
+        seen.update(style=style, path=path, has_progress=progress is not None, author=author)
         return {"style": style, "path": path, "levels": [1, 2], "size": 4096}
 
     monkeypatch.setattr(pack_module, "export_pack", _fake_export)
@@ -233,6 +236,7 @@ def test_exporting_a_pack_runs_in_the_background(workshop, monkeypatch):
     workshop._export_pack()
     assert seen["style"] == "classic"
     assert seen["has_progress"] is True, "打包没有报进度，长任务会显得像卡死"
+    assert seen["author"] == "我自己", "问来的署名没交给导出"
     assert "已导出" in workshop.notice_label.text()
 
 

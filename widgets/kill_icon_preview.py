@@ -111,11 +111,15 @@ class KillIconPreview(QWidget):
     def has_frames(self) -> bool:
         return bool(self._frames)
 
+    def set_opacity(self, value: float):
+        self._user_opacity = max(0.0, min(1.0, float(value)))
+        self.update()
+
     def set_import_zone(self, on: bool):
         """空状态下变导入区（虚线框 +「＋」+ 可点）。不加文字：空库一屏只许一句指路（RN-682）。"""
         self._import_zone = bool(on)
         self.setCursor(Qt.PointingHandCursor if on else Qt.ArrowCursor)
-        self.setToolTip("点这里选图标包或素材文件，也可以把 zip 直接拖进来" if on else "")
+        self.setToolTip("点这里选图标包或素材文件，也可以把 zip 或视频直接拖进来" if on else "")
         self.update()
 
     def is_import_zone(self) -> bool:
@@ -224,6 +228,7 @@ class KillIconPreview(QWidget):
             return
 
         frame = self._frames[min(self._index, len(self._frames) - 1)]
+        painter.setOpacity(getattr(self, "_user_opacity", 1.0))   # 批 118：预览跟着「不透明度」走
         painter.drawImage(
             rect.center().x() - frame.width() // 2,
             rect.center().y() - frame.height() // 2,

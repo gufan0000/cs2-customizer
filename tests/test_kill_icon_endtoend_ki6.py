@@ -120,7 +120,7 @@ def test_a_real_drop_of_each_supported_file_is_accepted(cell, tmp_path, name):
     assert _send_drag_enter(cell, [path]) is True, f"{name} 拖不进来"
 
 
-@pytest.mark.parametrize("name", ["song.mp3", "clip.mp4", "readme.txt"])
+@pytest.mark.parametrize("name", ["song.mp3", "layers.psd", "readme.txt"])  # 批 120：mp4 能导了
 def test_a_real_drop_of_an_unsupported_file_is_not_accepted(cell, tmp_path, name):
     """不认的后缀连接都不接——鼠标就显示禁止图标，用户不用等到松手才知道。"""
     path = tmp_path / name

@@ -198,7 +198,7 @@ def test_an_unreadable_source_raises_instead_of_opening_a_broken_window(qapp, tm
     with pytest.raises(KillIconImportError) as excinfo:
         KillIconImportWizard(str(bad))
     # 而且这句话要给出路，不能只说"不支持"
-    assert "WebP" in str(excinfo.value) or "ffmpeg" in str(excinfo.value)
+    assert "WebP" in str(excinfo.value) or "换成 mp4" in str(excinfo.value)  # 批 120：坏视频指到能用的格式
 
 
 # ==================================================== 4. 不许再问多余的问题

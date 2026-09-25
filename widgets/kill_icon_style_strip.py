@@ -91,6 +91,8 @@ class KillIconStyleCard(QFrame):
     """一套风格 = 一张卡。整张卡都可点，不是只有某个按钮可点。"""
 
     clicked = Signal(str)
+    #: 批 118：右键 ⇒ (风格名, 屏幕坐标)，菜单由页面出（藏起来 / 显示已隐藏的）
+    menu_requested = Signal(str, object)
 
     def __init__(self, style_name, parent=None):
         super().__init__(parent)
@@ -166,6 +168,9 @@ class KillIconStyleCard(QFrame):
             self.clicked.emit(self.style_name)
         super().mouseReleaseEvent(event)
 
+    def contextMenuEvent(self, event):
+        self.menu_requested.emit(self.style_name, event.globalPos())
+
 
 class KillIconStyleAddCard(QFrame):
     """末尾那张「＋ 导入」。和风格卡同宽同高，排在一条线上。"""
@@ -196,7 +201,7 @@ class KillIconStyleAddCard(QFrame):
         self.name_label.setFixedWidth(THUMB_BOX[0])
         layout.addWidget(self.name_label)
 
-        hint = QLabel("zip / 动图 / 图片")
+        hint = QLabel("zip / 图片 / 视频")          # 批 120：门牌上写视频（动图算图片，字数不变）
         hint.setObjectName("hintLabel")
         hint.setAlignment(Qt.AlignCenter)
         hint.setFixedWidth(THUMB_BOX[0])
@@ -213,6 +218,7 @@ class KillIconStyleStrip(QWidget):
 
     style_selected = Signal(str)
     import_requested = Signal()
+    style_menu_requested = Signal(str, object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -285,6 +291,7 @@ class KillIconStyleStrip(QWidget):
             if card is None:
                 card = KillIconStyleCard(name, self)
                 card.clicked.connect(self.style_selected)
+                card.menu_requested.connect(self.style_menu_requested)
                 self.cards[name] = card
             self._layout.removeWidget(card)
             # RN-405①：和「＋ 导入」卡同一条对齐口径，见 `__init__` 那处注释。

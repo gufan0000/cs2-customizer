@@ -28,7 +28,7 @@ KI-4 补的是四条**静默失败**——它们的共同点是全程零报错�
    "一张静态图"，屏幕上是一条巨大的马赛克。现在选 png 会自动去找同名 json。
 3. `.jpg` 单文件被拒，同一个 `.jpg` 放进文件夹里却能进——两条路的格式表
    各写各的。现在合成一张表。
-4. 不认识的格式只回一句"不认识这个格式"。现在按类别给出路（视频→先转动图）。
+4. 不认识的格式只回一句"不认识这个格式"。现在按类别给出路（批 120 起视频直接解码）。
 
 ⚠ GIF 的透明度是 1-bit 的（一个像素要么全透明要么全不透明），边缘会有
 硬白边。这不是我们能修的，只能在导入时明确告诉用户——所以 `probe_source`
@@ -65,9 +65,7 @@ SINGLE_FILE_EXTENSIONS = tuple(sorted(set(ANIMATED_EXTENSIONS + STATIC_EXTENSION
 
 #: 明确"认得出来但不支持"的格式。报错要给出路，不是甩一句不认识。
 UNSUPPORTED_HINTS = {
-    (".mp4", ".webm", ".mkv", ".avi", ".mov", ".flv", ".m4v", ".wmv"):
-        "是视频文件，击杀图标不支持直接导入视频。"
-        "先用在线工具或 ffmpeg 转成 WebP 动图（边缘最干净）或 GIF 再拖进来。",
+    # 批 120：视频不再在这里 —— 直接解码（core/kill_icon_video），不用用户去装 ffmpeg
     (".psd", ".ai", ".xcf", ".clip"):
         "是分层工程文件。请先在原软件里导出成 PNG 序列、WebP 动图或 APNG。",
     (".svg", ".eps", ".pdf"):
@@ -116,7 +114,7 @@ class KillIconImportCancelled(Exception):
 class SourceProbe:
     """探测结果。UI 拿它做导入前的预览与确认。"""
 
-    kind: str                 # "animation" | "sequence" | "spritesheet"
+    kind: str                 # "animation" | "sequence" | "spritesheet" | "video"（批 120）
     path: str
     frame_count: int
     frame_width: int
@@ -163,7 +161,7 @@ def _report(progress, done, total, stage):
 def _unsupported_message(path):
     """给不支持的格式一条**带出路**的报错。
 
-    KI-4 之前这里统一回"不认识这个格式"。用户拿着一个 mp4 站在原地，
+    KI-4 之前这里统一回"不认识这个格式"。用户拿着一个 psd 站在原地，
     既不知道为什么不行、也不知道下一步该干嘛。
     """
     name = os.path.basename(str(path))
@@ -173,7 +171,7 @@ def _unsupported_message(path):
             return f"{name} {hint}"
     return (
         f"不认识这个格式：{name}。\n"
-        f"支持 GIF / WebP 动图 / APNG / AVIF / PNG / JPG / BMP，"
+        f"支持 GIF / WebP 动图 / APNG / AVIF / PNG / JPG / BMP、mp4 / webm 等视频，"
         f"或者一个装着帧序列的文件夹、一个 zip 图标包。"
     )
 
@@ -604,6 +602,10 @@ def probe_source(path, grid=None, analyze=False):
     if sibling:
         return _probe_spritesheet(sibling, analyze=analyze)
 
+    from core.kill_icon_video import VIDEO_EXTENSIONS
+    if lower.endswith(VIDEO_EXTENSIONS):
+        return _probe_video(path)
+
     if not lower.endswith(SINGLE_FILE_EXTENSIONS):
         raise KillIconImportError(_unsupported_message(path))
 
@@ -611,6 +613,20 @@ def probe_source(path, grid=None, analyze=False):
         return _probe_grid_sheet(path, grid, analyze=analyze)
 
     return _probe_animation(path, analyze=analyze)
+
+
+def _probe_video(path):
+    """视频：只读元数据（时长、分辨率），闸门在这一步就把「会取多少帧」算好、警告摆出来。"""
+    from core.kill_icon_video import VideoError, plan_sampling, probe_video, target_fps
+
+    try:
+        duration, width, height, source_fps = probe_video(path)
+    except VideoError as exc:
+        raise KillIconImportError(str(exc)) from exc
+    seconds, fps, warnings = plan_sampling(duration, target_fps(source_fps))
+    scale = min(1.0, MAX_FRAME_EDGE / float(max(width, height, 1)))
+    return SourceProbe("video", path, max(1, int(seconds * fps)), int(width * scale), int(height * scale),
+                       fps, warnings)
 
 
 def _probe_animation(path, analyze=False):
@@ -770,8 +786,7 @@ def _probe_spritesheet(json_path, analyze=False):
     if frame_width > 0 and frame_height > 0 and frames > 0:
         from kill_icon_overlay import clamp_hold
 
-        cols = _as_int(data.get("cols")) or 1
-        rows = _as_int(data.get("rows")) or 1
+        cols, rows = _json_sheet_grid(data, sprite_path, frames)
         probe = SourceProbe("spritesheet", json_path, frames, frame_width, frame_height,
                             _as_int(data.get("fps")) or DEFAULT_FPS, [],
                             hold_seconds=clamp_hold(data.get("hold_seconds", 0.0)),
@@ -877,6 +892,13 @@ def _read_source_frames(source, probe, progress=None, cancel=None):
         return _read_sequence_frames(str(source), progress, cancel)
     if probe.kind == "animation":
         return _read_animation_frames(str(source), progress, cancel)
+    if probe.kind == "video":
+        from core.kill_icon_video import VideoError, read_video_frames
+        try:
+            return read_video_frames(str(source), fps=probe.fps, max_edge=MAX_FRAME_EDGE,
+                                     progress=progress, cancel=cancel)
+        except VideoError as exc:
+            raise KillIconImportError(str(exc)) from exc
 
     # 图集：要么按行列切，要么按 Aseprite 的 rect 切
     json_path = probe.path if str(probe.path).lower().endswith(".json") else None
@@ -885,8 +907,7 @@ def _read_source_frames(source, probe, progress=None, cancel=None):
             data = json.load(handle)
         sprite_path = _resolve_sheet_image(json_path, data)
         rects = _aseprite_rects(data) if not _as_int(data.get("frame_width")) else None
-        cols = _as_int(data.get("cols")) or 1
-        rows = _as_int(data.get("rows")) or 1
+        cols, rows = _json_sheet_grid(data, sprite_path, probe.frame_count)
         frames = _read_spritesheet_frames(sprite_path, cols, rows,
                                           probe.frame_count, rects=rects)
         return frames, probe.fps, []
@@ -949,6 +970,13 @@ def convert_to_style(source, style_name, kills, *, fps=None, duration=None,
         _atomic_write(sprite_path, lambda tmp: shutil.copyfile(source_sheet, tmp))
         metadata = _load_json(probe.path)
         frame_count = int(metadata.get("frames") or probe.frame_count)
+        warnings = list(probe.warnings)
+        # 批 117：原样搬运也过同一道帧数闸门，并把算出来的列行写回 —— 转手出去的包字段是齐的
+        if frame_count > MAX_FRAMES:
+            warnings.append(f"帧数超过 {MAX_FRAMES}，只取前 {MAX_FRAMES} 帧。")
+            frame_count = MAX_FRAMES
+        metadata["frames"] = frame_count
+        metadata["cols"], metadata["rows"] = _json_sheet_grid(metadata, source_sheet, frame_count)
         target_fps = clamp_fps(
             fps_for_duration(frame_count, duration) if duration else
             (fps if fps else metadata.get("fps", DEFAULT_FPS))
@@ -958,7 +986,6 @@ def convert_to_style(source, style_name, kills, *, fps=None, duration=None,
             metadata.get("hold_seconds", 0.0) if hold_seconds is None else hold_seconds
         )
         metadata.setdefault("version", 1)
-        warnings = list(probe.warnings)
     else:
         frames, source_fps, warnings = _read_source_frames(source, probe, progress, cancel)
         _check_cancelled(cancel)
@@ -1040,6 +1067,24 @@ def _as_int(value, default=0):
         return int(float(value))
     except (TypeError, ValueError):
         return default
+
+
+def _json_sheet_grid(data, sprite_path, frames):
+    """JSON 图集的 (列, 行)。缺 `cols` 时与运行时同一个兜底（`kill_icon_overlay.sheet_columns`），
+    缺 `rows` 时按帧数算够（只写 1 行的话后面的帧全读不到）。"""
+    from kill_icon_overlay import sheet_columns
+
+    width = 0
+    if not _as_int(data.get("cols")):
+        try:
+            from PIL import Image
+            with Image.open(sprite_path) as image:       # 只读文件头
+                width = image.width
+        except OSError:
+            pass
+    cols = sheet_columns(data.get("cols"), width, _as_int(data.get("frame_width")))
+    rows = _as_int(data.get("rows")) or max(1, -(-int(frames or 1) // cols))
+    return cols, rows
 
 
 def _is_native_schema(json_path):

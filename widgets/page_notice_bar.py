@@ -29,6 +29,7 @@
 """
 from __future__ import annotations
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton
 
 
@@ -51,15 +52,13 @@ class PageNoticeBar(QFrame):
 
         self.undo_btn = QPushButton(undo_text)
         self.undo_btn.setObjectName("secondaryButton")
-        self.undo_btn.setFixedHeight(26)
         self.undo_btn.hide()
-        layout.addWidget(self.undo_btn)
+        layout.addWidget(self.undo_btn, 0, Qt.AlignRight | Qt.AlignVCenter)
 
         self.dismiss_btn = QPushButton(dismiss_text)
         self.dismiss_btn.setObjectName("secondaryButton")
-        self.dismiss_btn.setFixedHeight(26)
         self.dismiss_btn.clicked.connect(self.clear)
-        layout.addWidget(self.dismiss_btn)
+        layout.addWidget(self.dismiss_btn, 0, Qt.AlignRight | Qt.AlignVCenter)
 
         self._undo_callback = None
         self.hide()

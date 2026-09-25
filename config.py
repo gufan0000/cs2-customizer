@@ -272,6 +272,11 @@ class Config:
         # 击杀图标显示效果（KI-1 起，Qt 叠加层才做得到；pygame 版是纯黑抠图，没有真 alpha）
         self.kill_icon_fade_enabled = True       # 入场淡入 / 收尾渐隐
         self.kill_icon_headshot_enabled = True   # 有 <等级>hs 素材时爆头用专属图标
+        # 批 118（对标补课）
+        self.kill_icon_opacity = 1.0             # 图标不透明度 0.3~1.0（素材太亮太实会挡视线）
+        self.kill_icon_style_layouts = {}        # {风格名: {"x", "y", "scale"}}：位置/大小按风格记
+        self.kill_icon_hidden_styles = []        # 风格条里藏起来的（不删素材）
+        self.kill_icon_recent_styles = []        # 最近用过的风格，最近的在前
 
         # 击杀图标FPS设置
         self.kill_icon_fps_1 = 30  # 1杀FPS
@@ -1073,6 +1078,20 @@ class Config:
             if key in data:
                 setattr(self, key, data[key])
 
+    def _load_kill_icon_prefs(self, data):
+        """批 118 的四项：都要校验（手改坏的 config.json 不许把页面带崩）。"""
+        try:
+            self.kill_icon_opacity = min(1.0, max(0.3, float(data.get("kill_icon_opacity", 1.0))))
+        except (TypeError, ValueError):
+            self.kill_icon_opacity = 1.0
+        layouts = data.get("kill_icon_style_layouts", {})
+        self.kill_icon_style_layouts = {
+            str(k): dict(v) for k, v in layouts.items() if isinstance(v, dict)
+        } if isinstance(layouts, dict) else {}
+        for key in ("kill_icon_hidden_styles", "kill_icon_recent_styles"):
+            value = data.get(key, [])
+            setattr(self, key, [str(x) for x in value] if isinstance(value, list) else [])
+
     def load_config(self):
         """从新位置加载配置"""
         config_path = get_config_path()
@@ -1097,6 +1116,7 @@ class Config:
                 self._load_plain(config_data,
                                  "kill_icon_style", "kill_icon_offset_x", "kill_icon_offset_y", "kill_icon_scale", "kill_icon_base_width", "kill_icon_base_height",
                                  "kill_icon_fade_enabled", "kill_icon_headshot_enabled")
+                self._load_kill_icon_prefs(config_data)
 
                 # 击杀图标FPS设置
                 self._load_plain(config_data,
@@ -1710,6 +1730,10 @@ class Config:
                     "kill_icon_base_height": self.kill_icon_base_height,
                     "kill_icon_fade_enabled": self.kill_icon_fade_enabled,
                     "kill_icon_headshot_enabled": self.kill_icon_headshot_enabled,
+                    "kill_icon_opacity": self.kill_icon_opacity,
+                    "kill_icon_style_layouts": self.kill_icon_style_layouts,
+                    "kill_icon_hidden_styles": self.kill_icon_hidden_styles,
+                    "kill_icon_recent_styles": self.kill_icon_recent_styles,
 
                     # 击杀图标FPS设置
                     "kill_icon_fps_1": self.kill_icon_fps_1,

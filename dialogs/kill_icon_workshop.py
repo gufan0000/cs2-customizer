@@ -28,7 +28,7 @@ import os
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QComboBox, QDialog, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QLabel,
+    QComboBox, QDialog, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QInputDialog, QLabel,
     QProgressBar, QPushButton, QScrollArea, QVBoxLayout, QWidget
 )
 
@@ -112,15 +112,13 @@ class KillIconWorkshop(QDialog):
         notice_layout.addWidget(self.notice_label, 1)
         self.undo_btn = QPushButton("撤销")
         self.undo_btn.setObjectName("secondaryButton")
-        self.undo_btn.setFixedHeight(26)
         self.undo_btn.clicked.connect(self._undo_last_delete)
         self.undo_btn.hide()
-        notice_layout.addWidget(self.undo_btn)
+        notice_layout.addWidget(self.undo_btn, 0, Qt.AlignRight | Qt.AlignVCenter)
         dismiss_btn = QPushButton("知道了")
         dismiss_btn.setObjectName("secondaryButton")
-        dismiss_btn.setFixedHeight(26)
         dismiss_btn.clicked.connect(self._clear_notice)
-        notice_layout.addWidget(dismiss_btn)
+        notice_layout.addWidget(dismiss_btn, 0, Qt.AlignRight | Qt.AlignVCenter)
         self.notice_frame.hide()
         layout.addWidget(self.notice_frame)
 
@@ -137,9 +135,8 @@ class KillIconWorkshop(QDialog):
         progress_layout.addWidget(self.progress_bar, 1)
         self.cancel_btn = QPushButton("取消")
         self.cancel_btn.setObjectName("secondaryButton")
-        self.cancel_btn.setFixedHeight(26)
         self.cancel_btn.clicked.connect(self._import_task.cancel)
-        progress_layout.addWidget(self.cancel_btn)
+        progress_layout.addWidget(self.cancel_btn, 0, Qt.AlignRight | Qt.AlignVCenter)
         self.progress_frame.hide()
         layout.addWidget(self.progress_frame)
 
@@ -506,7 +503,7 @@ class KillIconWorkshop(QDialog):
     def _choose_files_for(self, kills, variant):
         path, _filter = QFileDialog.getOpenFileName(
             self, f"选择 {kills} 杀的素材", "",
-            "图片与动图 (*.gif *.webp *.png *.apng *.avif *.jpg *.jpeg *.bmp);;"
+            "图片、动图与视频 (*.gif *.webp *.png *.apng *.avif *.jpg *.jpeg *.bmp *.mp4 *.webm *.mov *.mkv);;"
             "图集配置 (*.json);;所有文件 (*.*)")
         if path:
             self.import_paths([path], kills, variant)
@@ -649,12 +646,25 @@ class KillIconWorkshop(QDialog):
             self, "导出图标包", f"{self.style_name}.zip", "图标包 (*.zip)")
         if not path:
             return
+        author = self._ask_export_author()
+        if author is False:
+            return
 
         # 也走后台：逐帧目录要先转成图集，实测默认风格（519 帧）要 4 秒。
         def _work(progress, _cancel):
-            return {"exported": export_pack(self.style_name, path, progress=progress)}
+            return {"exported": export_pack(self.style_name, path, author=author, progress=progress)}
 
         self._run_import(_work, "正在打包…")
+
+    def _ask_export_author(self):
+        """批 117：这套风格**导入时带着作者**就原样沿用（返回 None，别问）；
+        没记作者（自己做的 / 包里本来没写）才问一句署名，可留空。取消 ⇒ False（不导出）。"""
+        from core.kill_icon_pack import read_style_meta
+
+        if read_style_meta(self.style_name).get("author"):
+            return None
+        text, ok = QInputDialog.getText(self, "导出图标包", "署名（会写进包里，可以留空）：")
+        return text.strip() if ok else False
 
     def style_folder(self):
         """要交给资源管理器打开的那个目录。没有就返回空串。

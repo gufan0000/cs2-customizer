@@ -60,6 +60,42 @@ PACK_VERSION = 1
 
 MANIFEST_NAME = "style.json"
 
+#: 批 117：包作者的授权与说明 —— 导入时留在风格目录里、导出时原样带走。
+#: 以前导入只把作者名拼进一次提示、导出三个参数调用点一个都没传 ⇒ 每个经 CS2 Customizer 转手的包都被剥掉署名。
+CARRIED_FILES = ("license.txt", "readme.txt")
+
+
+def _style_dir(resource_manager, style_name) -> str:
+    """风格目录 = 等级图集所在的目录（所有资源管理器 / 判据里的替身都有这个取法）。"""
+    return os.path.dirname(resource_manager.get_kill_icon_sprite_sheet_paths(style_name, 1)[0])
+
+
+def read_style_meta(style_name, resource_manager=None) -> dict:
+    """风格目录里记着的包元数据（导入时落的）。没有就是空字典。"""
+    if resource_manager is None:
+        from resource_manager import ResourceManager as resource_manager
+    path = os.path.join(_style_dir(resource_manager, style_name), MANIFEST_NAME)
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _keep_pack_meta(style_dir, probe, temp_root):
+    """把作者 / 版本 / 说明和随包文件留进风格目录。失败不影响导入本身。"""
+    try:
+        meta = {"pack_version": PACK_VERSION, "name": probe.name, "author": probe.author,
+                "version": probe.version, "description": probe.description}
+        with open(os.path.join(style_dir, MANIFEST_NAME), "w", encoding="utf-8") as handle:
+            json.dump(meta, handle, indent=2, ensure_ascii=False)
+        for relative in probe.carried:
+            shutil.copyfile(os.path.join(temp_root, relative), os.path.join(style_dir, relative.lower()))
+    except OSError as exc:
+        logger.warning(f"图标包元数据没留下来（不影响导入）：{exc}")
+
+
 #: 包里的等级条目：`3.png` / `3.json` / `3hs.png` / `3hs.json`。
 LEVEL_ENTRY_RE = re.compile(r"^([1-5])(hs)?\.(png|json)$", re.IGNORECASE)
 
@@ -93,6 +129,8 @@ class PackProbe:
     warnings: list = field(default_factory=list)
     entry_count: int = 0
     total_bytes: int = 0
+    #: 根上的随包文件（包作者的授权 / 说明），包内路径
+    carried: list = field(default_factory=list)
 
     @property
     def loose(self) -> bool:
@@ -138,6 +176,7 @@ def probe_pack(zip_path):
         probe.author = str(manifest.get("author") or "").strip()
         probe.version = str(manifest.get("version") or "").strip()
         probe.description = str(manifest.get("description") or "").strip()
+        probe.carried = [p for p in stripped if "/" not in p and p.lower() in CARRIED_FILES]
 
         # 标准包：根上成对的 <等级>.png + <等级>.json
         pairs = {}
@@ -265,6 +304,9 @@ def import_pack(zip_path, style_name=None, resource_manager=None,
                     warnings.extend(result.get("warnings", []))
                 except KillIconImportError as exc:
                     failed.append(f"{os.path.basename(relative)}（{exc}）")
+        style_dir = _style_dir(resource_manager, style)
+        if imported and os.path.isdir(style_dir):
+            _keep_pack_meta(style_dir, probe, temp_root)
     finally:
         shutil.rmtree(temp_root, ignore_errors=True)
 
@@ -304,8 +346,8 @@ def _sanitize_style_name(name):
 # ==================================================== 导出
 
 
-def export_pack(style_name, output_path, author="", description="",
-                version="1.0", resource_manager=None, progress=None):
+def export_pack(style_name, output_path, author=None, description=None,
+                version=None, resource_manager=None, progress=None):
     """把一套风格打成 zip。
 
     导出的**永远是运行时格式**（图集 + JSON），逐帧目录的老素材会在这里先
@@ -328,14 +370,18 @@ def export_pack(style_name, output_path, author="", description="",
     output_path = str(output_path)
     os.makedirs(os.path.dirname(os.path.abspath(output_path)) or ".", exist_ok=True)
 
+    # 批 117：没显式给的就用导入时记下的 —— 转手不剥署名
+    kept = read_style_meta(style_name, resource_manager)
     manifest = {
         "pack_version": PACK_VERSION,
         "name": str(style_name),
-        "author": str(author or ""),
-        "version": str(version or "1.0"),
-        "description": str(description or ""),
+        "author": str(kept.get("author", "") if author is None else author),
+        "version": str((kept.get("version") if version is None else version) or "1.0"),
+        "description": str(kept.get("description", "") if description is None else description),
         "levels": [f"{e.kills}{e.variant}" for e in entries],
     }
+    style_dir = _style_dir(resource_manager, style_name)
+    carried = [n for n in CARRIED_FILES if os.path.isfile(os.path.join(style_dir, n))]
 
     handle, temp_path = tempfile.mkstemp(
         dir=os.path.dirname(os.path.abspath(output_path)), suffix=".tmp")
@@ -365,6 +411,13 @@ def export_pack(style_name, output_path, author="", description="",
                         progress(index + 1, len(entries), "打包")
                     except Exception:
                         pass
+            for name in carried:
+                archive.write(os.path.join(style_dir, name), name)
+        # 批 117：写完先重开校验一遍，坏了就不替换 —— 旧文件原样留着，别让用户拿到一个坏包
+        with zipfile.ZipFile(temp_path) as check:
+            bad = check.testzip()
+        if bad is not None:
+            raise KillIconImportError(f"打出来的包校验不过（{bad} 损坏），已放弃，原文件没动。")
         replace_with_retry(temp_path, output_path)
     finally:
         shutil.rmtree(staging, ignore_errors=True)

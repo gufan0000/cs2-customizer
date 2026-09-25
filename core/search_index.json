@@ -1246,7 +1246,7 @@
   },
   {
    "page": "kill_icon",
-   "text": "zip / 动图 / 图片",
+   "text": "zip / 图片 / 视频",
    "card": "",
    "tab": "",
    "kind": "label",
@@ -1274,6 +1274,14 @@
    "card": "导入",
    "tab": "",
    "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "kill_icon",
+   "text": "不透明度",
+   "card": "当前图标",
+   "tab": "",
+   "kind": "label",
    "src": "runtime"
   },
   {

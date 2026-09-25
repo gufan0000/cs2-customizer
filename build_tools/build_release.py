@@ -96,7 +96,7 @@ EXCLUDES = [
     "PySide6.QtHelp",
     "PySide6.QtHttpServer",
     "PySide6.QtLocation",
-    "PySide6.QtMultimedia",
+    # 批 120：`PySide6.QtMultimedia` 不再排除 —— 击杀图标的视频导入靠它自带的 FFmpeg 后端解码（约 +21MB）。
     "PySide6.QtMultimediaWidgets",
     "PySide6.QtNetworkAuth",
     "PySide6.QtNfc",
@@ -165,6 +165,10 @@ CRITICAL_ARCHIVE_MODULES = [
     "core.kill_icon_import",
     "core.kill_icon_library",
     "core.kill_icon_pack",
+    # 批 118：风格条顺序 / 隐藏 / 按风格记的位置。页面只在方法里 import 它 ⇒ 静态图可能收不到。
+    "core.kill_icon_prefs",
+    # 批 120：视频 → 帧。导入管线只在探测到视频时才 import 它（连同 PySide6.QtMultimedia）。
+    "core.kill_icon_video",
 ]
 
 # onefile 归档里资源条目的前缀。PyInstaller 把 datas 的目标名按 os.sep 规范化，

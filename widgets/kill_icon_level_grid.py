@@ -36,7 +36,7 @@ DURATION_MIN_TICKS = 3
 DURATION_MAX_TICKS = 50
 
 #: 每一格认的拖拽后缀。目录与 zip 另有开关，见 `enable_file_drop`。
-DROP_EXTENSIONS = (".gif", ".webp", ".apng", ".png", ".avif",
+DROP_EXTENSIONS = (".gif", ".webp", ".apng", ".png", ".avif", ".mp4", ".webm", ".mov", ".mkv",  # 批 120：视频
                    ".jpg", ".jpeg", ".bmp", ".json", ".zip")
 
 LEVEL_TITLES = {1: "1 杀", 2: "2 杀", 3: "3 杀", 4: "4 杀", 5: "5 杀 · ACE"}
@@ -174,7 +174,7 @@ class KillIconLevelCell(QFrame):
 
         if not present:
             self.badge_label.setText("空缺")
-            self.info_label.setText("把 GIF / WebP / PNG 序列文件夹拖进来")
+            self.info_label.setText("把 GIF / WebP / 视频 / PNG 序列拖进来")
             self.timing_label.setText("无素材")
             return
 

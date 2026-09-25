@@ -311,7 +311,7 @@ class SpriteSheetMaker(QDialog):
     def _select_file(self):
         path, _filter = QFileDialog.getOpenFileName(
             self, "选择素材文件", "",
-            "图片与动图 (*.gif *.webp *.png *.apng *.avif *.jpg *.jpeg *.bmp);;"
+            "图片、动图与视频 (*.gif *.webp *.png *.apng *.avif *.jpg *.jpeg *.bmp *.mp4 *.webm *.mov *.mkv);;"
             "图集配置 (*.json);;所有文件 (*.*)",
         )
         if path:
@@ -391,6 +391,7 @@ class SpriteSheetMaker(QDialog):
             "animation": "动图",
             "sequence": "帧序列文件夹",
             "spritesheet": "现成图集",
+            "video": "视频",
         }.get(kind, kind)
 
     # ------------------------------------------------------------- 后台任务

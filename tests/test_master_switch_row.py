@@ -419,6 +419,10 @@ def test_the_badge_follows_the_switch_it_describes(main_window, qapp):
     from PySide6.QtWidgets import QLabel
 
     page, row = _page_with_row(main_window, qapp, "kill_icon")
+    # ⚠ 批 117 回退验证逮到：拨开关 ⇒ 主窗让播放器重装素材 ⇒ `assets_ready` ⇒ 页面也会刷新徽章。
+    #   这条旁路赶在断言前回来（装载变快一点就会），就把「开关没通知页面」盖住了 —— 结果取决于时序。
+    #   ⇒ 断开旁路，只量「开关 → 页面」这一条（RN-689 同族）。
+    page.set_kill_icon_player(None)
 
     def badge_texts():
         chip = getattr(page, "status_badge_label", None)

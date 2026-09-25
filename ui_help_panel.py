@@ -289,7 +289,8 @@ PAGE_HELP_TEXTS = {
         "1. 通用连杀风格放在 <code>AppData/Local/CS2Customizer/resources/audio/kill_sounds/风格名/</code><br>"
         "2. 武器专属风格放在 <code>AppData/Local/CS2Customizer/resources/audio/weapon_kill_sounds/武器名/风格名/</code><br>"
         "3. 目录内建议按击杀数命名：<code>1~5</code>，爆头可用 <code>1-headshot</code> 这类文件名；支持 MP3/WAV/OGG<br>"
-        "4. 放完后点击页面里的「刷新风格列表」，武器专属目录会优先覆盖对应武器"
+        "4. 同一档想放几条轮着播：再放 <code>3-2</code>、<code>3-3</code> 这样的文件，每次随机挑一条、不和上一次重复（最多前 5 条）<br>"
+        "5. 放完后点击页面里的「刷新风格列表」，武器专属目录会优先覆盖对应武器"
     ),
     "kill_voice": (
         "<b>功能说明</b><br>"
@@ -303,7 +304,8 @@ PAGE_HELP_TEXTS = {
         "1. 通用语音风格放在 <code>AppData/Local/CS2Customizer/resources/audio/kill_voices/风格名/</code><br>"
         "2. 武器专属语音风格放在 <code>AppData/Local/CS2Customizer/resources/audio/weapon_kill_voices/武器名/风格名/</code><br>"
         "3. 目录内建议按击杀数命名：<code>1~5</code>，爆头可用 <code>1-headshot</code>；支持 MP3/WAV/OGG<br>"
-        "4. 放完后点击「刷新风格列表」，同名武器专属风格会优先于通用风格"
+        "4. 同一档想放几条轮着播：再放 <code>3-2</code>、<code>3-3</code>，每次随机挑一条、不和上一次重复（最多前 5 条）<br>"
+        "5. 放完后点击「刷新风格列表」，同名武器专属风格会优先于通用风格"
     ),
     "kill_icon": (
         "<b>功能说明</b><br>"
@@ -313,7 +315,7 @@ PAGE_HELP_TEXTS = {
         "2. 在「风格库」里点一张卡就换——卡片上有缩略图和「素材齐不齐」<br>"
         "3. 点「在屏幕上试播」，位置和大小所见即所得；不顺眼点「调整位置和大小」<br><br>"
         "<b>装一套新的</b><br>"
-        "• <b>把图标包(.zip)、动图或图片拖到这一页上</b>，或点「＋ 导入」<br>"
+        "• <b>把图标包(.zip)、动图、图片或视频拖到这一页上</b>，或点「＋ 导入」<br>"
         "• zip 图标包是一整套风格，直接装完 5 个等级，一句都不问<br>"
         "• 单个素材会弹一个小窗问「用在几杀」；文件名带等级（<code>3hs.gif</code>）"
         "就已经替你选好了，直接按「导入」<br>"
@@ -322,7 +324,8 @@ PAGE_HELP_TEXTS = {
         "• 想要干净的半透明边缘请用 WebP 动图 / APNG / PNG 序列<br>"
         "• GIF 的透明度是 1-bit 的（像素只能全透明或全不透明），边缘会有硬白边<br>"
         "• 静态图片会作为单帧图标定格显示<br>"
-        "• 视频（mp4/webm）不支持，请先转成 WebP 动图或 GIF<br>"
+        "• 视频（mp4 / webm / mov / mkv）直接拖进来就行：只取开头 10 秒，帧数多会自动降帧率（最多 600 帧）；"
+        "视频没有透明通道，要去背景就在素材工坊里抠纯色<br>"
         "• 超过 1024 像素的帧会自动等比缩小；各帧尺寸不一会居中对齐<br><br>"
         "<b>想自己做一套 → 素材工坊</b><br>"
         "• 页面底部「打开素材工坊」：五个击杀等级摊成一块板，每一格自己就能"

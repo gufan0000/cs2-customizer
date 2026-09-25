@@ -95,6 +95,21 @@ def clamp_fps(value) -> int:
     return max(MIN_FPS, min(MAX_FPS, fps))
 
 
+def sheet_columns(cols, sheet_width, frame_width) -> int:
+    """图集的列数：JSON 写了就用它，缺了按「图集宽 ÷ 帧宽」算。
+
+    批 117：以前运行时这么算、导入探测却是 `cols or 1` —— 同一份文件两条路两个答案。
+    ⇒ 两边都调这一个。
+    """
+    try:
+        cols = int(cols or 0)
+    except (TypeError, ValueError):
+        cols = 0
+    if cols > 0:
+        return cols
+    return max(1, int(sheet_width or 0) // int(frame_width)) if frame_width and int(frame_width) > 0 else 1
+
+
 def clamp_hold(value) -> float:
     """把任意脏值夹成合法定格时长（秒）。缺省/脏值一律 0，即"没有定格"。"""
     try:
@@ -219,6 +234,69 @@ def compute_scaled_size(frame_width, frame_height, base_width, scale):
     return target_width, target_height
 
 
+#: 一套风格预缩放后常驻内存的上限（批 117）。默认风格 519 帧：100% ≈174MB、150% ≈475MB
+#: （kill_icon_player 里的实测）⇒ 512MB 让现有默认风格的任何缩放都不变，只挡 200% 这类（≈845MB）
+#: 和帧多、画格大的外来素材。挡的时候整套一起等比缩，不单缩某一档。
+SCALED_MEMORY_BUDGET = 512 * 1024 * 1024
+
+
+def capped_scale(levels, base_width, scale, budget=SCALED_MEMORY_BUDGET) -> float:
+    """`levels = [(帧数, 帧宽, 帧高), ...]`：按内存预算压过之后实际能用的缩放（只会变小）。"""
+    try:
+        scale = max(0.1, min(4.0, float(scale)))
+    except (TypeError, ValueError):
+        scale = 1.0
+
+    def total_bytes(s):
+        return sum(int(n) * w * h * 4 for n, fw, fh in levels if n and fw and fh
+                   for w, h in [compute_scaled_size(fw, fh, base_width, s)])
+
+    need = total_bytes(scale)
+    if need <= budget:
+        return scale
+    capped = max(0.1, int(scale * (budget / need) ** 0.5 * 100) / 100.0)
+    while capped > 0.1 and total_bytes(capped) > budget:     # 取整误差：往下再退一步
+        capped = round(capped - 0.01, 2)
+    return capped
+
+
+def _legacy_frame_size(legacy_dir):
+    """逐帧目录第一张图的尺寸（只读文件头）。清单（`core.kill_icon_library`）不量它：
+    那边不许碰 Qt / PIL（要在建页路径上跑）⇒ 算内存预算时在这里补。"""
+    from PySide6.QtGui import QImageReader
+
+    try:
+        names = sorted(n for n in os.listdir(legacy_dir)
+                       if n.lower().endswith((".png", ".jpg", ".jpeg", ".bmp", ".webp")))
+    except OSError:
+        return 0, 0
+    if not names:
+        return 0, 0
+    size = QImageReader(os.path.join(legacy_dir, names[0])).size()
+    return max(0, size.width()), max(0, size.height())
+
+
+def budget_levels(style_name, resource_manager=None):
+    """`[(帧数, 帧宽, 帧高), ...]`：这套风格要常驻多少像素。逐帧目录（默认风格就是）补量尺寸 ——
+    不补的话内存上限对最常见的那套素材空转。"""
+    from core.kill_icon_library import list_style_levels
+
+    levels = []
+    for e in list_style_levels(style_name, resource_manager):
+        if not e.exists:
+            continue
+        width, height = e.frame_width, e.frame_height
+        if e.kind == "legacy" and not (width and height):
+            width, height = _legacy_frame_size(e.legacy_dir)
+        levels.append((e.frames, width, height))
+    return levels
+
+
+def effective_scale(style_name, base_width, scale, resource_manager=None) -> float:
+    """这套风格实际按多大缩放显示（批 117）。播放器预缩放和设置页的提示共用这一个。"""
+    return capped_scale(budget_levels(style_name, resource_manager), base_width, scale)
+
+
 def compute_overlay_geometry(screen_geometry, dpr, physical_width, physical_height,
                              offset_x=0, offset_y=0):
     """`(屏幕逻辑几何, 缩放, 图标物理尺寸, 偏移) → 窗口的逻辑矩形`。
@@ -297,7 +375,7 @@ def load_sprite_sheet(sprite_path, json_path):
         logger.warning(f"击杀图标配置缺少帧尺寸: {json_path}")
         return None
 
-    cols = int(metadata.get("cols") or 0) or max(1, sheet.width() // frame_width)
+    cols = sheet_columns(metadata.get("cols"), sheet.width(), frame_width)
     frame_count = int(metadata.get("frames") or 0) or cols
     frame_count = max(0, min(frame_count, MAX_FRAMES))
 

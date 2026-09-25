@@ -120,6 +120,14 @@ SOUND_EVENTS: Tuple[SoundEvent, ...] = (
         group="round", category="round_sounds", subdir="halftime",
         priority=70, since="2.2.4",
     ),
+    # ── 助攻（批 119，对标补课）──────────────────────────────────────────
+    # 数据一直在手边（GSI cfg 订阅了 player_match_stats）却没人读。一瞬间的事 ⇒ 不淡入；
+    # 优先级低于回合胜负 / MVP，不去抢它们。默认 "0" = 关，存量用户听感不变。
+    SoundEvent(
+        key="assist", label="助攻", config_attr="round_assist_style",
+        group="round", category="round_sounds", subdir="assist",
+        priority=50, fade=False, since="2.3.1",
+    ),
     # ── C4 ────────────────────────────────────────────────────────────
     # 三个事件共用 c4_sounds/<风格>/ 这一个目录，靠文件名关键词区分。
     # 分层目录会让老用户已导入的素材全部失联，见模块 docstring。
