@@ -798,7 +798,11 @@ class SoundPageBase:
 
         now = time.monotonic()
         last = getattr(self, "_last_auto_refresh", 0.0)
-        if now - last >= self.AUTO_REFRESH_COOLDOWN:
+        # 批 123：刚在「导入资源」装过包 ⇒ 不看冷却（否则「导入成功、回来下拉里没有」）
+        import core.resource_generation as resource_generation
+
+        imported = resource_generation.take_news(self)
+        if imported or now - last >= self.AUTO_REFRESH_COOLDOWN:
             self._last_auto_refresh = now
             try:
                 self._refresh_style_catalog()

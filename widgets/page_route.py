@@ -44,6 +44,31 @@ def goto_page(widget, page_id: str) -> bool:
         return False
 
 
+IMPORTER_PAGE_ID = "audio_import_wizard"
+
+
+def hand_to_importer(widget, paths) -> bool:
+    """把拖到某一页上的包转交给「导入资源」（批 123）。
+
+    RN-193 早就说透：「三步被劈在两个区域里，换个说法治不好」——
+    「去社区拿 → 打开资源目录放进去 → 刷新」中间那两步**砍掉**，
+    下好的包拖到哪一页都行，由统一导入去问、去装、能撤销。
+    ⛔ 不在各页里另写一套解压 / 认类别 —— 那是第二份导入器。
+    """
+    window = widget.window() if hasattr(widget, "window") else None
+    pages = getattr(window, "pages", None) or {}
+    # 先认出「用户是在哪一页松的手」—— 跳过去之后要告诉他为什么到了导入页
+    from_id = next((pid for pid, page in pages.items() if page is widget), "")
+    if not paths or not goto_page(widget, IMPORTER_PAGE_ID):
+        return False
+    importer = (getattr(window, "pages", None) or {}).get(IMPORTER_PAGE_ID)
+    accept = getattr(importer, "accept_sources", None)
+    if not callable(accept):
+        _logger.warning("转交导入失败：导入资源页没建出来或没有 accept_sources")
+        return False
+    return bool(accept(list(paths), handed_from=(page_label(widget, from_id) if from_id else "") or "这一页"))
+
+
 def _page_names_of(widget) -> dict:
     """那份**唯一**的 page_id → 显示名表（主窗的 `_page_names`）。
 

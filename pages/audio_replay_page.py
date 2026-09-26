@@ -95,6 +95,13 @@ class AudioReplayPage(QWidget):
         self.summary_label.setObjectName("hintLabel")
         self.summary_label.hide()
         card_layout.addWidget(self.summary_label)
+
+        # 批 124：环形缓冲满了会静默顶掉最老的记录 —— 排障时「第一条」不是真的第一条。
+        self.overwritten_label = QLabel("")
+        self.overwritten_label.setObjectName("hintLabel")
+        self.overwritten_label.setWordWrap(True)
+        self.overwritten_label.hide()
+        card_layout.addWidget(self.overwritten_label)
         layout.addWidget(card)
 
         filter_card, filter_layout = SettingsCard.make(
@@ -400,8 +407,20 @@ class AudioReplayPage(QWidget):
         self.key_edit.clear()
         self._refresh_events()
 
+    def _sync_overwritten_note(self):
+        dropped = int(getattr(self.timeline, "dropped_count", lambda: 0)() or 0)
+        label = getattr(self, "overwritten_label", None)
+        if label is None:
+            return
+        if dropped:
+            keep = getattr(self.timeline, "max_events", 0) or 0
+            label.setText(f"更早的 {dropped} 条记录已被新记录顶掉（最多保留最近 {keep} 条）。"
+                          f"要留下这一段，先点「{self.export_btn.text()}」。")
+        label.setVisible(bool(dropped))
+
     def _refresh_events(self):
         self._events = self.timeline.query(limit=500, filters=self._build_filters())
+        self._sync_overwritten_note()
         self._sync_event_choices()
         has_events = bool(self._events)
         self.table.setVisible(has_events)

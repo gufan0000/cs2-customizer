@@ -169,6 +169,8 @@ CRITICAL_ARCHIVE_MODULES = [
     "core.kill_icon_prefs",
     # 批 120：视频 → 帧。导入管线只在探测到视频时才 import 它（连同 PySide6.QtMultimedia）。
     "core.kill_icon_video",
+    # 批 123：资源代数 —— 导入页与各页只在方法里 import 它（静态图可能收不到）。
+    "core.resource_generation",
 ]
 
 # onefile 归档里资源条目的前缀。PyInstaller 把 datas 的目标名按 os.sep 规范化，

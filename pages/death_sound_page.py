@@ -75,9 +75,10 @@ class DeathSoundPage(QWidget):
         # StyleCreatorDialog 早就支持 initial_files 了,以前只是没人接这根线——
         # 用户想加一个音效得先找到菜单里的"新建风格…",再在对话框里选文件。
         try:
-            from widgets.drop_import_mixin import enable_file_drop
+            from widgets.drop_import_mixin import enable_file_drop, enable_pack_drop
 
             enable_file_drop(self, DEFAULT_AUDIO_EXTENSIONS, self._on_audio_files_dropped)
+            enable_pack_drop(self)          # 批 123：下好的整包拖进来 ⇒ 转交「导入资源」
         except Exception:
             self.logger.exception("音频拖拽导入初始化失败(不影响其它功能)")
 
@@ -383,7 +384,10 @@ class DeathSoundPage(QWidget):
 
         now = _time.monotonic()
         last = getattr(self, "_last_auto_refresh", 0.0)
-        if now - last >= 10.0:
+        import core.resource_generation as resource_generation
+
+        imported = resource_generation.take_news(self)      # 批 123：刚导过包就不看冷却
+        if imported or now - last >= 10.0:
             self._last_auto_refresh = now
             try:
                 self._refresh_style_catalog()

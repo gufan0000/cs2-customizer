@@ -114,7 +114,8 @@ class EmptyLibraryCallout:
         """
         from page_theme_helper import style_as_primary_button
 
-        self.title.setText(f"还没有任何可用{what} —— 本软件不带素材。")
+        # 批 123：「拿到之后怎么办」和「去哪拿」在同一句、同一张卡里（不再劈成顶 / 底两处）
+        self.title.setText(f"还没有任何可用{what} —— 本软件不带素材，下好的包拖到这一页就能装上。")
         self.button.setText(cta_text)
         try:                                  # 重复接会叠加，先断干净
             self.button.clicked.disconnect()
@@ -214,8 +215,12 @@ def guide_empty_library(bar, *, empty: bool, category_key: str, cta_text: str,
         #   **三步被劈在两个区域里**。换个说法治不好被劈开这件事。
         # ⇒ 干脆不编号：编号才会产生"第 1 步去哪了"这个问题。
         #   卡里那颗按钮是行动，这里说的是拿到之后怎么办，各自完整。
+        # ⭐⭐⭐ 批 123：上面那句「换个说法治不好」是对的 —— 外审到批 119 仍 6/6 + 6/6
+        #   「顶上去社区拿、底下放目录再刷新，下完不知道怎么生效」。治法是**砍掉中间两步**：
+        #   各页直接收拖进来的整包（`enable_pack_drop` ⇒ 转交「导入资源」），
+        #   「拖到这一页」写进卡里那句话、紧挨着按钮；底栏只剩「手动放也行」这条备选。
         bar.set_message(
-            f"下载好的包放进资源目录（点「{keep_text}」），再点「{refresh_label}」。")
+            f"手动放也行：点「{keep_text}」放进资源目录，再点「{refresh_label}」。")
         return True
 
     bar.configure_primary(cta_text, lambda: open_category(category_key), visible=True)
@@ -355,7 +360,7 @@ def dim_controls_with_nothing_to_pick(scope, *, reason: str) -> int:
 def dim_reason(what: str = "风格") -> str:
     """置灰时那句 tooltip。**说清楚是"还没准备好"，不是"坏了"。**"""
     return (f"还没有任何可用{what} —— 先用上面那颗按钮去社区拿一个包，"
-            "放进资源目录再回来选。")
+            "下好之后拖到这一页就能装上。")
 
 
 def empty_library_message(what: str, refresh_label: str = "刷新风格列表") -> str:
@@ -363,8 +368,9 @@ def empty_library_message(what: str, refresh_label: str = "刷新风格列表") 
 
     ⭐ 不说"本来就没有"的话，用户会以为是自己装坏了（RN-145 的原话）。
     """
-    return (f"还没有任何可用{what} —— 本软件不带素材。三步：去社区拿一个包 → "
-            f"用旁边那颗按钮打开资源目录放进去 → 点「{refresh_label}」。")
+    # 批 123：原来是「三步：去社区拿 → 打开资源目录放进去 → 点刷新」；中间两步由整包拖放代替
+    return (f"还没有任何可用{what} —— 本软件不带素材。去社区拿一个包，"
+            f"下好之后拖到这一页就能装上（手动放进资源目录也行，放完点「{refresh_label}」）。")
 
 
 #: RN-197 那条链接的 href。真地址由 `open_category` 现拼，**页面不许自己拼 URL**

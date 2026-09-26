@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 
 from config import config, get_app_data_dir
 from core.audio.runtime_audio import get_runtime_audio_manager
+from widgets.drop_import_mixin import enable_pack_drop, rescan_if_imported
 from core.audio.special_events import (
     config_defaults,
     events_in_group,
@@ -96,6 +97,11 @@ class SpecialSoundPage(QWidget):
 
         self.init_ui()
         self.load_settings()
+        enable_pack_drop(self)          # 批 123：下好的整包拖进来 ⇒ 转交「导入资源」
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        rescan_if_imported(self, self._refresh_style_catalog)     # 批 123：刚导过包回来就看得见
 
     def _ensure_config_defaults(self):
         if not hasattr(config, "grenade_sound_styles") or not isinstance(config.grenade_sound_styles, dict):

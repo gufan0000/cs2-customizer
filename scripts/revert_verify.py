@@ -2337,8 +2337,8 @@ REVERTS = [
     Revert(
         "RN", "空库底栏文案又开始描述版面",
         "widgets/community_library.py",
-        # ⚠ RN-193 又改了一次这句话（去掉编号）。锚点跟着走。
-        '            f"下载好的包放进资源目录（点「{keep_text}」），再点「{refresh_label}」。")',
+        # ⚠ RN-193 又改了一次这句话（去掉编号）；批 123 再改成「手动放也行」。锚点跟着走。
+        '            f"手动放也行：点「{keep_text}」放进资源目录，再点「{refresh_label}」。")',
         '            f"第 1 步在上面那张卡里。点「{keep_text}」放进资源目录。")',
         "tests/test_empty_library_points_at_the_community.py::"
         "test_the_empty_state_keeps_a_way_to_put_the_files_in",
@@ -10436,6 +10436,96 @@ Revert(
         "        self.dismiss_btn.setFixedHeight(26)\n        layout.addWidget(self.dismiss_btn)\n",
         "tests/test_kill_sounds_vary_and_voices_take_turns.py::test_notice_buttons_are_tall_enough_for_their_text_and_do_not_stretch",
         "同一个写法在全站共用的提示条上也有一份 —— 修一处留一处",
+    ),
+    # ============================================ 批 124：回放页说出「更早的被顶掉了」
+    Revert(
+        "REPLAY", "顶掉了不计数",
+        "core/audio/audio_event_timeline.py",
+        "            if len(self._events) >= self._max_events:\n                self._dropped += 1\n",
+        "",
+        "tests/test_the_replay_says_when_old_records_were_pushed_out.py::test_every_record_past_the_limit_pushes_one_out_and_clear_resets",
+        "排障时看到的「第一条」不是真的第一条，页面一个字都没有",
+    ),
+    Revert(
+        "REPLAY", "清空不归零",
+        "core/audio/audio_event_timeline.py",
+        "            self._events.clear()\n            self._dropped = 0\n",
+        "            self._events.clear()\n",
+        "tests/test_the_replay_says_when_old_records_were_pushed_out.py::test_every_record_past_the_limit_pushes_one_out_and_clear_resets",
+        "清空之后还说「更早的 N 条被顶掉」—— 假说明",
+    ),
+    Revert(
+        "REPLAY", "回放页不说",
+        "pages/audio_replay_page.py",
+        "        self._sync_overwritten_note()\n",
+        "",
+        "tests/test_the_replay_says_when_old_records_were_pushed_out.py::test_the_replay_page_says_it_and_points_at_export",
+        "计数有了、页面上没人读",
+    ),
+    # ============================================ 批 123：下好的包拖到哪一页都能装上
+    Revert(
+        "PACKDROP", "特殊音效页不收整包",
+        "pages/special_sound_page.py",
+        "        enable_pack_drop(self)          # 批 123：下好的整包拖进来 ⇒ 转交「导入资源」\n",
+        "",
+        "tests/test_a_downloaded_pack_can_be_dropped_on_any_page.py::test_every_page_that_says_go_get_a_pack_also_takes_the_pack",
+        "卡上叫人去社区拿包，拖进来鼠标却是禁止图标（外审 6/6 那一页）",
+    ),
+    Revert(
+        "PACKDROP", "转交了却没交到导入页手上",
+        "widgets/page_route.py",
+        "    return bool(accept(list(paths), handed_from=(page_label(widget, from_id) if from_id else \"\") or \"这一页\"))\n",
+        "    return True\n",
+        "tests/test_a_downloaded_pack_can_be_dropped_on_any_page.py::test_a_pack_dropped_on_the_special_sound_page_lands_in_the_importer",
+        "页面跳到了导入页，框里却是空的 —— 用户得再拖一次",
+    ),
+    Revert(
+        "PACKDROP", "页面永远听不到导入过",
+        "core/resource_generation.py",
+        "    return seen is not None and seen != now\n",
+        "    return False\n",
+        "tests/test_a_downloaded_pack_can_be_dropped_on_any_page.py::test_a_page_hears_about_an_import_once",
+        "导入成功、回来下拉里没有",
+    ),
+    Revert(
+        "PACKDROP", "音效页导入后仍按冷却",
+        "pages/sound_page_base.py",
+        "        if imported or now - last >= self.AUTO_REFRESH_COOLDOWN:\n",
+        "        if now - last >= self.AUTO_REFRESH_COOLDOWN:\n",
+        "tests/test_a_downloaded_pack_can_be_dropped_on_any_page.py::test_coming_back_after_an_import_rescans_the_page",
+        "10 秒内切回击杀音效页，刚装的包不在下拉里",
+    ),
+    Revert(
+        "PACKDROP", "特殊音效页进页不重扫",
+        "pages/special_sound_page.py",
+        "        rescan_if_imported(self, self._refresh_style_catalog)     # 批 123：刚导过包回来就看得见\n",
+        "        pass\n",
+        "tests/test_a_downloaded_pack_can_be_dropped_on_any_page.py::test_coming_back_after_an_import_rescans_the_page",
+        "这一页进页本来就不重扫 ⇒ 导完回来要自己找「刷新风格列表」",
+    ),
+    Revert(
+        "PACKDROP", "导入后不报",
+        "pages/audio_import_wizard_page.py",
+        "            resource_generation.bump()      # 批 123：转交过来的那一页切回去就重扫，不看冷却\n",
+        "            pass\n",
+        "tests/test_a_downloaded_pack_can_be_dropped_on_any_page.py::test_the_importer_announces_every_write",
+        "装完没人知道 ⇒ 各页的「导入后重扫」永远不触发",
+    ),
+    Revert(
+        "PACKDROP", "拖到这一页又回到页尾",
+        "widgets/community_library.py",
+        '        self.title.setText(f"还没有任何可用{what} —— 本软件不带素材，下好的包拖到这一页就能装上。")\n',
+        '        self.title.setText(f"还没有任何可用{what} —— 本软件不带素材。")\n',
+        "tests/test_a_downloaded_pack_can_be_dropped_on_any_page.py::test_the_empty_state_says_drop_it_here_next_to_the_button",
+        "顶上去社区拿、底下说怎么装 —— 外审两轮 6/6 的那种割裂",
+    ),
+    Revert(
+        "PACKDROP", "类别目录被当外壳剥掉",
+        "core/resource_import_source.py",
+        "            if root_name and _is_category_dir(root_name):\n",
+        "            if False:\n",
+        "tests/test_a_downloaded_pack_can_be_dropped_on_any_page.py::test_a_wrapper_named_after_a_category_is_content_not_a_shell",
+        "回合音效包被问成「枪声替换」、装进 gun_sounds/win/，永远不响",
     ),
     # ============================================ 批 121：开源仓不再只靠人记着同步
     Revert(

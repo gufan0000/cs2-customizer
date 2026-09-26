@@ -15,6 +15,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 from config import config, get_app_data_dir
 from core.utils.logger import get_logger
+from widgets.drop_import_mixin import enable_pack_drop, rescan_if_imported
 from core.utils.format_utils import format_percent
 from flash_process_manager import FlashProcessManager
 from pages.audio_status_badge import create_badge_label, render_badges
@@ -62,10 +63,16 @@ class FlashPage(QWidget):
         
         self.init_ui()
         self.load_settings()
-        
+        enable_pack_drop(self)          # 批 123：下好的整包拖进来 ⇒ 转交「导入资源」
+
         # 如果闪光效果已启用，初始化进程
         if hasattr(config, 'flash_enabled') and config.flash_enabled:
             self._init_flash_process()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        # 批 123：刚导过包回来就看得见（图片样式和音频两张清单都重扫）
+        rescan_if_imported(self, self._refresh_styles, self._refresh_audio_styles)
 
     @staticmethod
     def _compact_text(text, fallback="未设置", max_length=10):

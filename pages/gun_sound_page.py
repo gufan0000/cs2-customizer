@@ -29,6 +29,7 @@ from core.audio.audio_file_utils import (
     list_style_dirs_with_audio,
 )
 from core.audio.runtime_audio import get_runtime_audio_manager
+from widgets.drop_import_mixin import enable_pack_drop, rescan_if_imported
 from core.gun_sound_series import find_series, group_style_series
 from core.gun_sound_profiles import (
     GUN_SOUND_PROFILES,  # noqa: F401  本文件未直接用，但测试经 gun_sound_page.GUN_SOUND_PROFILES 访问
@@ -100,8 +101,13 @@ class GunSoundPage(QWidget):
         self._scan_gun_sounds()
         self._init_ui()
         self.load_settings()
+        enable_pack_drop(self)          # 批 123：下好的整包拖进来 ⇒ 转交「导入资源」
 
         self.logger.info("枪声设置页面初始化完成")
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        rescan_if_imported(self, self._refresh_style_catalog)     # 批 123：刚导过包回来就看得见
 
     @staticmethod
     def _compact_text(text, fallback="未分组", max_length=8):

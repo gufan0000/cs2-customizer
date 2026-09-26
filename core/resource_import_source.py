@@ -150,6 +150,24 @@ def sweep_stale_temp_dirs(now: float = 0.0) -> int:
     return cleaned
 
 
+def _is_category_dir(name: str) -> bool:
+    """这个目录名是不是某类资源的目录（`round_sounds`、`kill_icons`、`audio`…）。
+
+    ⚠ 与站端 `pack_validate.php` 的剥壳规则不矛盾：那边管的是击杀图标包（`风格名/1.png`），
+    外壳永远是包名；这里多挡的只是「外壳恰好就是类别目录」这一种。
+    """
+    from core.resource_catalog import RESOURCE_SPECS
+
+    folded = str(name or "").strip().casefold()
+    if folded in ("audio", "resources"):
+        return True
+    for spec in RESOURCE_SPECS:
+        if folded in {spec.key.casefold(), spec.root_name.casefold(),
+                      *(alias.casefold() for alias in spec.aliases)}:
+            return True
+    return False
+
+
 def _check_cancel(should_cancel: Optional[Callable[[], bool]]) -> None:
     if should_cancel and should_cancel():
         raise ImportCancelled("已取消")
@@ -435,6 +453,12 @@ def _open_archive(
                     "这个压缩包里只有系统生成的临时文件，没有素材。")
             names = [relative for _info, relative in members]
             stripped, root_name = strip_single_root(names)
+            if root_name and _is_category_dir(root_name):
+                # 批 123 端到端逮到：`round_sounds/win/清脆/1.wav` 被当成外壳剥成
+                # `win/清脆/1.wav` —— 唯一能说明「这是回合音效」的那一层没了，
+                # 于是它去问用户，**第一猜还是「枪声替换」**（选了就装进 gun_sounds/win/）。
+                # ⭐ 外壳是「包名」那一层；名字就是资源类别目录的那层是内容，不剥。
+                stripped, root_name = names, ""
             total = len(members)
             # ⚠ Windows 的文件系统不分大小写，而 zip 分 ⇒ `a.mp3` 与 `A.MP3`
             #   会写到同一个文件上。实测：三条条目（含一条重复）解出来磁盘上只有

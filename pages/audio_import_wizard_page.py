@@ -36,6 +36,7 @@ from core.resource_import_source import (
 )
 from widgets.kill_icon_import_task import KillIconImportTask
 from widgets.page_notice_bar import PageNoticeBar
+import core.resource_generation as resource_generation
 from core.resource_import_wizard import (
     apply_resource_import_plan,
     plan_from_decisions,
@@ -157,41 +158,52 @@ class AudioImportWizardPage(QWidget):
 
             return "文件夹" if os.path.isdir(path) else "文件"
 
+    def accept_sources(self, paths, handed_from: str = "") -> bool:
+        """收下一个（或几个）本地源并开始识别。本页拖放和别的页转交（批 123）共用这一份。
+
+        `handed_from` 是转交过来的那一页的名字：用户是在「特殊音效」页上松的手，
+        切过来之后得告诉他为什么到了这一页。
+        """
+        import os
+
+        dropped = [p for p in (paths or []) if p and (os.path.isdir(p) or os.path.isfile(p))]
+        if not dropped:
+            return False
+        # ⭐ 目录直接用；**文件也直接用**（多半是刚下载的 zip）。
+        # ⛔ 不许再退回"取它所在的目录"——那会去扫用户整个下载文件夹。
+        #    认不认得这个文件交给 `open_source`：它按文件头判，
+        #    连改名的 RAR 都能说出一句该怎么办的话。
+        path = dropped[0]
+        self.source_edit.setText(path)
+        self.logger.info(f"拖拽导入: {path}（共拖入 {len(dropped)} 个{('，来自' + handed_from) if handed_from else ''}）")
+        try:
+            from ui_toast import toast_info
+
+            # ⚠ 这句话放 toast 不放提示条：提示条紧接着就会被扫描结果
+            #   （`_scan_unified` 那条"导入前请注意"）顶掉，等于没说。
+            extra = ("" if len(dropped) == 1
+                     else "（共 %d 个，先处理这一个）" % len(dropped))
+            where = f"从「{handed_from}」转到这里导入：" if handed_from else "已填入拖入的"
+            toast_info(
+                "%s%s%s，正在识别…" % (where, self._drop_noun(path), extra),
+                3200 if handed_from or len(dropped) > 1 else 2400)
+        except Exception:
+            pass
+        self._scan_source()
+        return True
+
     def dropEvent(self, event):
         # ⚠ 放在最外面：下面每一条出路（收下 / 不是本地文件 / 抛异常）
         #   都得把高亮撤掉，而"每条路各写一遍"正是漏掉一条的写法。
         self._set_drop_highlight(False)
         try:
-            import os
-
             # ⭐ 一次拖进来好几个是常事（一口气选中三个下载好的包）。
             #   这个页面一次只处理一个源 —— 那没问题，**但不许不说**：
             #   默默只导第一个，用户会以为三个都进去了。
             from widgets.drop_import_mixin import urls_from_drop
 
             dropped = [url.toLocalFile() for url in urls_from_drop(event)]
-            dropped = [p for p in dropped if p and (os.path.isdir(p) or os.path.isfile(p))]
-            if dropped:
-                # ⭐ 目录直接用；**文件也直接用**（多半是刚下载的 zip）。
-                # ⛔ 不许再退回"取它所在的目录"——那会去扫用户整个下载文件夹。
-                #    认不认得这个文件交给 `open_source`：它按文件头判，
-                #    连改名的 RAR 都能说出一句该怎么办的话。
-                path = dropped[0]
-                self.source_edit.setText(path)
-                self.logger.info(f"拖拽导入: {path}（共拖入 {len(dropped)} 个）")
-                try:
-                    from ui_toast import toast_info
-
-                    # ⚠ 这句话放 toast 不放提示条：提示条紧接着就会被扫描结果
-                    #   （`_scan_unified` 那条"导入前请注意"）顶掉，等于没说。
-                    extra = ("" if len(dropped) == 1
-                             else "（共 %d 个，先处理这一个）" % len(dropped))
-                    toast_info(
-                        "已填入拖入的%s%s，正在识别…" % (self._drop_noun(path), extra),
-                        2400 if len(dropped) == 1 else 4000)
-                except Exception:
-                    pass
-                self._scan_source()
+            if self.accept_sources(dropped):
                 event.acceptProposedAction()
                 return
             # ⚠ 走到这里说明拖进来的东西**不是本地文件**（最常见的是从浏览器
@@ -1014,6 +1026,8 @@ class AudioImportWizardPage(QWidget):
         if result is None:
             return
         self._last_import_result = result
+        if not dry_run and result.get("summary", {}).get("copied_count", 0) > 0:
+            resource_generation.bump()      # 批 123：转交过来的那一页切回去就重扫，不看冷却
         # ⚠ 临时解压目录只能在**落盘之后**清 —— 报告里存的是指向它的绝对路径。
         #   ⭐ 不清的代价是每导一个包在 `%TEMP%` 留一份副本，慢慢把盘填满。
         pending = getattr(self, "_pending_source", None)
@@ -1091,6 +1105,7 @@ class AudioImportWizardPage(QWidget):
         """把刚导进去的收回来。⭐ 走 core 的 `undo_import` ——
         它和"失败自动回滚"是同一个函数，两条路不会各自漂。"""
         outcome = undo_import(import_result)
+        resource_generation.bump()          # 批 123：各页进页时据此重扫
         removed = int(outcome["summary"]["removed_count"])
         failed = int(outcome["summary"]["failed_count"])
         if failed:

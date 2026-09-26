@@ -31,9 +31,21 @@ class AudioEventTimeline:
         self._max_events = max(200, int(max_events))
         self._events: deque[AudioEvent] = deque(maxlen=self._max_events)
         self._lock = threading.Lock()
+        #: 被新记录顶掉的条数（批 124，批 116 挪来）。环形缓冲满了之后每进一条就静默丢一条
+        #: 最老的 —— 排障时看到的「第一条」不是真的第一条，而页面上一个字都没有。
+        self._dropped = 0
+
+    @property
+    def max_events(self) -> int:
+        return self._max_events
+
+    def dropped_count(self) -> int:
+        return self._dropped
 
     def record(self, event: AudioEvent) -> None:
         with self._lock:
+            if len(self._events) >= self._max_events:
+                self._dropped += 1
             self._events.append(event)
 
     def record_dict(self, **kwargs) -> None:
@@ -42,6 +54,7 @@ class AudioEventTimeline:
     def clear(self) -> None:
         with self._lock:
             self._events.clear()
+            self._dropped = 0
 
     def query(self, limit: int, filters: dict) -> List[AudioEvent]:
         with self._lock:

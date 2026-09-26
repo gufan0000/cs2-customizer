@@ -105,3 +105,45 @@ def enable_file_drop(widget, extensions: Iterable[str], handler: Callable[[List[
     else:
         existing.append(filt)
     return filt
+
+
+def rescan_if_imported(page, *refreshers) -> bool:
+    """进页时：上次看过之后「导入资源」装过东西 ⇒ 把这一页的风格列表重扫一遍（批 123）。
+
+    给**进页本来不重扫**的那几页用（特殊音效 / 枪声 / 闪光）；自带冷却重扫的页在自己的
+    `showEvent` 里直接问 `resource_generation.take_news`。
+    """
+    import core.resource_generation as resource_generation
+
+    if not resource_generation.take_news(page):
+        return False
+    for refresh in refreshers:
+        try:
+            refresh()
+        except Exception:
+            from core.utils.logger import get_logger
+
+            get_logger("DropImport").exception("导入后进页重扫失败")
+    return True
+
+
+#: 社区下下来的「一整包」长这样（批 123）。单个音频仍走各页自己的「新建风格」。
+PACK_EXTENSIONS = (".zip", ".rar", ".7z")
+
+
+def enable_pack_drop(widget) -> _FileDropFilter:
+    """让一页收「下好的包」：zip / rar / 7z / 文件夹 ⇒ 转交「导入资源」（批 123）。
+
+    ⭐ 和同一页上已有的「拖单个音频 ⇒ 新建风格」并存：两个 filter 各认各的后缀，
+    没认出的不拦（`eventFilter` 回 False），另一个照样收得到。
+    rar / 7z 也收下 —— 导入页会按文件头认出来并说一句「先解压」，比鼠标变禁止图标强。
+    """
+    import core.resource_generation as resource_generation
+    from widgets.page_route import hand_to_importer
+
+    # 各页都在构造末尾调它、构造时刚扫过一遍 ⇒ 顺手记下「我看到的是这一代」，
+    # 之后 `showEvent` 里 `take_news` 才分得清「错过了一次导入」。
+    resource_generation.take_news(widget)
+    return enable_file_drop(widget, PACK_EXTENSIONS,
+                            lambda paths: hand_to_importer(widget, paths),
+                            accept_directories=True)
