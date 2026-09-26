@@ -323,6 +323,17 @@ def main() -> int:
         total = sum(phase_secs.values()) or 1.0
         print(f"    ⚠ 串行尾巴占全场 {tail_secs / total * 100:.0f}%"
               f"（{len(SERIAL_TAIL)} 个文件，**它不随 --jobs 变快**）")
+    # 批 121：开源仓落后多少，每次全量顺带报一句（只报数，不参与退出码；开源版没有这个目录）
+    state_mod = ROOT / "build_tools" / "oss_sync" / "sync_state.py"
+    if state_mod.is_file():
+        try:
+            sys.path.insert(0, str(state_mod.parent))
+            import sync_state
+            line = sync_state.lag_line(ROOT)
+            if line:
+                print("--- " + line)
+        except Exception:
+            pass
     if elapsed:
         top = sorted(elapsed.items(), key=lambda kv: -kv[1])[:15]
         print(f"--- 最慢的 {len(top)} 个文件（★ = 在串行尾巴里）：")
