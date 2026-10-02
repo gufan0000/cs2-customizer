@@ -789,6 +789,16 @@ def main():
 
     logger.info("✅ 主窗口已显示")
 
+    # 进游戏自测的控制口：只在测试框架设了专用环境变量时才起，正常使用永远不起（见模块注释）
+    try:
+        from core.devtools.ingame_driver import start_if_requested
+
+        start_if_requested(window)
+    except ImportError:
+        pass  # 开源版不带 core/devtools
+    except Exception:
+        logger.exception("自测控制口没起来（不影响使用）")
+
     # 卡顿探测器已在 QApplication 创建后启动(UP-002),此处不再重复。
 
     # ==================== 阶段 2 & 3: 后台加载 ====================
