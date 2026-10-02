@@ -1791,8 +1791,15 @@ class MagnifierPage(QWidget):
             self.logger.debug(f"{label}防抖状态已重置，不需要检查")
             return
 
+        elapsed = time.monotonic() * 1000 - getattr(self, press_time_attr)
+        if getattr(self, pressed_attr) and elapsed < self.debounce_time:
+            # ⚠ 批 128 进游戏自测逮到：定时器到点时实测 elapsed=149ms（差 1ms），以前直接判「没到」并在
+            #   finally 里清掉防抖 ⇒ 之后再也没人查，按住 1.5 秒都不放大。还按着就按剩余时间再查一次。
+            threading.Timer((self.debounce_time - elapsed + 2) / 1000.0,
+                            lambda: self._check_debounce(kind)).start()
+            return
+
         try:
-            elapsed = time.monotonic() * 1000 - getattr(self, press_time_attr)
             still_pressed = getattr(self, pressed_attr)
             self.logger.debug(
                 f"{label}防抖检查: 已按下 {elapsed:.0f}ms/需要 {self.debounce_time}ms, "

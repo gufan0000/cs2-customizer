@@ -625,3 +625,54 @@ def test_these_judges_would_notice_if_the_gate_came_back(page, monkeypatch):
     page._sensitivity_runtime_applied = True
     page._sync_magnifier_sensitivity_state(False)
     assert writes, "闸的后半边翻过来之后还是没写盘 —— 那条判据守的不是这道闸"
+
+
+def test_a_timer_that_fires_a_hair_early_rechecks_instead_of_giving_up(page, monkeypatch):
+    """批 128 进游戏自测逮到：定时器到点时 elapsed=149ms（需要 150），以前判「没到」就清掉防抖，
+    按住 1.5 秒都不放大。还按着就要按剩余时间再查一次。"""
+    import pages.magnifier_page as mp
+
+    scheduled: list[float] = []
+
+    class FakeTimer:
+        def __init__(self, delay, fn):
+            scheduled.append(delay)
+            self.fn = fn
+
+        def start(self):
+            pass
+
+    monkeypatch.setattr(mp.threading, "Timer", FakeTimer)
+    page.primary_key_pressed = True
+    page.primary_debouncing = True
+    page.primary_key_press_time = mp.time.monotonic() * 1000 - (page.debounce_time - 1)  # 差 1ms
+
+    page._check_primary_debounce()
+
+    assert scheduled and 0 < scheduled[0] < 0.05, f"差一点没到时应当很快再查一次，实际排了 {scheduled}"
+    assert page.primary_debouncing is True, "还按着、还没到点，防抖标志不能放掉"
+
+
+def test_a_quick_second_press_is_not_lost_as_a_double_click(monkeypatch):
+    """批 128 进游戏自测逮到：mouse 库把离上一次任何鼠标键事件不到双击时间的按下报成 "double"；
+    只订 "down" ⇒ 开一枪后 0.5 秒内开镜、收镜后马上再开镜都被吞。"""
+    from core.hotkeys import registry
+
+    calls: list[tuple] = []
+
+    class FakeMouse:
+        def on_button(self, cb, buttons=(), types=()):
+            calls.append((buttons, tuple(types)))
+            return object()
+
+        def unhook(self, _h):
+            pass
+
+    monkeypatch.setattr(registry, "_mouse", FakeMouse())
+    monkeypatch.setattr(registry, "hotkeys_disabled", lambda: False)
+    token = registry.register_mouse("测试", "right", on_press=lambda: None, on_release=lambda: None)
+    try:
+        press = [t for _b, t in calls if "up" not in t]
+        assert press and "double" in press[0], f"按下要连「快速第二下」一起收：{calls}"
+    finally:
+        registry.unregister(token)

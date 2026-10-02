@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 import types
 
 import pytest
@@ -243,6 +244,13 @@ def test_eco_qos_is_switched_off_without_touching_priority():
 
     assert process_power.opt_out_of_eco_qos(FakeKernel32()) is True
     assert calls == [(4, 1, 0x1, 0, 12)], calls
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="只有 Windows 有这个 API")
+def test_eco_qos_really_takes_effect_on_this_windows():
+    """⭐ 批 126 进游戏自测逮到：上面那条用假 kernel32 验「参数对」，绿了 10 天，
+    而真调用一次都没成功过（伪句柄 -1 没声明类型被截成 32 位）。⇒ 真调一次，真看返回值。"""
+    assert process_power.opt_out_of_eco_qos() is True
 
 
 def ctypes_addr(byref_obj):

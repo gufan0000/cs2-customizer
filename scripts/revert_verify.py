@@ -4033,8 +4033,8 @@ REVERTS = [
     Revert(
         "MAG", "防抖计时又用会往回拨的钟",
         "pages/magnifier_page.py",
-        "            elapsed = time.monotonic() * 1000 - getattr(self, press_time_attr)\n",
-        "            elapsed = time.time() * 1000 - getattr(self, press_time_attr)\n",
+        "        elapsed = time.monotonic() * 1000 - getattr(self, press_time_attr)\n",
+        "        elapsed = time.time() * 1000 - getattr(self, press_time_attr)\n",
         "tests/test_magnifier_chain_after_the_audit.py::"
         "test_the_debounce_uses_a_clock_that_cannot_go_backwards",
         "系统对时把 time.time() 往回拨 ⇒ elapsed 变负 ⇒ 这一次开镜被「防抖没到」静默吃掉",
@@ -10525,6 +10525,41 @@ Revert(
         "                t = self.fire(0.04)\n",
         "tests/test_the_ingame_harness_runs_end_to_end_on_a_fake_game.py::test_a_kill_needs_the_aim_on_the_bot",
         "沙鹰 7 发打空后校准全挂，误报「瞄不准」",
+    ),
+    Revert(
+        "INGAME", "EcoQoS 句柄没声明类型",
+        "core/runtime/process_power.py",
+        "            kernel32.SetProcessInformation.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]\n",
+        "",
+        "tests/test_you_can_tell_where_the_game_link_breaks.py::test_eco_qos_really_takes_effect_on_this_windows",
+        "批 116 起每次启动都写「未生效」， CS2 Customizer 一直被 Windows 当后台节能进程降频（进游戏自测逮到）",
+    ),
+    Revert(
+        "INGAME", "重开回合不清已播等级",
+        "gsi_handler_kills.py",
+        "                                self.played_kill_levels[steamid] = set()\n"
+        "                                self.played_sounds_this_round[steamid] = set()\n"
+        "                                self.bomb_kill_offset[steamid] = 0\n"
+        "                            self.previous_round_kills[steamid] = current_round_kills\n",
+        "                            self.previous_round_kills[steamid] = current_round_kills\n",
+        "tests/test_kill_sound_loss_fixes.py::test_a_restart_inside_round_zero_does_not_swallow_the_first_kill",
+        "热身里打过几杀，手枪局开头就吞几杀（音效、图标都不出；进游戏自测逮到）",
+    ),
+    Revert(
+        "INGAME", "防抖差 1ms 就放弃",
+        "pages/magnifier_page.py",
+        "        if getattr(self, pressed_attr) and elapsed < self.debounce_time:\n",
+        "        if False:\n",
+        "tests/test_magnifier_chain_after_the_audit.py::test_a_timer_that_fires_a_hair_early_rechecks_instead_of_giving_up",
+        "定时器早到 1ms，按住 1.5 秒开镜都不放大（进游戏自测逮到）",
+    ),
+    Revert(
+        "INGAME", "快速第二下当双击丢掉",
+        "core/hotkeys/registry.py",
+        "buttons=(nbtn,), types=(\"down\", \"double\"))))",
+        "buttons=(nbtn,), types=(\"down\",))))",
+        "tests/test_magnifier_chain_after_the_audit.py::test_a_quick_second_press_is_not_lost_as_a_double_click",
+        "开一枪后 0.5 秒内开镜、收镜马上再开镜都被吞（进游戏自测逮到）",
     ),
     # ============================================ 批 124：回放页说出「更早的被顶掉了」
     Revert(

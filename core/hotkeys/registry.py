@@ -233,7 +233,9 @@ def register_mouse(
     handles: List[Any] = []
     try:
         if on_press is not None:
-            handles.append(("ms", _mouse.on_button(on_press, buttons=(nbtn,), types=("down",))))
+            # ⚠ 批 128 进游戏自测逮到：mouse 库把「离上一次**任何**鼠标键事件不到双击时间（默认 0.5s）」的按下
+            #   改报成 "double"。只订 "down" ⇒ 开一枪（左键）后 0.5s 内开镜、收镜后马上再开镜，都被吞掉。
+            handles.append(("ms", _mouse.on_button(on_press, buttons=(nbtn,), types=("down", "double"))))
         if on_release is not None:
             handles.append(("ms", _mouse.on_button(on_release, buttons=(nbtn,), types=("up",))))
     except Exception:

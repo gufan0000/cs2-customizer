@@ -1004,6 +1004,13 @@ class GSIHandlerKills:
                     # 非 live 阶段只同步计数，不触发击杀播放
                     if round_phase and round_phase != "live":
                         if not self._is_round_end_kill_delta(round_phase, player_data, steamid):
+                            if current_round_kills < self.previous_round_kills.get(steamid, 0):
+                                # 批 126 进游戏自测逮到：热身结束 / 比赛重开时 map.round 不变（都是 0），
+                                # 计数在 freezetime 里归零 —— 这里只同步计数、不清「已播等级」，
+                                # 于是热身里打过几杀，手枪局开头就吞掉几杀（音效、图标都不出）。
+                                self.played_kill_levels[steamid] = set()
+                                self.played_sounds_this_round[steamid] = set()
+                                self.bomb_kill_offset[steamid] = 0
                             self.previous_round_kills[steamid] = current_round_kills
                             self.previous_round_killhs[steamid] = current_round_killhs
                             return

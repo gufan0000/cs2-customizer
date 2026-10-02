@@ -230,3 +230,15 @@ def test_transition_guard_still_absorbs_stale_count_without_fire(handler, monkey
 
     handler.process_data(payload)
     assert _played(handler) == []
+
+
+def test_a_restart_inside_round_zero_does_not_swallow_the_first_kill(handler):
+    """批 126 进游戏自测逮到：热身结束 / mp_restartgame 时 map.round 不变（都是 0），
+    计数在 freezetime 里 1→0 —— 以前「非 live 只同步计数」不清已播等级，下一个一杀被当成播过了。"""
+    handler.process_data(_payload(0, 0))
+    handler.process_data(_payload(0, 1))
+    assert _played(handler) == ["kill-1"]
+    handler.process_data(_payload(0, 0, phase="freezetime"))
+    handler.process_data(_payload(0, 0))
+    handler.process_data(_payload(0, 1))
+    assert _played(handler) == ["kill-1", "kill-1"], "重开之后的第一杀被吞了"

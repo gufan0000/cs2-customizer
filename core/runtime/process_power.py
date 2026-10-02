@@ -26,9 +26,19 @@ class PROCESS_POWER_THROTTLING_STATE(ctypes.Structure):
 
 
 def opt_out_of_eco_qos(kernel32=None) -> bool:
-    """ControlMask 点名「执行速度」、StateMask 置 0 = 这一项由我们管、且不节流。老系统没这个 API 就算了。"""
+    """ControlMask 点名「执行速度」、StateMask 置 0 = 这一项由我们管、且不节流。老系统没这个 API 就算了。
+
+    ⚠ 批 126 进游戏自测逮到：批 116 起这一调用**从来没成功过**。没声明类型时 `GetCurrentProcess()`
+    的伪句柄 -1 按 32 位 int 传进 64 位的 HANDLE 参数，高 32 位是 0 ⇒ 句柄无效 ⇒ 每次都「未生效」。
+    ⇒ 用自己的 WinDLL 实例声明 argtypes / restype（不改全局 `windll.kernel32`，别的模块也在用它）。"""
     try:
-        kernel32 = kernel32 or ctypes.windll.kernel32
+        if kernel32 is None:
+            from ctypes import wintypes
+
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+            kernel32.SetProcessInformation.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
+            kernel32.SetProcessInformation.restype = wintypes.BOOL
         state = PROCESS_POWER_THROTTLING_STATE(
             PROCESS_POWER_THROTTLING_CURRENT_VERSION, PROCESS_POWER_THROTTLING_EXECUTION_SPEED, 0)
         ok = bool(kernel32.SetProcessInformation(
