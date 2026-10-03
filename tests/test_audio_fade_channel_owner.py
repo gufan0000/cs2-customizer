@@ -157,3 +157,18 @@ def test_fade_out_timer_still_ramps_the_sound_it_owns(monkeypatch):
 
     assert win.min_volume < 0.8, (
         f"淡出斜坡根本没跑过（最低音量 {win.min_volume}）—— 淡出功能已经死了")
+
+
+def test_a_round_sound_shows_up_in_the_audio_event_timeline(monkeypatch):
+    """批 136 进游戏逮到（DEAD-ROUND）：回合胜负 / MVP / 开始唯一走的淡入淡出这条路不进时间线 ——
+    日志说「播放回合失败」，回放页和进游戏用例的时间线里都没有这一条。"""
+    from core.audio.audio_event_timeline import AudioEventTimeline
+
+    lose = _FakeSound("round-lose-1", 0.3)
+    mgr, _channel = _probe(monkeypatch, {"round-lose-1": lose})
+    mgr._timeline = AudioEventTimeline()
+    config_mod.config.audio_event_timeline_enabled = True
+    assert mgr.play_sound_with_fade("round-lose-1", "round_sound", fade_in_ms=20, fade_out_ms=20,
+                                    event_type="round_lose")
+    plays = [e for e in mgr._timeline.query(0, {}) if e.action == "play" and e.key == "round-lose-1"]
+    assert plays and plays[0].event_type == "round_lose", [e.to_dict() for e in mgr._timeline.query(0, {})]

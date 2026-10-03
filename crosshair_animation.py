@@ -30,14 +30,13 @@ except ImportError:
     logger.warning("未安装pywin32库，准心功能将不可用")
 
 def show_win32_error():
-    """显示Win32错误提示"""
-    import tkinter.messagebox as messagebox
-    messagebox.showerror(
-        "错误", 
-        "准心功能需要安装 pywin32 库。\n\n"
-        "请在命令行中运行：\n"
-        "pip install pywin32"
-    )
+    """显示Win32错误提示。批 133：改用系统 MessageBoxW —— 以前为这一个兜底弹窗把整套 Tk（约 3MB）打进了安装包。"""
+    import ctypes
+
+    ctypes.windll.user32.MessageBoxW(
+        None,
+        "准心功能需要安装 pywin32 库。\n\n请在命令行中运行：\npip install pywin32",
+        "错误", 0x10)
 
 class CrosshairAnimationSystem:
     """优化后的准心动画系统 - 保留所有功能"""

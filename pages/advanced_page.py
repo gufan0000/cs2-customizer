@@ -844,6 +844,27 @@ class AdvancedPage(QWidget):
         section_layout.addLayout(buttons_layout)
         parent_layout.addLayout(section_layout)
     
+    def _confirm_autoexec_edit(self, plan) -> bool:
+        """把要改的行列给用户看；返回「改」还是「不改」。"""
+        shown = plan["lines"][:12]
+        more = len(plan["lines"]) - len(shown)
+        verb = {"+": "加：", "-": "删：", "↓": "挪："}
+        diff = "\n".join(verb.get(ln[:1], "") + ln[2:] for ln in shown)
+        if more > 0:
+            diff += f"\n……另有 {more} 行"
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Question)
+        box.setWindowTitle("要改你的 autoexec.cfg")
+        box.setText("CS2 Customizer 要改你自己的 autoexec.cfg，改动如下（原文件会先备份成 autoexec.cfg.cs2customizer_bak）：")
+        box.setInformativeText(
+            diff + "\n\n为什么：游戏要在启动时执行 cs2customizer.cfg，而且要排在最后，"
+                   "否则后面的 cfg 会把准心快速回正这类设置覆盖掉。")
+        yes = box.addButton("改", QMessageBox.AcceptRole)
+        box.addButton("不改", QMessageBox.RejectRole)
+        box.setDefaultButton(yes)
+        box.exec()
+        return box.clickedButton() is yes
+
     def _browse_for_csgo_dir(self):
         """选择CS:GO目录"""
         directory = QFileDialog.getExistingDirectory(
@@ -865,15 +886,27 @@ class AdvancedPage(QWidget):
                 
                 # 确保配置文件存在
                 gsi_ok = False
+                edit_autoexec = True
                 try:
-                    from cfg_utils import ensure_all_cfg
-                    gsi_ok = ensure_all_cfg(config.csgo_dir)
+                    from cfg_utils import ensure_all_cfg, plan_autoexec
+
+                    # 批 131：要动用户自己的 autoexec.cfg 之前，先把要加 / 挪的那几行给他看
+                    plan = plan_autoexec(config.csgo_dir)
+                    if plan["exists"] and plan["changed"]:
+                        edit_autoexec = self._confirm_autoexec_edit(plan)
+                    gsi_ok = ensure_all_cfg(config.csgo_dir, edit_autoexec=edit_autoexec)
                 except ImportError:
                     self.logger.warning("cfg_utils 模块未找到，跳过配置文件创建")
                 except Exception as e:
                     self.logger.error(f"创建配置文件失败: {e}")
 
-                if gsi_ok:
+                if gsi_ok and not edit_autoexec:
+                    QMessageBox.information(
+                        self, "目录已设置，autoexec.cfg 没改",
+                        "CS2 目录设置成功，你的 autoexec.cfg 保持原样。\n\n"
+                        "准心快速回正、视角预设这些要靠 cs2customizer.cfg 的功能，需要你自己在\n"
+                        "autoexec.cfg 的最后加一行：exec cs2customizer.cfg")
+                elif gsi_ok:
                     QMessageBox.information(self, "成功", "CS2 目录设置成功！")
                 else:
                     # 批 129：目录记下了，但游戏联动那份配置没写进去 —— 以前这里照样说「成功」

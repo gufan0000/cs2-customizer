@@ -109,6 +109,7 @@ def test_the_guardian_takes_over_when_the_app_is_killed(tmp_path):
     """), encoding="utf-8")
     env = {k: v for k, v in os.environ.items() if k != "PYTEST_CURRENT_TEST"}
     env["CS2C_LOG_DIR"] = str(tmp_path / "logs")
+    env["LOCALAPPDATA"] = str(tmp_path / "appdata")   # 守护会写 runtime/exit_guardian.log，别落进用户真目录
     subprocess.run([sys.executable, str(child)], env=env, timeout=60,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     for _ in range(100):
@@ -116,6 +117,60 @@ def test_the_guardian_takes_over_when_the_app_is_killed(tmp_path):
             break
         time.sleep(0.05)
     assert mark.exists(), "父进程被硬退之后守护没有接手"
+
+
+class _Vol:
+    def __init__(self, v):
+        self.v = v
+
+    def GetMasterVolume(self):  # noqa: N802
+        return self.v
+
+    def SetMasterVolume(self, v, _ctx):  # noqa: N802
+        self.v = v
+
+
+def test_the_guardian_really_restores_and_says_so_in_its_log(monkeypatch, tmp_path):
+    """批 136：上面那条端到端判据把恢复函数整个换成了假的 —— 真的恢复条件、真的日志从来没一起跑过。
+    读数取 10-03 进游戏 HARDKILL 守护日志：cs2.exe 当前 0.198、压低目标 0.198、原值 1.0。"""
+    from core.audio import game_audio_ducker
+    from core.runtime import exit_guardian
+
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    state = tmp_path / "CS2Customizer" / "runtime" / "gun_sound_duck_state.json"
+    state.parent.mkdir(parents=True, exist_ok=True)
+    state.write_text(json.dumps({"timestamp": time.time(), "sessions": [
+        {"process_name": "cs2.exe", "original": 1.0, "ducked": 0.198}]}), encoding="utf-8")
+    vol = _Vol(0.198)
+    monkeypatch.setattr(game_audio_ducker._SessionAudioBackend, "_scan_sessions",
+                        lambda self, refresh=False: self._recover_stale_state_if_needed([("k", vol, "cs2.exe")]) or [])
+    assert exit_guardian.restore_after_parent_death() == 1
+    assert vol.v == 1.0
+    log = (tmp_path / "CS2Customizer" / "runtime" / "exit_guardian.log").read_text(encoding="utf-8")
+    assert "还回 1 个" in log and "0.198" in log, log
+
+
+def test_the_utility_display_process_leaves_when_the_app_is_gone(monkeypatch):
+    """批 136 进游戏（HARDKILL）逮到：只杀 CS2 Customizer 主进程，道具瞄点显示子进程一直活着（18 线程、约 73MB）。"""
+    import multiprocessing
+    import queue
+    import threading
+
+    import utility_display
+
+    class _DeadParent:
+        @staticmethod
+        def is_alive():
+            return False
+
+    monkeypatch.setattr(multiprocessing, "parent_process", lambda: _DeadParent())
+    w = utility_display.UtilityDisplayWorker(queue.Queue(), queue.Queue())
+    t = threading.Thread(target=w.run, daemon=True)
+    t.start()
+    t.join(3.0)
+    if t.is_alive():
+        w.running = False
+    assert not t.is_alive(), "父进程已经不在了，道具瞄点显示进程 3 秒内没自己退出"
 
 
 def test_the_guardian_never_starts_inside_pytest():

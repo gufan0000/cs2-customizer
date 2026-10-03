@@ -6,6 +6,10 @@ from core.utils.logger import get_logger
 
 logger = get_logger("GSIHandlerFlash")
 
+#: 闪光归零后多久补发强制清除：子进程最长淡出（flash_process.FADE_OUT_MAX_S）+ 余量。
+#: 不 import flash_process：它在 import 时就设 DPI 感知、拉 pygame，只该在子进程里发生。
+_CLEAR_AFTER_S = 2.0 + 0.4
+
 class GSIHandlerFlash:
     def __init__(self):
         # Flash component reference
@@ -28,8 +32,15 @@ class GSIHandlerFlash:
     
     def process_data(self, data):
         """处理GSI数据获取闪光状态"""
-        # 跳过禁用状态
+        # 跳过禁用状态。⛔ 批 136：正被闪时被关掉（首页开关 / 预设 / 闪光页）⇒ 清掉那层再走，
+        # 否则子进程按最后一个值一直画到断流看门狗；状态也归零，免得再打开时「1→1 不算开始」
         if not hasattr(config, 'flash_enabled') or not config.flash_enabled:
+            if self.current_flash_value > 0:
+                self.current_flash_value = 0
+                pm = getattr(self.flash_component, "process_manager", None)
+                if pm is not None:
+                    pm.force_clear_flash()
+                    pm.current_flash_value = 0
             return
         
         # 获取当前时间
@@ -96,9 +107,12 @@ class GSIHandlerFlash:
                     elif process_manager.audio_playing:
                         logger.info("保持音频播放（自动停止已禁用）")
                 
-                # 延迟100ms后发送强制清除命令，双重保险
+                # 淡出走完之后再发一次强制清除，双重保险。⛔ 批 136：以前 100ms 就发，把淡出拦腰砍断
+                # （游戏归零后还要白约 2 秒）；新一颗闪光已经开始就不清。
                 def send_delayed_clear():
-                    time.sleep(0.1)
+                    time.sleep(_CLEAR_AFTER_S)
+                    if self.current_flash_value > 0:
+                        return
                     if hasattr(process_manager, 'force_clear_flash'):
                         process_manager.force_clear_flash()
                         logger.info("发送延迟闪光清除命令")

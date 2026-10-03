@@ -1,7 +1,8 @@
 {
   "contract": {
     "gsi_handler_flash": [
-      "GSIHandlerFlash"
+      "GSIHandlerFlash",
+      "_CLEAR_AFTER_S"
     ],
     "gsi_handler_fun": [
       "GSIHandlerFun"
@@ -42,15 +43,17 @@
       "get_receive_stats"
     ]
   },
-  "contract_total": 21,
+  "contract_total": 22,
   "external_use": {
     "gsi_handler_flash": {
       "files": [
         "main_widget.py",
-        "scripts/gsi_full_sim.py"
+        "scripts/gsi_full_sim.py",
+        "tests/test_the_flash_overlay_follows_what_cs2_reports.py"
       ],
       "names": {
-        "GSIHandlerFlash": 2
+        "GSIHandlerFlash": 5,
+        "_CLEAR_AFTER_S": 2
       }
     },
     "gsi_handler_fun": {
@@ -98,10 +101,11 @@
         "main_widget.py",
         "scripts/gsi_full_sim.py",
         "tests/test_gsi_edge_loss_fixes.py",
+        "tests/test_gsi_edges_after_the_b129_audit.py",
         "tests/test_music_link_behavior.py"
       ],
       "names": {
-        "GSIHandlerMusic": 8,
+        "GSIHandlerMusic": 9,
         "get_music_gsi_handler": 2
       }
     },
@@ -112,6 +116,7 @@
         "tests/test_community_ticket_fixes.py",
         "tests/test_full_auto_guns_are_heard_every_shot.py",
         "tests/test_gsi_audio_handlers.py",
+        "tests/test_gsi_edges_after_the_b129_audit.py",
         "tests/test_gsi_replay_pipeline.py",
         "tests/test_gun_sound_chain_after_the_in_game_test.py"
       ],
@@ -119,7 +124,7 @@
         "Controller": 1,
         "DEATH_SOUND_HOLD_DURATION": 1,
         "DEATH_SOUND_PEAK_MS": 1,
-        "GSIHandlerSounds": 23,
+        "GSIHandlerSounds": 24,
         "GUN_SOUND_PROFILES": 1
       }
     },
@@ -129,15 +134,17 @@
         "scripts/gsi_full_sim.py",
         "tests/test_gsi_audio_handlers.py",
         "tests/test_gsi_edge_loss_fixes.py",
+        "tests/test_gsi_edges_after_the_b129_audit.py",
         "tests/test_gsi_replay_pipeline.py",
+        "tests/test_kill_sounds_vary_and_voices_take_turns.py",
         "tests/test_kills_that_are_not_gunfire.py",
         "tests/test_special_sound_events.py",
         "tests/test_the_sweep_bugs_stay_fixed.py",
         "tests/test_you_can_tell_where_the_game_link_breaks.py"
       ],
       "names": {
-        "GSIHandlerSpecial": 14,
-        "threading": 3
+        "GSIHandlerSpecial": 16,
+        "threading": 4
       }
     },
     "gsi_handler_stats": {
@@ -153,10 +160,11 @@
       "files": [
         "main_widget.py",
         "pages/utility_page.py",
-        "scripts/gsi_full_sim.py"
+        "scripts/gsi_full_sim.py",
+        "tests/test_gsi_edges_after_the_b129_audit.py"
       ],
       "names": {
-        "GSIHandlerUtility": 3
+        "GSIHandlerUtility": 4
       }
     },
     "gsi_server": {
@@ -182,15 +190,15 @@
   "imported_but_no_contract": [],
   "internal_only_modules": [],
   "loc": {
-    "gsi_handler_flash": 141,
+    "gsi_handler_flash": 155,
     "gsi_handler_fun": 158,
     "gsi_handler_hud_color": 191,
-    "gsi_handler_kills": 1157,
-    "gsi_handler_music": 277,
-    "gsi_handler_sounds": 646,
-    "gsi_handler_special": 721,
+    "gsi_handler_kills": 1164,
+    "gsi_handler_music": 279,
+    "gsi_handler_sounds": 653,
+    "gsi_handler_special": 779,
     "gsi_handler_stats": 148,
-    "gsi_handler_utility": 736,
+    "gsi_handler_utility": 742,
     "gsi_server": 306
   },
   "reexport_only_modules": [],
@@ -200,6 +208,7 @@
         "GSIHandlerFlash"
       ],
       "constants": [
+        "_CLEAR_AFTER_S",
         "logger"
       ],
       "functions": []

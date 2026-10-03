@@ -1030,6 +1030,30 @@
   },
   {
    "page": "crosshair",
+   "text": "CS2 分享码",
+   "card": "CS2 分享码",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "crosshair",
+   "text": "复制当前准心的分享码",
+   "card": "CS2 分享码",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "crosshair",
+   "text": "导入",
+   "card": "CS2 分享码",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "crosshair",
    "text": "T 型",
    "card": "准心样式",
    "tab": "",

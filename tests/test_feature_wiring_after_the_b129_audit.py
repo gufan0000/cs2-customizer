@@ -147,7 +147,7 @@ def test_ensure_all_cfg_reports_whether_the_gsi_cfg_was_written(tmp_path, monkey
     assert cfg_utils.ensure_all_cfg(str(tmp_path / "不存在的目录")) is False
     game = tmp_path / "cs2"
     (game / "game" / "csgo" / "cfg").mkdir(parents=True)
-    monkeypatch.setattr(cfg_utils, "setup_autoexec", lambda d: None)
+    monkeypatch.setattr(cfg_utils, "setup_autoexec", lambda d, allow_edit=True: None)
     assert cfg_utils.ensure_all_cfg(str(game)) is True
 
 

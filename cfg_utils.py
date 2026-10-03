@@ -276,31 +276,68 @@ def ensure_cs2customizer_cfg_exists(csgo_dir):
     else:
         logger.info(f"cs2customizer.cfg already exists at: {cs2customizer_cfg_path}")
 
-def setup_autoexec(csgo_dir):
-    """处理 autoexec.cfg 文件"""
+AUTOEXEC_BACKUP_SUFFIX = ".cs2customizer_bak"
+
+
+def plan_autoexec(csgo_dir) -> dict:
+    """`setup_autoexec` 会把 autoexec.cfg 改成什么样（**只读**，批 131）。
+
+    返回 {path, exists, before, after, changed, lines}；`lines` 是给人看的「+ 加的行 / - 去掉的行」。
+    ⭐ setup_autoexec 落盘的就是这里的 `after` —— 预览和实际写入是同一份文本，不是两套算法。"""
+    path = os.path.join(csgo_dir or "", "game", "csgo", "cfg", "autoexec.cfg")
+    exec_command = "exec cs2customizer.cfg"
+    exists = os.path.exists(path)
+    before = ""
+    if exists:
+        # 统一 utf-8：默认走系统区域编码（中文 Windows 为 GBK），
+        # 已有 UTF-8 的 autoexec 会解码失败 → 判存失败 → 每次启动重复追加
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            before = f.read()
+    if not exists:
+        after = exec_command + "\n"
+    elif exec_command not in before:
+        after = before + "\n" + exec_command + "\n"
+    else:
+        after = before
+    if exists:
+        # ⚠ 2026-08-18：排在后面的同名 alias 会把我们的整段覆盖掉 ⇒ 我们要最后 exec（见 ensure_cs2customizer_exec_is_last）
+        after = crosshair_reset.rewrite_autoexec_with_us_last(after)
+    from collections import Counter
+
+    # 按「多了哪几行 / 少了哪几行」说，不用逐行 diff：挪位置在 diff 里会变成别人那行「删了又加」，看不懂
+    b, a = Counter(ln for ln in before.splitlines() if ln.strip()), Counter(ln for ln in after.splitlines() if ln.strip())
+    lines = [f"+ {ln}" for ln in (a - b).elements()] + [f"- {ln}" for ln in (b - a).elements()]
+    if exists and exec_command in before and after != before:
+        lines.insert(0, f"↓ {exec_command}（挪到最后）")
+    return {"path": path, "exists": exists, "before": before, "after": after,
+            "changed": after != before, "lines": lines}
+
+
+def setup_autoexec(csgo_dir, allow_edit: bool = True):
+    """处理 autoexec.cfg 文件。`allow_edit=False`：用户在预览里选了「不改」，已有的文件一个字不动。"""
     if not csgo_dir or not os.path.exists(csgo_dir):
         logger.warning(f"CS2 目录无效或不存在: {csgo_dir}")
         return
 
-    autoexec_path = os.path.join(csgo_dir, "game", "csgo", "cfg", "autoexec.cfg")
-    exec_command = "exec cs2customizer.cfg"
-
     try:
-        # 统一 utf-8：默认走系统区域编码（中文 Windows 为 GBK），
-        # 已有 UTF-8 的 autoexec 会解码失败 → 判存失败 → 每次启动重复追加
-        if os.path.exists(autoexec_path):
-            with open(autoexec_path, "r", encoding="utf-8", errors="ignore") as f:
-                content = f.read()
-                if exec_command not in content:
-                    with open(autoexec_path, "a", encoding="utf-8") as f:
-                        f.write("\n" + exec_command + "\n")
-                    logger.info(f"Added '{exec_command}' to autoexec.cfg")
-                else:
-                    logger.info(f"autoexec.cfg already contains '{exec_command}'")
-        else:
+        plan = plan_autoexec(csgo_dir)
+        autoexec_path = plan["path"]
+        if plan["changed"] and plan["exists"] and not allow_edit:
+            logger.info(f"用户选择不改 autoexec.cfg（本要改：{plan['lines']}）")
+            return
+        if plan["changed"]:
+            if plan["exists"]:
+                # 批 131：改用户自己的文件之前留一份原样（只留第一次的，那才是用户原本的）
+                bak = autoexec_path + AUTOEXEC_BACKUP_SUFFIX
+                if not os.path.exists(bak):
+                    import shutil
+
+                    shutil.copyfile(autoexec_path, bak)      # 逐字节原样
             with open(autoexec_path, "w", encoding="utf-8") as f:
-                f.write(exec_command + "\n")
-            logger.info(f"Created autoexec.cfg and added '{exec_command}'")
+                f.write(plan["after"])
+            logger.info(f"autoexec.cfg 已改：{plan['lines']}")
+        else:
+            logger.info("autoexec.cfg already contains 'exec cs2customizer.cfg'")
 
         # ⚠ 2026-08-18：**排在后面的同名 alias 会把我们的整段覆盖掉。**
         # 用户实录：`exec cs2customizer.cfg`（开源版）排在我们后面，
@@ -397,10 +434,10 @@ def ensure_hud_cfg_exists(csgo_dir):
 
 
 # 确保所有CFG文件存在
-def ensure_all_cfg(csgo_dir):
+def ensure_all_cfg(csgo_dir, edit_autoexec: bool = True):
     """返回 GSI 联动配置有没有写成（批 129：以前恒返回 None，设置页照样弹「设置成功」）。"""
     gsi_ok = ensure_cfg_exists(csgo_dir)       # 确保 GSI 配置文件存在
     ensure_cs2customizer_cfg_exists(csgo_dir) # 确保 cs2customizer.cfg 存在
     ensure_hud_cfg_exists(csgo_dir)   # 确保 cs2customizer_hud.cfg 存在
-    setup_autoexec(csgo_dir)          # 处理 autoexec.cfg
+    setup_autoexec(csgo_dir, allow_edit=edit_autoexec)   # 处理 autoexec.cfg
     return bool(gsi_ok)

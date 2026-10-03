@@ -30,6 +30,20 @@ class _FixedTargets:
         return None
 
 
+def _log(line: str) -> None:
+    """守护自己的小日志（`runtime/exit_guardian.log`）：它在父进程死后才干活，没有别的地方能看见它做了什么。"""
+    try:
+        from core.audio.game_audio_ducker import _SessionAudioBackend
+
+        path = os.path.join(os.path.dirname(_SessionAudioBackend._resolve_state_path(None)), "exit_guardian.log")
+        import time
+
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(f"{time.strftime('%m-%d %H:%M:%S')} [{os.getpid()}] {line}\n")
+    except Exception:
+        pass
+
+
 def restore_after_parent_death() -> int:
     """父进程已不在：状态文件还在就恢复。返回状态文件里记着的会话数（没有状态文件返回 0）。"""
     # 用压声那一层（会话音量后端）自己的「陈旧状态修复」—— 状态文件格式和恢复条件只有它一份
@@ -38,6 +52,7 @@ def restore_after_parent_death() -> int:
     probe = _SessionAudioBackend(cfg=_FixedTargets(()))
     payload = probe._stale_state
     if not payload:
+        _log("父进程已退出；没有压声状态文件（正常退出已恢复，或从没压过）")
         return 0
     names = {str(item.get("process_name", "") or "").strip().lower()
              for item in payload.get("sessions", []) if isinstance(item, dict)}
@@ -45,8 +60,11 @@ def restore_after_parent_death() -> int:
     if not names:
         return 0
     ducker = _SessionAudioBackend(cfg=_FixedTargets(names))
+    ducker.recovery_trace = []
     ducker._ensure_com_initialized()
     ducker._scan_sessions(refresh=True)        # 扫到目标会话时就地走「陈旧状态修复」
+    _log(f"父进程已退出；状态文件 {sorted(names)}；会话（名, 当前, 压低目标, 原值）{ducker.recovery_trace}；"
+         f"还回 {ducker.recovered_count} 个")
     return len(names)
 
 
@@ -57,6 +75,7 @@ def _guardian_main() -> None:
     parent = mp.parent_process()
     if parent is None:
         return
+    _log(f"守护已起，盯着父进程 {parent.pid}")
     try:
         from multiprocessing.connection import wait
 
@@ -65,8 +84,8 @@ def _guardian_main() -> None:
         return
     try:
         restore_after_parent_death()
-    except Exception:
-        pass
+    except Exception as exc:
+        _log(f"恢复时出错：{exc!r}")
 
 
 def _spawn() -> None:
@@ -78,8 +97,8 @@ def _spawn() -> None:
         proc.start()
         with _lock:
             _process = proc
-    except Exception:
-        pass
+    except Exception as exc:
+        _log(f"起守护进程失败：{exc!r}")
     finally:
         with _lock:
             _starting = False

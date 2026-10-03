@@ -67,6 +67,9 @@ class _SessionAudioBackend:
         #: 覆写 + 恢复时 10 次删除，全落在同一个文件上），而且写在 `_run_transition`
         #: **之前** —— 磁盘忙或实时扫描卡住那一次，压声和枪声一起被推后（批 103）。
         self._persisted_state: tuple | None = None
+        #: 退出守护用（批 136）：记下陈旧状态修复时每个会话的读数、还回了几个
+        self.recovery_trace: list | None = None
+        self.recovered_count = 0
         self._stale_state = self._load_stale_state()
         # 2.1.4: COM 每线程初始化标记（GSI 工作线程里调 pycaw 前必须 CoInitialize，
         # 否则在 Qt(STA) 主线程已占用 COM 的进程里会报
@@ -215,9 +218,12 @@ class _SessionAudioBackend:
                 current = float(volume.GetMasterVolume())
             except Exception:
                 continue
+            if self.recovery_trace is not None:   # 退出守护记日志用（批 136）
+                self.recovery_trace.append((str(process_name), round(current, 3), round(ducked, 3), round(original, 3)))
             if current <= ducked + 0.05 and current < original - 0.05:
                 if self._set_volume(volume, original):
                     recovered += 1
+        self.recovered_count = recovered
 
         if recovered:
             self._logger.warning(f"检测到上次未恢复的游戏音量，已自动修复 {recovered} 个音频会话")

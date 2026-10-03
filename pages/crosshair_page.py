@@ -408,6 +408,11 @@ class CrosshairPage(QWidget):
         scroll_layout.addLayout(top_tools_row)
 
 
+        # 批 130：CS2 官方分享码导入 / 导出（建在自定义卡之前 ⇒ Tab 顺序与版面一致）
+        sharecode_card = self._create_sharecode_card()
+        sharecode_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+        scroll_layout.addWidget(sharecode_card)
+
         # 自定义准心操作卡片
         custom_card = self._create_custom_card()
         custom_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
@@ -1201,13 +1206,99 @@ class CrosshairPage(QWidget):
         #   ⇒ 同一句话现在也挂在那颗按钮身上（见 `_sync_action_bar`）。
         self.custom_hint_label = QLabel(
             "导入 / 导出在页面底部操作栏，收本软件导出的 .xchr"
-            "（.json 也能直接拖进来）；CS2 官方分享码（CSGO-…）暂不支持。"
+            "（.json 也能直接拖进来）；CS2 官方分享码（CSGO-…）在上面「CS2 分享码」一栏粘贴。"
         )
         self.custom_hint_label.setObjectName("hintLabel")
         self.custom_hint_label.setWordWrap(True)
         layout.addWidget(self.custom_hint_label)
 
         return card
+
+    def _create_sharecode_card(self):
+        """批 130：粘贴 CS2 分享码套到 CS2 Customizer 准心；把当前准心导出成分享码（复制到剪贴板）。"""
+        from PySide6.QtWidgets import QLineEdit
+
+        card = self._create_card()
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(8)
+        title = QLabel("CS2 分享码")
+        title.setObjectName("cardTitle")
+        layout.addWidget(title)
+        row = QHBoxLayout()
+        row.setSpacing(10)
+        self.sharecode_edit = QLineEdit()
+        self.sharecode_edit.setPlaceholderText("粘贴游戏里复制的 CSGO-xxxxx-xxxxx-xxxxx-xxxxx-xxxxx")
+        self.sharecode_edit.setClearButtonEnabled(True)
+        self.sharecode_edit.returnPressed.connect(self._import_sharecode)
+        row.addWidget(self.sharecode_edit, 1)
+        import_btn = QPushButton("导入")
+        import_btn.setFixedHeight(36)
+        import_btn.clicked.connect(self._import_sharecode)
+        row.addWidget(import_btn)
+        export_btn = QPushButton("复制当前准心的分享码")
+        export_btn.setFixedHeight(36)
+        export_btn.clicked.connect(self._export_sharecode)
+        row.addWidget(export_btn)
+        layout.addLayout(row)
+        self.sharecode_result_label = QLabel(
+            "导入只换样式、颜色、粗细、长度、间隙、描边和中心点；游戏里在「准星 → 分享或导入」粘贴导出的码。")
+        self.sharecode_result_label.setObjectName("hintLabel")
+        self.sharecode_result_label.setWordWrap(True)
+        self.sharecode_result_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        layout.addWidget(self.sharecode_result_label)
+        return card
+
+    @staticmethod
+    def _screen_height_px() -> int:
+        """游戏所在屏（取主屏）的物理像素高：分享码按出码屏高等比缩放时要用。"""
+        from PySide6.QtGui import QGuiApplication
+
+        scr = QGuiApplication.primaryScreen()
+        if scr is None:
+            return 0
+        return int(round(scr.size().height() * scr.devicePixelRatio()))
+
+    def _import_sharecode(self):
+        import core.crosshair_sharecode as cs
+
+        code = self.sharecode_edit.text().strip()
+        try:
+            values, notes = cs.to_cs2customizer(code, self._screen_height_px())
+        except cs.ShareCodeError as e:
+            self.sharecode_result_label.setText(f"⚠️ 没导入：{e}")
+            return
+        for key, value in values.items():
+            setattr(config, key, value)
+        config.save_config()
+        for button in self.style_group.buttons():
+            if button.property("style_value") == values["crosshair_style"]:
+                button.setChecked(True)
+                break
+        self.load_settings()
+        self._update_crosshair_system()
+        self._update_preview()
+        self._sync_overview_status()
+        tail = ("；" + "；".join(notes)) if notes else ""
+        self.sharecode_result_label.setText(
+            f"✓ 已导入：{self._format_style_text(values['crosshair_style'])} · {values['crosshair_color_custom']} · "
+            f"粗 {values['crosshair_thickness']} · 间隙 {values['crosshair_gap']} · 全长 {values['crosshair_size']}{tail}")
+        self.logger.info(f"准心分享码已导入: {code} → {values}；{notes}")
+
+    def _export_sharecode(self):
+        from PySide6.QtGui import QGuiApplication
+
+        import core.crosshair_sharecode as cs
+
+        try:
+            code = cs.from_cs2customizer(config, self._screen_height_px())
+        except cs.ShareCodeError as e:
+            self.sharecode_result_label.setText(f"⚠️ 没导出：{e}")
+            return
+        QGuiApplication.clipboard().setText(code)
+        self.sharecode_edit.setText(code)
+        self.sharecode_result_label.setText(
+            f"✓ 已复制到剪贴板：{code}（游戏里在「准星 → 分享或导入」粘贴）")
 
     def _on_size_changed(self, value):
         """准心大小改变"""

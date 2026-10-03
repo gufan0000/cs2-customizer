@@ -229,20 +229,32 @@ def test_import_says_what_it_actually_accepts(page):
         f"没提 CS2 分享码这件事 —— 那正是玩家会来试的东西：{text!r}")
 
 
-def test_the_copy_does_not_promise_share_code_support(page):
-    """反面守卫：**不许把没做的事写成做了**（RN-042 那一族）。
+def test_the_share_code_row_does_what_the_hint_says(page, monkeypatch):
+    """批 130 起真做了分享码（以前这里是反面守卫「没做就不许承诺」）。说明里指过去的那一栏
+    必须真的能用：粘贴 → 导入 → 配置变；坏码 → 说出来且配置不动；导出 → 剪贴板里的码解得回去。"""
+    from PySide6.QtGui import QGuiApplication
 
-    如果哪天真做了分享码解码，这条判据会红 —— 那时连同上面一条一起改，
-    而不是让文案先跑到实现前面去。
-    """
-    from core import io_validation
+    from core import crosshair_sharecode as cs
 
-    supports_share_code = any(
-        "csgo-" in str(getattr(io_validation, name, "")).lower()
-        for name in dir(io_validation) if not name.startswith("__")
-    )
-    text = page.custom_hint_label.text()
-    if not supports_share_code:
-        for promise in ("支持分享码", "支持 CS2 分享码", "可直接粘贴分享码"):
-            assert promise not in text, (
-                f"文案承诺了分享码，而导入链路里没有任何解码实现：{text!r}")
+    for key in ("crosshair_style", "crosshair_color_custom", "crosshair_alpha", "crosshair_thickness",
+                "crosshair_gap", "crosshair_size", "crosshair_outline", "crosshair_dot", "crosshair_color"):
+        monkeypatch.setattr(config, key, getattr(config, key), raising=False)
+    monkeypatch.setattr(page, "_update_crosshair_system", lambda *a, **k: None)
+    assert "分享码" in page.custom_hint_label.text()
+
+    page.sharecode_edit.setText("CSGO-hLbCn-69VT6-Bok83-9MOqW-SWzwQ")   # 静态十字 #32FA32 gap4 len8 粗2 @1080
+    monkeypatch.setattr(page, "_screen_height_px", lambda: 1080)
+    page._import_sharecode()
+    assert (config.crosshair_style, config.crosshair_color_custom, config.crosshair_gap,
+            config.crosshair_size, config.crosshair_thickness) == ("crosshair", "#32FA32", 4, 24, 2)
+    assert page.size_slider.value() == 24 and page.gap_slider.value() == 4, "控件没跟着配置刷新"
+    assert "已导入" in page.sharecode_result_label.text()
+
+    page.sharecode_edit.setText("CSGO-12345-12345-12345-12345-12345")
+    page._import_sharecode()
+    assert "没导入" in page.sharecode_result_label.text()
+    assert config.crosshair_color_custom == "#32FA32", "坏码把配置改了"
+
+    page._export_sharecode()
+    code = QGuiApplication.clipboard().text()
+    assert cs.to_cs2customizer(code, 1080)[0]["crosshair_size"] == 24

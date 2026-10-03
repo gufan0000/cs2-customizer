@@ -131,7 +131,25 @@ EXCLUDES = [
     "PySide6.QtOpenGLWidgets",
     "PySide6.QtBluetooth",
     "PySide6.QtDBus",
+    # 批 133：产品里唯一用 Tk 的兜底弹窗已换成 MessageBoxW ⇒ 整套 Tcl/Tk（约 3MB）不再打包
+    "tkinter",
+    "_tkinter",
 ]
+
+#: 批 133：打进来却永远不会被加载的二进制（按文件名小写比对）。
+#: PySide6 为 Qt 的 TLS 插件自带一份 OpenSSL（`*-x64.dll`，6.8MB），而产品不用 QtNetwork；
+#: HTTPS 走 Python 自己的 ssl（用的是另一份 `libssl-3.dll` / `libcrypto-3.dll`，**那份不许动**）。
+DROP_BINARIES = [
+    "libssl-3-x64.dll",
+    "libcrypto-3-x64.dll",
+    "qopensslbackend.dll",
+    "qcertonlybackend.dll",
+    "qschannelbackend.dll",
+]
+
+# onefile 归档里资源条目的前缀。PyInstaller 把 datas 的目标名按 os.sep 规范化，
+# 所以两种分隔符都要认（打包机是 Windows，但判据不该依赖这一点）。
+BUNDLED_ASSET_PREFIXES = ("resources/", "resources\\")
 
 LOCAL_MODULE_EXCLUDES = {
     "__init__",
@@ -171,11 +189,9 @@ CRITICAL_ARCHIVE_MODULES = [
     "core.kill_icon_video",
     # 批 123：资源代数 —— 导入页与各页只在方法里 import 它（静态图可能收不到）。
     "core.resource_generation",
+    # 批 130：准心分享码 —— 准心页只在按钮回调里 import 它。
+    "core.crosshair_sharecode",
 ]
-
-# onefile 归档里资源条目的前缀。PyInstaller 把 datas 的目标名按 os.sep 规范化，
-# 所以两种分隔符都要认（打包机是 Windows，但判据不该依赖这一点）。
-BUNDLED_ASSET_PREFIXES = ("resources/", "resources\\")
 
 MIN_PYINSTALLER_SPLASH_CENTER = (6, 21, 0)
 
@@ -710,6 +726,8 @@ coll = COLLECT(
     block = onefile_block if mode == "onefile" else onedir_block
 
     return f"""# -*- mode: python ; coding: utf-8 -*-
+import os
+
 from PyInstaller.utils.hooks import collect_submodules
 
 block_cipher = None
@@ -748,6 +766,10 @@ a = Analysis(
     # Do not use -OO: stripping docstrings breaks numpy/pygame import chain.
     optimize=1,
 )
+
+# 批 133：去掉永远不会被加载的二进制（见 build_release.DROP_BINARIES）
+_drop = {{n.lower() for n in {py_list(DROP_BINARIES)}}}
+a.binaries = [b for b in a.binaries if os.path.basename(b[0]).lower() not in _drop]
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 {stable_splash_class}
@@ -831,6 +853,13 @@ def verify_onedir_tree(
         # （原注释说交给 `verify_obfuscation_manifest()` —— **那个函数全仓不存在**，
         #  照着它去找会以为有一道并不存在的门禁。）
         checks.append(("PyArmor 运行时", bool(list(internal.glob("pyarmor_runtime*")))))
+    # 批 133：瘦掉的那几样真的没了；Python 自己 HTTPS 用的那份 OpenSSL 还在
+    # （放在这里而不是上面的清单里：开源版的语义补丁要改那张清单，挨着写会让补丁对不上）
+    checks += [
+        ("没有多余的 OpenSSL / Tk", not any((internal / n).exists() for n in DROP_BINARIES + ["_tk_data", "_tcl_data"])),
+        ("Python 的 ssl 依赖 libssl-3.dll",
+         (internal / "libssl-3.dll").is_file() or not (internal / "_ssl.pyd").exists()),
+    ]
     missing = [name for name, ok in checks if not ok]
     if missing:
         raise RuntimeError("onedir 校验失败,缺失: " + ", ".join(missing))

@@ -1033,7 +1033,22 @@ class CrosshairOverlayManager(QObject):
     def kill_effect(self, value):
         self._state.kill_effect = value
 
+    def _refresh_from_config(self):
+        """按 config 现在的样子重刷 state。⛔ 批 130 进游戏逮到：state 只在启动时读一次 config，之后只靠
+        update_settings 推 —— 而准心页在准心**关着**时不推（`_update_crosshair_system` 见不可见就 return）。
+        ⇒ 关着时改的颜色 / 大小 / 间隙（或导入的分享码），打开后画的还是启动时那一套。"""
+        cfg = self.config
+        self._state.size = getattr(cfg, "crosshair_size", self._state.size)
+        self._state.thickness = getattr(cfg, "crosshair_thickness", self._state.thickness)
+        self._state.color = getattr(cfg, "crosshair_color", self._state.color)
+        self._state.style = getattr(cfg, "crosshair_style", self._state.style)
+        self._state.animation = getattr(cfg, "crosshair_animation", self._state.animation)
+        self._state.kill_effect = getattr(cfg, "crosshair_kill_effect", self._state.kill_effect)
+        self._state.custom_points = tuple(tuple(p) for p in (getattr(cfg, "crosshair_custom_data", ()) or ()))
+        self._sync_style_extras()
+
     def show_crosshair(self):
+        self._refresh_from_config()
         if self._window is None:
             self._window = CrosshairOverlayWindow()
         self._window.recenter()

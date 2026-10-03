@@ -507,8 +507,21 @@ class UtilityDisplayWorker:
         
         # 延迟初始化pygame，避免过早创建窗口
         self.status_queue.put(("initialized", True))
-        
+
+        # 批 136 进游戏逮到： CS2 Customizer 被强杀后这个进程一直活着（18 线程、约 73MB）—— 队列看不见写端消失，
+        # 只会一直超时。⇒ 同闪光子进程：约 1 秒看一次父进程还在不在，不在就自己退。
+        import multiprocessing as _mp
+
+        parent = _mp.parent_process()
+        last_parent_check = time.monotonic()
+
         while self.running:
+            if parent is not None and time.monotonic() - last_parent_check >= 1.0:
+                last_parent_check = time.monotonic()
+                if not parent.is_alive():
+                    print("[UtilityWorker] 父进程已不在，退出")
+                    self.running = False
+                    break
             try:
                 # UP-061: 原本 `if not empty(): get_nowait()` + `time.sleep(0.001)`
                 # 空转轮询。下面虽有 clock.tick(10)，但那只在窗口**可见**时生效，

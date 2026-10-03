@@ -37,6 +37,66 @@ def set_dpi_awareness():
 # 在定义类之前调用
 set_dpi_awareness()
 
+#: 批 136（RN-706②，F-02 实测 6 颗）：CS2 的 `flashed` 只报 0 / 1。正对一颗「1」持续约 1.1s，
+#: 归零那一刻游戏仍是全白、再用约 2s 淡回；侧对 / 背对「1」只有 0.02s。
+#: ⇒ 非零 = 满强度；淡出从屏幕上**正画着的**浓度起，时长随「1」持续了多久走（正对约 2s，擦边约 0.4s）。
+FADE_OUT_MIN_S = 0.4
+FADE_OUT_MAX_S = 2.0
+
+
+def flash_strength(value) -> float:
+    """闪光值 → 0~1 强度。单调（以前 1~19 有小值加强、20 起按 /255，19→20 从 0.885 掉到 0.078）。"""
+    return 1.0 if value and value > 0 else 0.0
+
+
+def fade_out_seconds(held_s: float) -> float:
+    return max(FADE_OUT_MIN_S, min(FADE_OUT_MAX_S, FADE_OUT_MIN_S + 1.5 * max(0.0, held_s)))
+
+
+class FlashEnvelope:
+    """闪光值 → 这一帧画多浓（淡入 / 淡出状态机），主循环每帧调一次 `step`。"""
+
+    def __init__(self, fade_in_s: float = 0.3):
+        self.fade_in_s = fade_in_s
+        self.fading_in = self.fading_out = False
+        self.t0 = self.started_at = 0.0
+        self.fade_from = 0.0
+        self.fade_out_s = FADE_OUT_MIN_S
+        self.shown = 0.0
+        self.last_value = 0
+
+    def cancel(self) -> None:
+        self.fading_in = self.fading_out = False
+        self.shown = 0.0
+        self.last_value = 0
+
+    def step(self, now: float, value, target: float, fade_in: bool = True, fade_out: bool = True) -> float:
+        if value != self.last_value:
+            if self.last_value == 0 and value > 0:
+                self.fading_in, self.fading_out = fade_in, False
+                self.t0 = self.started_at = now
+            elif self.last_value > 0 and value == 0:
+                self.fading_in = False
+                self.fading_out = fade_out
+                self.t0 = now
+                self.fade_from = self.shown          # ⛔ 从正画着的浓度淡，不从目标值、更不从 0
+                self.fade_out_s = fade_out_seconds(now - self.started_at)
+            self.last_value = value
+        if value > 0:
+            p = 1.0
+            if self.fading_in:
+                p = min(1.0, (now - self.t0) / self.fade_in_s)
+                self.fading_in = p < 1.0
+            self.shown = target * p
+        elif self.fading_out:
+            p = min(1.0, (now - self.t0) / self.fade_out_s)
+            self.fading_out = p < 1.0
+            self.shown = self.fade_from * (1.0 - p)
+        else:
+            self.shown = 0.0
+        return self.shown
+
+
 class FlashEffectProcess:
     def __init__(self):
         self.is_running = False
@@ -101,7 +161,8 @@ class FlashEffectProcess:
         self.fade_out_duration = 0.2  # 200ms淡出
         self.fade_in_enabled = True  # 是否启用淡入效果
         self.fade_out_enabled = True # 是否启用淡出效果
-        
+        self.envelope = FlashEnvelope(self.fade_in_duration)
+
     def initialize(self, screen_width, screen_height):
         """初始化闪光效果进程"""
         self.screen_width = screen_width
@@ -267,19 +328,10 @@ class FlashEffectProcess:
         # 保存原始值
         self.flash_value = value
         
-        # 特殊处理小值 - 关键修复
-        if value > 0 and value < 20:  # CS:GO实际闪光值范围通常是1-20
-            # 给小值赋予较大的基础不透明度
-            # 闪光值为1时基础不透明度为0.6
-            # 闪光值为20时不透明度为0.9
-            normalized_value = 0.6 + (value / 20.0) * 0.3
-            print(f"应用小值加强: 原始值={value}, 归一化后={normalized_value:.2f}")
-        else:
-            # 标准归一化处理
-            normalized_value = float(min(255, max(0, value))) / 255.0
-        
-        # 直接设置当前不透明度
-        self.current_opacity = normalized_value * self.max_opacity
+        normalized_value = flash_strength(value)
+        # 归零时不清目标浓度：淡出由 FlashEnvelope 从正画着的浓度起算
+        if normalized_value > 0:
+            self.current_opacity = normalized_value * self.max_opacity
         
         print(f"更新闪光值: {value}, 归一化值: {normalized_value:.2f}, 不透明度: {self.current_opacity:.2f}")
         
@@ -390,17 +442,11 @@ class FlashEffectProcess:
             if self.flash_value != last_flash_value:
                 # 闪光开始 - 从0变为非0
                 if last_flash_value == 0 and self.flash_value > 0:
-                    self.is_fading_in = True
-                    self.is_fading_out = False
-                    self.fade_start_time = current_time
                     current_fps = transition_fps
                     print("开始淡入效果")
-                
+
                 # 闪光结束 - 从非0变为0
                 elif last_flash_value > 0 and self.flash_value == 0:
-                    self.is_fading_in = False
-                    self.is_fading_out = True
-                    self.fade_start_time = current_time
                     current_fps = transition_fps
                     print("开始淡出效果")
                 
@@ -415,39 +461,23 @@ class FlashEffectProcess:
                 # 更新上一个闪光值
                 last_flash_value = self.flash_value
             
-            # 处理淡入淡出效果
-            actual_opacity = self.current_opacity
-            if self.is_fading_in and self.fade_in_enabled:
-                # 计算淡入进度 (0.0 到 1.0)
-                fade_progress = min(1.0, (current_time - self.fade_start_time) / self.fade_in_duration)
-                # 应用渐进不透明度
-                target_opacity = self.current_opacity
-                actual_opacity = target_opacity * fade_progress
-                
+            # 处理淡入淡出效果（状态机在 FlashEnvelope，批 136）
+            was_fading = self.is_fading_in or self.is_fading_out
+            actual_opacity = self.envelope.step(current_time, self.flash_value, self.current_opacity,
+                                                self.fade_in_enabled, self.fade_out_enabled)
+            ended_fade_out = self.is_fading_out and not self.envelope.fading_out
+            self.is_fading_in, self.is_fading_out = self.envelope.fading_in, self.envelope.fading_out
+            if self.is_fading_in or self.is_fading_out:
                 self.needs_redraw = True
-                
-                # 淡入完成
-                if fade_progress >= 1.0:
-                    self.is_fading_in = False
-                    stable_flash_time = current_time
-                    
-            elif self.is_fading_out and self.fade_out_enabled:
-                # 计算淡出进度 (0.0 到 1.0)
-                fade_progress = min(1.0, (current_time - self.fade_start_time) / self.fade_out_duration)
-                # 应用渐退不透明度
-                start_opacity = self.current_opacity
-                actual_opacity = start_opacity * (1.0 - fade_progress)
-                
-                self.needs_redraw = True
-                
-                # 淡出完成
-                if fade_progress >= 1.0:
-                    self.is_fading_out = False
-                    # 强制清除
-                    self.overlay_win.fill((0, 0, 0, 0))
-                    pygame.display.flip()
-                    actual_opacity = 0
-                    self.needs_redraw = False
+            elif was_fading and self.flash_value > 0:
+                stable_flash_time = current_time
+            if ended_fade_out or (self.flash_value == 0 and not self.is_fading_out and was_fading):
+                # 淡出完成：强制清除
+                self.current_opacity = 0
+                self.overlay_win.fill((0, 0, 0, 0))
+                pygame.display.flip()
+                actual_opacity = 0
+                self.needs_redraw = False
             
             # 检测闪光稳定期 - 如果闪光值稳定一段时间，降低帧率节省资源
             if self.flash_value > 0 and not self.is_fading_in and not self.is_fading_out:
@@ -1039,6 +1069,7 @@ def process_commands(command_queue, flash_effect):
                 print("收到强制清除命令")
                 flash_effect.flash_value = 0
                 flash_effect.current_opacity = 0
+                flash_effect.envelope.cancel()
                 flash_effect.needs_redraw = True
                 flash_effect.overlay_win.fill((0, 0, 0, 0))
                 pygame.display.flip()
@@ -1052,20 +1083,10 @@ def process_commands(command_queue, flash_effect):
                 if "monitor" in command:
                     flash_effect.request_monitor(command.get("monitor"))
 
-                if flash_value > 0 and flash_effect.flash_value == 0:
-                    flash_effect.is_fading_in = True
-                    flash_effect.is_fading_out = False
-                    flash_effect.fade_start_time = time.time()
-                    print("开始淡入效果")
-                elif flash_value == 0 and flash_effect.flash_value > 0:
-                    flash_effect.is_fading_in = False
-                    flash_effect.is_fading_out = True
-                    flash_effect.fade_start_time = time.time()
-                    print("开始淡出效果")
-
+                # 淡入 / 淡出由主循环的 FlashEnvelope 判（批 136），这里只交值
                 flash_effect.update_flash_value(flash_value)
 
-                if flash_value == 0 and not flash_effect.is_fading_out:
+                if flash_value == 0 and not flash_effect.fade_out_enabled:
                     flash_effect.overlay_win.fill((0, 0, 0, 0))
                     pygame.display.flip()
                     print("闪光效果已清除(值为0)")

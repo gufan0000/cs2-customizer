@@ -991,6 +991,12 @@ class AudioManager:
         except Exception as e:
             self.logger.error(f"Fade start failed {key}: {e}")
             return False
+        # 批 136 进游戏逮到：这条路（回合开始 / 胜负 / MVP 唯一走的路）以前不进时间线 ——
+        # 回放页上看不见回合音效响过，进游戏用例也读不到（日志说播了、时间线里没有）。
+        self._record_timeline_event(
+            action="play", key=key, channel_type=channel_type, event_type=str(event_type or channel_type),
+            reason="played_with_fade", success=True,
+        )
 
         # 本地真的开播了才转发（被策略层拒掉的不转发，队友听到的 = 自己听到的）。
         # group=channel_type：回合音效本地共用一个通道、后来的顶掉先来的，

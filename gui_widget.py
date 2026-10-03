@@ -3315,6 +3315,14 @@ class MainWindow(QMainWindow):
                     self.logger.info("正在隐藏准心...")
                     self.crosshair_animation.hide_crosshair()
         
+        # 闪光总开关拨关：正白着的那层当场清掉（批 136 进游戏逮到：以前只改配置，
+        # GSI 那边不再转发 ⇒ 子进程按最后一个值一直画，直到 10 秒断流看门狗）
+        if config_key == "flash_enabled" and not checked:
+            pm = getattr(self.pages.get("flash"), "process_manager", None)
+            if pm is not None and getattr(pm, "current_flash_value", 0):
+                pm.force_clear_flash()
+                pm.current_flash_value = 0
+
         # 特殊处理：开镜放大开关
         # 2.2.0 丝滑化:建页/启停挪出点击帧——复选框即时回弹,重活下一拍做
         # ⚠⚠ RN-454（批 33）：这一段原来**只挂在音乐页那颗子开关上**。
