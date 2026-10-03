@@ -73,6 +73,7 @@ class RuntimeHudEngine:
         self.previous_round_killhs = 0
         self.previous_active_weapon = ""
         self.player_alive = True
+        self._seeded = False
         self.team_side = ""
         #: RN-683：炸弹炸死的人头不闪「击杀 / 连杀」色（与击杀音效同一个判定）
         self._bomb_filter = BombKillFilter()
@@ -99,7 +100,14 @@ class RuntimeHudEngine:
         # 驱动 HUD 并污染 previous_* 边沿检测）。provider.steamid 恒为本机。
         # RN-685：口径收进 core/gsi/identity（这里不给 config 兜底 —— 引擎不读 config，与原行为一致）。
         if not is_self(data):
-            return RuntimeOutput(None)
+            if self.player_alive:
+                return RuntimeOutput(None)
+            # 批 129：本人已阵亡、在看队友 —— 边沿一个都不动，但**已经触发的计时窗口要按时走完**。
+            # 以前这里直接 None ⇒ 效果线程拿着被观战者的帧永远算不出颜色 ⇒ 死亡色一直停到下回合复活。
+            candidate = self._pick_candidate(
+                now=now, health=0, bomb_state="", weapon_cat="",
+                round_phase=self.previous_round_phase)
+            return self._output_for(candidate, now)
 
         state = player.get("state", {})
         health = state.get("health", 100)
@@ -123,6 +131,15 @@ class RuntimeHudEngine:
         # ⚠ 上面那个 bomb_state 只读 `bomb` 组件、给配色候选用，**原样保留**；
         # 炸弹击杀过滤看的是 `round.bomb` 优先（kill_attribution.bomb_state），两者别合并。
         self._bomb_filter.observe(data, now)
+        if not self._seeded:
+            # 第一帧（软件中途启动 / 重连）：计数和血量是「已经是这样」，不是「刚变成这样」（批 129）。
+            # 不播种的话，首帧 round_kills=3 会一口气闪击杀 + 连杀 + 爆头色，health=0 会闪死亡色。
+            self._seeded = True
+            self.previous_health = health
+            self.previous_round_kills = round_kills
+            self.previous_round_killhs = round_killhs
+            self.previous_round_phase = round_phase
+            self.player_alive = health > 0
         self._detect_events(
             now=now,
             health=health,
@@ -149,6 +166,9 @@ class RuntimeHudEngine:
             weapon_cat=weapon_cat,
             round_phase=round_phase,
         )
+        return self._output_for(candidate, now)
+
+    def _output_for(self, candidate, now):
         if not candidate:
             return RuntimeOutput(None)
 

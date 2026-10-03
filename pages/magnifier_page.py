@@ -1557,56 +1557,68 @@ class MagnifierPage(QWidget):
             if conflict_notes:
                 self.logger.warning("热键冲突: " + "；".join(conflict_notes))
 
+            # 批 129：注册返回 None = 没挂上（库不可用 / 键名不认）。以前不看返回值，
+            # 状态栏照样写「主武器热键: X」，按了没反应也没处查。
+            not_registered = []
+
+            def _check(token, what):
+                if token is None:
+                    not_registered.append(what)
+
             # 注册主武器键盘热键
             primary_kb_key = key_mapping.get(primary_key)
             if primary_kb_key:
                 self.logger.info(f"注册主武器键盘热键: {primary_kb_key}")
-                hotkey_registry.register_key(
+                _check(hotkey_registry.register_key(
                     self.HOTKEY_OWNER, primary_kb_key,
                     on_press=lambda e: self._global_primary_key_press(),
                     on_release=lambda e: self._global_primary_key_release(),
                     note="主武器开镜",
-                )
+                ), f"主武器（{primary_key}）")
 
             # 注册副武器键盘热键(如果与主武器热键不同)
             if secondary_key != primary_key:
                 secondary_kb_key = key_mapping.get(secondary_key)
                 if secondary_kb_key:
                     self.logger.info(f"注册副武器键盘热键: {secondary_kb_key}")
-                    hotkey_registry.register_key(
+                    _check(hotkey_registry.register_key(
                         self.HOTKEY_OWNER, secondary_kb_key,
                         on_press=lambda e: self._global_secondary_key_press(),
                         on_release=lambda e: self._global_secondary_key_release(),
                         note="手枪开镜",
-                    )
+                    ), f"手枪（{secondary_key}）")
 
             primary_mouse_button = mouse_mapping.get(primary_key)
             if primary_mouse_button:
                 self.logger.info(f"注册主武器鼠标热键: {primary_mouse_button}")
-                hotkey_registry.register_mouse(
+                _check(hotkey_registry.register_mouse(
                     self.HOTKEY_OWNER, primary_mouse_button,
                     on_press=lambda: self._global_primary_key_press(),
                     on_release=lambda: self._global_primary_key_release(),
                     note="主武器开镜",
-                )
+                ), f"主武器（{primary_key}）")
 
             if secondary_key != primary_key:
                 secondary_mouse_button = mouse_mapping.get(secondary_key)
                 if secondary_mouse_button:
                     self.logger.info(f"注册副武器鼠标热键: {secondary_mouse_button}")
-                    hotkey_registry.register_mouse(
+                    _check(hotkey_registry.register_mouse(
                         self.HOTKEY_OWNER, secondary_mouse_button,
                         on_press=lambda: self._global_secondary_key_press(),
                         on_release=lambda: self._global_secondary_key_release(),
                         note="手枪开镜",
-                    )
+                    ), f"手枪（{secondary_key}）")
 
             status_text = f"主武器热键: {primary_key} | 手枪热键: {secondary_key}"
+            if not_registered:
+                status_text = ("⚠️ 热键没挂上：" + "、".join(not_registered)
+                               + "，按了不会放大（详情见日志）")
+                self.logger.error("开镜热键注册失败: " + "、".join(not_registered))
             if conflict_notes:
                 status_text += " ⚠️ " + "；".join(conflict_notes)
             self.status_label.setText(status_text)
             self.logger.info(f"热键设置完成 - 主武器: {primary_key}, 副武器: {secondary_key}")
-            return True
+            return not not_registered
         except ImportError:
             self.status_label.setText("未安装keyboard/mouse库")
             self.logger.warning("未安装keyboard/mouse库")

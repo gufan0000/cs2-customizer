@@ -11,6 +11,21 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
+
+# 批 129：这支冒烟以前是**真窗口 + 用户真配置**（还会把 `ui_expert_mode` 改掉）——
+# 跑一次就在用户屏幕上闪 216 次切页。改成与其它离屏审计同一套：离屏、隔离配置、不挂全局热键、静音。
+import os  # noqa: E402
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
+os.environ.setdefault("CS2C_SAFE_MODE_ACTIVE", "1")
+from _pristine_config import use_pristine_config_dir  # noqa: E402
+
+use_pristine_config_dir("cs2customizer_v5_full_smoke")
+from _audit_neutralize import enable_audit_mode  # noqa: E402
+
+enable_audit_mode()
 
 from PySide6.QtWidgets import QApplication
 from gui_widget import MainWindow

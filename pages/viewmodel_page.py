@@ -808,6 +808,17 @@ class ViewmodelPage(QWidget):
                 })
             config.save_config()
 
+            if not str(getattr(config, "csgo_dir", "") or "").strip():
+                # 批 129：没设 CS2 目录时 `write_cs2customizer_cfg` 一个文件都不写，而下面照样弹
+                # 「已保存到 game/csgo/cfg/cs2customizer.cfg」（拿空串拼出来的相对路径）。
+                QMessageBox.warning(
+                    self, "还没设置 CS2 目录",
+                    "这些设置已经记在软件里了，但还没写进游戏：\n"
+                    "CS2 Customizer 还不知道 CS2 装在哪。\n\n"
+                    "去「高级设置」选一下 CS2 目录，再回来点一次保存。")
+                self._mark_saved()
+                return
+
             from core.cfg_compiler import write_cs2customizer_cfg
             warnings = write_cs2customizer_cfg(config)
             if warnings:

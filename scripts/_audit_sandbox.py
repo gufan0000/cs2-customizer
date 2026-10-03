@@ -162,7 +162,9 @@ def block_config_persistence(verbose: bool = True) -> None:
         pass
 
     def _refuse(*_args, **_kwargs):
-        return None
+        # 批 129：返回「写成了」。以前返回 None ⇒ 退出路径的 `save_config_on_exit` 当成三次都失败，
+        # 每支离屏审计收尾都打一条 ERROR「退出时配置写盘 3 次全部失败」—— 假报错会教人无视真报错。
+        return True
 
     _refuse.__doc__ = "审计沙箱：配置落盘已被禁用（scripts/_audit_sandbox.py）"
     for name in _SAVE_ENTRY_POINTS:

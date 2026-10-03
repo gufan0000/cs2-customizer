@@ -3347,6 +3347,23 @@ class MainWindow(QMainWindow):
             if hud_handler is not None and hasattr(hud_handler, "stop"):
                 hud_handler.stop()
 
+        # 特殊处理：道具瞄点总开关（批 129）。以前**只写 config**：关掉之后热键监听和键盘钩子照跑、
+        # 进游戏按键照样弹菜单；启动时关着、中途打开则一直不生效，要重启软件。
+        if config_key == "utility_guide_enabled":
+            utility_handler = (getattr(self, "gsi_handlers", None) or {}).get("utility")
+            if utility_handler is not None:
+                try:
+                    if checked:
+                        if getattr(utility_handler, "_runtime_ready", False):
+                            utility_handler.init_hotkey_listener()
+                    else:
+                        utility_handler.stop_hotkey_listener()
+                        display = getattr(utility_handler, "utility_display", None)
+                        if display is not None:
+                            display.hide()
+                except Exception:
+                    self.logger.exception("切换道具瞄点总开关时启停热键监听失败")
+
         # 特殊处理：死亡刷短视频总开关（开了就预热备好窗口，关了立刻收掉浏览器进程）
         if config_key == "fun_afterlife_enabled":
             controller = getattr(self, "afterlife_controller", None)

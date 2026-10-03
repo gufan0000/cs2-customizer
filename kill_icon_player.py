@@ -270,6 +270,7 @@ class KillIconPlayer(QObject):
         self._assets_lock = threading.Lock()
         self._load_token = 0
         self._loading_thread = None
+        self._pending_load = None
 
         self._play_signal.connect(self._handle_play)
         self._stop_signal.connect(self._handle_stop)
@@ -300,6 +301,8 @@ class KillIconPlayer(QObject):
             assets = {}
             for kills in KILL_LEVELS:
                 for variant in ("", HEADSHOT_VARIANT):
+                    if token != self._load_token:
+                        return          # 已经有更新的一份在排队：这份算完也是作废，别白算（批 129）
                     animation = load_level_animation(style_name, kills, variant)
                     if animation is None:
                         continue
@@ -313,18 +316,34 @@ class KillIconPlayer(QObject):
             self._assets_signal.emit(style_name, token, assets)
         except Exception as exc:
             logger.error(f"装载击杀图标素材失败（风格 {style_name}）: {exc}")
+        finally:
+            with self._assets_lock:
+                pending = getattr(self, "_pending_load", None)
+                self._pending_load = None
+                self._loading_thread = None
+            if pending:
+                self._start_load(pending)
 
     def _start_load(self, style_name):
+        """起一次后台装载。⭐ 批 129：**同一时刻最多一条**。
+        以前拖「图标大小」滑条每过一档就新起一条线程、各自把整套风格预缩放一遍（150 档 ⇒ 几十条并发，
+        每条峰值上百 MB），旧的还没法取消。现在正在装时只记下「最新要哪一份」，装完接着装它。"""
         with self._assets_lock:
             self._load_token += 1
             token = self._load_token
-        thread = threading.Thread(
-            target=self._load_worker,
-            args=(style_name, token),
-            daemon=True,
-            name="KillIconLoad",
-        )
-        self._loading_thread = thread
+            current = getattr(self, "_loading_thread", None)
+            running = current is not None and current.is_alive()
+            if running:
+                self._pending_load = style_name
+                return
+            self._pending_load = None
+            thread = threading.Thread(
+                target=self._load_worker,
+                args=(style_name, token),
+                daemon=True,
+                name="KillIconLoad",
+            )
+            self._loading_thread = thread
         thread.start()
 
     def _handle_assets_ready(self, style_name, token, assets):

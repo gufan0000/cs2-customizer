@@ -864,15 +864,25 @@ class AdvancedPage(QWidget):
                 self._update_csgo_dir_display()
                 
                 # 确保配置文件存在
+                gsi_ok = False
                 try:
                     from cfg_utils import ensure_all_cfg
-                    ensure_all_cfg(config.csgo_dir)
+                    gsi_ok = ensure_all_cfg(config.csgo_dir)
                 except ImportError:
                     self.logger.warning("cfg_utils 模块未找到，跳过配置文件创建")
                 except Exception as e:
                     self.logger.error(f"创建配置文件失败: {e}")
-                
-                QMessageBox.information(self, "成功", "CS2 目录设置成功！")
+
+                if gsi_ok:
+                    QMessageBox.information(self, "成功", "CS2 目录设置成功！")
+                else:
+                    # 批 129：目录记下了，但游戏联动那份配置没写进去 —— 以前这里照样说「成功」
+                    QMessageBox.warning(
+                        self, "目录已记下，但联动配置没写进去",
+                        "CS2 目录已经记下，但游戏联动配置文件没能写进\n"
+                        "game\\csgo\\cfg 目录（可能没有写入权限，或被杀毒软件拦了）。\n\n"
+                        "不处理的话音效、击杀图标这些游戏联动功能都不会响应。\n"
+                        "可以试试右键「以管理员身份运行」 CS2 Customizer 后再设一次。")
                 self.logger.info(f"CS:GO 目录已设置: {directory}")
             else:
                 QMessageBox.critical(

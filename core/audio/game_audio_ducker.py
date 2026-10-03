@@ -149,6 +149,14 @@ class _SessionAudioBackend:
             self._logger.debug(f"写入 Ducking 状态失败: {exc}")
         else:
             self._persisted_state = fingerprint
+            # RN-706①（批 129）：游戏音量真的被压下去了 ⇒ 起退出守护（幂等、不阻塞）。
+            # CS2 Customizer 被强杀时由它照这份状态文件把音量还回去。
+            try:
+                from core.runtime import exit_guardian
+
+                exit_guardian.ensure_started()
+            except Exception:
+                pass
 
     def _load_stale_state(self):
         try:

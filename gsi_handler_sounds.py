@@ -135,7 +135,14 @@ class GSIHandlerSounds:
         if config.spectator_mode_mute and current_steamid and self_steamid and current_steamid != self_steamid:
             if self.magnifier_component:
                 self.magnifier_component.update_current_weapon("")
+            self._back_from_spectating = True
             return
+
+        if getattr(self, "_back_from_spectating", False):
+            # 死后观战回来（下一回合复活）：手里的枪是游戏发的，不是玩家切的（批 129）。
+            # RN-660 只挡了「本人帧恰好是阶段跳变帧」—— 观战期间那一跳已经被上面的 return 吃掉了。
+            self._back_from_spectating = False
+            phase_changed = True
 
         if self.magnifier_component:
             self.magnifier_component.update_current_weapon(current_weapon)

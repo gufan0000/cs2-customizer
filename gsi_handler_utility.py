@@ -656,7 +656,13 @@ class GSIHandlerUtility:
         # 检查玩家状态
         if "player" in data:
             player_data = data["player"]
-            
+            # 批 129：死后观战时 player 块是被观战者的 —— 它活着不等于我活着，它的阵营也不是我的。
+            # 以前不分，于是死了照样能呼出瞄点菜单，观战敌方（休闲 / 死斗）时菜单还换成对面的道具。
+            from core.gsi.identity import is_self as _is_self
+
+            if not _is_self(data, config.player_steamid):
+                player_data = {"state": {"health": 0}}
+
             # 更新玩家存活状态
             if "state" in player_data:
                 health = player_data["state"].get("health", 0)

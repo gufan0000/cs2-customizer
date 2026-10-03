@@ -57,6 +57,8 @@ class GSIHandlerSpecial:
         # 中途启动软件时 map.phase 直接就是 live，拿 "" 当上一帧会误播"比赛开始"。
         self.previous_map_phase = None
         self.previous_team_side = None
+        #: 这张图上收到过本人的帧 ⇒ 「我这一局」（观战静音靠它分辨死后观战队友与观战别人的比赛）
+        self._own_match_map = None
         self.match_start_played = False
         
         # 投掷物类型映射
@@ -116,9 +118,19 @@ class GSIHandlerSpecial:
         # 「哪一个是我」：provider 优先、config 兜底（RN-685，core/gsi/identity）
         is_self = _frame_is_self(data, config.player_steamid)
 
-        # 观战模式静音检查
+        # 观战模式静音：只挡「别人那一局」，不挡「我这一局里我死了」。
+        # ⭐⭐ 批 129：这里原来是整帧 `return` —— 而下面那段注释写着「C4 与回合胜负是全局事件，
+        #   不受此限制」、MVP 那段写着「这里不能再用 is_self 挡」。两段注释都对，可它们都在这一行
+        #   **后面**：默认开着观战静音，人一死整帧就走了，回合胜负 / MVP / C4 拆爆全都不响。
+        #   ⇒ 「我这一局」= 这张图上收到过本人的帧（回主菜单 / 没有 map 块时清掉）。
+        map_name = (data.get("map") or {}).get("name") if isinstance(data.get("map"), dict) else None
+        if not map_name:
+            self._own_match_map = None
+        elif is_self:
+            self._own_match_map = map_name
         if config.spectator_mode_mute and current_steamid and not is_self:
-            return  # 不是玩家本人，且开启了观战静音，直接返回
+            if not map_name or map_name != getattr(self, "_own_match_map", None):
+                return  # 看的不是自己这一局（观战好友 / GOTV）：整帧不管
 
         # 玩家个人事件（血量/手雷/MVP）只对"本人"数据有效：死亡观战时 GSI 的
         # player 会切成被观战者，若不区分会把队友的低血量/投掷/MVP 当成自己的。
@@ -279,6 +291,14 @@ class GSIHandlerSpecial:
         
         # 2. 统计当前各投掷物数量（ammo_reserve，缺字段按 1 个算）
         current_grenade_counts = grenade_counts(current_weapons, tuple(self.grenade_types))
+
+        # 阵亡那一帧武器栏被清空：手里攥着的雷「少了一个」不是扔出去了（批 129）。只追基线。
+        health = (player_data.get("state") or {}).get("health")
+        if isinstance(health, (int, float)) and health <= 0:
+            self.previous_active_weapon = active_weapon
+            self.previous_grenade_counts = current_grenade_counts.copy()
+            self.grenade_held_type = None
+            return
 
         # 3. 检测投掷动作：上一帧举着的投掷物这一帧少了一个。
         #    判定与击杀处理器的投掷物归属共用一条（core/gsi/kill_attribution.thrown_grenade，批 115）
@@ -528,9 +548,29 @@ class GSIHandlerSpecial:
         in_warmup = current_phase == "warmup"
         first_frame = self.previous_map_phase is None
 
+        if "map" not in data:
+            # 回主菜单 / 断线 / 换图加载：下一次带 map 的帧按「刚进来」处理（只播种不判定）。
+            # ⚠ 批 129：以前这里会把 "" 记进 previous_*，于是重连后的第一帧被当成一次
+            #   「阶段跳变」，响一声行动开始 / 回合开始 —— 同理中途启动软件的第一帧。
+            self.previous_map_phase = None
+            self.previous_freeze_time = False
+            self.previous_round_direct_phase = ""
+            self.previous_team_side = None
+            return
+
         if current_phase == "warmup" and self.previous_map_phase != "warmup":
             # 回到热身 = 换了一局，比赛开始可以再响一次
             self.match_start_played = False
+
+        if first_frame:
+            # 刚进来（软件中途启动 / 重连）：这一帧的阶段是「已经在那里」，不是「刚变成那样」。
+            self.previous_freeze_time = is_freeze_time
+            self.previous_map_phase = current_phase
+            self.previous_round_direct_phase = round_phase
+            self.previous_round_win = current_win_team
+            if self.team_side:
+                self.previous_team_side = self.team_side
+            return
 
         if (
             not first_frame
@@ -546,11 +586,12 @@ class GSIHandlerSpecial:
             self.logger.info("[回合音效] 检测到比赛结束")
             self._play_event("round", "match_end")
 
-        # 半场交换：自己的阵营变了且不是刚进服（previous_team_side 已知）
+        # 半场交换：自己的阵营变了且不是刚进服（previous_team_side 已知）；热身里换边是选人，不算
         if (
             self.team_side
             and self.previous_team_side
             and self.team_side != self.previous_team_side
+            and not in_warmup
         ):
             self.logger.info(
                 f"[回合音效] 检测到半场交换: {self.previous_team_side} -> {self.team_side}"

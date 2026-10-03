@@ -398,7 +398,9 @@ def ensure_hud_cfg_exists(csgo_dir):
 
 # 确保所有CFG文件存在
 def ensure_all_cfg(csgo_dir):
-    ensure_cfg_exists(csgo_dir)       # 确保 GSI 配置文件存在
+    """返回 GSI 联动配置有没有写成（批 129：以前恒返回 None，设置页照样弹「设置成功」）。"""
+    gsi_ok = ensure_cfg_exists(csgo_dir)       # 确保 GSI 配置文件存在
     ensure_cs2customizer_cfg_exists(csgo_dir) # 确保 cs2customizer.cfg 存在
     ensure_hud_cfg_exists(csgo_dir)   # 确保 cs2customizer_hud.cfg 存在
     setup_autoexec(csgo_dir)          # 处理 autoexec.cfg
+    return bool(gsi_ok)

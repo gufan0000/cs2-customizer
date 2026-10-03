@@ -416,7 +416,13 @@ class VoiceOutputManager:
                 input_stream.start()
                 output_stream.start()
                 success_flag['value'] = True
+                # 批 129：设备被拔 / 掉线时 read/write 每一圈都抛 ⇒ 以前每 10ms 记一条 error、永不退出
+                # （3 小时上百万行，日志轮转把有用的旧日志全冲掉）。连错 2 秒就停，这期间只记第一条。
+                consecutive_errors = 0
                 while self.microphone_passthrough_active:
+                    if consecutive_errors >= 200:
+                        self.logger.error("[麦克风穿透] 连续 2 秒读写失败（设备可能被拔出或掉线），已停止麦克风直通")
+                        break
                     try:
                         audio_data, _ = input_stream.read(self.chunk_size)
                         with self.mute_lock:
@@ -454,9 +460,12 @@ class VoiceOutputManager:
                                     audio_data = audio_data * 0.6 + audio_chunk * 0.4
                         audio_data = np.clip(audio_data, -1.0, 1.0)
                         output_stream.write(audio_data.astype('float32'))
+                        consecutive_errors = 0
                     except Exception as e:
                         if self.microphone_passthrough_active:
-                            self.logger.error(f"[麦克风穿透] 音频处理错误: {e}")
+                            if consecutive_errors == 0:
+                                self.logger.error(f"[麦克风穿透] 音频处理错误: {e}")
+                            consecutive_errors += 1
                             time.sleep(0.01)
             except Exception as e:
                 self.logger.error(f"[麦克风穿透] 启动麦克风直通失败: {e}")

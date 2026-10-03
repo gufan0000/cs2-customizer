@@ -185,7 +185,9 @@ def test_the_same_pack_lands_once_the_user_picks(tmp_path):
         apply_resource_import_plan(report, dry_run=False)
     finally:
         source.cleanup()
-    assert _landed(resources) == ["audio/switch_weapons/ak47/默认/1.wav"]
+    # ⚠ 批 129：这里原来断言的是 `switch_weapons/ak47/` —— 那正是 RN-656② 那条缺陷本身
+    #   （产品按 GSI 全名 `weapon_ak47` 找切枪目录，`ak47` 目录永远不会被读）。判据把缺陷钉成了预期。
+    assert _landed(resources) == ["audio/switch_weapons/weapon_ak47/默认/1.wav"]
 
 
 # ---------------------------------------------------- 外来数据的边界

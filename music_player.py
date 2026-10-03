@@ -690,6 +690,7 @@ class MusicPlayer:
             
             # 开始播放
             pygame.mixer.music.play()
+            self._consecutive_load_failures = 0
             self.is_playing = True
             self.is_paused = False
             self.current_track = {**track, "_resolved_path": audio_path}
@@ -739,13 +740,24 @@ class MusicPlayer:
             self.stop()
         except Exception as e:
             self.logger.error(f"播放失败: {e}", exc_info=True)
-            # 延迟调用next
-            threading.Timer(0.5, self.next).start()
+            self._skip_after_failure()
 
     def _on_track_load_error(self, track: Dict, error: str):
         """当音轨加载失败时调用"""
         self.logger.error(f"音频加载失败: {track.get('title', 'Unknown')} - {error}")
-        # 延迟后尝试下一首
+        self._skip_after_failure()
+
+    def _skip_after_failure(self):
+        """这一首放不出来就跳下一首 —— **但整张歌单都试过一遍还不行就停**（批 129）。
+        以前没有计数：歌单里的文件全被删了 / 全是离线链接时，循环和随机模式每 0.5 秒重试一轮、
+        永不停止（3 小时上万轮），后台一直空转刷错误日志，而用户根本不在音乐页。"""
+        failures = getattr(self, "_consecutive_load_failures", 0) + 1
+        self._consecutive_load_failures = failures
+        if failures >= max(1, len(self.playlist or [])):
+            self.logger.error(f"[音乐] 连续 {failures} 首都放不出来，停止自动切歌（歌单里的文件可能已被删除或离线）")
+            self._consecutive_load_failures = 0
+            self.stop()
+            return
         threading.Timer(0.5, self.next).start()
 
 

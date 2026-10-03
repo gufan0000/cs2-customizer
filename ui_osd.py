@@ -11,7 +11,7 @@
 """
 from __future__ import annotations
 
-from PySide6.QtCore import QObject, Qt, QTimer, Signal
+from PySide6.QtCore import QCoreApplication, QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QFont, QGuiApplication
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QWidget
 
@@ -82,7 +82,14 @@ class OsdNotifier(QObject):
     @classmethod
     def instance(cls) -> "OsdNotifier":
         if cls._instance is None:
-            cls._instance = OsdNotifier()
+            obj = OsdNotifier()
+            # 批 129：第一次调用可能在 GSI 线程（换图自动套预设 → notify_osd）。QObject 住在哪个线程，
+            # 同线程 emit 就直连 —— 于是 `_show_on_gui_thread` 在 GSI 线程里建窗口：崩，或者被 except 吞掉不显示。
+            # 搬回 GUI 线程，之后任何线程 emit 都按队列送过去。（moveToThread 只能在对象当前所在线程调，这里正是。）
+            app = QCoreApplication.instance()
+            if app is not None and obj.thread() is not app.thread():
+                obj.moveToThread(app.thread())
+            cls._instance = obj
         return cls._instance
 
     def notify(self, text: str):

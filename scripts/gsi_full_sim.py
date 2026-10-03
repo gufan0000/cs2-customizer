@@ -17,6 +17,11 @@ from unittest.mock import MagicMock
 # ---------------- 沙盒垫片 (Windows-only / 系统库缺失) ----------------
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
+os.environ.setdefault("CS2C_NO_GLOBAL_HOTKEYS", "1")
+if sys.platform == "win32":
+    # 批 129：`ctypes.wintypes` 要 import 过才是 ctypes 的属性 —— 不先 import，下面那段垫片
+    # 会在 Windows 上把真 wintypes 换成假的，colorama（经 werkzeug）一 import 就崩。
+    import ctypes.wintypes  # noqa: F401
 if not hasattr(ctypes, "windll"):
     ctypes.windll = MagicMock(name="windll")
 if not hasattr(ctypes, "WinDLL"):
@@ -50,6 +55,11 @@ def _ff(name):
 _cul.find_library = _ff
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# 批 129：处理器读的是全局 `config` 单例 —— 不隔离就会读写用户真配置（还写进真日志目录）。
+from _pristine_config import use_pristine_config_dir  # noqa: E402
+use_pristine_config_dir("cs2customizer_gsi_full_sim")
 
 # ---------------- Spy 组件 ----------------
 class SpyAudio:

@@ -167,11 +167,13 @@ class GSIHandlerMusic:
         self.last_health = current_health
 
     def _is_player_active(self, data):
-        return (
-            "player" in data
-            and "activity" in data["player"]
-            and data["player"]["activity"] == "playing"
-        )
+        """还在对局里吗。⭐ 批 129：打字（`textinput`）和对局里按 ESC（`menu` 但 map 还在）都还活着 ——
+        以前只认 `playing`，聊天框一开音乐就当成「死了」被拉起来，关掉又压下去。
+        回主菜单时 GSI 不带 map 块，那才是真的不在游戏里。"""
+        activity = (data.get("player") or {}).get("activity")
+        if activity in ("playing", "textinput"):
+            return True
+        return activity == "menu" and isinstance(data.get("map"), dict) and bool(data["map"])
 
     def _on_player_death(self):
         if not self._music_session_active():

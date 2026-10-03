@@ -139,6 +139,24 @@ def guess_bucket_from_filename(filename: str) -> str:
     return match.group(0).lower() if match else ""
 
 
+def _guess_bucket_for(spec_key: str, filename: str) -> str:
+    """先拿**整个文件名主干**去对产品自己的武器表，对不上才退回朴素的「第一段字母数字」。
+
+    ⭐ 批 129（RN-656②）：朴素那一刀在第一个分隔符处断开 ——
+    `AK-47.wav` ⇒ `ak`（不认识，会被报出来），`M4A1-S.wav` ⇒ `m4a1`（**是 M4A4 的合法代号**，
+    一个警告都没有，消音版的声音悄悄装进了 M4A4 的目录）。整名先过一遍别名表就都对了。
+    """
+    from core.resource_readback import known_buckets
+
+    stem = os.path.splitext(str(filename or "").rsplit("/", 1)[-1])[0]
+    allowed = known_buckets(spec_key)
+    if allowed and stem:
+        whole = normalize_bucket(spec_key, stem)
+        if str(whole).lower() in allowed:
+            return str(whole).lower()
+    return guess_bucket_from_filename(filename)
+
+
 def detect_c4_events(filenames: Sequence[str]) -> Dict[str, str]:
     """这堆文件里，C4 的三个事件各命中了哪一个文件。
 
@@ -368,7 +386,14 @@ def plan_placements(
     #   ⭐⭐⭐ 这一步以前完全没有，于是「导入成功」和「进游戏能响」之间
     #   没有任何东西连着。实测：`清脆/爆头.mp3` 这种包导进去报成功、
     #   设置页里看得见「清脆」，而产品找的是 `1.*`~`5.*`，一个都找不到。
-    renamed, dropped = _renumber_if_needed(spec_key, paths, plan)
+    def _bucket_of(path):
+        """这个文件按名字猜出来进哪个武器目录（只在要猜的时候猜）。⚠ 一律拿**原文件名**猜 ——
+        编号制会把它改名成 `1.wav`，拿改名后的猜就一个都猜不出（批 129 实测）。"""
+        if covered or bucket or spec_key not in NEEDS_BUCKET:
+            return ""
+        return _guess_bucket_for(spec_key, path.rsplit("/", 1)[-1])
+
+    renamed, dropped = _renumber_if_needed(spec_key, paths, plan, sub_key=_bucket_of)
     _warn_if_the_product_will_not_look_there(spec_key, spec, bucket, style,
                                              covered, from_source, plan)
 
@@ -387,7 +412,7 @@ def plan_placements(
                 cleaned[0] = normalize_bucket(spec_key, cleaned[0])
             parts.extend(cleaned)
         elif spec_key in NEEDS_BUCKET:
-            chosen = bucket or guess_bucket_from_filename(base)
+            chosen = bucket or _bucket_of(path)
             parts.append(normalize_bucket(spec_key, _clean_name(chosen)))
         if not (covered and source_layers) and spec_key in NEEDS_STYLE_NAME:
             parts.append(style)
@@ -398,11 +423,15 @@ def plan_placements(
     return plan
 
 
-def _renumber_if_needed(spec_key, paths, plan):
+def _renumber_if_needed(spec_key, paths, plan, sub_key=None):
     """编号制的类：替用户把文件名摆成 `1`~`5`，并把这件事说出来。
 
     ⭐ 这正是用户要的「软件自己归类」—— 把「你得自己改名」退回给用户，
     等于这个功能只做了一半。
+
+    `sub_key`：同一个源目录里还要再按什么分组各自编号（按文件名猜出的武器目录）。
+    ⚠ 批 129：切枪 / 换弹是「武器/风格/1.wav」，一个目录里散放 `AK-47.wav`、`awp.wav` 这种
+    以前整组一起编号 ⇒ 只留下一个 `1.wav`、其余按「超出槽数」丢掉，而那一个还落进「新风格」目录。
     """
     layout = layout_of(spec_key)
     if layout not in ("numbered", "single"):
@@ -410,7 +439,8 @@ def _renumber_if_needed(spec_key, paths, plan):
     slots = numbered_slots(spec_key) or 1
     by_dir = {}
     for path in paths:
-        by_dir.setdefault(path.rsplit("/", 1)[0] if "/" in path else "", []).append(path)
+        directory = path.rsplit("/", 1)[0] if "/" in path else ""
+        by_dir.setdefault((directory, sub_key(path) if sub_key else ""), []).append(path)
     renamed, dropped = {}, set()
     by_meaning = True
     for group in by_dir.values():

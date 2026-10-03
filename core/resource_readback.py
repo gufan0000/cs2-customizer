@@ -88,12 +88,39 @@ def known_buckets(spec_key: str) -> Optional[frozenset]:
         from core.audio.audio_manager import AudioManager
 
         return frozenset(str(t).lower() for t in AudioManager.GRENADE_TYPES)
-    if key in ("gun_sounds", "switch_weapons", "reload_sounds",
-               "weapon_kill_sounds", "weapon_kill_voices"):
+    if key == "gun_sounds":
         from core.gun_sound_profiles import GUN_SOUND_WEAPON_TYPES
 
         return frozenset(str(w).lower() for w in GUN_SOUND_WEAPON_TYPES)
+    if key in _FULL_NAME_BUCKETS:
+        # ⭐⭐ 批 129（RN-656② 前半）：切枪 / 换弹 / 按枪击杀音效与语音，产品按 **GSI 全名**
+        #   找目录（`switch_weapons/weapon_ak47/<风格>/`，见 `AudioManager.load_switch_weapon_sound`），
+        #   而这里以前和枪声共用一张**短代号**表（`ak47`）⇒ 结构正确的包被报成「产品不认识」，
+        #   照提示改成 `ak47` 之后真的就不响了。真源是配置里那四张按枪记风格的表的键。
+        from config import config
+
+        return frozenset(str(w).lower() for w in (getattr(config, _FULL_NAME_BUCKETS[key], None) or {}))
     return None
+
+
+#: 资源类别 → 产品按枪记风格的那张配置表（键就是产品找目录用的名字）
+_FULL_NAME_BUCKETS = {
+    "switch_weapons": "weapon_switch_sounds",
+    "reload_sounds": "weapon_reload_sounds",
+    "weapon_kill_sounds": "weapon_kill_sounds",
+    "weapon_kill_voices": "weapon_kill_voices",
+}
+
+
+def _gsi_name_of(short: str) -> str:
+    """枪声短代号 → GSI 全名（`usp` ⇒ `weapon_usp_silencer`）。以档案里的 `gsi_names` 为准。"""
+    from core.gun_sound_profiles import GUN_SOUND_PROFILE_LIST
+
+    for profile in GUN_SOUND_PROFILE_LIST:
+        if str(profile.gun_type).lower() == short:
+            names = tuple(getattr(profile, "gsi_names", ()) or ())
+            return str(names[0]).lower() if names else f"weapon_{short}"
+    return f"weapon_{short}"
 
 
 _BUCKET_ALIAS_CACHE: Optional[Dict[str, str]] = None
@@ -139,10 +166,17 @@ def normalize_bucket(spec_key: str, raw: str) -> str:
     lowered = text.lower()
     if lowered in allowed:
         return lowered
-    return _bucket_aliases().get(
+    if f"weapon_{lowered}" in allowed:                 # `knife` / `hegrenade` ⇒ 全名那几类
+        return f"weapon_{lowered}"
+    short = _bucket_aliases().get(
         lowered,
-        _bucket_aliases().get(
-            lowered.replace("-", "").replace(" ", "").replace("_", ""), text))
+        _bucket_aliases().get(lowered.replace("-", "").replace(" ", "").replace("_", "")))
+    if not short:
+        return text
+    if short in allowed:
+        return short
+    full = _gsi_name_of(short)
+    return full if full in allowed else text
 
 
 def bucket_problem(spec_key: str, bucket: str) -> Optional[str]:
