@@ -12,7 +12,7 @@ pywin32>=306
 # 设置搜索拼音层(R1-2 新增)
 pypinyin>=0.53
 # 音量归一化测试链路(CI #6 实锤缺失)
-numpy>=1.26
+numpy>=2.5.1
 # 语音输出页 import 链(voice_output_manager 顶层:sounddevice/soundfile/numpy/pygame/keyboard)
 sounddevice>=0.4
 soundfile>=0.12
