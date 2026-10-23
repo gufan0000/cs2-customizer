@@ -214,6 +214,13 @@ class Revert:
 
 REVERTS = [
     Revert(
+        "NATIVE-20261023", "音频解码前未校验内容",
+        "core/audio/safe_soundfile.py",
+        "    _check_container(data)", "    pass  # defect: enters native parser before validation",
+        "tests/test_audit_native_audio.py::test_unsafe_container_never_reaches_native_parser",
+        "伪装文件及有漏洞的 WAV 编码可直接进入 libsndfile",
+    ),
+    Revert(
         "AUDIT-20261023", "配置顶层类型不检查",
         "config.py",
         "                config_data = json.load(f)\n                if not isinstance(config_data, dict):",

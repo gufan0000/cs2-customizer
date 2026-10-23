@@ -158,7 +158,7 @@ Nine themes ship with the app; four of them (dark / light / ocean / rose):
 **Requirements**
 
 - Windows 10 / 11
-- Python 3.13
+- Python 3.13.17 (or a newer 3.13 security patch)
 - CS2 (a first-run wizard walks you through pointing at the game directory)
 
 **Run from source**
@@ -166,7 +166,7 @@ Nine themes ship with the app; four of them (dark / light / ocean / rose):
 ```bash
 git clone https://github.com/gufan0000/cs2-customizer.git
 cd cs2-customizer
-pip install -r requirements_qt.txt
+python -m pip install -r requirements-ci.txt -c requirements.lock.txt
 python main_widget.py
 ```
 
@@ -239,7 +239,7 @@ resources/
 ## Building a release
 
 ```bash
-pip install -r requirements_qt.txt -r requirements-build.txt
+python -m pip install -r requirements-ci.txt -r requirements-build.txt -c requirements.lock.txt
 python build_tools/build_release.py --mode onedir --no-obfuscate --without-bundled-assets
 ```
 
@@ -248,6 +248,7 @@ python build_tools/build_release.py --mode onedir --no-obfuscate --without-bundl
   without this flag the artifact verification stops the build.
 - `--no-obfuscate` — skip PyArmor. It needs a licence and makes no sense for an open-source build.
 - `--mode onedir` — noticeably faster cold start than `onefile` (~5.9s → ~1.9s).
+- `--work-dir` — choose a parent directory for build scratch files on a disk with sufficient space.
 - `--upx` — off by default. UPX packing is a common source of AV / SmartScreen false positives.
 
 The Windows installer is built from `build_tools/installer.iss` with

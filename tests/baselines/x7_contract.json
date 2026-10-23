@@ -221,6 +221,12 @@
       "get_runtime_audio_manager",
       "peek_runtime_audio_manager"
     ],
+    "core.audio.safe_soundfile": [
+      "AudioFileError",
+      "_check_container",
+      "info",
+      "read"
+    ],
     "core.audio.special_events": [
       "SOUND_EVENTS",
       "config_defaults",
@@ -242,7 +248,7 @@
       "validate_style_name"
     ]
   },
-  "contract_total": 53,
+  "contract_total": 57,
   "external_use": {
     "core.audio.__init__": {
       "files": [],
@@ -405,6 +411,19 @@
         "peek_runtime_audio_manager": 1
       }
     },
+    "core.audio.safe_soundfile": {
+      "files": [
+        "tests/test_audit_native_audio.py",
+        "voice_output_manager.py"
+      ],
+      "names": {
+        "AudioFileError": 4,
+        "_check_container": 2,
+        "info": 3,
+        "read": 8,
+        "soundfile": 5
+      }
+    },
     "core.audio.special_events": {
       "files": [
         "config.py",
@@ -462,6 +481,7 @@
     "core.audio.audio_task_runner": 240,
     "core.audio.game_audio_ducker": 869,
     "core.audio.runtime_audio": 45,
+    "core.audio.safe_soundfile": 122,
     "core.audio.special_events": 209,
     "core.audio.style_creator": 328
   },
@@ -605,6 +625,22 @@
         "get_legacy_audio_manager",
         "get_runtime_audio_manager",
         "peek_runtime_audio_manager"
+      ]
+    },
+    "core.audio.safe_soundfile": {
+      "classes": [
+        "AudioFileError"
+      ],
+      "constants": [
+        "MAX_DECODED_BYTES",
+        "MAX_FILE_BYTES"
+      ],
+      "functions": [
+        "_check_container",
+        "_check_wav",
+        "_open",
+        "info",
+        "read"
       ]
     },
     "core.audio.special_events": {

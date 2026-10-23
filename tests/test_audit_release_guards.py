@@ -34,6 +34,20 @@ def test_ci_uses_release_constraints_and_invalidates_the_dependency_cache(job_na
     assert constraint == "requirements.lock.txt" and (root / constraint).is_file()
     setup = next(step for step in steps if step.get("uses", "").startswith("actions/setup-python@"))
     assert constraint in setup["with"]["cache-dependency-path"].splitlines()
+    assert setup["with"]["python-version"] == "3.13.17"
+
+
+@pytest.mark.parametrize("version,allowed", [((3, 13, 12), False), ((3, 13, 16), False),
+                                           ((3, 13, 17), True), ((3, 13, 18), True),
+                                           ((3, 14, 0), False)])
+def test_release_python_has_verified_security_fixes(version, allowed):
+    from build_tools.freeze_release_deps import check_python_version
+
+    if allowed:
+        check_python_version(version)
+    else:
+        with pytest.raises(ValueError, match="3.13.17"):
+            check_python_version(version)
 
 
 def test_flash_commands_are_applied_by_display_owner(monkeypatch):

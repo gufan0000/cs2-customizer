@@ -6,6 +6,9 @@ import argparse
 import importlib.metadata as metadata
 import json
 import platform
+import pyexpat
+import ssl
+import sys
 from pathlib import Path
 
 from packaging.requirements import Requirement
@@ -14,6 +17,11 @@ from packaging.utils import canonicalize_name
 ROOT = Path(__file__).resolve().parent.parent
 LOCK = ROOT / "requirements.lock.txt"
 SBOM = ROOT / "docs" / "quality" / "dependencies.sbom.json"
+
+
+def check_python_version(version):
+    if version[:2] != (3, 13) or version < (3, 13, 17):
+        raise ValueError("Release builds require Python 3.13.17 or a later 3.13 security patch")
 
 
 def declarations(path, seen=None):
@@ -74,6 +82,7 @@ def make_sbom(packages):
     from PIL import features
     from PySide6.QtCore import qVersion
     native = {"Python": platform.python_version(), "Qt": qVersion(),
+              "OpenSSL": ssl.OPENSSL_VERSION.split()[1], "Expat": pyexpat.EXPAT_VERSION,
               "SDL": ".".join(map(str, pygame.get_sdl_version())),
               "libsndfile": soundfile.__libsndfile_version__}
     native.update({f"Pillow:{name}": features.version(name)
@@ -90,6 +99,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
+    check_python_version(sys.version_info[:3])
     roots = [*declarations(ROOT / "requirements-ci.txt"),
              *declarations(ROOT / "requirements-build.txt")]
     packages = dependency_closure(roots)

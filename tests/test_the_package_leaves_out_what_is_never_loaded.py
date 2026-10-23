@@ -6,7 +6,11 @@
 from __future__ import annotations
 
 import ast
+import os
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 from build_tools import build_release
 
@@ -59,3 +63,51 @@ def test_the_pywin32_fallback_still_shows_a_message(monkeypatch):
     monkeypatch.setattr(ctypes.windll.user32, "MessageBoxW", lambda *a: shown.append(a) or 1, raising=False)
     crosshair_animation.show_win32_error()
     assert shown and "pywin32" in shown[0][1]
+
+
+@pytest.mark.parametrize("suffix", ["-3.dll", "-3-x64.dll"])
+def test_pruning_preserves_the_python_ssl_imports(tmp_path, monkeypatch, suffix):
+    import _ssl
+    from PyInstaller.depend import bindepend
+
+    required = {"libssl" + suffix, "libcrypto" + suffix}
+    sources = {name: str(Path(_ssl.__file__).with_name(name)) for name in required}
+    monkeypatch.setattr(bindepend, "get_imports", lambda _: set(sources.items()))
+    spec = build_release.build_spec_text(stage_dir=tmp_path, app_name="CS2Customizer", mode="onedir",
+                                        upx_enabled=False, runtime_modules=[], local_modules=[],
+                                        console_enabled=False, windowed_traceback=False)
+    snippet = spec[spec.index("_drop ="):spec.index("pyz = PYZ")]
+    names = sorted(required | set(build_release.DROP_BINARIES) | {"needed.pyd"})
+    analysis = SimpleNamespace(binaries=[(name, "/source/" + name, "BINARY") for name in names])
+    exec(compile(snippet, "<spec-pruning>", "exec"), {"a": analysis, "os": os})
+    assert {item[0] for item in analysis.binaries} == required | {"needed.pyd"}
+    assert {name: path for name, path, _ in analysis.binaries if name in required} == sources
+
+
+@pytest.mark.parametrize("source", [None, "/unrelated-software/libssl-3-x64.dll"])
+def test_pruning_rejects_missing_or_external_python_ssl_source(tmp_path, monkeypatch, source):
+    from PyInstaller.depend import bindepend
+
+    monkeypatch.setattr(bindepend, "get_imports", lambda _: {("libssl-3-x64.dll", source)})
+    spec = build_release.build_spec_text(stage_dir=tmp_path, app_name="CS2Customizer", mode="onedir",
+                                        upx_enabled=False, runtime_modules=[], local_modules=[],
+                                        console_enabled=False, windowed_traceback=False)
+    snippet = spec[spec.index("_drop ="):spec.index("pyz = PYZ")]
+    with pytest.raises(RuntimeError, match="Python SSL dependency"):
+        exec(compile(snippet, "<spec-pruning>", "exec"), {"a": SimpleNamespace(binaries=[]), "os": os})
+
+
+@pytest.mark.parametrize("suffix", ["-3.dll", "-3-x64.dll"])
+def test_onedir_checks_the_actual_ssl_dependency_names(tmp_path, monkeypatch, suffix):
+    internal = tmp_path / "_internal"
+    for directory in ("resources", "PySide6", "core"):
+        (internal / directory).mkdir(parents=True, exist_ok=True)
+    for file in ("python313.dll", "core/search_index.json", "libssl" + suffix, "libcrypto" + suffix):
+        (internal / file).write_bytes(b"synthetic")
+    (tmp_path / "test.exe").write_bytes(b"synthetic")
+    required = {"libssl" + suffix, "libcrypto" + suffix}
+    monkeypatch.setattr(build_release, "ssl_binary_dependencies", lambda _: required)
+    build_release.verify_onedir_tree(tmp_path, "test", require_obfuscation=False)
+    (internal / ("libcrypto" + suffix)).unlink()
+    with pytest.raises(RuntimeError, match="SSL"):
+        build_release.verify_onedir_tree(tmp_path, "test", require_obfuscation=False)

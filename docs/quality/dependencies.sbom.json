@@ -523,8 +523,8 @@
     {
       "type": "library",
       "name": "pyside6",
-      "version": "6.10.2",
-      "purl": "pkg:pypi/pyside6@6.10.2",
+      "version": "6.12.0",
+      "purl": "pkg:pypi/pyside6@6.12.0",
       "properties": [
         {
           "name": "application:scope",
@@ -542,8 +542,8 @@
     {
       "type": "library",
       "name": "pyside6-addons",
-      "version": "6.10.2",
-      "purl": "pkg:pypi/pyside6-addons@6.10.2",
+      "version": "6.12.0",
+      "purl": "pkg:pypi/pyside6-addons@6.12.0",
       "properties": [
         {
           "name": "application:scope",
@@ -561,8 +561,46 @@
     {
       "type": "library",
       "name": "pyside6-essentials",
-      "version": "6.10.2",
-      "purl": "pkg:pypi/pyside6-essentials@6.10.2",
+      "version": "6.12.0",
+      "purl": "pkg:pypi/pyside6-essentials@6.12.0",
+      "properties": [
+        {
+          "name": "application:scope",
+          "value": "declared-build-environment"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "name": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "pyside6-pdf",
+      "version": "6.12.0.140",
+      "purl": "pkg:pypi/pyside6-pdf@6.12.0.140",
+      "properties": [
+        {
+          "name": "application:scope",
+          "value": "declared-build-environment"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "name": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "pyside6-webengine",
+      "version": "6.12.0.140",
+      "purl": "pkg:pypi/pyside6-webengine@6.12.0.140",
       "properties": [
         {
           "name": "application:scope",
@@ -732,8 +770,8 @@
     {
       "type": "library",
       "name": "shiboken6",
-      "version": "6.10.2",
-      "purl": "pkg:pypi/shiboken6@6.10.2",
+      "version": "6.12.0",
+      "purl": "pkg:pypi/shiboken6@6.12.0",
       "properties": [
         {
           "name": "application:scope",
@@ -789,8 +827,8 @@
     {
       "type": "library",
       "name": "soundfile",
-      "version": "0.13.1",
-      "purl": "pkg:pypi/soundfile@0.13.1",
+      "version": "0.14.0",
+      "purl": "pkg:pypi/soundfile@0.14.0",
       "properties": [
         {
           "name": "application:scope",
@@ -801,6 +839,25 @@
         {
           "license": {
             "name": "BSD 3-Clause License"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "typing-extensions",
+      "version": "4.16.0",
+      "purl": "pkg:pypi/typing-extensions@4.16.0",
+      "properties": [
+        {
+          "name": "application:scope",
+          "value": "declared-build-environment"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "name": "PSF-2.0"
           }
         }
       ]
@@ -861,6 +918,16 @@
           }
         }
       ]
+    },
+    {
+      "type": "library",
+      "name": "Expat",
+      "version": "expat_2.8.5"
+    },
+    {
+      "type": "library",
+      "name": "OpenSSL",
+      "version": "3.5.9"
     },
     {
       "type": "library",
@@ -925,12 +992,12 @@
     {
       "type": "library",
       "name": "Python",
-      "version": "3.13.12"
+      "version": "3.13.17"
     },
     {
       "type": "library",
       "name": "Qt",
-      "version": "6.10.2"
+      "version": "6.12.0"
     },
     {
       "type": "library",

@@ -138,7 +138,7 @@ EXCLUDES = [
 
 #: 批 133：打进来却永远不会被加载的二进制（按文件名小写比对）。
 #: PySide6 为 Qt 的 TLS 插件自带一份 OpenSSL（`*-x64.dll`，6.8MB），而产品不用 QtNetwork；
-#: HTTPS 走 Python 自己的 ssl（用的是另一份 `libssl-3.dll` / `libcrypto-3.dll`，**那份不许动**）。
+#: 仅作为精简候选；Python 自己依赖的库按导入表保留，不能由文件名推断归属。
 DROP_BINARIES = [
     "libssl-3-x64.dll",
     "libcrypto-3-x64.dll",
@@ -199,6 +199,7 @@ MIN_PYINSTALLER_SPLASH_CENTER = (6, 21, 0)
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build CS2Customizer release package")
     parser.add_argument("--release-dir", help="Separate output directory for an internal candidate")
+    parser.add_argument("--work-dir", help="Parent directory for isolated build scratch files")
     parser.add_argument(
         "--mode",
         choices=["onefile", "onedir"],
@@ -779,7 +780,20 @@ a = Analysis(
 
 # 批 133：去掉永远不会被加载的二进制（见 build_release.DROP_BINARIES）
 _drop = {{n.lower() for n in {py_list(DROP_BINARIES)}}}
+import _ssl
+from PyInstaller.depend.bindepend import get_imports
+_ssl_binaries = {{os.path.basename(name): path for name, path in get_imports(_ssl.__file__)
+                 if name.lower().startswith(('libssl', 'libcrypto'))}}
+for _name, _path in _ssl_binaries.items():
+    if not _path or os.path.normcase(os.path.dirname(_path)) != os.path.normcase(os.path.dirname(_ssl.__file__)):
+        raise RuntimeError('Python SSL dependency must resolve beside _ssl.pyd: ' + _name)
+_ssl_names = {{name.lower() for name in _ssl_binaries}}
+_drop -= _ssl_names
 a.binaries = [b for b in a.binaries if os.path.basename(b[0]).lower() not in _drop]
+# Analysis can deduplicate a same-name DLL from PATH before visiting _ssl.pyd.
+# Replace that source too: keeping the filename alone does not preserve the runtime.
+a.binaries = [b for b in a.binaries if os.path.basename(b[0]).lower() not in _ssl_names]
+a.binaries += [(name, path, 'BINARY') for name, path in sorted(_ssl_binaries.items())]
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 {stable_splash_class}
@@ -825,6 +839,14 @@ def verify_onefile_archive(exe_path: Path, require_bundled_assets: bool = False)
     print("[INFO] Archive verification passed:", ", ".join(CRITICAL_ARCHIVE_MODULES))
 
 
+def ssl_binary_dependencies(binary: Path) -> set[str]:
+    if not binary.is_file():
+        return set()
+    from PyInstaller.depend.bindepend import get_imports
+    return {name.lower() for name, _ in get_imports(str(binary))
+            if name.lower().startswith(("libssl", "libcrypto"))}
+
+
 def verify_onedir_tree(
     folder: Path,
     app_name: str,
@@ -863,12 +885,13 @@ def verify_onedir_tree(
         # （原注释说交给 `verify_obfuscation_manifest()` —— **那个函数全仓不存在**，
         #  照着它去找会以为有一道并不存在的门禁。）
         checks.append(("PyArmor 运行时", bool(list(internal.glob("pyarmor_runtime*")))))
-    # 批 133：瘦掉的那几样真的没了；Python 自己 HTTPS 用的那份 OpenSSL 还在
-    # （放在这里而不是上面的清单里：开源版的语义补丁要改那张清单，挨着写会让补丁对不上）
+    # CPython installers and standalone builds use different OpenSSL DLL names.
+    # Inspect the packaged extension, so an upgrade cannot silently break HTTPS.
+    required_ssl = ssl_binary_dependencies(internal / "_ssl.pyd")
+    unused = set(DROP_BINARIES) - required_ssl
     checks += [
-        ("没有多余的 OpenSSL / Tk", not any((internal / n).exists() for n in DROP_BINARIES + ["_tk_data", "_tcl_data"])),
-        ("Python 的 ssl 依赖 libssl-3.dll",
-         (internal / "libssl-3.dll").is_file() or not (internal / "_ssl.pyd").exists()),
+        ("没有多余的 OpenSSL / Tk", not any((internal / n).exists() for n in (*unused, "_tk_data", "_tcl_data"))),
+        ("Python SSL 动态依赖完整", all((internal / name).is_file() for name in required_ssl)),
     ]
     missing = [name for name, ok in checks if not ok]
     if missing:
@@ -972,7 +995,8 @@ def main() -> int:
         build_installer(project_root, version, app_name)
         return 0
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    work_root = project_root / ".build" / f"release-{stamp}"
+    work_parent = Path(args.work_dir).resolve() if args.work_dir else project_root / ".build"
+    work_root = work_parent / f"release-{stamp}"
     stage_dir = work_root / "stage"
     pyi_work_dir = work_root / "pyinstaller_work"
     dist_dir = work_root / "dist"

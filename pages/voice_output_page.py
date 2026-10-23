@@ -1281,6 +1281,7 @@ class VoiceOutputPage(QWidget):
                     QTimer.singleShot(clear_time, self._clear_status)
             except Exception as e:
                 self.status_label.setText(f"✗ 预览失败: {str(e)}")
+                self._toast_playback_failure(str(e))
                 self._sync_overview_status()
                 self.logger.error(f"预览音频失败: {e}")
                 # 3秒后清除错误状态
@@ -2225,6 +2226,7 @@ class VoiceOutputPage(QWidget):
                     self._status_clear_signal.emit(clear_time)
             except Exception as e:
                 self._status_signal.emit(f"✗ 播放失败: {str(e)}")
+                self._toast_error_signal.emit(str(e))
                 self.logger.error(f"[语音输出] 播放音频失败: {e}")
                 self._status_clear_signal.emit(3000)
     

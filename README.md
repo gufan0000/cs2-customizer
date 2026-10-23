@@ -139,7 +139,7 @@ GSI 在完全默认的官方游戏环境下就能工作：**不需要修改任�
 **环境要求**
 
 - Windows 10 / 11
-- Python 3.13
+- Python 3.13.17（或更新的 3.13 安全补丁版）
 - CS2（首次启动时会引导你指定游戏安装目录）
 
 **从源码运行**
@@ -147,7 +147,7 @@ GSI 在完全默认的官方游戏环境下就能工作：**不需要修改任�
 ```bash
 git clone https://github.com/gufan0000/cs2-customizer.git
 cd cs2-customizer
-pip install -r requirements_qt.txt
+python -m pip install -r requirements-ci.txt -c requirements.lock.txt
 python main_widget.py
 ```
 
@@ -226,7 +226,7 @@ resources/
 ## 构建发布包
 
 ```bash
-pip install -r requirements_qt.txt -r requirements-build.txt
+python -m pip install -r requirements-ci.txt -r requirements-build.txt -c requirements.lock.txt
 python build_tools/build_release.py --mode onedir --no-obfuscate --without-bundled-assets
 ```
 
@@ -236,6 +236,7 @@ python build_tools/build_release.py --mode onedir --no-obfuscate --without-bundl
   （闭源版的前提），不加这个开关，产物校验会直接把构建拦下来。
 - `--no-obfuscate`：跳过 PyArmor 混淆。混淆需要 PyArmor 授权，且对开源版没有意义。
 - `--mode onedir`：冷启动明显快于 `onefile`（约 5.9s → 1.9s）。
+- `--work-dir`：指定构建临时文件的父目录，可将较大的构建缓存放到空间充足的磁盘。
 - `--upx`：默认关闭。UPX 加壳是杀软/SmartScreen 误报的主要来源之一。
 
 Windows 安装包用 [Inno Setup](https://jrsoftware.org/isinfo.php) 编译 `build_tools/installer.iss`。

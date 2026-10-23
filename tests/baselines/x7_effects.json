@@ -1,6 +1,6 @@
 {
   "_说明": "import 期的外部效应。每个模块一个全新子进程，谁都不沾谁的 sys.modules。",
-  "import 成功": 11,
+  "import 成功": 12,
   "import 期写过盘的模块": [
     "core.audio.audio_resource_health",
     "core.audio.audio_task_runner",
@@ -24,7 +24,7 @@
       "config.json.tmp"
     ]
   },
-  "模块数": 11,
+  "模块数": 12,
   "逐模块": [
     {
       "import 失败": "",
@@ -123,6 +123,16 @@
       "import 完还活着的线程": [],
       "写盘文件名": [],
       "模块": "core.audio.runtime_audio",
+      "起子进程": [],
+      "起定时器": [],
+      "起线程": [],
+      "首次引导才写的文件": []
+    },
+    {
+      "import 失败": "",
+      "import 完还活着的线程": [],
+      "写盘文件名": [],
+      "模块": "core.audio.safe_soundfile",
       "起子进程": [],
       "起定时器": [],
       "起线程": [],

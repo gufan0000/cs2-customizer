@@ -4,7 +4,7 @@ import threading
 import time
 import queue
 import sounddevice as sd
-import soundfile as sf
+import core.audio.safe_soundfile as sf
 import numpy as np
 from typing import Optional, List
 import pygame
@@ -553,7 +553,7 @@ class VoiceOutputManager:
                     audio_data, sample_rate = sf.read(audio_path, dtype='float32')
                     if len(audio_data.shape) == 1:
                         audio_data = np.column_stack((audio_data, audio_data))
-                    duration = self.get_sound_duration(audio_path)
+                    duration = len(audio_data) / sample_rate
                 if audio_data is None:
                     raise ValueError("无法加载音频数据")
                 audio_data *= volume
@@ -904,6 +904,8 @@ class VoiceOutputManager:
     def get_sound_duration(self, audio_file: str) -> float:
         try:
             return sf.info(audio_file).duration
+        except ValueError:
+            raise  # Surface unsafe/unsupported file guidance before claiming playback.
         except Exception:
             return 0.0
     
