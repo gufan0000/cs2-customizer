@@ -50,6 +50,31 @@ def test_release_python_has_verified_security_fixes(version, allowed):
             check_python_version(version)
 
 
+def test_packaging_child_excludes_third_party_path_without_changing_parent(tmp_path, monkeypatch):
+    import json
+    import os
+    import sys
+    from build_tools.build_release import pyinstaller_environment, run
+
+    inherited = os.pathsep.join((str(tmp_path / "unrelated-dlls"), os.environ["PATH"]))
+    monkeypatch.setenv("PATH", inherited)
+    monkeypatch.setenv("AUDIT_BUILD_SENTINEL", "keep-isolation-settings")
+    child = tmp_path / "child.py"
+    child.write_text(
+        "import json, os\nfrom pathlib import Path\n"
+        "Path(__file__).with_suffix('.json').write_text(json.dumps({"
+        "'path': os.environ['PATH'], 'sentinel': os.environ['AUDIT_BUILD_SENTINEL']}))\n",
+        encoding="utf-8",
+    )
+    run([sys.executable, str(child)], env=pyinstaller_environment(sys.executable))
+    observed = json.loads(child.with_suffix(".json").read_text())
+    windows = Path(os.environ["SystemRoot"])
+    assert observed["path"].split(os.pathsep) == [str(Path(sys.executable).resolve().parent),
+                                                str(windows / "System32"), str(windows)]
+    assert observed["sentinel"] == "keep-isolation-settings"
+    assert os.environ["PATH"] == inherited
+
+
 def test_flash_commands_are_applied_by_display_owner(monkeypatch):
     import queue
     import threading

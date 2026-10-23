@@ -13,6 +13,7 @@ Goals:
 from __future__ import annotations
 
 import argparse
+import os
 import ast
 import codecs
 import re
@@ -301,14 +302,26 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def run(cmd: List[str], cwd: Path | None = None, check: bool = True) -> subprocess.CompletedProcess[str]:
+def run(cmd: List[str], cwd: Path | None = None, check: bool = True,
+        env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     print(f"[CMD] {' '.join(cmd)}")
     return subprocess.run(
         cmd,
         cwd=str(cwd) if cwd else None,
         check=check,
         text=True,
+        env=env,
     )
+
+
+def pyinstaller_environment(python: str) -> dict[str, str]:
+    """Keep unrelated tools' DLLs out of the dependency resolver's PATH."""
+    env = dict(os.environ)
+    windows = Path(env.get("SystemRoot", r"C:\Windows"))
+    env["PATH"] = os.pathsep.join(str(path) for path in (
+        Path(python).resolve().parent, windows / "System32", windows,
+    ))
+    return env
 
 
 def parse_pyinstaller_version(version: str) -> tuple[int, int, int]:
@@ -1081,7 +1094,7 @@ def main() -> int:
         require_splash_center=args.mode == "onefile",
     )
 
-    run(pyinstaller_cmd, cwd=project_root)
+    run(pyinstaller_cmd, cwd=project_root, env=pyinstaller_environment(args.python))
 
     if args.mode == "onefile":
         artifact = dist_dir / f"{exe_name}.exe"
