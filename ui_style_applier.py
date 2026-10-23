@@ -512,7 +512,7 @@ def mark_compact_buttons(root) -> int:
     changed = 0
     for b in root.findChildren(QAbstractButton):
         narrow = b.maximumWidth() < b.minimumWidth()
-        short = b.maximumHeight() < b.minimumHeight()
+        short = b.maximumHeight() < max(b.minimumHeight(), b.sizeHint().height())
         if not narrow and not short:
             continue
         # ⚠ 只能走样式表变体 + repolish：实测**直接 `setMinimumWidth` 不管用**

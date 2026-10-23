@@ -55,6 +55,7 @@ from pages.audio_status_badge import (
     stale_style_name,
 )
 from ui_help_panel import PAGE_HELP_TEXTS, install_help_panel
+from ui_style_applier import keep_single_line
 from widgets.page_header import PageHeader
 from widgets.page_action_bar import PageActionBar
 
@@ -445,17 +446,17 @@ class GunSoundPage(QWidget):
         tuning_layout.addWidget(duration_caption, 0, 3)
 
         duration_slider = QSlider(Qt.Horizontal)
-        duration_slider.setMinimum(1)
-        duration_slider.setMaximum(10)
-        duration_slider.setValue(int(round(mute_duration * 10)))
+        duration_slider.setMinimum(10)
+        duration_slider.setMaximum(100)
+        duration_slider.setValue(int(round(mute_duration * 100)))
         duration_slider.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         duration_slider.valueChanged.connect(
             lambda value, weapon=weapon_type: self._on_mute_duration_changed(weapon, value)
         )
         tuning_layout.addWidget(duration_slider, 0, 4)
 
-        duration_value_label = QLabel(f"{mute_duration:.1f}秒")
-        duration_value_label.setFixedWidth(52)
+        duration_value_label = keep_single_line(QLabel(f"{mute_duration:.2f}秒"))
+        duration_value_label.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
         tuning_layout.addWidget(duration_value_label, 0, 5)
 
         tuning_layout.setColumnStretch(1, 1)
@@ -594,9 +595,9 @@ class GunSoundPage(QWidget):
                 duration_slider = weapon_row.get("duration_slider")
                 duration_label = weapon_row.get("duration_label")
                 if duration_slider is not None:
-                    duration_slider.setValue(int(round(mute_duration * 10)))
+                    duration_slider.setValue(int(round(mute_duration * 100)))
                 if duration_label is not None:
-                    duration_label.setText(f"{mute_duration:.1f}秒")
+                    duration_label.setText(f"{mute_duration:.2f}秒")
         finally:
             self._loading = False
 
@@ -934,11 +935,11 @@ class GunSoundPage(QWidget):
         if not profile:
             return
 
-        duration = value / 10.0
+        duration = value / 100.0
         if weapon_type in self.weapon_rows:
             duration_label = self.weapon_rows[weapon_type].get("duration_label")
             if duration_label is not None:
-                duration_label.setText(f"{duration:.1f}秒")
+                duration_label.setText(f"{duration:.2f}秒")
 
         if getattr(self, "_loading", False):
             return

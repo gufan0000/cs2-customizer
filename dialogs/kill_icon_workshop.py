@@ -69,6 +69,8 @@ class KillIconWorkshop(QDialog):
         self.setMinimumSize(560, 420)
 
         self._init_ui()
+        from ui_style_applier import mark_compact_buttons
+        mark_compact_buttons(self)
         self.reload_styles()
         self.refresh()
 

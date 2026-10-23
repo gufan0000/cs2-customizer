@@ -18,7 +18,13 @@ from __future__ import annotations
 
 import os
 import shutil
+import tempfile
+import uuid
 from typing import Dict, List, Optional
+from core.io_validation import replace_with_retry
+from core.resource_import_source import (
+    ImportCancelled, check_import_size, check_import_space,
+)
 
 from core.resource_catalog import (
     build_spec_lookup,
@@ -202,6 +208,28 @@ def apply_resource_import_plan(
     cancelled = False
     total = max(1, len(recognized))
 
+    # Validate the complete plan before the first copy, including directory/single
+    # file sources and callers that do not use the source-opening UI.
+    if not dry_run:
+        try:
+            total_bytes = 0
+            backup_bytes = 0
+            destinations = set()
+            for item in recognized:
+                source = str(item.get("source_path", ""))
+                target = str(item.get("target_abs_path", ""))
+                if source and target and (overwrite_existing or not os.path.exists(target)):
+                    total_bytes = check_import_size(os.path.getsize(source), total_bytes)
+                    if overwrite_existing and os.path.isfile(target):
+                        backup_bytes += os.path.getsize(target)
+                    destinations.add(os.path.dirname(target))
+            for destination in destinations:
+                check_import_space(destination, total_bytes + backup_bytes)
+        except Exception as exc:
+            failed.append({"reason": str(exc)})
+            recognized = []
+
+    copied_bytes = 0
     for index, item in enumerate(recognized, start=1):
         if should_cancel is not None and should_cancel():
             cancelled = True
@@ -253,9 +281,26 @@ def apply_resource_import_plan(
 
         try:
             os.makedirs(os.path.dirname(target_abs_path), exist_ok=True)
-            shutil.copy2(source_path, target_abs_path)
+            fd, partial = tempfile.mkstemp(prefix=".cs2customizer-import-", dir=os.path.dirname(target_abs_path))
+            backup = None
+            try:
+                with os.fdopen(fd, "wb") as sink, open(source_path, "rb") as source:
+                    while chunk := source.read(1024 * 1024):
+                        if should_cancel is not None and should_cancel():
+                            raise ImportCancelled()
+                        copied_bytes = check_import_size(len(chunk), copied_bytes)
+                        sink.write(chunk)
+                shutil.copystat(source_path, partial)
+                if exists:
+                    backup = target_abs_path + f".backup-{uuid.uuid4().hex}"
+                    shutil.copy2(target_abs_path, backup)
+                replace_with_retry(partial, target_abs_path)
+            finally:
+                if os.path.exists(partial):
+                    os.remove(partial)
             copied.append(
                 {
+                    "backup_path": backup,
                     "source_path": source_path,
                     "target_abs_path": target_abs_path,
                     "target_rel_path": target_rel_path,
@@ -263,6 +308,9 @@ def apply_resource_import_plan(
                     "domain": str(item.get("domain", "")),
                 }
             )
+        except ImportCancelled:
+            cancelled = True
+            break
         except Exception as exc:
             failed.append(
                 {
@@ -294,8 +342,8 @@ def apply_resource_import_plan(
         }
         # ⭐ 收不回来的那几个**仍然在盘上** ⇒ 留在 `copied` 里，
         #   这样撤销按钮还能再试一次，报告里也数得出来。
-        copied = [c for c in copied
-                  if os.path.exists(str(c.get("target_abs_path", "")))] \
+        stuck_paths = {entry.get("target_abs_path") for entry in rolled.get("failed", [])}
+        copied = [c for c in copied if c.get("target_abs_path") in stuck_paths] \
             if stuck else []
     else:
         rollback = {"rolled_back": False, "removed_count": 0,
@@ -346,10 +394,15 @@ def undo_import(import_result: Dict[str, object]) -> Dict[str, object]:
         if not target:
             continue
         try:
-            if os.path.isfile(target):
+            backup = item.get("backup_path")
+            if backup and os.path.isfile(backup):
+                replace_with_retry(backup, target)
+            elif os.path.isfile(target):
                 os.remove(target)
-                removed.append(target)
-                directories.add(os.path.dirname(target))
+            else:
+                continue
+            removed.append(target)
+            directories.add(os.path.dirname(target))
         except OSError as exc:
             failed.append({"target_abs_path": target, "reason": str(exc)})
 

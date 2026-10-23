@@ -142,10 +142,12 @@ FORK_HELPER_MARK = "--multiprocessing-fork"
 
 
 def _child_processes(pid: int) -> list[tuple[int, str]]:
-    """(子进程 pid, 命令行) —— 命令行是分辨「引导→应用」和「应用→助手」的唯一依据。"""
+    """同名可执行文件的子进程；控制台宿主不是 onefile 的应用子进程。"""
     out = subprocess.run(
         ["powershell", "-NoProfile", "-Command",
+         f"$candidateParent = Get-CimInstance Win32_Process -Filter 'ProcessId={pid}'; "
          f"Get-CimInstance Win32_Process -Filter 'ParentProcessId={pid}' "
+         "| Where-Object { $_.Name -eq $candidateParent.Name } "
          "| ForEach-Object { \"$($_.ProcessId)`t$($_.CommandLine)\" }"],
         capture_output=True, text=True, errors="replace", timeout=60,
     ).stdout

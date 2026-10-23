@@ -229,7 +229,7 @@ class Config:
     def __init__(self):
         # 防抖保存定时器
         self._save_timer = None
-        self._save_lock = threading.Lock()
+        self._save_lock = threading.RLock()
         #: RN-622：退避仍失败时还剩几次「过一会儿再来」；写成功即还原。
         #: ⛔ 不许拿掉上限 —— 磁盘真坏时它会变成一条永不停的定时器链。
         self._save_retries_left = _SAVE_RETRIES_ON_FAILURE
@@ -1096,9 +1096,13 @@ class Config:
         """从新位置加载配置"""
         config_path = get_config_path()
         config_data = None
+        self._write_blocked_config_path = None
         try:
             with open(config_path, "r", encoding="utf-8") as f:
                 config_data = json.load(f)
+                if not isinstance(config_data, dict):
+                    config_data = None
+                    raise ValueError("配置顶层必须是 JSON 对象")
 
                 # 基础设置
                 self._load_plain(config_data,
@@ -1519,7 +1523,7 @@ class Config:
                     config_data.get("audio_event_timeline_enabled", self.audio_event_timeline_enabled)
                 )
 
-        except (FileNotFoundError, json.JSONDecodeError, KeyError) as e:
+        except (FileNotFoundError, ValueError, KeyError) as e:
             self._load_error = f"配置文件加载失败，已恢复默认设置: {e}"
             logger.error(f"加载配置失败: {e}。使用默认值。")
             # 损坏(非缺失)的配置先隔离备份,保留用户数据与排障线索,再写默认
@@ -1527,11 +1531,14 @@ class Config:
                 try:
                     if os.path.exists(config_path):
                         import time as _t
-                        quarantine = f"{config_path}.corrupt-{_t.strftime('%Y%m%d_%H%M%S')}"
+                        quarantine = f"{config_path}.corrupt-{_t.strftime('%Y%m%d_%H%M%S')}-{_t.time_ns()}"
                         replace_with_retry(config_path, quarantine)
                         logger.warning(f"损坏配置已隔离为: {quarantine}")
                 except OSError as _qe:
-                    logger.warning(f"隔离损坏配置失败(忽略): {_qe}")
+                    self._write_blocked_config_path = config_path
+                    self._load_error += "；原配置未能备份，已暂停保存，请检查文件权限"
+                    logger.warning(f"隔离损坏配置失败，保留原文件: {_qe}")
+                    return
             # 如果配置文件不存在或无效，保存一份默认配置
             self._do_save_config()
         finally:
@@ -1608,7 +1615,7 @@ class Config:
             if self._save_timer is not None:
                 self._save_timer.cancel()
                 self._save_timer = None
-        self._do_save_config()
+        return self._do_save_config()
 
     def save_config_on_exit(self, attempts=None, delay=None):
         """退出路径专用：**在本线程里**把重试做完，一次也不排队。返回是否落盘成功。
@@ -1653,6 +1660,8 @@ class Config:
     def _do_save_config(self):
         """保存配置到新位置（原子写入）"""
         config_path = get_config_path()
+        if getattr(self, "_write_blocked_config_path", None) == config_path:
+            return False
 
         # 确保目录存在
         os.makedirs(os.path.dirname(config_path), exist_ok=True)
@@ -1663,18 +1672,7 @@ class Config:
         from core.audio.special_events import config_defaults as _sound_style_defaults
 
         with self._save_lock:
-            # ⭐ RN-616（批 85）：这一趟写盘就是防抖 timer 要做的那件事，做完它就不再「待写」。
-            #   原来这里**从不**把 `_save_timer` 置回 `None`（只有 `save_config_now` /
-            #   `_atexit_flush` 会清）⇒ 本次会话只要调过一次 `save_config`，
-            #   `_atexit_flush` 里的 `has_pending = self._save_timer is not None` 就**恒为真**，
-            #   每次正常退出都多做一次内容相同的同步写盘。
-            #   ⚠ 不是数据丢失，⭐ 但它让「真的有待写改动吗」这个信号失真 ——
-            #     而那正是退出路径唯一用来决定「要不要在关机时动磁盘」的依据。
-            #   ⛔ 只认**线程身份**，不认 `is_alive()`：`threading.Timer` 就是一个线程，
-            #     而它到点之后正是**在它自己那个线程里**调这个函数 ⇒ 这一刻 `is_alive()`
-            #     必然为真，照它判就永远清不掉（我第一版就是这么写的）。
-            #   ⭐ 「这一趟是不是那个 timer 自己跑的」只有线程身份答得了；
-            #     `save_config_now` / `_atexit_flush` 走的是别的线程，它们自己会清。
+            # RN-616：只清当前执行的防抖 timer；不能用 is_alive 判断自己的线程。
             if self._save_timer is threading.current_thread():
                 self._save_timer = None
             try:
@@ -2063,7 +2061,8 @@ class Config:
                 # ⭐⭐⭐ RN-622（批 86）：**退避用尽之后那一格，RN-613 一个字都没动** ——
                 #   「一次就放弃」变成了「五次才放弃」，而放弃的结果照旧是静默丢掉。
                 #   ⇒ 重新排进防抖队列，过一会儿再写。叙事见登记册 RN-622 / 档案 X4。
-                # ⛔ 不许改成调 `save_config()`：这里正握着不可重入的 `_save_lock` ⇒ 当场死锁。
+                # Keep the retry on this persistence path; save_config() would
+                # enqueue an unrelated debounce while this transaction is active.
                 # ⭐⭐⭐ RN-624：**退出路径上不许排队** —— 排一个 1 秒后的 daemon Timer，
                 #   前提是「1 秒后这个进程还在」，而看门狗下一行就是 `os._exit(0)`。
                 #   重试改由 `save_config_on_exit()` 在本线程里循环，这里只管别排队。

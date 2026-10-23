@@ -3,7 +3,6 @@ import pygame
 import os
 import sys
 import time
-import threading
 import math
 import random
 import queue
@@ -405,7 +404,7 @@ class FlashEffectProcess:
         self.needs_redraw = True
         print("闪光样式参数已更新")
     
-    def main_loop(self):
+    def main_loop(self, command_queue=None):
         """主循环"""
         clock = pygame.time.Clock()
         self.needs_redraw = True
@@ -435,6 +434,14 @@ class FlashEffectProcess:
         last_flash_value = self.flash_value
         
         while self.is_running:
+            if command_queue is not None:
+                # SDL display, surfaces and settings have one owner. Bound work
+                # per frame so a busy producer cannot starve event processing.
+                for _ in range(32):
+                    if not process_commands(command_queue, self, single_pass=True):
+                        break
+                if not self.is_running:
+                    break
             current_time = time.time()
             self._apply_pending_monitor()
 
@@ -1032,7 +1039,7 @@ def monitor_rect(device_name, monitors):
 _PARENT_CHECK_EVERY_EMPTIES = 20
 
 
-def process_commands(command_queue, flash_effect):
+def process_commands(command_queue, flash_effect, *, single_pass=False):
     """处理命令队列 - 增强版
 
     ⚠ QA-002：**父进程被强杀时，队列不会断，异常也不会抛。**
@@ -1061,7 +1068,7 @@ def process_commands(command_queue, flash_effect):
     while flash_effect.is_running:
         try:
             # 阻塞等待命令，有命令立刻响应，无命令不耗CPU
-            command = command_queue.get(timeout=0.05)
+            command = command_queue.get(timeout=0 if single_pass else 0.05)
             _empty_streak = 0
 
             # 处理强制清除命令 - 最高优先级
@@ -1124,12 +1131,14 @@ def process_commands(command_queue, flash_effect):
             # QA-002: 父进程存活检测挂在这里 —— 队列空是常态（几乎每一拍都空），
             # 所以这是唯一能稳定拿到执行机会的位置。
             _empty_streak += 1
-            if _empty_streak >= _PARENT_CHECK_EVERY_EMPTIES:
+            if single_pass or _empty_streak >= _PARENT_CHECK_EVERY_EMPTIES:
                 _empty_streak = 0
                 if _parent is not None and not _parent.is_alive():
                     print("父进程已退出（存活检测），关闭闪光进程，避免留下全屏覆盖层")
                     flash_effect.shutdown()
                     return
+            if single_pass:
+                return False
             continue
         except (EOFError, BrokenPipeError, OSError) as e:
             # ⚠ 这条**不是**父进程崩溃检测（实测强杀父进程时它永远不触发，见函数 docstring）。
@@ -1140,6 +1149,8 @@ def process_commands(command_queue, flash_effect):
             return
         except Exception as e:
             print(f"处理命令异常: {e}")
+        if single_pass:
+            return True
 
 
 def process_function(command_queue, screen_width, screen_height):
@@ -1148,17 +1159,13 @@ def process_function(command_queue, screen_width, screen_height):
         flash_effect = FlashEffectProcess()
         flash_effect.initialize(screen_width, screen_height)
         
-        # 启动命令处理线程
-        command_thread = threading.Thread(
-            target=process_commands,
-            args=(command_queue, flash_effect),
-            daemon=True,
-            name="FlashCommand"
-        )
-        command_thread.start()
-        
-        # 运行主循环
-        flash_effect.main_loop()
+        # Consume commands on the SDL owner thread, including image conversion
+        # and force-clear. No command worker can paint or tear down its surfaces.
+        try:
+            flash_effect.main_loop(command_queue)
+        finally:
+            flash_effect.shutdown()
+            pygame.quit()
         
     except Exception as e:
         print(f"闪光效果进程出错: {e}")

@@ -11,18 +11,16 @@ qtawesome>=1.4.0
 pycaw; platform_system == "Windows"
 comtypes; platform_system == "Windows"
 
-# --- 2026-06-10 安全下限（pip-audit 体检后确定）---
-# pillow 12.1.x 含 6 个图片解析 CVE（本软件处理用户导入图片，属真实攻击面）
-pillow>=12.2.0
+# 安全下限：2026-10-23 在隔离环境验证并审计。
+# 外部图片解码、流式下载、信任库与本地 GSI 服务。
+pillow>=13.0.0
 # requests/urllib3 升级修复已知 CVE（更新检测/账号登录链路使用）
 requests>=2.33.0
-urllib3>=2.7.0
+urllib3>=2.8.0
+certifi>=2026.10.19
+Werkzeug>=3.1.9
 
-# 注意：以下依赖已在 requirements.txt 中，这里仅列出Qt专用的
-# - customtkinter (经典版本需要)
-# - pygame (音频系统)
-# - flask (GSI服务器)
-# - 等等...
+# 其余运行和验证依赖由 requirements-ci.txt 声明；发版按 requirements.lock.txt 安装。
 
 # --- 2026-08-14 死亡刷短视频 ---
 # 通过浏览器调试端点注入 JS，把抖音从"精选网格页"切到"推荐视频流"。

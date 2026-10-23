@@ -1114,6 +1114,10 @@ class GSIHandlerKills:
                     # 立即同步击杀计数，防止后续逻辑跳过时状态不一致
                     self.previous_round_kills[steamid] = current_round_kills
 
+                    from core.gsi.timing import packet_is_stale
+                    if packet_is_stale(data):
+                        return  # consume the count, never replay obsolete feedback
+
                     # 新增: 触发击杀回调
                     for callback in self.kill_callbacks:
                         try:

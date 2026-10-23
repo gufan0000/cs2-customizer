@@ -45,6 +45,13 @@ class AfterlifeController(QObject):
         self.game_hwnd = 0
         self._failures = 0
         self._session_disabled = False
+        self._dead = False
+        self._show_timer = QTimer(self)
+        self._show_timer.setSingleShot(True)
+        self._show_timer.timeout.connect(self._show_now)
+        self._feed_timer = QTimer(self)
+        self._feed_timer.setSingleShot(True)
+        self._feed_timer.timeout.connect(self.ensure_feed)
 
         self._stay_timer = QTimer(self)
         self._stay_timer.setSingleShot(True)
@@ -119,7 +126,7 @@ class AfterlifeController(QObject):
             self.browser.pause()
             self.statusChanged.emit("已就绪")
             # 等首屏渲染完再纠正 tab；窗口此刻是隐藏的，用户看不到这个切换过程
-            QTimer.singleShot(9000, self.ensure_feed)
+            self._feed_timer.start(9000)
         else:
             self.browser = None
             self.statusChanged.emit("浏览器启动失败")
@@ -156,6 +163,9 @@ class AfterlifeController(QObject):
 
     def shutdown(self):
         """软件退出 / 功能关闭时才真正结束浏览器进程。"""
+        self._dead = False
+        self._show_timer.stop()
+        self._feed_timer.stop()
         self._stay_timer.stop()
         if self.browser:
             try:
@@ -171,10 +181,11 @@ class AfterlifeController(QObject):
         if self._session_disabled:
             return
         delay = max(0, int(getattr(self.config, "fun_afterlife_delay_ms", 800) or 0))
-        QTimer.singleShot(delay, self._show_now)
+        self._dead = True
+        self._show_timer.start(delay)
 
     def _show_now(self):
-        if self._session_disabled:
+        if self._session_disabled or not self._dead:
             return
         if not self.preheat():
             return
@@ -207,6 +218,8 @@ class AfterlifeController(QObject):
 
     def _retract(self, reason):
         """暂停播放 + 隐藏 + 焦点还给游戏。不关进程，下次接着播。"""
+        self._dead = False
+        self._show_timer.stop()
         self._stay_timer.stop()
         if not self.browser or not self.browser.is_alive():
             return

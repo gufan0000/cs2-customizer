@@ -86,6 +86,8 @@ class FlashProcessManager:
         self.current_audio = None
         self.audio_channel = None
         self.audio_playing = False
+        self._audio_lock = threading.RLock()
+        self._audio_generation = 0
 
         # 保存屏幕尺寸
         self._saved_screen_width = 1920  # 默认值
@@ -797,6 +799,8 @@ class FlashProcessManager:
         
         # 停止当前播放的音频
         self.stop_audio()
+        with self._audio_lock:
+            generation = self._audio_generation
         
         # 选择音频文件
         audio_file = self._select_audio_file()
@@ -816,26 +820,41 @@ class FlashProcessManager:
             # 都看不见对方（批 103）。ch16 是 `set_num_channels(18)` 扩出来的。
             if pygame.mixer.get_num_channels() < FLASH_AUDIO_CHANNEL + 1:
                 pygame.mixer.set_num_channels(FLASH_AUDIO_CHANNEL + 1)
-            if self.audio_channel is None:
-                self.audio_channel = pygame.mixer.Channel(FLASH_AUDIO_CHANNEL)
-            
             # 加载音频
-            self.current_audio = pygame.mixer.Sound(audio_file)
-            self.current_audio.set_volume(self.audio_volume)
+            sound = pygame.mixer.Sound(audio_file)
             
             # 在专用通道播放音频
             # 如果不是自动停止模式，则循环播放(pygame: -1 = 无限循环)
             # v2.1.1 fix: 旧版 else 0 是 bug, 导致"关闭自动停止"开关从未生效
-            loops = 0 if self.audio_auto_stop else -1
-            self.audio_channel.play(self.current_audio, loops=loops)
-            
-            self.audio_playing = True
+            with self._audio_lock:
+                if not self.audio_enabled or generation != self._audio_generation:
+                    return
+                if self.audio_channel is None:
+                    self.audio_channel = pygame.mixer.Channel(FLASH_AUDIO_CHANNEL)
+                # Recheck after channel allocation too (device callbacks may reenter).
+                if not self.audio_enabled or generation != self._audio_generation:
+                    return
+                self.current_audio = sound
+                sound.set_volume(self.audio_volume)
+                loops = 0 if self.audio_auto_stop else -1
+                self.audio_channel.play(sound, loops=loops)
+                if not self.audio_enabled or generation != self._audio_generation:
+                    self.audio_channel.stop()
+                    self.current_audio = None
+                    self.audio_playing = False
+                    return
+                self.audio_playing = True
             logger.info(f"播放闪光音频: {os.path.basename(audio_file)}, 自动停止: {self.audio_auto_stop}, 循环模式: {loops == -1}")
         except Exception as e:
             logger.error(f"播放闪光音频失败: {e}", exc_info=True)
 
     def stop_audio(self):
         """停止闪光音频"""
+        with self._audio_lock:
+            self._audio_generation += 1
+            self._stop_audio_locked()
+
+    def _stop_audio_locked(self):
         try:
             import pygame
             if not pygame.mixer.get_init():
@@ -851,6 +870,9 @@ class FlashProcessManager:
             self.audio_playing = False
         except Exception as e:
             logger.error(f"停止闪光音频失败: {e}")
+        finally:
+            self.current_audio = None
+            self.audio_playing = False
 
     def _select_audio_file(self):
         """根据轮换模式选择音频文件"""
@@ -928,23 +950,21 @@ class FlashProcessManager:
             
     def update_audio_enabled(self, enabled):
         """更新音频启用状态"""
-        self.audio_enabled = enabled
-        
-        # 如果禁用，停止当前播放的音频
-        if not enabled and self.audio_playing:
-            self.stop_audio()
+        with self._audio_lock:
+            self.audio_enabled = enabled
+            if not enabled:
+                self.stop_audio()
         
         logger.info(f"闪光音频功能: {'开启' if enabled else '关闭'}")
             
     def update_audio_style(self, style):
         """更新音频风格"""
-        self.audio_style = style
-        
-        # 如果正在播放，重新开始播放新风格
-        if self.audio_playing:
+        with self._audio_lock:
+            restart = self.audio_playing
+            self.audio_style = style
             self.stop_audio()
-            if self.current_flash_value > 0:
-                self.play_audio()
+        if restart and self.current_flash_value > 0:
+            self.play_audio()
                 
         logger.info(f"闪光音频风格已更新: {style}")
             

@@ -28,6 +28,8 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[1]
 SMOKE = REPO / "scripts" / "smoke_packaged.py"
+# Windows venv 的 python.exe 自己是转发父进程；对照必须直接启动解释器。
+FIXTURE_PYTHON = getattr(sys, "_base_executable", sys.executable)
 
 pytestmark = pytest.mark.skipif(sys.platform != "win32", reason="用的是 Win32 进程树")
 
@@ -61,8 +63,9 @@ def test_it_resolves_to_the_child_not_the_launcher(tmp_path):
     parent_py.write_text(PARENT, encoding="utf-8")
 
     launcher = subprocess.Popen(
-        [sys.executable, str(parent_py), str(child_py), str(pid_file)],
+        [FIXTURE_PYTHON, str(parent_py), str(child_py), str(pid_file)],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        creationflags=subprocess.CREATE_NO_WINDOW,
     )
     try:
         deadline = time.time() + 30
@@ -104,8 +107,9 @@ def test_a_multiprocessing_helper_child_is_not_mistaken_for_the_app(tmp_path):
     pid_file = tmp_path / "child_pid.txt"
     child_py.write_text(CHILD, encoding="utf-8")
     parent_py.write_text(PARENT_WITH_FORK_HELPER, encoding="utf-8")
-    launcher = subprocess.Popen([sys.executable, str(parent_py), str(child_py), str(pid_file)],
-                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    launcher = subprocess.Popen([FIXTURE_PYTHON, str(parent_py), str(child_py), str(pid_file)],
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                creationflags=subprocess.CREATE_NO_WINDOW)
     try:
         for _ in range(100):
             if pid_file.exists() and pid_file.read_text().strip():
@@ -135,8 +139,9 @@ def test_a_process_with_no_child_resolves_to_itself(tmp_path):
     smoke = _load_smoke()
     lone = tmp_path / "lone.py"
     lone.write_text("import time\ntime.sleep(30)\n", encoding="utf-8")
-    proc = subprocess.Popen([sys.executable, str(lone)],
-                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    proc = subprocess.Popen([FIXTURE_PYTHON, str(lone)],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                            creationflags=subprocess.CREATE_NO_WINDOW)
     try:
         assert smoke._resolve_app_pid(proc.pid, wait_seconds=2.0) == proc.pid
     finally:

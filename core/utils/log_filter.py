@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 import re
+from urllib.parse import urlsplit, urlunsplit
 from typing import Final, Iterable, Pattern, Tuple
 
 __all__ = ["SensitiveFilter", "redact_text"]
@@ -34,7 +35,8 @@ _RULES: Final[Tuple[Tuple[Pattern[str], str], ...]] = (
     (
         re.compile(
             r"(?P<key>(?:access[_-]?token|refresh[_-]?token|api[_-]?key|secret"
-            r"|password|passwd|pwd|token))"
+            r"|password|passwd|pwd|token|signature|sig|x-amz-signature|x-goog-signature"
+            r"|auth_key|wssecret|hdnts|hmac))"
             r"(?P<sep>[\"']?\s*[:=]\s*[\"']?)"
             r"(?P<val>[^\s\"',}\]\)]+)",
             re.IGNORECASE,
@@ -76,12 +78,28 @@ _RULES: Final[Tuple[Tuple[Pattern[str], str], ...]] = (
 )
 
 
+def _redact_url(match):
+    try:
+        parts = urlsplit(match.group())
+        # Query strings can contain nested URLs, encoded/repeated keys and
+        # platform-specific bearer signatures. Logs need neither query nor fragment.
+        host = parts.hostname or ""
+        if ":" in host:
+            host = f"[{host}]"
+        if parts.port:
+            host += f":{parts.port}"
+        return urlunsplit((parts.scheme, host, parts.path,
+                           "***" if parts.query else "", "***" if parts.fragment else ""))
+    except ValueError:
+        return "[URL 已隐藏]"
+
+
 def redact_text(text: str, rules: Iterable[Tuple[Pattern[str], str]] = _RULES) -> str:
     """对文本做脱敏替换。异常时原样返回（保证日志链不断）。"""
     if not isinstance(text, str) or not text:
         return text
     try:
-        redacted = text
+        redacted = re.sub(r"https?://[^\s\"'<>]+", _redact_url, text, flags=re.IGNORECASE)
         for pattern, repl in rules:
             redacted = pattern.sub(repl, redacted)
         return redacted

@@ -62,6 +62,8 @@ class SpriteSheetMaker(QDialog):
         self._pending = None
 
         self._init_ui()
+        from ui_style_applier import mark_compact_buttons
+        mark_compact_buttons(self)
         self._refresh_styles()
 
     # ------------------------------------------------------------------ UI

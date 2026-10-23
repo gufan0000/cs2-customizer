@@ -1320,7 +1320,7 @@ class Theme:
                 padding: {button.primary_padding_vertical}px {button.primary_padding_horizontal}px;
                 font-weight: 600;
                 font-size: {button.primary_font_size}px;
-                min-height: {qss_box(button.primary_height, button.primary_padding_vertical)}px;
+                min-height: {max(qss_box(button.primary_height, button.primary_padding_vertical), round(button.primary_font_size * 1.3))}px;
                 min-width: {qss_box(button.primary_min_width, button.primary_padding_horizontal)}px;
             }}
             
@@ -1355,7 +1355,7 @@ class Theme:
                 border-radius: {button.secondary_border_radius}px;
                 padding: {button.secondary_padding_vertical}px {button.secondary_padding_horizontal}px;
                 font-size: {button.secondary_font_size}px;
-                min-height: {qss_box(button.secondary_height, button.secondary_padding_vertical, button.secondary_border_width)}px;
+                min-height: {max(qss_box(button.secondary_height, button.secondary_padding_vertical, button.secondary_border_width), round(button.secondary_font_size * 1.3))}px;
                 min-width: {qss_box(button.primary_min_width, button.secondary_padding_horizontal, button.secondary_border_width)}px;
             }}
             
@@ -1369,7 +1369,10 @@ class Theme:
             }}
 
             /* v5 Phase 9: focus ring */
-            QPushButton#primaryButton[fp_narrow="true"], QPushButton#secondaryButton[fp_narrow="true"], QPushButton#dangerButton[fp_narrow="true"], QPushButton#actionButton[fp_narrow="true"], QPushButton#helpCloseButton[fp_narrow="true"], QPushButton#anchorChip[fp_narrow="true"] {{ min-width: 0px; }}  QPushButton#primaryButton[fp_short="true"], QPushButton#secondaryButton[fp_short="true"], QPushButton#dangerButton[fp_short="true"], QPushButton#actionButton[fp_short="true"], QPushButton#helpCloseButton[fp_short="true"], QPushButton#anchorChip[fp_short="true"] {{ min-height: 0px; }}  /* RN-442：ID 选择器比属性选择器更具体，必须逐个点名；两个轴各一个标记 */
+            QPushButton#primaryButton[fp_narrow="true"], QPushButton#secondaryButton[fp_narrow="true"], QPushButton#dangerButton[fp_narrow="true"], QPushButton#actionButton[fp_narrow="true"], QPushButton#helpCloseButton[fp_narrow="true"], QPushButton#anchorChip[fp_narrow="true"] {{ min-width: 0px; }}
+            /* Fixed-height controls must leave room for the enlarged font. */
+            QPushButton#primaryButton[fp_short="true"], QPushButton#secondaryButton[fp_short="true"], QPushButton#dangerButton[fp_short="true"], QPushButton#actionButton[fp_short="true"], QPushButton#helpCloseButton[fp_short="true"], QPushButton#anchorChip[fp_short="true"] {{ min-height: {round(button.secondary_font_size * 1.3)}px; padding-top: 2px; padding-bottom: 2px; }}
+            QPushButton#primaryButton[fp_short="true"]:focus, QPushButton#secondaryButton[fp_short="true"]:focus, QPushButton#dangerButton[fp_short="true"]:focus, QPushButton#actionButton[fp_short="true"]:focus, QPushButton#helpCloseButton[fp_short="true"]:focus, QPushButton#anchorChip[fp_short="true"]:focus {{ padding-top: 1px; padding-bottom: 1px; }}
             QPushButton#secondaryButton:focus {{
                 border: 2px solid {c.border_focus};
                 padding: {max(0, button.secondary_padding_vertical - 1)}px {max(0, button.secondary_padding_horizontal - 1)}px;
@@ -1384,7 +1387,7 @@ class Theme:
                 border-radius: {button.secondary_border_radius}px;
                 padding: {button.secondary_padding_vertical}px {button.secondary_padding_horizontal}px;
                 font-size: {button.secondary_font_size}px;
-                min-height: {qss_box(button.secondary_height, button.secondary_padding_vertical, button.secondary_border_width)}px;
+                min-height: {max(qss_box(button.secondary_height, button.secondary_padding_vertical, button.secondary_border_width), round(button.secondary_font_size * 1.3))}px;
             }}
 
             QToolButton#secondaryButton:hover {{
@@ -1423,7 +1426,7 @@ class Theme:
                 border-radius: {button.action_border_radius}px;
                 padding: {button.action_padding_vertical}px {button.action_padding_horizontal}px;
                 font-size: {button.action_font_size}px;
-                min-height: {qss_box(button.action_height, button.action_padding_vertical, 1)}px;
+                min-height: {max(qss_box(button.action_height, button.action_padding_vertical, 1), round(button.action_font_size * 1.3))}px;
                 font-weight: 500;
             }}
             
@@ -1550,7 +1553,7 @@ class Theme:
                 padding: {button.danger_padding_vertical}px {button.danger_padding_horizontal}px;
                 font-weight: 600;
                 font-size: {button.danger_font_size}px;
-                min-height: {qss_box(button.danger_height, button.danger_padding_vertical)}px;
+                min-height: {max(qss_box(button.danger_height, button.danger_padding_vertical), round(button.danger_font_size * 1.3))}px;
                 min-width: {qss_box(button.primary_min_width, button.danger_padding_horizontal)}px;
             }}
 

@@ -251,9 +251,10 @@ def main() -> int:
                         if re.search(r"passed|failed|error", ln)), "")
         m = re.search(r"(\d+) passed", summary)
         cases = int(m.group(1)) if m else 0
-        passed = r.returncode == 0 or (
-            "passed" in summary and "failed" not in summary and "error" not in summary
-        )
+        # A passing pytest summary does not excuse a crash during Qt teardown.
+        passed = r.returncode == 0
+        if not passed:
+            summary = f"exit={r.returncode}: {summary}"
         if passed:
             return (tf, "ok", summary, cases, [], [])
         return (tf, "fail", summary, cases, out[-30:],

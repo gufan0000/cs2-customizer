@@ -470,8 +470,8 @@ class VoiceOutputManager:
             except Exception as e:
                 self.logger.error(f"[麦克风穿透] 启动麦克风直通失败: {e}")
             finally:
-                if input_stream: input_stream.stop(); input_stream.close()
-                if output_stream: output_stream.stop(); output_stream.close()
+                self._close_stream(input_stream)
+                self._close_stream(output_stream)
                 self.microphone_passthrough_active = False
         self.passthrough_thread = threading.Thread(target=passthrough_worker, daemon=True, name="VoicePassthrough")
         self.passthrough_thread.start()
@@ -781,14 +781,15 @@ class VoiceOutputManager:
     def _play_data_locally(self, audio_data, sample_rate, cancel_event=None):
         def _write_all(device_id):
             stream = sd.OutputStream(device=device_id, samplerate=sample_rate, channels=2, blocksize=self.chunk_size, latency='low', dtype='float32')
-            stream.start()
-            for i in range(0, len(audio_data), self.chunk_size):
-                if cancel_event is not None and cancel_event.is_set():
-                    break
-                chunk = audio_data[i:min(i + self.chunk_size, len(audio_data))]
-                stream.write(chunk)
-            stream.stop()
-            stream.close()
+            try:
+                stream.start()
+                for i in range(0, len(audio_data), self.chunk_size):
+                    if cancel_event is not None and cancel_event.is_set():
+                        break
+                    chunk = audio_data[i:min(i + self.chunk_size, len(audio_data))]
+                    stream.write(chunk)
+            finally:
+                self._close_stream(stream)
 
         def play_local_thread():
             # QA-017: 优先走声音映射器 —— 每次开流才解析到"当时的 Windows 默认输出"，
@@ -829,6 +830,16 @@ class VoiceOutputManager:
                 self._mute_refcount -= 1
             if self._mute_refcount == 0:
                 self.set_microphone_mute(False)
+
+    def _close_stream(self, stream):
+        """A removed device may reject stop; close must still be attempted."""
+        if stream is None:
+            return
+        for operation in ("stop", "close"):
+            try:
+                getattr(stream, operation)()
+            except Exception as exc:
+                self.logger.warning("音频流 %s 失败: %s", operation, exc)
 
     def _play_file_data(self, audio_data: np.ndarray, sample_rate: int, also_local: bool, auto_mode: bool = False, cancel_event=None):
         was_passthrough_active = self.microphone_passthrough_active
@@ -883,10 +894,12 @@ class VoiceOutputManager:
         except Exception as e:
             self.logger.error(f"[播放数据] 播放数据失败: {e}")
         finally:
-            if vb_stream: vb_stream.stop(); vb_stream.close()
-            if was_passthrough_active and auto_mode:
-                self.logger.info("[播放数据] 释放麦克风静音引用")
-                self._release_mic_mute()
+            try:
+                self._close_stream(vb_stream)
+            finally:
+                if was_passthrough_active and auto_mode:
+                    self.logger.info("[播放数据] 释放麦克风静音引用")
+                    self._release_mic_mute()
     
     def get_sound_duration(self, audio_file: str) -> float:
         try:

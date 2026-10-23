@@ -154,8 +154,8 @@ def test_gun_sound_page_load_settings_supports_new_weapon_profile(monkeypatch):
     page.load_settings()
 
     assert page.weapon_rows["xm1014"]["style_combo"].index == 1
-    assert page.weapon_rows["xm1014"]["duration_slider"].value == 3
-    assert page.weapon_rows["xm1014"]["duration_label"].text.startswith("0.3")
+    assert page.weapon_rows["xm1014"]["duration_slider"].value == 30
+    assert page.weapon_rows["xm1014"]["duration_label"].text == "0.30秒"
 
 
 def test_reload_and_switch_style_change_save_config(monkeypatch):

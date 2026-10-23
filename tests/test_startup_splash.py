@@ -485,9 +485,9 @@ def test_main_uses_build_command_boundary_after_dry_run_guard():
 def test_build_requirements_pin_supported_pyinstaller_range():
     project_root = Path(build_release.__file__).resolve().parent.parent
 
-    assert (project_root / "requirements-build.txt").read_text(encoding="utf-8") == (
-        "PyInstaller>=6.21,<7\n"
-    )
+    requirements = (project_root / "requirements-build.txt").read_text(encoding="utf-8").splitlines()
+    assert "PyInstaller>=6.21,<7" in requirements
+    assert "setuptools>=83.0.0" in requirements
 
 
 def test_packaging_guide_uses_pinned_build_requirements():

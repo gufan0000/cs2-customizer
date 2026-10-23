@@ -312,21 +312,25 @@ def test_build_cli_exposes_and_wires_the_flag():
 
 
 def test_prebuild_test_target_exists():
-    """打包前跑的那个 pytest 目标必须真的存在。
+    """打包前通过项目测试入口选择的目标必须真的存在。
 
     原先钉的是 tests/test_update_runtime.py —— 在线更新链路随开源裁剪删掉之后
     文件也没了，于是每一次不加 --skip-tests 的构建都会直接挂在 pytest 上。
     """
     src = (ROOT / "build_tools" / "build_release.py").read_text(encoding="utf-8")
-    targets = [
-        arg.value
+    commands = [
+        node.args[0].elts
         for node in ast.walk(ast.parse(src))
         if isinstance(node, ast.Call)
-        for arg in ast.walk(node)
-        if isinstance(arg, ast.Constant)
-        and isinstance(arg.value, str)
-        and arg.value.startswith("tests/")
+        and isinstance(node.func, ast.Name) and node.func.id == "run"
+        and node.args and isinstance(node.args[0], ast.List)
     ]
-    assert targets, "build_release 里找不到打包前的 pytest 目标，判据前提变了"
-    for target in targets:
-        assert (ROOT / target).is_file(), f"打包前要跑的测试文件不存在: {target}"
+    selectors = []
+    for command in commands:
+        literals = [arg.value for arg in command if isinstance(arg, ast.Constant)]
+        if "build_tools/run_tests.py" in literals:
+            selectors.extend(literals[literals.index("build_tools/run_tests.py") + 1:])
+    assert selectors, "build_release 里找不到打包前的测试选择条件，判据前提变了"
+    assert (ROOT / "build_tools/run_tests.py").is_file()
+    for selector in selectors:
+        assert any((ROOT / "tests").glob(f"test_*{selector}*.py")), f"打包前的选择条件没有对应测试: {selector}"

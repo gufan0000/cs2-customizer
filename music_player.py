@@ -53,6 +53,9 @@ class MusicPlayer:
     
     def __init__(self):
         self.logger = get_logger()  # 初始化logger
+        self._transition_lock = threading.RLock()
+        self._transition_generation = 0
+        self._pending_transition = None
         pygame.init()
         if not pygame.mixer.get_init():
             pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
@@ -283,8 +286,7 @@ class MusicPlayer:
             return
         
         # 保存当前播放状态
-        if self.is_playing:
-            self.stop()
+        self.stop()
         
         self.current_playlist_name = name
         config.music_current_playlist = name
@@ -549,8 +551,50 @@ class MusicPlayer:
         self.end_check_thread = threading.Thread(target=check_end, daemon=True, name="MusicEndCheck")
         self.end_check_thread.start()
         
+    def _cancel_transition(self):
+        if not hasattr(self, "_transition_lock"):
+            self._transition_lock = threading.RLock()
+        with self._transition_lock:
+            self._transition_generation = getattr(self, "_transition_generation", 0) + 1
+            timer = getattr(self, "_pending_transition", None)
+            self._pending_transition = None
+            if timer:
+                timer.cancel()
+            return self._transition_generation
+
+    def _schedule_transition(self, delay, callback, generation=None):
+        if not hasattr(self, "_transition_lock"):
+            self._transition_lock = threading.RLock()
+        with self._transition_lock:
+            current = getattr(self, "_transition_generation", 0)
+            if generation is not None and current != generation:
+                return
+            previous = getattr(self, "_pending_transition", None)
+            if previous:
+                previous.cancel()
+
+            def run():
+                with self._transition_lock:
+                    if current != getattr(self, "_transition_generation", 0):
+                        return
+                    self._pending_transition = None
+                    callback()
+
+            timer = threading.Timer(delay, run)
+            timer.daemon = True
+            self._pending_transition = timer
+            timer.start()
+
+    def _deliver_loader_result(self, loader, callback, *args):
+        with self._transition_lock:
+            if (loader.is_cancelled or loader is not self.loader_thread
+                    or loader.generation != self._transition_generation):
+                return
+            callback(*args)
+
     def _handle_track_end(self):
         """处理曲目结束 - 线程安全版本"""
+        generation = getattr(self, "_transition_generation", 0)
         # 检查是否太快重复触发
         current_time = time.time()
         if current_time - self._last_track_end_time < 1.0:  # 1秒内不重复触发
@@ -581,10 +625,10 @@ class MusicPlayer:
             # 使用定时器在新线程中执行，避免线程冲突
             if self.play_mode == "repeat_one":
                 self._debug_log("单曲循环模式，重新播放当前曲目")
-                threading.Timer(0.2, self.play_current).start()
+                self._schedule_transition(0.2, self.play_current, generation)
             else:
                 self._debug_log("切换到下一首")
-                threading.Timer(0.2, self.next).start()
+                self._schedule_transition(0.2, self.next, generation)
                 
         finally:
             # 立即释放锁
@@ -616,6 +660,7 @@ class MusicPlayer:
             self._play_track(self.playlist[self.current_index])
             
     def _play_track(self, track: Dict):
+        generation = self._cancel_transition()
         try:
             self._debug_log(f"准备播放: {track.get('title', 'Unknown')}")
             
@@ -626,22 +671,15 @@ class MusicPlayer:
             # （下面那个 on_track_change），它得先存在。
             notify_playback_started()
 
-            # 停止当前播放
-            self.stop_progress = True
-            self.stop_end_check = True
-            
             # 取消之前的加载任务
             self.cancel_loading()
-            
-            # 确保音乐完全停止
-            if pygame.mixer.music.get_busy():
-                pygame.mixer.music.stop()
-                # 等待停止
-                timeout = 0.5
-                start_time = time.time()
-                while pygame.mixer.music.get_busy() and time.time() - start_time < timeout:
-                    time.sleep(0.01)
-                self._debug_log("已停止之前的播放")
+            with self._transition_lock:
+                if generation != self._transition_generation:
+                    return
+                self.stop_progress = True
+                self.stop_end_check = True
+                if pygame.mixer.music.get_busy():
+                    pygame.mixer.music.stop()
             
             # 等待线程结束
             if self.progress_thread and self.progress_thread.is_alive():
@@ -660,20 +698,27 @@ class MusicPlayer:
                 self.on_track_change(loading_track)
             
             # 启动异步加载
-            self.loader_thread = MusicLoaderThread(self, track)
-            self.loader_thread.start()
+            with self._transition_lock:
+                if generation != self._transition_generation:
+                    return
+                self.loader_thread = MusicLoaderThread(self, track)
+                self.loader_thread.start()
 
         except Exception as e:
             self.logger.error(f"准备播放失败: {e}", exc_info=True)
             # 延迟调用next避免立即触发
-            threading.Timer(0.5, self.next).start()
+            self._schedule_transition(0.5, self.next, generation=generation)
 
     def cancel_loading(self):
         """取消当前的加载任务"""
-        if hasattr(self, 'loader_thread') and self.loader_thread and self.loader_thread.is_alive():
-            self.loader_thread.cancel()
-            self.loader_thread.join(timeout=0.5)
-            self.loader_thread = None
+        loader = getattr(self, "loader_thread", None)
+        if loader and loader.is_alive():
+            loader.cancel()
+            if loader is not threading.current_thread():
+                loader.join(timeout=0.5)
+            with self._transition_lock:
+                if self.loader_thread is loader:
+                    self.loader_thread = None
             self._debug_log("已取消之前的加载任务")
 
     def _on_track_loaded(self, track: Dict, audio_path: str):
@@ -758,20 +803,26 @@ class MusicPlayer:
             self._consecutive_load_failures = 0
             self.stop()
             return
-        threading.Timer(0.5, self.next).start()
+        self._schedule_transition(0.5, self.next)
 
 
         
     def stop(self):
         self._debug_log("停止播放")
+        self._cancel_transition()
+        with self._transition_lock:
+            loader = getattr(self, "loader_thread", None)
+            if loader:
+                loader.cancel()
+            pygame.mixer.music.stop()
+            self.is_playing = False
+            self.is_paused = False
+        self.cancel_loading()
         
         # 停止所有检测线程
         self.stop_progress = True
         self.stop_end_check = True
         
-        pygame.mixer.music.stop()
-        self.is_playing = False
-        self.is_paused = False
         config.music_is_playing = False
         
         if self.on_state_change:
@@ -1426,6 +1477,7 @@ class MusicLoaderThread(threading.Thread):
         super().__init__()
         self.player = player
         self.track = track
+        self.generation = player._transition_generation
         self.is_cancelled = False
         self.daemon = True
 
@@ -1444,15 +1496,16 @@ class MusicLoaderThread(threading.Thread):
                 # 或者如果后续有UI操作，这里直接调用也是可以的，因为_on_track_loaded主要操作mixer和变量）
                 # 注意：如果是在Qt环境中，最好使用信号槽回到主线程。
                 # 但这里是纯Python逻辑层，直接调用即可。
-                self.player._on_track_loaded(self.track, audio_path)
+                self.player._deliver_loader_result(self, self.player._on_track_loaded, self.track, audio_path)
             else:
-                self.player._on_track_load_error(
-                    self.track, f"本地文件不存在: {self.track.get('path', '')}"
+                self.player._deliver_loader_result(
+                    self, self.player._on_track_load_error, self.track,
+                    f"本地文件不存在: {self.track.get('path', '')}"
                 )
 
         except Exception as e:
             if not self.is_cancelled:
-                self.player._on_track_load_error(self.track, str(e))
+                self.player._deliver_loader_result(self, self.player._on_track_load_error, self.track, str(e))
 
     def cancel(self):
         self.is_cancelled = True

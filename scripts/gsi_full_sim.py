@@ -263,7 +263,7 @@ SCRIPT = [
     ("R2 出生",              frame(round_no=2, phase="live", health=100, weapon="weapon_ak47")),
     ("R2 第1杀",             frame(round_no=2, phase="live", health=100, round_kills=1, match_kills=4, weapon="weapon_ak47")),
     ("换图 dust2->mirage",   frame(round_no=1, phase="freezetime", health=100, weapon="weapon_knife", map_name="de_mirage", team="T")),
-    ("换图后出生",           frame(round_no=1, phase="live", health=100, weapon="weapon_awp", map_name="de_mirage", team="T")),
+    ("换图后出生",           frame(round_no=1, phase="live", health=100, weapon="weapon_awp", ammo_clip=5, map_name="de_mirage", team="T")),
     ("AWP 开火(弹药下降)",   frame(round_no=1, phase="live", health=100, weapon="weapon_awp", ammo_clip=4, map_name="de_mirage", team="T")),
 ]
 
@@ -277,6 +277,20 @@ print("-" * 72)
 per_handler_calls = {n: 0 for n in handlers}
 per_handler_errors = {n: [] for n in handlers}
 frame_log = []
+oracle_errors = []
+expected_audio = {
+    4: ("play_sound", "switch-weapon_ak47-经典", "switch_weapon"),
+    5: ("play_sound", "reload-weapon_ak47-经典", "reload"),
+    7: ("play_sound", "kill-1", "kill_sound"),
+    8: ("play_sound", "kill-2", "kill_sound"),
+    9: ("play_sound", "kill-3-headshot", "kill_sound"),
+    14: ("play_sound", "grenade-hegrenade-经典", "grenade_sound"),
+    15: ("play_sound", "health-warning-经典", "health_warning"),
+    16: ("play_sound", "c4-planted-经典", "c4_sound"),
+    17: ("play_sound", "death-经典", "death_sound"),
+    21: ("play_sound", "kill-1", "kill_sound"),
+    24: ("play_sound", "gun-awp-经典", "gun_sound"),
+}
 
 for idx, (label, payload) in enumerate(SCRIPT, 1):
     triggered = []
@@ -296,6 +310,12 @@ for idx, (label, payload) in enumerate(SCRIPT, 1):
     new_music = spy_music.calls[music_before:]
     new_img = spy_image.calls[img_before:]
     new_dash = spy_gui.dashboard.calls[dash_before:]
+    if idx in expected_audio and new_audio.count(expected_audio[idx]) != 1:
+        oracle_errors.append(f"帧#{idx}: 应且仅应产生 {expected_audio[idx]}")
+    if idx in (10, 12):
+        expected = f"update_flash_value({255 if idx == 10 else 0})"
+        if new_flash.count(expected) != 1:
+            oracle_errors.append(f"帧#{idx}: 缺少闪光状态 {expected}")
     if new_audio: triggered.append(f"audio:{new_audio}")
     if new_flash: triggered.append(f"flash:{new_flash}")
     if new_music: triggered.append(f"music:{new_music}")
@@ -335,9 +355,15 @@ if "stats" in handlers:
     h = handlers["stats"]
     print(f"  stats 会话统计: 总击杀={h.total_kills} 总爆头={h.total_headshots} 总死亡={h.total_deaths} K/D={h._calculate_kd()}")
 
+if "stats" in handlers and (handlers["stats"].total_kills, handlers["stats"].total_headshots,
+                             handlers["stats"].total_deaths) != (4, 1, 1):
+    oracle_errors.append("最终统计应为 4 杀 / 1 爆头 / 1 死亡")
+total_err += len(oracle_errors)
+for error in oracle_errors:
+    print(f"[FAIL] {error}")
 print("=" * 72)
 frames_with_fx = sum(1 for _, _, t in frame_log if t)
 verdict = "全部通过" if total_err == 0 else f"{total_err} 处异常"
-print(f"  结论: {len(handlers)}/8 处理器在线, 24 帧全程分发, {frames_with_fx} 帧产生预期副作用, {verdict}")
+print(f"  结论: {len(handlers)}/8 处理器在线, 24 帧全程分发, {frames_with_fx} 帧产生副作用, 关键事件断言错误 {len(oracle_errors)}, {verdict}")
 print("=" * 72)
 sys.exit(0 if total_err == 0 else 1)

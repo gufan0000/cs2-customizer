@@ -242,6 +242,8 @@ class GSIServer:
         self.data_queue = data_queue
         self.handlers = []
         self._running = False
+        self._stop_event = threading.Event()
+        self.process_thread = None
         self.startup_error = None
 
     def add_handler(self, handler):
@@ -282,11 +284,16 @@ class GSIServer:
 
     def process_data(self):
         """处理接收到的GSI数据"""
+        self.process_thread = threading.current_thread()
+        if self._stop_event.is_set():
+            return
         self._running = True
-        while self._running:
+        while self._running and not self._stop_event.is_set():
             try:
                 data = self.data_queue.get(timeout=0.1)
                 for handler in self.handlers:
+                    if self._stop_event.is_set():
+                        break
                     try:
                         handler.process_data(data)
                     except Exception as e:
@@ -295,13 +302,21 @@ class GSIServer:
                 pass
             except Exception as e:
                 logger.error(f"Error processing data: {e}", exc_info=True)
+        self._running = False
 
     def stop(self):
         """停止数据处理循环"""
         self._running = False
+        self._stop_event.set()
+        thread = self.process_thread
+        if thread and thread is not threading.current_thread():
+            thread.join(timeout=2.0)
+            if thread.is_alive():
+                logger.warning("GSI 在途处理尚未结束；已禁止后续分发")
 
     def start(self):
         """启动GSI服务器"""
+        self._stop_event.clear()
         self.start_flask()
-        process_thread = threading.Thread(target=self.process_data, daemon=True, name="GSIDataProcess")
-        process_thread.start()
+        self.process_thread = threading.Thread(target=self.process_data, daemon=True, name="GSIDataProcess")
+        self.process_thread.start()

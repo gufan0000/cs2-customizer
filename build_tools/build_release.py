@@ -198,6 +198,7 @@ MIN_PYINSTALLER_SPLASH_CENTER = (6, 21, 0)
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build CS2Customizer release package")
+    parser.add_argument("--release-dir", help="Separate output directory for an internal candidate")
     parser.add_argument(
         "--mode",
         choices=["onefile", "onedir"],
@@ -463,6 +464,8 @@ def copy_project(project_root: Path, stage_dir: Path) -> None:
         #   ③ 开发者的一堆开关（枪声风格、快捷键、音量、主题）变成别人的"出厂默认"。
         # 从源头挡掉，比只删 datas 更稳 —— 以后谁再往 datas 里加一行也带不出去。
         "config.json",
+        "account_session.json", "account_session_*.tmp", ".env", ".env.*",
+        "*.sqlite", "*.db", "*.log", "*.bak", ".venv", "venv",
     )
     shutil.copytree(project_root, stage_dir, ignore=ignore)
 
@@ -615,6 +618,8 @@ def build_spec_text(
         # 漏了的话开发机搜索一切正常、装完只剩页级搜索，是典型的假绿。
         # 所以下面 verify_onedir_tree 的正向清单里也钉了一条。
         (stage_dir / "core" / "search_index.json", "core"),
+        (stage_dir / "requirements.lock.txt", "."),
+        (stage_dir / "docs" / "quality" / "dependencies.sbom.json", "."),
     ]
     for src, dst in data_entries:
         if src.exists():
@@ -728,7 +733,7 @@ coll = COLLECT(
     return f"""# -*- mode: python ; coding: utf-8 -*-
 import os
 
-from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_submodules, copy_metadata
 
 block_cipher = None
 
@@ -748,6 +753,11 @@ excludes = {py_list(EXCLUDES)}
 datas = [
 {chr(10).join(f"    {item}," for item in datas)}
 ]
+lock_path = {str(stage_dir / "requirements.lock.txt")!r}
+if os.path.exists(lock_path):
+    for line in open(lock_path, encoding="utf-8"):
+        if "==" in line and not line.lstrip().startswith("#"):
+            datas += copy_metadata(line.split("==", 1)[0].strip())
 
 a = Analysis(
     [{str(stage_dir / 'main_widget.py')!r}],
@@ -946,6 +956,7 @@ def main() -> int:
     script_dir = Path(__file__).resolve().parent
     project_root = script_dir.parent
     config_file = project_root / "config.py"
+    run([args.python, str(script_dir / "freeze_release_deps.py"), "--check"], cwd=project_root)
 
     version = read_version(config_file)
     app_name = f"CS2 Customizer {version}"  # 发布产物目录名:带版本号,保留历史（须与 installer.iss 的 AppDirName 逐字一致）
@@ -965,7 +976,7 @@ def main() -> int:
     stage_dir = work_root / "stage"
     pyi_work_dir = work_root / "pyinstaller_work"
     dist_dir = work_root / "dist"
-    release_dir = project_root / "release"
+    release_dir = Path(args.release_dir).resolve() if args.release_dir else project_root / "release"
     release_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"[INFO] Project root: {project_root}")
@@ -974,10 +985,8 @@ def main() -> int:
     print(f"[INFO] Work root: {work_root}")
 
     if not args.skip_tests:
-        # 打包前的最小体检：原先跑的 tests/test_update_runtime.py 已随在线更新链路删除，
-        # 留着会让每次不加 --skip-tests 的构建直接挂在 pytest 上。
-        # 换成"无内置素材"这条 —— 它量的正是本脚本和 resource_manager 的这条链。
-        run([args.python, "-m", "pytest", "-q", "tests/test_no_bundled_assets.py"], cwd=project_root)
+        # 开源版不含在线更新，构建前验证零内置素材边界。
+        run([args.python, "build_tools/run_tests.py", "no_bundled_assets"], cwd=project_root)
 
     copy_project(project_root, stage_dir)
 

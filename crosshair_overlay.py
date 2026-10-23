@@ -436,7 +436,7 @@ class CrosshairAnimator:
                 int((math.sin(phase) * 0.5 + 0.5) * 255),
                 int((math.sin(phase + 2.0) * 0.5 + 0.5) * 255),
                 int((math.sin(phase + 4.0) * 0.5 + 0.5) * 255),
-                255,
+                color.alpha(),
             )
 
         elif animation == "rotate":
@@ -475,7 +475,7 @@ class CrosshairAnimator:
 
         progress = max(0.0, elapsed / KILL_DURATION_S)
         effect = self._kill_type
-        base_color = resolve_color(state.color)
+        base_color = resolve_color(state.color, getattr(state, "alpha", 255))
 
         if effect == "pulse":
             frame.size = int(frame.size * (1.0 + math.sin(progress * math.pi)))
@@ -497,7 +497,7 @@ class CrosshairAnimator:
         elif effect == "x_flash":
             if progress < 0.4:
                 frame.style = "x_mark"
-                frame.color = QColor(255, 0, 0, 255)
+                frame.color = QColor(255, 0, 0, base_color.alpha())
             else:
                 frame.color = brighten(base_color, 1.5)
 
@@ -506,7 +506,7 @@ class CrosshairAnimator:
             radius = progress * 40
             if radius > 0:
                 frame.overlays = frame.overlays + (
-                    RingOverlay(radius, QColor(r, g, b, int(255 * (1.0 - progress))), 2),
+                    RingOverlay(radius, QColor(r, g, b, int(base_color.alpha() * (1.0 - progress))), 2),
                 )
 
         elif effect == "shatter":
@@ -529,11 +529,11 @@ class CrosshairAnimator:
 
         elif effect == "neon_wave":
             r, g, b = hsv_to_rgb(((progress * 360) % 360) / 360, 1.0, 1.0)
-            frame.color = QColor(r, g, b, 255)
+            frame.color = QColor(r, g, b, base_color.alpha())
             rings = []
             for i in range(3):
                 wave_progress = (progress + i * 0.2) % 1.0
-                alpha = int(255 * (1.0 - wave_progress))
+                alpha = int(base_color.alpha() * (1.0 - wave_progress))
                 if alpha > 0:
                     rings.append(RingOverlay(
                         wave_progress * 40,
@@ -555,7 +555,7 @@ class CrosshairAnimator:
         cos_v, sin_v = math.cos(rad), math.sin(rad)
         length = int(int(state.size) * 1.8 // 2)
         gap = max(3, frame.size // 4)
-        color = resolve_color(state.color)
+        color = resolve_color(state.color, getattr(state, "alpha", 255))
         width = max(1, frame.thickness)
 
         pairs = (

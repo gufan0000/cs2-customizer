@@ -124,9 +124,13 @@ def test_a_playlist_that_cannot_play_stops_instead_of_spinning(monkeypatch):
     class _Timer:
         def __init__(self, interval, fn):
             timers.append(fn)
+            self.cancelled = False
 
         def start(self):
             return None
+
+        def cancel(self):
+            self.cancelled = True
 
     monkeypatch.setattr(music_player.threading, "Timer", _Timer)
     player = music_player.MusicPlayer.__new__(music_player.MusicPlayer)

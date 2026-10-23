@@ -105,14 +105,25 @@ def main() -> int:
     fresh = C.Config()
     fresh.load_config()
 
-    lost_on_disk, lost_on_load, rejected = [], [], []
+    lost_on_disk, lost_on_load, rejected, normalized = [], [], [], []
+    # These are documented validators, not a blanket allowance for lost values.
+    rejected_keys = {
+        "category_volumes", "close_action", "crash_report_prompt", "grenade_sound_styles",
+        "hud_color_dynamic_map", "hud_keymap_enabled", "hud_rules", "hud_rules_profile",
+        "hud_rules_version", "hud_runtime_refresh_key", "hud_runtime_sync_mode",
+        "kill_icon_opacity", "kill_icon_style_layouts", "osd_corner", "screen_effects_play_mode",
+        "screen_effects_preset", "sfx_forwarding_options", "volume", "weapon_kill_sounds",
+        "weapon_kill_voices", "weapon_reload_sounds", "weapon_switch_sounds", "window_geometry",
+    }
     for k, want in changed.items():
         got = getattr(fresh, k, "<缺席>")
         if got == want:
             continue
         if k not in raw:
             lost_on_disk.append(k)
-        elif got == before[k]:
+        elif k == "fun_afterlife_height_ratio" and got == max(0.3, min(1.0, want)):
+            normalized.append(k)
+        elif got == before[k] and k in rejected_keys:
             # ⭐ 落回默认值 = 归一化/校验**拒绝了我造的那个非法值**，这是它在正常工作
             rejected.append(k)
         else:
@@ -127,7 +138,8 @@ def main() -> int:
     print(f"\n✅ 落回默认值 = 校验拒绝了我造的非法值（**不是缺陷**）{len(rejected)} 个：")
     print("   " + (", ".join(sorted(rejected)) or "（无）"))
     print(f"\n跳过的：{', '.join(sorted(skipped)) or '（无）'}")
-    return 0
+    print(f"已核对的范围钳位：{', '.join(normalized) or '（无）'}")
+    return int(bool(lost_identity or lost_on_disk or lost_on_load))
 
 
 if __name__ == "__main__":

@@ -101,6 +101,12 @@ def ctl(monkeypatch, qapp, tmp_path):
     return controller, fake
 
 
+def _fire_death(controller):
+    controller._handle_death()
+    controller._show_timer.stop()
+    controller._show_now()
+
+
 def test_preheat_launches_hidden_and_pauses(ctl):
     controller, fake = ctl
     assert controller.preheat() is True
@@ -119,7 +125,7 @@ def test_preheat_is_idempotent(ctl):
 
 def test_death_shows_and_resumes(ctl):
     controller, fake = ctl
-    controller._show_now()
+    _fire_death(controller)
     assert fake.visible is True
     assert "show" in fake.calls and "resume" in fake.calls
 
@@ -127,7 +133,7 @@ def test_death_shows_and_resumes(ctl):
 def test_respawn_pauses_and_hides_without_closing(ctl):
     """核心契约：复活只暂停+隐藏，绝不结束进程。"""
     controller, fake = ctl
-    controller._show_now()
+    _fire_death(controller)
     fake.calls.clear()
     controller._handle_respawn()
 
@@ -141,16 +147,16 @@ def test_respawn_pauses_and_hides_without_closing(ctl):
 def test_second_death_reuses_same_window(ctl):
     """再次死亡复用同一窗口，从上次暂停处接着播。"""
     controller, fake = ctl
-    controller._show_now()
+    _fire_death(controller)
     controller._handle_respawn()
-    controller._show_now()
+    _fire_death(controller)
     assert fake.launched == 1, "第二次死亡不能重新启动浏览器"
     assert fake.visible is True
 
 
 def test_abort_retracts(ctl):
     controller, fake = ctl
-    controller._show_now()
+    _fire_death(controller)
     fake.calls.clear()
     controller._handle_abort("换图")
     assert "hide" in fake.calls
@@ -160,7 +166,7 @@ def test_abort_retracts(ctl):
 def test_stay_timeout_retracts(ctl):
     """GSI 断流时复活边沿永远不来，必须靠超时兜底收回。"""
     controller, fake = ctl
-    controller._show_now()
+    _fire_death(controller)
     fake.calls.clear()
     controller._on_stay_timeout()
     assert "hide" in fake.calls
@@ -179,12 +185,12 @@ def test_circuit_breaker_after_repeated_failures(ctl):
     controller, fake = ctl
     fake.show_ok = False
     for _ in range(af.FAILURE_CIRCUIT_LIMIT):
-        controller._show_now()
+        _fire_death(controller)
     assert controller._session_disabled is True
 
     # 停用后不再尝试
     fake.calls.clear()
-    controller._show_now()
+    _fire_death(controller)
     assert fake.calls == []
 
 
@@ -252,7 +258,7 @@ def test_reload_platform_clears_circuit_breaker(ctl):
     controller.preheat()
     fake.show_ok = False
     for _ in range(af.FAILURE_CIRCUIT_LIMIT):
-        controller._show_now()
+        _fire_death(controller)
     assert controller._session_disabled is True
     fake.show_ok = True
     controller.reload_platform()
@@ -338,5 +344,5 @@ def test_open_login_does_not_auto_retract(ctl):
 def test_death_still_has_timeout_guard(ctl):
     """但正常死亡触发时，兜底超时必须还在——GSI 断流后要靠它收回。"""
     controller, fake = ctl
-    controller._show_now()
+    _fire_death(controller)
     assert controller._stay_timer.isActive() is True

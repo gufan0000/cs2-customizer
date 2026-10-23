@@ -4,10 +4,13 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+from contextlib import nullcontext
+from copy import deepcopy
 from typing import Dict, List
 
 from config import config
 from core.utils.logger import get_logger
+from .payload_validation import validate_payload
 
 _logger = get_logger("PresetCenter")
 
@@ -349,7 +352,8 @@ def validate_bundle(bundle: Dict[str, object]) -> ValidationResult:
 
     if bundle.get("schema") != SCHEMA_NAME:
         errors.append(f"invalid schema: {bundle.get('schema')}")
-    if int(bundle.get("schema_version", 0) or 0) not in _COMPAT_VERSIONS:
+    version = bundle.get("schema_version")
+    if type(version) is not int or version not in _COMPAT_VERSIONS:
         errors.append(f"unsupported schema_version: {bundle.get('schema_version')}")
 
     items = bundle.get("items")
@@ -370,29 +374,14 @@ def validate_bundle(bundle: Dict[str, object]) -> ValidationResult:
             continue
         if not payload:
             warnings.append(f"items[{idx}] payload is empty")
+        errors.extend(f"items[{idx}].{error}" for error in validate_payload(
+            payload, _TYPE_ALLOWED_KEYS.get(preset_type, frozenset())))
 
     return ValidationResult(ok=(len(errors) == 0), errors=errors, warnings=warnings)
 
 
-def _apply_payload(payload: Dict[str, object], *, replace: bool, changed_keys: List[str]):
-    for key, value in payload.items():
-        current = getattr(config, key, None)
-        if isinstance(current, dict):
-            if replace:
-                setattr(config, key, dict(value if isinstance(value, dict) else {}))
-            else:
-                if isinstance(value, dict):
-                    merged = dict(current)
-                    merged.update(value)
-                    setattr(config, key, merged)
-                else:
-                    setattr(config, key, value)
-        else:
-            setattr(config, key, value)
-        changed_keys.append(key)
-
-
 def apply_bundle(bundle: Dict[str, object], mode: str = "merge") -> ApplyResult:
+    bundle = deepcopy(bundle)
     validation = validate_bundle(bundle)
     if not validation.ok:
         return ApplyResult(ok=False, errors=list(validation.errors))
@@ -422,20 +411,40 @@ def apply_bundle(bundle: Dict[str, object], mode: str = "merge") -> ApplyResult:
             except Exception as exc:
                 _logger.warning("快照清理失败（还原点已建立，不影响回滚）：%s", exc)
 
-    for item in bundle.get("items", []) or []:
-        preset_type = str(item.get("type", ""))
-        payload = item.get("payload", {})
-        if preset_type not in SUPPORTED_TYPES or not isinstance(payload, dict):
-            continue
-        allowed = _TYPE_ALLOWED_KEYS.get(preset_type, frozenset())
-        filtered = {k: v for k, v in payload.items() if k in allowed}
-        _apply_payload(filtered, replace=replace, changed_keys=changed_keys)
-        applied_types.append(preset_type)
-
-    if hasattr(config, "save_config_now"):
-        config.save_config_now()
-    else:
-        config.save_config()
+    # Build the full result before publishing any value. A pending save timer
+    # shares this lock and cannot serialize a half-applied bundle.
+    with getattr(config, "_save_lock", nullcontext()):
+        missing = object()
+        before = {}
+        try:
+            prepared = {}
+            for item in bundle["items"]:
+                preset_type = item["type"]
+                for key, value in item["payload"].items():
+                    if key not in _TYPE_ALLOWED_KEYS[preset_type]:
+                        continue
+                    current = prepared.get(key, getattr(config, key, None))
+                    if not replace and isinstance(current, dict):
+                        value = {**deepcopy(current), **deepcopy(value)}
+                    prepared[key] = deepcopy(value)
+                applied_types.append(preset_type)
+            before = {k: deepcopy(getattr(config, k)) if hasattr(config, k) else missing
+                      for k in prepared}
+            for key, value in prepared.items():
+                setattr(config, key, value)
+            changed_keys = list(prepared)
+            save = getattr(config, "save_config_now", None) or config.save_config
+            if save() is False:
+                raise OSError("配置保存失败")
+        except Exception as exc:
+            for key, value in before.items():
+                if value is missing:
+                    if hasattr(config, key):
+                        delattr(config, key)
+                else:
+                    setattr(config, key, value)
+            _logger.warning("预设未应用，已保留原设置：%s", exc)
+            return ApplyResult(ok=False, errors=["预设未应用，原设置已保留"], warnings=warnings)
 
     # UP-035: 配置被整体改写了,广播出去让已打开的页面重读。
     # 不广播的后果不是"界面没刷新"这么轻——已打开的页面还显示旧值,

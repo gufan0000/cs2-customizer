@@ -1,52 +1,111 @@
-# -*- coding: utf-8 -*-
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""锁定发版依赖(2026-06-13)。
-
-为什么:requirements_qt.txt / requirements-ci.txt 用 `>=` 只锁下限——能自动拿
-安全补丁,但打包时实际装的版本取决于构建机当时的环境,**不可复现**;PySide6 /
-numpy 等出大版本可能悄悄破包或改行为。本脚本把当前环境冻成精确版本底片。
-
-用法(在构建机上、正式打包发布前跑一次):
-    python build_tools/freeze_release_deps.py
-
-产出:仓库根 requirements.lock.txt = 当前环境 `pip freeze` 精确快照(可 git 入库,
-作该次发布的依赖溯源)。日常开发 / CI 仍用 requirements*.txt 的 `>=`,
-只有发版打包以本锁定文件为准(pip install -r requirements.lock.txt)。
-"""
+"""Lock declared dependencies and record linked native versions."""
 from __future__ import annotations
 
-import subprocess
-import sys
-from datetime import datetime
+import argparse
+import importlib.metadata as metadata
+import json
+import platform
 from pathlib import Path
+
+from packaging.requirements import Requirement
+from packaging.utils import canonicalize_name
 
 ROOT = Path(__file__).resolve().parent.parent
 LOCK = ROOT / "requirements.lock.txt"
+SBOM = ROOT / "docs" / "quality" / "dependencies.sbom.json"
 
 
-def main() -> int:
-    try:
-        frozen = subprocess.check_output(
-            [sys.executable, "-m", "pip", "freeze"],
-            text=True,
-            encoding="utf-8",
-        )
-    except (subprocess.CalledProcessError, OSError) as exc:
-        print(f"pip freeze 失败: {exc}")
-        return 1
+def declarations(path, seen=None):
+    seen = set() if seen is None else seen
+    path = path.resolve()
+    if path in seen:
+        return
+    seen.add(path)
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.split("#", 1)[0].strip()
+        if line.startswith("-r "):
+            yield from declarations(path.parent / line[3:].strip(), seen)
+        elif line:
+            yield Requirement(line)
 
-    header = (
-        "# CS2 Customizer · 发版依赖锁定文件(自动生成,请勿手改)\n"
-        f"# 生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-        f"# Python:   {sys.version.split()[0]}  ({sys.executable})\n"
-        f"# 平台:     {sys.platform}\n"
-        "# 用途:发版打包以此锁定版本为准;日常/CI 仍用 requirements*.txt(>=)。\n"
-        "# 重新生成: python build_tools/freeze_release_deps.py\n"
-        "# 按锁定安装: pip install -r requirements.lock.txt\n\n"
-    )
-    LOCK.write_text(header + frozen, encoding="utf-8")
-    pkgs = [ln for ln in frozen.splitlines() if ln.strip() and not ln.startswith("#")]
-    print(f"已写出 {LOCK}（{len(pkgs)} 个包）")
+
+def dependency_closure(requirements, distribution=metadata.distribution):
+    pending = list(requirements)
+    resolved, expanded = {}, set()
+    while pending:
+        req = pending.pop()
+        if req.marker and not req.marker.evaluate():
+            continue
+        name = canonicalize_name(req.name)
+        dist = distribution(name)
+        if req.specifier and not req.specifier.contains(dist.version, prereleases=True):
+            raise ValueError(f"{name}=={dist.version} does not satisfy {req}")
+        resolved[name] = dist
+        expansion = (name, tuple(sorted(req.extras)))
+        if expansion in expanded:
+            continue
+        expanded.add(expansion)
+        for raw in dist.requires or []:
+            child = Requirement(raw)
+            if child.marker and not any(child.marker.evaluate({"extra": extra})
+                                        for extra in ("", *req.extras)):
+                continue
+            child.marker = None
+            pending.append(child)
+    return resolved
+
+
+def make_sbom(packages):
+    components = []
+    for name, dist in sorted(packages.items()):
+        component = {
+            "type": "library", "name": name, "version": dist.version,
+            "purl": f"pkg:pypi/{name}@{dist.version}",
+            "properties": [{"name": "application:scope", "value": "declared-build-environment"}],
+        }
+        license_text = dist.metadata.get("License-Expression") or dist.metadata.get("License")
+        if license_text:
+            component["licenses"] = [{"license": {"name": license_text[:1024]}}]
+        components.append(component)
+    # No display or audio device is opened.
+    import pygame
+    import soundfile
+    from PIL import features
+    from PySide6.QtCore import qVersion
+    native = {"Python": platform.python_version(), "Qt": qVersion(),
+              "SDL": ".".join(map(str, pygame.get_sdl_version())),
+              "libsndfile": soundfile.__libsndfile_version__}
+    native.update({f"Pillow:{name}": features.version(name)
+                   for name in features.get_supported() if features.version(name)})
+    components.extend({"type": "library", "name": name, "version": str(version)}
+                      for name, version in sorted(native.items()))
+    return {"bomFormat": "CycloneDX", "specVersion": "1.6", "version": 1,
+            "metadata": {"properties": [{"name": "application:inventory-boundary", "value":
+                "Build environment and linked native versions; validate final artifact separately."}]},
+            "components": components}
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--check", action="store_true")
+    args = parser.parse_args()
+    roots = [*declarations(ROOT / "requirements-ci.txt"),
+             *declarations(ROOT / "requirements-build.txt")]
+    packages = dependency_closure(roots)
+    lines = [f"{name}=={dist.version}" for name, dist in sorted(packages.items())]
+    if args.check:
+        locked = [str(req) for req in declarations(LOCK)]
+        if sorted(locked) != sorted(lines):
+            raise SystemExit("Build environment differs from requirements.lock.txt")
+        print(f"Verified {len(lines)} locked packages")
+        return 0
+    LOCK.write_text("# Isolated Windows build/test dependency closure; Python "
+                    + platform.python_version() + "\n# Generated by build_tools/freeze_release_deps.py\n"
+                    + "\n".join(lines) + "\n", encoding="utf-8")
+    SBOM.parent.mkdir(parents=True, exist_ok=True)
+    SBOM.write_text(json.dumps(make_sbom(packages), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    print(f"Wrote {len(lines)} packages to {LOCK}; native inventory: {SBOM}")
     return 0
 
 

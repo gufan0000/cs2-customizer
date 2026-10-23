@@ -34,6 +34,8 @@ import os
 import re
 import shutil
 import tempfile
+import threading
+import uuid
 import zipfile
 from dataclasses import dataclass, field
 
@@ -54,6 +56,7 @@ from core.archive_safe import (
 )
 
 logger = get_logger("KillIconPack")
+_IMPORT_COMMIT_LOCK = threading.Lock()
 
 #: 包格式版本。往里加字段不用涨版本；改字段含义才涨。
 PACK_VERSION = 1
@@ -255,6 +258,13 @@ def import_pack(zip_path, style_name=None, resource_manager=None,
         )
 
     style = _sanitize_style_name(style_name or probe.name)
+    style_dir = _style_dir(resource_manager, style)
+    if os.path.exists(style_dir) and not overwrite:
+        raise KillIconImportError(f"风格「{style}」已存在，未覆盖原素材。")
+    parent = os.path.dirname(style_dir)
+    os.makedirs(parent, exist_ok=True)
+    staged = tempfile.mkdtemp(prefix=".cs2customizer-import-", dir=parent)
+    backup_path = None
     warnings = list(probe.warnings)
     imported = []
     failed = []
@@ -263,6 +273,13 @@ def import_pack(zip_path, style_name=None, resource_manager=None,
     try:
         with zipfile.ZipFile(str(zip_path)) as archive:
             members = list(iter_safe_members(archive, KillIconImportError, "图标包"))
+            from core.resource_import_source import ImportSourceError, check_import_space
+            try:
+                required = sum(info.file_size for info, _ in members)
+                check_import_space(temp_root, required)
+                check_import_space(staged, required)
+            except ImportSourceError as exc:
+                raise KillIconImportError(str(exc)) from exc
             paths = [relative for _info, relative in members]
             stripped, _root = strip_single_root(paths)
             total = max(1, len(members))
@@ -273,7 +290,10 @@ def import_pack(zip_path, style_name=None, resource_manager=None,
                 target = os.path.join(temp_root, target_rel.replace("/", os.sep))
                 os.makedirs(os.path.dirname(target), exist_ok=True)
                 with archive.open(info) as source, open(target, "wb") as sink:
-                    shutil.copyfileobj(source, sink)
+                    while chunk := source.read(1024 * 1024):
+                        if cancel is not None and cancel():
+                            raise KillIconImportCancelled()
+                        sink.write(chunk)
                 if progress is not None:
                     try:
                         progress(index + 1, total, "解压")
@@ -287,6 +307,9 @@ def import_pack(zip_path, style_name=None, resource_manager=None,
                     result = convert_to_style(
                         source_json, style, kills, variant=variant,
                         resource_manager=resource_manager,
+                        output_paths=(os.path.join(staged, f"{kills}{variant}.png"),
+                                      os.path.join(staged, f"{kills}{variant}.json")),
+                        cancel=cancel,
                     )
                     imported.append(result)
                     warnings.extend(result.get("warnings", []))
@@ -299,16 +322,38 @@ def import_pack(zip_path, style_name=None, resource_manager=None,
                     result = convert_to_style(
                         source, style, kills, variant=variant,
                         resource_manager=resource_manager,
+                        output_paths=(os.path.join(staged, f"{kills}{variant}.png"),
+                                      os.path.join(staged, f"{kills}{variant}.json")),
+                        cancel=cancel,
                     )
                     imported.append(result)
                     warnings.extend(result.get("warnings", []))
                 except KillIconImportError as exc:
                     failed.append(f"{os.path.basename(relative)}（{exc}）")
-        style_dir = _style_dir(resource_manager, style)
-        if imported and os.path.isdir(style_dir):
-            _keep_pack_meta(style_dir, probe, temp_root)
+        if failed or not imported:
+            raise KillIconImportError("图标包未完整通过校验，原素材未更改。\n" + "\n".join(failed[:5]))
+        if cancel is not None and cancel():
+            raise KillIconImportCancelled()
+        _keep_pack_meta(staged, probe, temp_root)
+        with _IMPORT_COMMIT_LOCK:
+            if os.path.exists(style_dir):
+                if not overwrite:
+                    raise KillIconImportError(f"风格「{style}」已存在，未覆盖原素材。")
+                backup_path = os.path.join(parent, f".{style}.backup-{uuid.uuid4().hex}")
+                replace_with_retry(style_dir, backup_path)
+            try:
+                replace_with_retry(staged, style_dir)
+            except Exception:
+                if backup_path:
+                    replace_with_retry(backup_path, style_dir)
+                raise
+        for result in imported:
+            for key in ("sprite_path", "json_path"):
+                result[key] = os.path.join(style_dir, os.path.basename(result[key]))
     finally:
         shutil.rmtree(temp_root, ignore_errors=True)
+        if os.path.isdir(staged):
+            shutil.rmtree(staged, ignore_errors=True)
 
     if not imported:
         raise KillIconImportError(
@@ -329,6 +374,7 @@ def import_pack(zip_path, style_name=None, resource_manager=None,
         "failed": failed,
         "warnings": warnings,
         "loose": probe.loose,
+        "backup_path": backup_path,
     }
 
 

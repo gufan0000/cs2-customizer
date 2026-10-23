@@ -31,6 +31,7 @@ class GSIHandlerHudColor:
         self._last_data_ts = 0.0
         self._effect_timer = None
         self._effect_stop = threading.Event()
+        self._stopped = False
         # GSI处理线程(_tick)与效果线程(_effect_loop)共享 current_color/_last_write_time
         # 并写同一cfg文件，必须互斥，否则并发判断"颜色已变"会重复/乱序写
         self._write_lock = threading.Lock()
@@ -72,7 +73,7 @@ class GSIHandlerHudColor:
             self.logger.info("[HUD规则] 已应用最新规则配置")
 
     def process_data(self, data):
-        if not config.hud_rules_enabled:
+        if self._stopped or not config.hud_rules_enabled:
             return
         if config.hud_runtime_sync_mode != "safe":
             return
@@ -98,6 +99,8 @@ class GSIHandlerHudColor:
     def _maybe_write_color(self, color, now):
         """检查-写入合并为一个临界区，供 GSI 线程与效果线程共用。"""
         with self._write_lock:
+            if self._stopped:
+                return
             if (
                 color != self.current_color
                 and (now - self._last_write_time) >= self._min_write_interval
@@ -107,12 +110,15 @@ class GSIHandlerHudColor:
                 self._last_write_time = now
 
     def _ensure_effect_timer(self):
-        if self._effect_timer and self._effect_timer.is_alive():
-            return
-        self._effect_stop.clear()
-        t = threading.Thread(target=self._effect_loop, daemon=True)
-        t.start()
-        self._effect_timer = t
+        with self._write_lock:
+            if self._stopped:
+                return
+            if self._effect_timer and self._effect_timer.is_alive():
+                return
+            self._effect_stop.clear()
+            t = threading.Thread(target=self._effect_loop, daemon=True)
+            self._effect_timer = t
+            t.start()
 
     #: 多久收不到 GSI 推送就认为游戏不在跑了，效果线程退出等下次唤醒。
     _DATA_STALE_SECONDS = 3.0
@@ -150,6 +156,8 @@ class GSIHandlerHudColor:
                 continue
 
     def stop(self):
+        with self._write_lock:
+            self._stopped = True
         self._effect_stop.set()
         if self._effect_timer:
             self._effect_timer.join(timeout=1.0)

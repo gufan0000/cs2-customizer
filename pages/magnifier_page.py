@@ -1686,7 +1686,11 @@ class MagnifierPage(QWidget):
         if weapon not in self.weapon_enabled_vars:
             return False
         
-        return self.weapon_enabled_vars[weapon].isChecked()
+        # Keyboard hooks run outside Qt's GUI thread. save_settings publishes a
+        # new dict, so readers need no QWidget access or shared mutable snapshot.
+        settings = getattr(self.config, "magnifier", {})
+        enabled = settings.get("weapon_settings", {}) if isinstance(settings, dict) else {}
+        return bool(enabled.get(weapon, True)) if isinstance(enabled, dict) else False
 
     def _activation_is_allowed(self, label):
         """按下热键的这一刻，到底该不该放大。三道闸，任何一道不过就不放大。

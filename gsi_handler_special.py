@@ -83,6 +83,8 @@ class GSIHandlerSpecial:
 
     def process_data(self, data):
         """处理GSI数据"""
+        from core.gsi.timing import packet_is_stale
+        self._suppress_stale_effects = packet_is_stale(data)
         self.frame_counter += 1
         
         # ===== 完整GSI数据结构输出 =====
@@ -357,7 +359,8 @@ class GSIHandlerSpecial:
         # 播放音效。v2.2.1: allow_preempt 改为 True——手雷是单通道(ch5)，
         # 连投两颗雷（烟接闪很常见）时第一声未播完，第二声会被 preempt_disabled
         # 直接吞掉。同优先级下新雷切旧声，切断优于静音。
-        audio_manager.play_sound(sound_key, channel_type="grenade_sound", event_type="grenade", priority=45, allow_preempt=True)
+        if not getattr(self, "_suppress_stale_effects", False):
+            audio_manager.play_sound(sound_key, channel_type="grenade_sound", event_type="grenade", priority=45, allow_preempt=True)
         self.logger.info(f"[投掷音效] 播放{grenade_type}投掷音效: {sound_key}")
     
     def _process_bomb_events(self, data):
@@ -723,6 +726,8 @@ class GSIHandlerSpecial:
 
         事件的全部属性来自 core/audio/special_events 的事件表。
         """
+        if getattr(self, "_suppress_stale_effects", False):
+            return True  # Consume event bookkeeping without replay/retry.
         event = get_event(group, key)
         if event is None:
             self.logger.warning(f"[特殊音效] 未知事件: {group}/{key}")

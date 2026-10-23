@@ -255,28 +255,17 @@ def test_the_floor_rule_actually_rejects_a_too_tall_floor():
     assert not dlgs.floor_verdict(_FakeDialog(400, 300), budget)
 
 
-def test_every_dialog_debt_key_names_a_registered_dialog():
-    """在册的对话框存量债，键必须指向清单里真有的那个对话框。
-
-    ⭐ 打错一个字的后果不是红，是**那条债从此对不上账**：它既不再命中
-    （于是只提醒不红），也不会拦住同一处的新债。
-    """
+def test_dialog_button_height_has_no_debt_exemptions():
+    """按钮裁切已修复；后续不能通过重新添加豁免使审计放过回归。"""
     tree = _tree(LAYOUT_AUDIT)
-    keys: list[str] = []
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Dict):
-            continue
-        for key in node.keys:
-            if not isinstance(key, ast.Tuple) or not key.elts:
-                continue
-            first = key.elts[0]
-            if isinstance(first, ast.Constant) and isinstance(first.value, str):
-                if first.value.startswith("对话框:"):
-                    keys.append(first.value)
-    assert keys, "一条对话框存量债都没扫到 —— 分母为空，下面的断言是空的"
-    known = set(dlgs.registered_keys())
-    bad = sorted({k for k in keys if k.split("对话框:", 1)[1] not in known})
-    assert not bad, f"这些债的键不在对话框清单里（打错字或对话框已删）：{bad}"
+    declarations = [
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.AnnAssign)
+        and isinstance(node.target, ast.Name)
+        and node.target.id == "KNOWN_SQUASHED_DEBT"
+    ]
+    assert len(declarations) == 1, "按钮豁免表必须有且只有一个声明，避免空分母"
+    assert ast.literal_eval(declarations[0].value) == {}, "不允许重新添加按钮裁切豁免"
 
 
 # ==================== 四、这一批修掉的三条，行为上钉住 ====================
@@ -378,7 +367,7 @@ def test_the_platform_cards_declare_themselves_unshrinkable(_add_url, qapp):
     同一段代码、同样的 `apply_font_scale(1.25)`，量到的字高与可用区都不一样。
     ⭐ 按 §0「同一件事串行修 3 轮即停」停在这里，改钉机制本身，并把这条限制写在这儿。
     ⚠ 行为那一半没有丢：`layout_overflow_audit` 的按钮压扁判据每轮两档都在量它，
-      本批那 12 条在册的对话框按钮债就是它报出来的。
+      原有对话框按钮债由它报出，2026-10-23 修复后已移除全部豁免。
 
     机制：`QScrollArea` 开了 `setWidgetResizable(True)` 之后会把内层控件 resize
     成视口大小，而内层控件**不是顶层窗口** —— `QLayout::SetDefaultConstraint`

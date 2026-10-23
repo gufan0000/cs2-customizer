@@ -27,6 +27,7 @@ from typing import Callable, List, Optional
 from core.archive_safe import (
     ARCHIVE_KINDS,
     MAX_ENTRIES,
+    MAX_UNCOMPRESSED_BYTES,
     UNSUPPORTED_HINTS,
     ArchiveError,
     is_system_junk,
@@ -57,6 +58,23 @@ class ImportSourceError(Exception):
 
 class ImportCancelled(Exception):
     """用户中途取消。⭐ 与失败分开 —— 取消不该弹错误。"""
+
+
+DISK_RESERVE_BYTES = 64 * 1024 * 1024
+
+
+def check_import_size(size, total=0):
+    if size < 0 or size > MAX_UNCOMPRESSED_BYTES or total + size > MAX_UNCOMPRESSED_BYTES:
+        raise ImportSourceError(f"资源总大小超过 {MAX_UNCOMPRESSED_BYTES // 1048576}MB 上限。请分批导入。")
+    return total + size
+
+
+def check_import_space(path, needed):
+    parent = os.path.abspath(path)
+    while not os.path.exists(parent):
+        parent = os.path.dirname(parent)
+    if shutil.disk_usage(parent).free < needed + DISK_RESERVE_BYTES:
+        raise ImportSourceError("磁盘剩余空间不足，导入后至少需要保留 64MB。请释放空间后重试。")
 
 
 @dataclass
@@ -322,23 +340,19 @@ def _open_directory(
     should_cancel: Optional[Callable[[], bool]],
 ) -> ImportSource:
     entries: List[str] = []
+    total_bytes = 0
     for walk_root, _dirs, files in os.walk(path):
         _check_cancel(should_cancel)
         for filename in files:
+            _check_cancel(should_cancel)
             absolute = os.path.join(walk_root, filename)
+            total_bytes = check_import_size(os.path.getsize(absolute), total_bytes)
             relative = os.path.relpath(absolute, path).replace("\\", "/")
             entries.append(relative)
+            if len(entries) > MAX_ENTRIES:
+                raise ImportSourceError(f"文件夹文件数量超过上限 {MAX_ENTRIES}，可能选到了上一层目录，请选中真正装素材的那一层。")
     if not entries:
         raise ImportSourceError("这个文件夹是空的，没有可以导入的文件。")
-    # ⚠ 压缩包那条路有三条上限（3200 条 / 512MB / 压缩比），**文件夹这条一条都没有**。
-    #   于是在「选择目录」里点错一层（选了 `下载`、`图片`，甚至整个 D 盘）会把
-    #   整棵树收进来，确认面板列几万条，落盘时把几十 GB 照片复制进资源目录。
-    #   ⭐ 同一件事在两条入口上防得不一样，就是只防了一半。
-    if len(entries) > MAX_ENTRIES:
-        raise ImportSourceError(
-            f"这个文件夹里有 {len(entries)} 个文件，远超一个资源包该有的规模"
-            f"（上限 {MAX_ENTRIES}）。是不是选到上一层了？"
-            f"请选中真正装素材的那一层再试。")
     assets, companions, junk = split_entries(entries)
     if not assets:
         raise ImportSourceError(
@@ -369,8 +383,10 @@ def _open_single_file(
     ⚠ `paths` 只放这一个文件：同目录里别的东西跟这次导入无关，
     收进来就成了"我拖了一个文件，它把整个下载夹都导进去了"。
     """
-    if os.path.getsize(path) <= 0:
+    size = os.path.getsize(path)
+    if size <= 0:
         raise ImportSourceError("这个文件是空的。")
+    check_import_size(size)
     # ⛔⛔ 这道闸门原来**只有目录和压缩包两条路有**，单文件这条一次都没查过 ——
     #   于是 `.m4a`（微信/QQ 语音转存最常见的格式）、`.mp4`、`.txt` 全都收下，
     #   逼用户从 17 个类目里挑一个（全部拿不准、没有正确答案），挑完报
@@ -438,6 +454,7 @@ def _open_archive(
         with zipfile.ZipFile(path) as archive:
             _refuse_what_zipfile_cannot_read(archive)
             members = list(iter_safe_members(archive, ArchiveError, "资源包"))
+            check_import_space(temp_dir, sum(info.file_size for info, _ in members))
             if not members:
                 raise ImportSourceError("这个压缩包里没有文件。")
             # ⭐⭐ 垃圾必须在**剥壳之前**扔掉，顺序不许换：Mac 打的包里
@@ -466,6 +483,7 @@ def _open_archive(
             #   用户丢了两个音效且毫不知情。
             written = {}
             collisions = []
+            extracted_bytes = 0
             for index, (info, relative) in enumerate(members, start=1):
                 _check_cancel(should_cancel)
                 target_rel = stripped[index - 1]
@@ -477,7 +495,10 @@ def _open_archive(
                 target = os.path.join(temp_dir, target_rel.replace("/", os.sep))
                 os.makedirs(os.path.dirname(target) or temp_dir, exist_ok=True)
                 with archive.open(info) as src, open(target, "wb") as dst:
-                    shutil.copyfileobj(src, dst)
+                    while chunk := src.read(1024 * 1024):
+                        _check_cancel(should_cancel)
+                        extracted_bytes = check_import_size(len(chunk), extracted_bytes)
+                        dst.write(chunk)
                 if progress:
                     progress(index, total, f"正在解压：{target_rel}")
             if collisions:

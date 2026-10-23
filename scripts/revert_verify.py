@@ -213,6 +213,34 @@ class Revert:
 
 
 REVERTS = [
+    Revert(
+        "AUDIT-20261023", "配置顶层类型不检查",
+        "config.py",
+        "                config_data = json.load(f)\n                if not isinstance(config_data, dict):",
+        "                config_data = json.load(f)\n                if False:",
+        "tests/test_audit_input_boundaries.py",
+        "合法 JSON 的非对象根导致启动异常",
+    ),
+    Revert(
+        "AUDIT-20261023", "更新请求前不验证地址",
+        "core/update_download.py",
+        "        validate_update_url(url)  # before every request, including the first",
+        "        pass  # defect: sends a request before validating its destination",
+        "tests/test_audit_download_boundaries.py",
+        "非法更新地址在拒绝前已发送网络请求",
+    ),
+    Revert(
+        "AUDIT-20261023", "颜色动画强制不透明",
+        "crosshair_overlay.py", "                color.alpha(),", "                255,",
+        "tests/test_audit_resources_and_frames.py::test_all_crosshair_effects_respect_user_alpha",
+        "变色动画忽略用户透明度",
+    ),
+    Revert(
+        "AUDIT-20261023", "枪声时长回到十分之一秒",
+        "pages/gun_sound_page.py", "        duration = value / 100.0", "        duration = value / 10.0",
+        "tests/test_audit_resources_and_frames.py::test_gun_duration_roundtrip_preserves_hundredths",
+        "0.18 秒默认值不能由滑块往返保持",
+    ),
     # ============================================ R9-A：t_shape 第五样式
     Revert(
         "R9-A", "从 USER_STYLES 里删掉 t_shape",
@@ -611,8 +639,8 @@ REVERTS = [
     Revert(
         "QA", "stage 又开始拷 config.json",
         "build_tools/build_release.py",
-        '        "config.json",\n    )',
-        "    )",
+        '        "config.json",\n',
+        "",
         "tests/test_qa_non_ui_r12.py::test_qa001_stage_copy_excludes_the_dev_config",
         "QA-001：源头没堵住，任何人往 datas 加一行就又带出去了",
     ),
@@ -9112,14 +9140,13 @@ Revert(
         "两支审计各有一条通往对话框的路，**修好一条不等于修好一族**（RN-671 那条的翻版）",
     ),
     Revert(
-        "DLG", "在册的对话框存量债键打错一个字",
+        "DLG", "重新添加按钮裁切豁免",
         "scripts/layout_overflow_audit.py",
-        '    ("对话框:add_url", "测试"): (2, "setFixedSize(68,34) + fp_short；字号放大档差 2px"),\n',
-        '    ("对话框:add_urls", "测试"): (2, "setFixedSize(68,34) + fp_short；字号放大档差 2px"),\n',
+        'KNOWN_SQUASHED_DEBT: dict[tuple[str, str], tuple[int, str]] = {}\n',
+        'KNOWN_SQUASHED_DEBT: dict[tuple[str, str], tuple[int, str]] = {("对话框:add_url", "测试"): (2, "过期豁免")}\n',
         "tests/test_the_dialogs_are_all_audited.py::"
-        "test_every_dialog_debt_key_names_a_registered_dialog",
-        "打错一个字的后果不是红，是**那条债从此对不上账**：它既不再命中"
-        "（于是只提醒不红），也不会拦住同一处的新债",
+        "test_dialog_button_height_has_no_debt_exemptions",
+        "裁切已修复，重新添加豁免会掩盖回归；即使豁免键仍在对话框清单里也必须拦住",
     ),
     Revert(
         "DLG", "「添加在线音乐」又把地板钉回 700×700",
@@ -10198,8 +10225,8 @@ Revert(
     Revert(
         "CARRY", "导入不把作者和授权留下来",
         "core/kill_icon_pack.py",
-        "            _keep_pack_meta(style_dir, probe, temp_root)\n",
-        "            pass\n",
+        "        _keep_pack_meta(staged, probe, temp_root)\n",
+        "        pass\n",
         "tests/test_kill_icon_packs_keep_what_they_carry.py::test_the_author_and_license_survive_an_import_export_round_trip",
         "CS2 Customizer 又成了署名剥离器：别人的包经 CS2 Customizer 导出一次，作者和 license.txt 就没了",
     ),

@@ -4766,8 +4766,8 @@ class MainWindow(QMainWindow):
             # 漏掉的代价：游戏里麦一直开着（os._exit 之后没人再发抬起）。断点 `--only VOX`。
             ("松开语音开麦键", self._release_voice_output_on_close),
             ("保存音乐进度", self._save_music_progress_on_close),
-            ("恢复GSI游戏内状态", self._cleanup_gsi_handlers_on_close),
             ("停止GSI服务器", lambda: self.gsi_server.stop() if getattr(self, 'gsi_server', None) else None),
+            ("恢复GSI游戏内状态", self._cleanup_gsi_handlers_on_close),
             # UP-055: 不能走 self.audio_manager —— 那是惰性属性，本次运行若从没
             # 碰过音频，这一步会为了"清理"反而把 pygame 整套拉起来，把退出拖慢。
             # peek 只看已存在的实例（可能是 GSI 线程建的，不限于本窗口建的）。

@@ -83,6 +83,8 @@ def style_as_primary_button(button: QPushButton):
         button: 要设置的按钮
     """
     button.setObjectName("primaryButton")
+    if button.maximumHeight() < 64:
+        button.setProperty("fp_short", True)
     button.setStyleSheet("")  # 清除硬编码样式
     # UP-080: `_apply_widget_style` 一见到 objectName 非空就 return，
     # 于是**所有显式派名的按钮**都拿不到 `_style_button` 里那句手型光标——
@@ -99,6 +101,8 @@ def style_as_secondary_button(button: QPushButton):
         button: 要设置的按钮
     """
     button.setObjectName("secondaryButton")
+    if button.maximumHeight() < 64:
+        button.setProperty("fp_short", True)
     button.setStyleSheet("")  # 清除硬编码样式
     # UP-080: `_apply_widget_style` 一见到 objectName 非空就 return，
     # 于是**所有显式派名的按钮**都拿不到 `_style_button` 里那句手型光标——
@@ -123,6 +127,8 @@ def style_as_danger_button(button: QPushButton):
     显式设了 objectName 之后 `_apply_widget_style` 会提前 return，猜名逻辑不再介入。
     """
     button.setObjectName("dangerButton")
+    if button.maximumHeight() < 64:
+        button.setProperty("fp_short", True)
     button.setStyleSheet("")  # 清除硬编码样式
     # UP-080: 同 primary/secondary —— 显式派名会让 `_style_button` 整段跳过，
     # 手型光标也一并丢掉。危险按钮更不该缺这点可点击性反馈。

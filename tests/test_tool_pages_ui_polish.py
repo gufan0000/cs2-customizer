@@ -1575,7 +1575,7 @@ def test_gun_sound_page_status_card_tracks_category_and_tuning(qapp, monkeypatch
 
     page.weapon_rows["xm1014"]["style_combo"].setCurrentIndex(1)
     page.weapon_rows["xm1014"]["duck_slider"].setValue(35)
-    page.weapon_rows["xm1014"]["duration_slider"].setValue(4)
+    page.weapon_rows["xm1014"]["duration_slider"].setValue(40)
 
     assert config.xm1014_style == "styleXm"
     assert config.xm1014_duck_ratio == pytest.approx(0.35)
