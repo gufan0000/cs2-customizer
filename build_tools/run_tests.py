@@ -258,7 +258,7 @@ def main() -> int:
         if passed:
             return (tf, "ok", summary, cases, [], [])
         return (tf, "fail", summary, cases, out[-30:],
-                (r.stderr or "").strip().splitlines()[-10:])
+                (r.stderr or "").strip().splitlines()[-120:])
 
     def report(res) -> None:
         """打印一个文件的结局。只在主线程调用；锁是防手改成多线程打印时绞在一起。"""

@@ -248,8 +248,24 @@ def wizard(qapp, monkeypatch, tmp_path):
     root.mkdir(parents=True, exist_ok=True)
     page.resources_root = str(root)
     page.audio_root = str(root / "audio")
-    yield page
-    page.deleteLater()
+    try:
+        yield page
+    finally:
+        from PySide6.QtCore import QCoreApplication, QEvent
+        from shiboken6 import isValid
+
+        # Complete owned workers and deletion while QApplication is still alive;
+        # deleteLater alone leaves the widget for a later test or interpreter exit.
+        for task in page.findChildren(mod.KillIconImportTask):
+            task.cancel()
+            thread = task.__dict__.get("_thread")
+            if thread:
+                thread.join(timeout=5)
+            assert not task.running, "导入线程必须在测试页面销毁前结束"
+        page.close()
+        page.deleteLater()
+        QCoreApplication.sendPostedEvents(page, QEvent.Type.DeferredDelete)
+        assert not isValid(page), "导入页面必须在 Qt 退出前释放"
 
 
 def test_a_refused_source_does_not_leave_the_previous_plan_armed(wizard, tmp_path):

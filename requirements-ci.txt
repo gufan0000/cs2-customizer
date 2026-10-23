@@ -2,6 +2,8 @@
 # 口径:tests/ 全量回归所需的最小集 = requirements_qt.txt + 运行时实际 import 的包。
 # 来源取证:.build/_probe_imports.py 全库 import 扫描(2026-06-12)。
 -r requirements_qt.txt
+# 打包回归会调用 PyInstaller 的 PE 依赖解析接口，干净 CI 也必须安装。
+-r requirements-build.txt
 
 pytest>=8.0
 flask>=3.0
