@@ -75,6 +75,18 @@ def test_packaging_child_excludes_third_party_path_without_changing_parent(tmp_p
     assert os.environ["PATH"] == inherited
 
 
+def test_packaging_uses_the_actual_windows_directory(tmp_path, monkeypatch):
+    import os
+    import sys
+    from build_tools.build_release import pyinstaller_environment
+
+    windows = tmp_path / "custom-Windows"
+    monkeypatch.setenv("SystemRoot", str(windows))
+    assert pyinstaller_environment(sys.executable)["PATH"].split(os.pathsep)[1:] == [
+        str(windows / "System32"), str(windows),
+    ]
+
+
 def test_flash_commands_are_applied_by_display_owner(monkeypatch):
     import queue
     import threading

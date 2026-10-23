@@ -317,7 +317,7 @@ def run(cmd: List[str], cwd: Path | None = None, check: bool = True,
 def pyinstaller_environment(python: str) -> dict[str, str]:
     """Keep unrelated tools' DLLs out of the dependency resolver's PATH."""
     env = dict(os.environ)
-    windows = Path(env.get("SystemRoot", r"C:\Windows"))
+    windows = Path(os.environ.get("SystemRoot", r"C:\Windows"))
     env["PATH"] = os.pathsep.join(str(path) for path in (
         Path(python).resolve().parent, windows / "System32", windows,
     ))
