@@ -31,15 +31,25 @@ def test_every_record_past_the_limit_pushes_one_out_and_clear_resets():
 
 
 def test_the_replay_page_says_it_and_points_at_export(qapp, monkeypatch):
+    from PySide6.QtCore import QCoreApplication, QEvent
+    from shiboken6 import isValid
+
     import pages.audio_replay_page as replay
 
     timeline = AudioEventTimeline(max_events=200)
     monkeypatch.setattr(replay, "get_audio_event_timeline", lambda: timeline)
     page = replay.AudioReplayPage()
-    page._refresh_events()
-    assert not page.overwritten_label.isVisibleTo(page), "没丢过就不该说"
-    _fill(timeline, 205)
-    page._refresh_events()
-    text = page.overwritten_label.text()
-    assert page.overwritten_label.isVisibleTo(page)
-    assert "5 条" in text and "200" in text and page.export_btn.text() in text, text
+    try:
+        page._refresh_events()
+        assert not page.overwritten_label.isVisibleTo(page), "没丢过就不该说"
+        _fill(timeline, 205)
+        page._refresh_events()
+        text = page.overwritten_label.text()
+        assert page.overwritten_label.isVisibleTo(page)
+        assert "5 条" in text and "200" in text and page.export_btn.text() in text, text
+    finally:
+        # This test has no running event loop. Finish the owned widget's deletion
+        # before Python/Qt shutdown, including when a content assertion fails.
+        page.deleteLater()
+        QCoreApplication.sendPostedEvents(page, QEvent.Type.DeferredDelete)
+        assert not isValid(page), "回放窗口必须在 Qt 退出前释放"

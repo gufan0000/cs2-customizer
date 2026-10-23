@@ -69,10 +69,12 @@ jobs:
         with:
           python-version: "3.13"
           cache: pip
-          cache-dependency-path: requirements-ci.txt
+          cache-dependency-path: |
+            requirements-ci.txt
+            requirements.lock.txt
 
       - name: Install deps
-        run: pip install -r requirements-ci.txt ruff
+        run: python -m pip install -r requirements-ci.txt -c requirements.lock.txt ruff
 
       - name: Lint (ruff)
         run: ruff check .
@@ -102,10 +104,12 @@ jobs:
         with:
           python-version: "3.13"
           cache: pip
-          cache-dependency-path: requirements-ci.txt
+          cache-dependency-path: |
+            requirements-ci.txt
+            requirements.lock.txt
 
       - name: Install deps
-        run: pip install -r requirements-ci.txt
+        run: python -m pip install -r requirements-ci.txt -c requirements.lock.txt
 
       # 纯色彩数学,不依赖字体,offscreen 完全可信
       - name: 对比度审计(9 主题 × 11 判据)

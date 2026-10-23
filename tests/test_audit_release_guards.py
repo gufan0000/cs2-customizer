@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 from types import SimpleNamespace
+from pathlib import Path
+import shlex
 
 import pytest
 from packaging.requirements import Requirement
@@ -16,6 +18,22 @@ def test_dependency_lock_excludes_unrelated_packages_and_checks_constraints():
     assert set(dependency_closure([Requirement("app[feature]")], packages.__getitem__)) == {"app", "child", "optional"}
     with pytest.raises(ValueError):
         dependency_closure([Requirement("child>=3")], packages.__getitem__)
+
+
+@pytest.mark.parametrize("job_name", ["test", "ui-audit"])
+def test_ci_uses_release_constraints_and_invalidates_the_dependency_cache(job_name):
+    import yaml
+
+    root = Path(__file__).resolve().parents[1]
+    workflow = yaml.safe_load((root / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
+    steps = workflow["jobs"][job_name]["steps"]
+    install = next(step for step in steps if step.get("name") == "Install deps")
+    tokens = shlex.split(install["run"])
+    assert "-c" in tokens, "CI must test the dependencies shipped in the candidate"
+    constraint = tokens[tokens.index("-c") + 1]
+    assert constraint == "requirements.lock.txt" and (root / constraint).is_file()
+    setup = next(step for step in steps if step.get("uses", "").startswith("actions/setup-python@"))
+    assert constraint in setup["with"]["cache-dependency-path"].splitlines()
 
 
 def test_flash_commands_are_applied_by_display_owner(monkeypatch):
