@@ -105,3 +105,33 @@ def test_flash_commands_are_applied_by_display_owner(monkeypatch):
     mod.process_function(commands, 1, 1)
     assert handled == [("test", owner)]
     assert not effect.is_running
+
+
+def test_a_project_import_left_out_of_the_package_fails_the_build(tmp_path):
+    from build_tools.build_release import missing_project_imports, verify_project_imports_bundled
+
+    # Excerpt of the 2026-10-23 isolated build: mouse/mutagen silently dropped,
+    # stdlib false positives and third-party-only misses must not fail the build.
+    warn = "\n".join([
+        "missing module named 'collections.abc' - imported by core.audio.audio_manager (top-level)",
+        "missing module named multiprocessing.Queue - imported by flash_process (top-level)",
+        "missing module named mouse - imported by core.hotkeys.registry (optional), "
+        "pages.magnifier_page (delayed, conditional)",
+        "missing module named 'mutagen.flac' - imported by music_player (optional)",
+        "missing module named yt_dlp - imported by url_resolver (delayed)",
+        "missing module named account_help - imported by ui_help_panel (optional)",
+        "missing module named olefile - imported by PIL.Image (optional)",
+    ])
+    project = {"core", "pages", "flash_process", "music_player", "url_resolver", "ui_help_panel"}
+    assert missing_project_imports(warn, project) == ["mouse", "mutagen.flac"]
+    (tmp_path / "stage").mkdir()
+    with pytest.raises(RuntimeError):
+        verify_project_imports_bundled(tmp_path / "absent.txt", tmp_path / "stage")
+
+
+def test_runtime_imports_that_fail_silently_are_declared():
+    from build_tools.freeze_release_deps import declarations
+
+    root = Path(__file__).resolve().parents[1]
+    declared = {req.name.lower() for req in declarations(root / "requirements-ci.txt")}
+    assert {"mouse", "mutagen"} <= declared

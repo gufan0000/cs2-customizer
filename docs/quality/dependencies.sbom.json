@@ -270,6 +270,44 @@
     },
     {
       "type": "library",
+      "name": "mouse",
+      "version": "0.7.1",
+      "purl": "pkg:pypi/mouse@0.7.1",
+      "properties": [
+        {
+          "name": "application:scope",
+          "value": "declared-build-environment"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "mutagen",
+      "version": "1.48.1",
+      "purl": "pkg:pypi/mutagen@1.48.1",
+      "properties": [
+        {
+          "name": "application:scope",
+          "value": "declared-build-environment"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "name": "GPL-2.0-or-later"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "numpy",
       "version": "2.5.2",
       "purl": "pkg:pypi/numpy@2.5.2",

@@ -852,6 +852,47 @@ def verify_onefile_archive(exe_path: Path, require_bundled_assets: bool = False)
     print("[INFO] Archive verification passed:", ", ".join(CRITICAL_ARCHIVE_MODULES))
 
 
+# 项目代码导入、但 PyInstaller 没找到的第三方模块。代码里多是可选导入，缺了构建照样成功，
+# 只是对应功能在包里静默失效 —— 2026-10-23 隔离构建漏了 mouse，右键开镜放大整个不工作，
+# 两仓 CI 全绿，是进游戏实测才逮到的。这里只放「确知不随包分发」的。
+KNOWN_MISSING_IMPORTS = {
+    "yt_dlp": "音乐链接解析的可选后端，从未随包分发",
+    "account_help": "开源版不含账号模块",
+}
+
+
+def project_module_names(stage_dir: Path) -> set[str]:
+    return {p.stem for p in stage_dir.glob("*.py")} | {p.name for p in stage_dir.iterdir() if p.is_dir()}
+
+
+def missing_project_imports(warn_text: str, project_modules: set[str]) -> list[str]:
+    missing = set()
+    for line in warn_text.splitlines():
+        m = re.match(r"missing module named '?([\w.]+)'? - imported by (.*)", line)
+        if not m:
+            continue
+        name, importers = m.groups()
+        top = name.split(".")[0]
+        if top in sys.stdlib_module_names or top in KNOWN_MISSING_IMPORTS or top in project_modules:
+            continue
+        if any((imp := re.match(r"\s*(\w+)", part)) and imp.group(1) in project_modules
+               for part in importers.split(",")):
+            missing.add(name)
+    return sorted(missing)
+
+
+def verify_project_imports_bundled(warn_file: Path, stage_dir: Path) -> None:
+    if not warn_file.is_file():
+        raise RuntimeError(f"PyInstaller warning report missing: {warn_file}")
+    missing = missing_project_imports(warn_file.read_text(encoding="utf-8", errors="replace"),
+                                      project_module_names(stage_dir))
+    if missing:
+        raise RuntimeError(
+            "Project imports not bundled (declare them in requirements-ci.txt and re-freeze the lock): "
+            + ", ".join(missing)
+        )
+
+
 def ssl_binary_dependencies(binary: Path) -> set[str]:
     if not binary.is_file():
         return set()
@@ -1095,6 +1136,7 @@ def main() -> int:
     )
 
     run(pyinstaller_cmd, cwd=project_root, env=pyinstaller_environment(args.python))
+    verify_project_imports_bundled(pyi_work_dir / spec_path.stem / f"warn-{spec_path.stem}.txt", stage_dir)
 
     if args.mode == "onefile":
         artifact = dist_dir / f"{exe_name}.exe"

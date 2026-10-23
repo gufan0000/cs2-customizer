@@ -15,6 +15,8 @@ itsdangerous==2.2.0
 jinja2==3.1.6
 keyboard==0.13.5
 markupsafe==3.0.3
+mouse==0.7.1
+mutagen==1.48.1
 numpy==2.5.2
 packaging==26.3
 pefile==2024.8.26
