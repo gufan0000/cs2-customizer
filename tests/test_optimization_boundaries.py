@@ -21,10 +21,15 @@ def test_benchmark_needs_clean_exit_and_one_finite_result(returncode, stdout, va
     assert (read_result(proc) is not None) == valid
 
 
-def test_release_import_parser_sees_absolute_windows_entry_scripts():
+@pytest.mark.parametrize("folder", ["stage dir", "stage (x64)"])
+def test_release_import_parser_sees_absolute_windows_entry_scripts(folder):
     from build_tools.build_release import missing_project_imports
-    text = "missing module named mouse - imported by 'H:\\stage dir\\main_widget.py' (top-level)"
+    text = f"missing module named mouse - imported by 'H:\\{folder}\\main_widget.py' (top-level)"
     assert missing_project_imports(text, {"main_widget"}) == ["mouse"]
+    assert missing_project_imports(
+        "missing module named mouse - imported by main_widget (delayed, conditional)",
+        {"main_widget"},
+    ) == ["mouse"]
 
 
 def test_sandbox_does_not_delete_from_a_sibling_prefix(tmp_path, monkeypatch):

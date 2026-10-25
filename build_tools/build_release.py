@@ -877,7 +877,8 @@ def missing_project_imports(warn_text: str, project_modules: set[str]) -> list[s
             continue
         # PyInstaller also reports entry scripts as quoted absolute Windows paths.
         # Strip the location suffix before extracting a module or script basename.
-        owners = [part.split(" (")[0].strip().strip("'\"") for part in importers.split(",")]
+        owners = [re.sub(r"\s+\([^)]*\)\s*$", "", part).strip().strip("'\"")
+                  for part in re.split(r",\s*(?![^()]*\))", importers)]
         if any(owner.replace("\\", "/").rsplit("/", 1)[-1].split(".")[0] in project_modules
                for owner in owners):
             missing.add(name)
