@@ -355,9 +355,19 @@ class MainWindow(QMainWindow):
         """退出时清理音频管理器，但绝不为此把它创建出来（UP-055）。"""
         from core.audio.runtime_audio import peek_runtime_audio_manager
 
+        if not getattr(self, "_audio_tasks_stopped", True):
+            self.logger.warning("音频维护仍在退出，跳过并发清理；由进程退出释放资源")
+            return
+
         manager = peek_runtime_audio_manager()
         if manager is not None:
             manager.cleanup()
+
+    def _stop_audio_tasks_on_close(self):
+        from core.audio.audio_task_runner import stop_audio_tasks
+        self._audio_tasks_stopped = stop_audio_tasks()
+        if not self._audio_tasks_stopped:
+            self.logger.warning("音频维护停止等待超时，后续阶段已取消")
 
     def _start_source_backup(self):
         try:
@@ -3562,7 +3572,7 @@ class MainWindow(QMainWindow):
                 self.show_page("audio_task_panel")
             QMessageBox.information(
                 self,
-                "载入完成",
+                "任务已提交",
                 "已提交音频重载任务，请在“音频任务面板”查看进度与结果。"
             )
         except Exception as e:
@@ -4754,6 +4764,7 @@ class MainWindow(QMainWindow):
         watchdog.start()
 
         steps = [
+            ("停止音频维护任务", self._stop_audio_tasks_on_close),
             # UP-035: 先退订配置重载广播。总线是模块级的、活得比窗口久,
             # 不退订的话它会一直握着这个已析构窗口的方法引用——
             # 之后任何一次 apply_bundle() 都会往死对象上打,抛 RuntimeError。

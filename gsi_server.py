@@ -5,12 +5,14 @@ import socket
 import threading
 import time
 from flask import Flask, request, jsonify
+from werkzeug.exceptions import RequestEntityTooLarge
 from core.utils.logger import get_logger
 
 logger = get_logger("GSIServer")
 
 # --- Flask App ---
 flask_app = Flask(__name__)
+flask_app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024
 data_queue = Queue(maxsize=100)  # 限制队列大小防止内存泄漏
 
 # 模块级变量：Flask 启动错误信息
@@ -157,13 +159,18 @@ PACKET_RECV_KEY = "_cs2customizer_recv_monotonic"
 
 @flask_app.route('/', methods=['POST'])
 def game_state_update():
-    data = request.get_json(silent=True)
+    try:
+        data = request.get_json(silent=True)
+    except RequestEntityTooLarge:
+        _count_post(False)
+        return jsonify({"status": "error", "error": "payload too large"}), 413
+    except (RecursionError, ValueError):
+        data = None
     _count_post(isinstance(data, dict))
+    if not isinstance(data, dict):
+        return jsonify({"status": "error", "error": "JSON object required"}), 400
     if data:
-        try:
-            data[PACKET_RECV_KEY] = time.monotonic()
-        except Exception:
-            pass
+        data[PACKET_RECV_KEY] = time.monotonic()
         try:
             # 非阻塞放入，队列满时丢弃最旧数据
             data_queue.put_nowait(data)

@@ -52,8 +52,25 @@ class AudioTaskRunner(QObject):
         self._stop_flag = False
         self._host_gone_logged = False
 
-    def stop(self):
-        self._stop_flag = True
+    def stop(self, timeout: float = 2.0) -> bool:
+        """Reject new work, cancel queued refreshes and bound the shutdown wait."""
+        with self._lock:
+            self._stop_flag = True
+            cancelled = list(self._queue)
+            self._queue.clear()
+            worker = self._worker_thread
+        for task in cancelled:
+            task.started_at = task.finished_at = time.time()
+            task.message = "任务已取消：程序正在退出"
+            self._push_history(task)
+            self._safe_emit("task_finished", task.task_id, False, task.message)
+        if worker is not None and worker is not threading.current_thread():
+            worker.join(max(0.0, timeout))
+        return worker is None or not worker.is_alive()
+
+    def _check_running(self):
+        if self._stop_flag:
+            raise RuntimeError("任务已取消：程序正在退出")
 
     def _safe_emit(self, signal_name: str, *args) -> bool:
         """发一个面向宿主的通知信号；宿主已被销毁时安全失败并返回 False。
@@ -108,6 +125,16 @@ class AudioTaskRunner(QObject):
             fn=fn,
         )
         with self._lock:
+            self._check_running()
+            # Both public operations refresh the latest config/resources. Keep at
+            # most one pending operation of each kind; never merge an active scan.
+            if task_type in ("reload_audio", "import_refresh"):
+                for pending in self._queue:
+                    if pending.task_type == task_type:
+                        pending.reason = task.reason
+                        return pending.task_id
+            if len(self._queue) >= 32:
+                raise RuntimeError("音频维护队列已满，请稍后重试")
             self._queue.append(task)
         self._ensure_worker()
         self.logger.info(f"[AudioTask] queued: {task.task_id} {task.task_type} ({task.reason})")
@@ -115,6 +142,8 @@ class AudioTaskRunner(QObject):
 
     def _ensure_worker(self):
         with self._lock:
+            if self._stop_flag:
+                return
             thread = self._worker_thread
             if thread and thread.is_alive():
                 return
@@ -122,9 +151,9 @@ class AudioTaskRunner(QObject):
             self._worker_thread.start()
 
     def _worker_loop(self):
-        while not self._stop_flag:
+        while True:
             with self._lock:
-                if self._queue:
+                if self._queue and not self._stop_flag:
                     task = self._queue.popleft()
                 else:
                     # 退出决策与线程引用清理必须同锁原子完成：否则"判空后、
@@ -149,7 +178,9 @@ class AudioTaskRunner(QObject):
         self.logger.info(f"[AudioTask] started: {task.task_id} {task.task_type}")
 
         try:
+            self._check_running()
             task.fn(task)
+            self._check_running()
             task.success = True
             if not task.message:
                 task.message = "任务完成"
@@ -194,8 +225,10 @@ class AudioTaskRunner(QObject):
             manager._styles_scanned = False
         self._safe_emit("task_progress", task.task_id, 45, "扫描音频资源目录")
         manager.ensure_styles_scanned()
+        self._check_running()
         self._safe_emit("task_progress", task.task_id, 75, "加载启用的音效资源")
         manager.load_all_enabled_sounds()
+        self._check_running()
         self._safe_emit("task_progress", task.task_id, 90, "写入配置")
         if hasattr(config, "save_config_now"):
             config.save_config_now()
@@ -209,8 +242,10 @@ class AudioTaskRunner(QObject):
         if hasattr(manager, "_styles_scanned"):
             manager._styles_scanned = False
         manager.ensure_styles_scanned()
+        self._check_running()
         self._safe_emit("task_progress", task.task_id, 65, "预加载当前启用音效")
         manager.load_all_enabled_sounds()
+        self._check_running()
         self._safe_emit("task_progress", task.task_id, 90, "保存配置")
         if hasattr(config, "save_config_now"):
             config.save_config_now()
@@ -221,6 +256,13 @@ class AudioTaskRunner(QObject):
 
 _runner_lock = threading.Lock()
 _runner_instance: AudioTaskRunner | None = None
+
+
+def stop_audio_tasks(timeout: float = 2.0) -> bool:
+    """Stop only an existing runner; shutdown must not initialize audio services."""
+    with _runner_lock:
+        runner = _runner_instance
+    return runner is None or runner.stop(timeout)
 
 
 def get_audio_task_runner() -> AudioTaskRunner:

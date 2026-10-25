@@ -789,8 +789,8 @@
     {
       "type": "library",
       "name": "setuptools",
-      "version": "83.0.0",
-      "purl": "pkg:pypi/setuptools@83.0.0",
+      "version": "84.1.0",
+      "purl": "pkg:pypi/setuptools@84.1.0",
       "properties": [
         {
           "name": "application:scope",

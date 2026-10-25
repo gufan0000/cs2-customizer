@@ -130,6 +130,14 @@ class SensitiveFilter(logging.Filter):
             if redacted_message is not original_message:
                 record.msg = redacted_message
                 record.args = None
+            # logging.Formatter appends traceback/stack text *after* getMessage().
+            # Cache the sanitized traceback so every downstream handler sees it.
+            if record.exc_info and not record.exc_text:
+                record.exc_text = logging.Formatter().formatException(record.exc_info)
+            if record.exc_text:
+                record.exc_text = redact_text(record.exc_text)
+            if record.stack_info:
+                record.stack_info = redact_text(record.stack_info)
         except Exception:
             # 过滤失败时保持原样，绝不阻断日志
             pass

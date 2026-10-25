@@ -7,6 +7,10 @@ import hashlib
 import json
 import os
 import shutil
+import copy
+import threading
+from functools import wraps
+from pathlib import Path
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from typing import List
@@ -19,6 +23,26 @@ from core.io_validation import replace_with_retry as _replace_with_retry
 
 SNAPSHOT_DIR = "config_snapshots"
 INDEX_FILE = "index.json"
+_fallback_lock = threading.RLock()
+
+
+def _serialized(fn):
+    @wraps(fn)
+    def locked(*args, **kwargs):
+        with getattr(config, "_save_lock", _fallback_lock):
+            return fn(*args, **kwargs)
+    return locked
+
+
+def _owned_snapshot_path(value: str) -> bool:
+    try:
+        root = Path(_snapshot_root()).resolve()
+        path = Path(value)
+        return (root.is_relative_to(Path(get_config_dir()).resolve())
+                and not path.is_symlink() and path.resolve().parent == root
+                and path.suffix == ".json" and path.name != INDEX_FILE)
+    except (OSError, ValueError):
+        return False
 
 # QA-012: 淘汰时**优先**丢掉的 reason 前缀 —— 只有"后台自动、随时能再生"的才列进来。
 # 语义是白名单反着用：**没列出的 reason 一律当用户资产保护**，
@@ -81,7 +105,7 @@ def _load_index() -> List[dict]:
         with open(path, "r", encoding="utf-8") as handle:
             value = json.load(handle)
             if isinstance(value, list):
-                return value
+                return [item for item in value if isinstance(item, dict)]
     except Exception:
         pass
     return []
@@ -108,13 +132,13 @@ def _sha256_file(path: str) -> str:
     return digest.hexdigest()
 
 
+@_serialized
 def create_snapshot(reason: str) -> SnapshotMeta:
     cfg_path = get_config_path()
-    if not os.path.isfile(cfg_path):
-        if hasattr(config, "save_config_now"):
-            config.save_config_now()
-        else:
-            config.save_config()
+    # Always flush while holding the same lock as atomic config saves.
+    # A pre-existing file may still be half a second behind the current UI.
+    if config.save_config_now() is False:
+        raise OSError("current configuration could not be saved; snapshot aborted")
 
     if not os.path.isfile(cfg_path):
         raise FileNotFoundError(f"Config file not found: {cfg_path}")
@@ -163,10 +187,24 @@ def list_snapshots() -> List[SnapshotMeta]:
 
 
 def restore_snapshot(snapshot_id: str) -> RestoreResult:
+    result = _restore_snapshot_locked(snapshot_id)
+    if result.ok:
+        try:
+            from core.config_reload_bus import notify
+            notify("snapshot_restore")
+        except Exception:
+            pass
+    return result
+
+
+@_serialized
+def _restore_snapshot_locked(snapshot_id: str) -> RestoreResult:
     snaps = {item.snapshot_id: item for item in list_snapshots()}
     if snapshot_id not in snaps:
         return RestoreResult(snapshot_id=snapshot_id, ok=False, restored_to=get_config_path(), error="snapshot not found")
     snap = snaps[snapshot_id]
+    if not _owned_snapshot_path(snap.file_path):
+        return RestoreResult(snapshot_id, False, get_config_path(), "snapshot path outside owned directory")
     if not os.path.isfile(snap.file_path):
         return RestoreResult(snapshot_id=snapshot_id, ok=False, restored_to=get_config_path(), error="snapshot file missing")
 
@@ -177,21 +215,16 @@ def restore_snapshot(snapshot_id: str) -> RestoreResult:
     # 原样写进 config.json,而函数照样返回 ok=True、页面照样报"恢复成功"——
     # 用好配置换来一份坏配置,还告诉用户成功了。SnapshotMeta 里存了 sha256,
     # 从建库起就没被校验过,现在用起来。
-    if snap.sha256:
-        try:
-            if _sha256_file(snap.file_path) != snap.sha256:
+    try:
+        snapshot_bytes = Path(snap.file_path).read_bytes()
+        if snap.sha256:
+            if hashlib.sha256(snapshot_bytes).hexdigest() != snap.sha256:
                 return RestoreResult(
                     snapshot_id=snapshot_id, ok=False, restored_to=cfg_path,
                     error="snapshot checksum mismatch (文件已损坏或被改动)",
                 )
-        except Exception as exc:
-            return RestoreResult(
-                snapshot_id=snapshot_id, ok=False, restored_to=cfg_path,
-                error=f"snapshot unreadable: {exc}",
-            )
-    try:
-        with open(snap.file_path, "r", encoding="utf-8") as handle:
-            json.load(handle)
+        if not isinstance(json.loads(snapshot_bytes), dict):
+            raise ValueError("snapshot root must be a JSON object")
     except Exception as exc:
         return RestoreResult(
             snapshot_id=snapshot_id, ok=False, restored_to=cfg_path,
@@ -203,11 +236,22 @@ def restore_snapshot(snapshot_id: str) -> RestoreResult:
     # 而这个功能存在的全部意义恰恰是"可回退"。这里让恢复动作自身也可回退。
     # 建不成不阻断恢复(用户明确要求了),但把 backup_id 留空让调用方能如实告知。
     backup_id = ""
+    if config.save_config_now() is False:
+        return RestoreResult(snapshot_id, False, cfg_path, "current configuration could not be saved")
     if os.path.isfile(cfg_path):
         try:
             backup_id = create_snapshot(f"before_restore_{snapshot_id}").snapshot_id
         except Exception:
             backup_id = ""
+
+    # Cancel old pending saves and keep a rollback copy of disk and memory.
+    timer = getattr(config, "_save_timer", None)
+    if timer is not None:
+        timer.cancel()
+        config._save_timer = None
+    before_disk = Path(cfg_path).read_bytes() if os.path.isfile(cfg_path) else None
+    before_memory = copy.deepcopy({k: v for k, v in vars(config).items()
+                                   if not k.startswith("_") or k == "_loaded_config_data"})
 
     try:
         os.makedirs(os.path.dirname(cfg_path), exist_ok=True)
@@ -215,7 +259,7 @@ def restore_snapshot(snapshot_id: str) -> RestoreResult:
         # 那是比"恢复失败"更坏的结局——旧配置没了,新配置也不完整。
         tmp_path = f"{cfg_path}.restore.tmp"
         try:
-            shutil.copy2(snap.file_path, tmp_path)
+            Path(tmp_path).write_bytes(snapshot_bytes)
             # 这一步比写索引更不能输：失败就是"恢复失败"。同样要穿过
             # Defender 那几十毫秒的窗口，见 _replace_with_retry。
             _replace_with_retry(tmp_path, cfg_path)
@@ -231,31 +275,31 @@ def restore_snapshot(snapshot_id: str) -> RestoreResult:
             snapshot_id=snapshot_id, ok=False, restored_to=cfg_path, error=str(exc), backup_id=backup_id
         )
 
-    # 到这里 config.json 已经确实换成快照内容了 —— 从此不能再返回 ok=False。
-    # 原实现把 load_config() 也包在上面那个 try 里:它一抛异常(比如快照里某个
-    # 字段类型变了导致 int() 失败),函数就报"恢复失败",可磁盘上的配置**已经换了**。
-    # 用户看到失败提示 → 页面不刷新、后悔药 id 也不告知 → 下一步操作把旧值写回去,
-    # 那才是真正丢数据的路径。现在把重载/广播的失败降级为 warning。
-    warning = ""
+    # Reload under the same save lock. On failure restore both memory and disk;
+    # reporting success with old in-memory values would let the next save undo it.
     if hasattr(config, "load_config"):
         try:
             config.load_config()
         except Exception as exc:
-            warning = f"配置已替换，但内存重载失败（建议重启软件）: {exc}"
+            for key, value in before_memory.items():
+                setattr(config, key, value)
+            try:
+                if before_disk is not None:
+                    Path(tmp_path).write_bytes(before_disk)
+                    _replace_with_retry(tmp_path, cfg_path)
+            except Exception as rollback_exc:
+                return RestoreResult(snapshot_id, False, cfg_path,
+                                     f"reload failed: {exc}; rollback failed: {rollback_exc}", backup_id)
+            return RestoreResult(snapshot_id, False, cfg_path, f"reload failed; rolled back: {exc}", backup_id)
     # UP-035: 内存里的 config 换掉了,但已打开页面上的控件还停在旧值。
     # 不广播的话"恢复快照"在这些页面上等于失效——用户动一下就把旧值写回去。
-    try:
-        from core.config_reload_bus import notify
-
-        notify("snapshot_restore")
-    except Exception:
-        pass
     return RestoreResult(
         snapshot_id=snapshot_id, ok=True, restored_to=cfg_path,
-        error=warning, backup_id=backup_id,
+        backup_id=backup_id,
     )
 
 
+@_serialized
 def prune_snapshots(max_keep: int) -> int:
     keep = max(1, int(max_keep))
     entries = sorted(
@@ -282,7 +326,7 @@ def prune_snapshots(max_keep: int) -> int:
         if id(item) in keep_ids:
             continue
         path = str(item.get("file_path", ""))
-        if path and os.path.isfile(path):
+        if path and _owned_snapshot_path(path) and os.path.isfile(path):
             try:
                 os.remove(path)
                 removed += 1

@@ -329,6 +329,8 @@ class KillIconPlayer(QObject):
         以前拖「图标大小」滑条每过一档就新起一条线程、各自把整套风格预缩放一遍（150 档 ⇒ 几十条并发，
         每条峰值上百 MB），旧的还没法取消。现在正在装时只记下「最新要哪一份」，装完接着装它。"""
         with self._assets_lock:
+            if getattr(self, "_cleaned_up", False):
+                return
             self._load_token += 1
             token = self._load_token
             current = getattr(self, "_loading_thread", None)
@@ -555,6 +557,10 @@ class KillIconPlayer(QObject):
                 QTimer.singleShot(50, lambda: setattr(config, "kill_icon_enabled", was_enabled))
 
     def cleanup(self):
+        with self._assets_lock:
+            self._cleaned_up = True
+            self._load_token += 1
+            self._pending_load = None
         self._handle_stop()
         if self._window is not None:
             self._window.close()

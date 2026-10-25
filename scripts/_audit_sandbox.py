@@ -104,17 +104,21 @@ def reset_sandbox_game_dir(sandbox: Path | None = None) -> list[str]:
     try:
         resolved = target.resolve()
         temp_root = Path(tempfile.gettempdir()).resolve()
-        if not str(resolved).lower().startswith(str(temp_root).lower()):
+        if resolved == temp_root or not resolved.is_relative_to(temp_root):
             return []
     except OSError:
         return []
 
     cfg_dir = resolved / "game" / "csgo" / "cfg"
+    # Junctions/symlinks below the sandbox must not redirect cleanup outside it.
+    if not cfg_dir.resolve().is_relative_to(resolved):
+        return []
     removed: list[str] = []
     if not cfg_dir.is_dir():
         return removed
     for entry in cfg_dir.iterdir():
-        if entry.is_file() and entry.name in PRODUCT_WRITTEN_CFGS:
+        if (entry.name in PRODUCT_WRITTEN_CFGS and not entry.is_symlink()
+                and entry.resolve().parent == cfg_dir.resolve() and entry.is_file()):
             try:
                 entry.unlink()
                 removed.append(entry.name)

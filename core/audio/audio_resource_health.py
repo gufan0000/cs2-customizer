@@ -74,6 +74,7 @@ def _collect_incomplete_kill_styles(audio_root: str) -> List[Dict[str, object]]:
     按风格目录去重，列出引用它的武器数。
     """
     results: Dict[str, Dict[str, object]] = {}
+    complete = set()
     for config_key, is_voice in (("weapon_kill_sounds", False), ("weapon_kill_voices", True)):
         style_map = getattr(config, config_key, {}) or {}
         if not isinstance(style_map, dict):
@@ -82,6 +83,8 @@ def _collect_incomplete_kill_styles(audio_root: str) -> List[Dict[str, object]]:
             if style in ("0", "", None):
                 continue
             style_dir = _resolve_kill_style_dir(audio_root, str(weapon), str(style), voice=is_voice)
+            if style_dir in complete:
+                continue
             if not os.path.isdir(style_dir):
                 continue  # 目录缺失由 invalid_config_refs 负责报告
             entry = results.get(style_dir)
@@ -91,6 +94,7 @@ def _collect_incomplete_kill_styles(audio_root: str) -> List[Dict[str, object]]:
                     if not find_audio_by_stem(style_dir, str(level), extensions=DEFAULT_AUDIO_EXTENSIONS)
                 ]
                 if not missing:
+                    complete.add(style_dir)
                     continue  # 1-5 全齐，无需报告
                 entry = {
                     "style_dir": style_dir,

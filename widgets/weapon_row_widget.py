@@ -39,7 +39,7 @@ class WeaponRowWidget(QWidget):
         layout.setSpacing(10)
         
         # 武器名称
-        name_label = QLabel(self.weapon_name)
+        name_label = QLabel(self.weapon_name, self)
         name_label.setFont(QFont("Microsoft YaHei", 14))
         name_label.setMinimumWidth(124)
         name_label.setMaximumWidth(140)
@@ -47,7 +47,7 @@ class WeaponRowWidget(QWidget):
         layout.addWidget(name_label)
         
         # 风格下拉框
-        self.style_combo = QComboBox()
+        self.style_combo = QComboBox(self)
         self.style_combo.addItems(style_options)
         self.style_combo.setCurrentText(current_style)
         self.style_combo.setMinimumWidth(220)
@@ -66,7 +66,7 @@ class WeaponRowWidget(QWidget):
         # 测试按钮。v2.2.1: 提供档位时用带下拉的分裂按钮（默认播1连杀，
         # 下拉可选 2-5 连杀试听——旧版永远只能试听第 1 连杀）
         if self._test_levels:
-            test_btn = QToolButton()
+            test_btn = QToolButton(self)
             test_btn.setObjectName("secondaryButton")
             test_btn.setText("测试")
             test_btn.setFixedWidth(84)
@@ -80,7 +80,7 @@ class WeaponRowWidget(QWidget):
             test_btn.setMenu(menu)
             layout.addWidget(test_btn)
         else:
-            test_btn = QPushButton("测试")
+            test_btn = QPushButton("测试", self)
             test_btn.setObjectName("secondaryButton")
             test_btn.setFixedWidth(72)
             test_btn.setMinimumHeight(34)

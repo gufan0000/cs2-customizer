@@ -21,9 +21,10 @@ from __future__ import annotations
 import argparse
 import json
 import statistics
-import subprocess
 import sys
 from pathlib import Path
+
+from _benchmark_runtime import run_child
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -31,14 +32,10 @@ _CHILD = r"""
 import json, os, sys, time, tempfile
 from pathlib import Path
 
-os.environ.setdefault("CS2C_SAFE_MODE_ACTIVE", "1")
-_tmp = Path(tempfile.gettempdir()) / "cs2customizer_health_table"
-(_tmp / "config").mkdir(parents=True, exist_ok=True)
-(_tmp / "logs").mkdir(parents=True, exist_ok=True)
-os.environ.setdefault("CS2C_CONFIG_DIR", str(_tmp / "config"))
-os.environ.setdefault("CS2C_LOG_DIR", str(_tmp / "logs"))
 sys.path.insert(0, r"__ROOT__")
 sys.path.insert(0, os.path.join(r"__ROOT__", "scripts"))
+from _benchmark_runtime import prepare_environment
+prepare_environment()
 
 import psutil
 proc = psutil.Process()
@@ -85,13 +82,7 @@ print("RESULT " + json.dumps(result))
 
 def run_once(idle: float) -> dict | None:
     code = _CHILD.replace("__ROOT__", str(ROOT).replace("\\", "\\\\")).replace("__IDLE__", repr(float(idle)))
-    proc = subprocess.run([sys.executable, "-c", code], cwd=str(ROOT), capture_output=True,
-                          text=True, errors="replace", timeout=600)
-    for line in proc.stdout.splitlines():
-        if line.startswith("RESULT "):
-            return json.loads(line[len("RESULT "):])
-    sys.stderr.write(proc.stdout[-2000:] + "\n" + proc.stderr[-2000:] + "\n")
-    return None
+    return run_child(code, ROOT, 600)
 
 
 def _dir_size(p: Path) -> int:
@@ -139,8 +130,8 @@ def main() -> int:
     except Exception:
         pass
     samples = [r for r in (run_once(args.idle) for _ in range(args.runs)) if r]
-    if not samples:
-        print("!! 启动全部失败，无数据")
+    if args.runs < 1 or len(samples) != args.runs:
+        print(f"!! 样本不完整：{len(samples)}/{args.runs}，不生成性能结论")
         return 1
     keys = list(samples[0].keys())
     median = {k: statistics.median(s[k] for s in samples) for k in keys}

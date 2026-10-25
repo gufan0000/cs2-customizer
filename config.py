@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 from core.utils.logger import get_logger
 import atexit
+import copy
 import json
+import math
 import os
 import shutil
 import sys
@@ -237,6 +239,7 @@ class Config:
         #: 失败时**不再排定时器** —— 排了也等不到，见常量处的注释。
         self._exiting = False
         self._load_error = None  # 配置加载错误信息
+        self._loaded_config_data = {}
         self._atexit_registered = False  # A3: atexit 注册保护（避免重复注册）
 
         # 基础功能开关
@@ -1076,7 +1079,34 @@ class Config:
         """
         for key in keys:
             if key in data:
-                setattr(self, key, data[key])
+                old = getattr(self, key, None)
+                value = self._coerce_scalar(data[key], old)
+                if isinstance(old, (list, dict)) and not isinstance(value, type(old)):
+                    value = old
+                setattr(self, key, value)
+
+    @staticmethod
+    def _coerce_scalar(value, fallback):
+        """Validate persisted scalar types without treating 'false' as True."""
+        if isinstance(fallback, bool):
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, str) and value.lower() in ("true", "false"):
+                return value.lower() == "true"
+            if type(value) in (int, float) and value in (0, 1):
+                return bool(value)
+            return fallback
+        if type(fallback) in (int, float):
+            try:
+                number = float(value)
+                if isinstance(value, bool) or not math.isfinite(number):
+                    return fallback
+                return type(fallback)(number)
+            except (ValueError, TypeError, OverflowError):
+                return fallback
+        if isinstance(fallback, str) and not isinstance(value, str):
+            return fallback
+        return value
 
     def _load_kill_icon_prefs(self, data):
         """批 118 的四项：都要校验（手改坏的 config.json 不许把页面带崩）。"""
@@ -1096,6 +1126,7 @@ class Config:
         """从新位置加载配置"""
         config_path = get_config_path()
         config_data = None
+        self._loaded_config_data = {}
         self._write_blocked_config_path = None
         try:
             with open(config_path, "r", encoding="utf-8") as f:
@@ -1103,6 +1134,11 @@ class Config:
                 if not isinstance(config_data, dict):
                     config_data = None
                     raise ValueError("配置顶层必须是 JSON 对象")
+                self._loaded_config_data = copy.deepcopy(config_data)
+                # Validate scalars before the individual legacy loaders/coercions.
+                for key, value in list(config_data.items()):
+                    if not key.startswith("_") and hasattr(self, key):
+                        config_data[key] = self._coerce_scalar(value, getattr(self, key))
 
                 # 基础设置
                 self._load_plain(config_data,
@@ -1310,7 +1346,7 @@ class Config:
                 _wg = config_data.get("window_geometry", self.window_geometry)
                 if (
                     isinstance(_wg, (list, tuple)) and len(_wg) == 4
-                    and all(isinstance(v, (int, float)) for v in _wg)
+                    and all(type(v) in (int, float) and -2**31 <= v < 2**31 for v in _wg)
                 ):
                     self.window_geometry = [int(v) for v in _wg]
                 else:
@@ -2042,6 +2078,10 @@ class Config:
                             for attr, default in _sound_style_defaults().items()
                         }
                     )
+                    # A downgrade must retain fields introduced by newer versions.
+                    # Known dictionaries replace whole values so deliberate deletions
+                    # in playlists/rules do not silently reappear.
+                    payload = {**self._loaded_config_data, **payload}
                     json.dump(payload, f, indent=4, ensure_ascii=False)
                     f.flush()
                     os.fsync(f.fileno())  # 落盘后再替换:防断电留下残缺文件

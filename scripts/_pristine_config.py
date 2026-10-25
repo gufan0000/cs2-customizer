@@ -67,6 +67,11 @@ def use_pristine_config_dir(name: str, *, force: bool = False) -> Path:
     if os.environ.get("CS2C_CONFIG_DIR") and not force:
         return tmp
 
+    temp_root = Path(tempfile.gettempdir()).resolve()
+    if (not name or Path(name).name != name or name in (".", "..")
+            or tmp.resolve().parent != temp_root or tmp.is_symlink()):
+        raise ValueError("pristine profile must be a direct child of the temporary directory")
+
     # 每次重建：复用目录等于让状态跨轮次累积，那正是 `cs2customizer_test_config`
     # 当年造出 10 处假红的原因（见 renovation_baseline.structure_of 的注释）。
     shutil.rmtree(tmp, ignore_errors=True)

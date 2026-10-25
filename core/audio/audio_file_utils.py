@@ -52,12 +52,16 @@ def list_audio_files(
         return []
 
     files: List[str] = []
-    for name in os.listdir(directory):
-        full_path = os.path.join(directory, name)
-        if not os.path.isfile(full_path):
-            continue
-        if is_audio_filename(name, extensions):
-            files.append(name)
+    suffixes = normalize_extensions(extensions)
+    with os.scandir(directory) as entries:
+        for entry in entries:
+            if not entry.name.lower().endswith(suffixes):
+                continue
+            try:
+                if entry.is_file():
+                    files.append(entry.name)
+            except OSError:
+                continue  # Match isfile() when an entry vanishes during enumeration.
 
     if sort:
         files.sort(key=str.lower)
@@ -79,10 +83,16 @@ def has_audio_files(
 ) -> bool:
     if not directory or not os.path.isdir(directory):
         return False
-    for name in os.listdir(directory):
-        full_path = os.path.join(directory, name)
-        if os.path.isfile(full_path) and is_audio_filename(name, extensions):
-            return True
+    suffixes = normalize_extensions(extensions)
+    with os.scandir(directory) as entries:
+        for entry in entries:
+            if not entry.name.lower().endswith(suffixes):
+                continue
+            try:
+                if entry.is_file():
+                    return True
+            except OSError:
+                continue
     return False
 
 

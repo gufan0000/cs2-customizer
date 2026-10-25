@@ -19,6 +19,15 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 # 「当前使用的 CS2 目录：…」对不上。⭐ **换隔离手段之前，先问这个路径会不会被人看见。**
 _cs2customizer_worker = os.environ.get("CS2C_TEST_WORKER", "")
 
+# Runtime volume recovery and guardian state also use these system locations.
+# Isolate before any product import, just as for config/log files below.
+_cs2customizer_test_state = tempfile.mkdtemp(prefix="cs2customizer_test_state" + _cs2customizer_worker + "_")
+for _env_name, _folder in (("LOCALAPPDATA", "local"), ("APPDATA", "roaming")):
+    _state_path = os.path.join(_cs2customizer_test_state, _folder)
+    os.makedirs(_state_path, exist_ok=True)
+    os.environ[_env_name] = _state_path
+os.environ["CS2C_NO_EXIT_GUARDIAN"] = "1"
+
 # 测试隔离：把配置目录重定向到临时目录，避免测试中对 config 的夹具改动
 # （如 weapon_switch_sounds=styleSwitch）经防抖/atexit/显式 save 写进用户真实配置。
 # 必须在任何测试 import config 之前设置（conftest 在收集阶段最先执行）。

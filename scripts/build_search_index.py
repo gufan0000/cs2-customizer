@@ -548,6 +548,8 @@ def teardown(handles):
     try:
         win.close()
         win.deleteLater()
+        from PySide6.QtCore import QCoreApplication, QEvent
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
         app.processEvents()
     except Exception:
         pass

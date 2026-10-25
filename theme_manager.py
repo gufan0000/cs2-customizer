@@ -6,6 +6,7 @@
 """
 
 import os
+import weakref
 from dataclasses import dataclass
 from typing import Dict
 from core.utils.logger import get_logger
@@ -2758,15 +2759,36 @@ class ThemeManager:
     
     def register_theme_changed_callback(self, callback):
         """注册主题变化回调"""
-        if callback not in self._theme_changed_callbacks:
-            self._theme_changed_callbacks.append(callback)
+        if not any(self._resolve_theme_callback(entry) == callback
+                   for entry in self._theme_changed_callbacks):
+            owner = getattr(callback, "__self__", None)
+            if owner is not None:
+                try:
+                    entry = weakref.WeakMethod(callback, self._discard_theme_callback)
+                except TypeError:
+                    entry = callback
+            else:
+                entry = callback
+            self._theme_changed_callbacks.append(entry)
+            # Parent-driven C++ destruction does not call Python deleteLater overrides.
+            if owner is not None and hasattr(owner, "destroyed"):
+                owner.destroyed.connect(lambda *_args, ref=entry: self._discard_theme_callback(ref))
             # 2.1.4 日志降噪：每个组件注册都打 info 会在启动期刷 100+ 条，降为 debug
             self.logger.debug("已注册主题变化回调")
 
     def unregister_theme_changed_callback(self, callback):
         """注销主题变化回调，防止内存泄漏"""
+        for entry in tuple(self._theme_changed_callbacks):
+            if self._resolve_theme_callback(entry) == callback:
+                self._discard_theme_callback(entry)
+
+    @staticmethod
+    def _resolve_theme_callback(entry):
+        return entry() if isinstance(entry, weakref.WeakMethod) else entry
+
+    def _discard_theme_callback(self, entry):
         try:
-            self._theme_changed_callbacks.remove(callback)
+            self._theme_changed_callbacks.remove(entry)
         except ValueError:
             pass
     
@@ -2778,9 +2800,11 @@ class ThemeManager:
             self.logger.info(f"已切换主题: {old_theme} -> {theme_name}")
             
             # 触发所有回调
-            for callback in self._theme_changed_callbacks:
+            for entry in tuple(self._theme_changed_callbacks):
                 try:
-                    callback()
+                    callback = self._resolve_theme_callback(entry)
+                    if callback is not None and entry in self._theme_changed_callbacks:
+                        callback()
                 except Exception as e:
                     self.logger.error(f"主题变化回调执行失败: {e}")
         else:

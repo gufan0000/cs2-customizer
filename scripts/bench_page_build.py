@@ -137,11 +137,15 @@ def _build_once(module_path: str, class_name: str, page_id: str = ""):
     page = cls(*_CTOR_ARGS.get(page_id, tuple)())
     cost = (time.perf_counter() - t0) * 1000
     # 立刻销毁,避免累计占用影响后续测量
+    from PySide6.QtCore import QCoreApplication, QEvent
     try:
+        cleanup = getattr(page, "cleanup", None)
+        if callable(cleanup):
+            cleanup()
+        page.close()
+    finally:
         page.deleteLater()
-        page.setParent(None)
-    except Exception:
-        pass
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
     return cost
 
 
@@ -217,6 +221,11 @@ def render(results: dict) -> str:
 
 def compare(old: dict, new: dict) -> str:
     lines = ["== 与基准比对 =="]
+    if set(old) != set(new) or any(
+        "中位ms" not in value or "error" in value or value.get("构造期模态框")
+        for group in (old, new) for value in group.values()
+    ):
+        return "基准不可比：页面集合不一致或存在失败/模态框，不生成合计改善结论"
     o_total = sum(v["中位ms"] for v in old.values() if "中位ms" in v)
     n_total = sum(v["中位ms"] for v in new.values() if "中位ms" in v)
     d_total = n_total - o_total
@@ -265,7 +274,7 @@ def main() -> int:
                   f"在 scripts/_audit_neutralize.py 里给出条件后再来。")
             return 2
         specs = [s for s in PAGE_SPECS if s[0] in wanted]
-        if not specs:
+        if wanted - {s[0] for s in specs}:
             print(f"没有匹配的页面。可选：{', '.join(s[0] for s in PAGE_SPECS)}")
             return 1
 
@@ -286,7 +295,10 @@ def main() -> int:
         except Exception as exc:
             print(f"读取基准失败: {exc}")
             return 1
-        print(compare(old, results))
+        comparison = compare(old, results)
+        print(comparison)
+        if comparison.startswith("基准不可比"):
+            return 1
         print()
 
     if args.save:
@@ -297,7 +309,9 @@ def main() -> int:
 
     print(json.dumps(results, ensure_ascii=False, indent=2) if args.json
           else render(results))
-    return 0
+    return int(any("error" in value or value.get("构造期模态框")
+                   or value.get("样本数") != max(1, args.repeat)
+                   for value in results.values()) or len(results) != len(specs))
 
 
 if __name__ == "__main__":

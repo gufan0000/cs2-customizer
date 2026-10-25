@@ -875,8 +875,11 @@ def missing_project_imports(warn_text: str, project_modules: set[str]) -> list[s
         top = name.split(".")[0]
         if top in sys.stdlib_module_names or top in KNOWN_MISSING_IMPORTS or top in project_modules:
             continue
-        if any((imp := re.match(r"\s*(\w+)", part)) and imp.group(1) in project_modules
-               for part in importers.split(",")):
+        # PyInstaller also reports entry scripts as quoted absolute Windows paths.
+        # Strip the location suffix before extracting a module or script basename.
+        owners = [part.split(" (")[0].strip().strip("'\"") for part in importers.split(",")]
+        if any(owner.replace("\\", "/").rsplit("/", 1)[-1].split(".")[0] in project_modules
+               for owner in owners):
             missing.add(name)
     return sorted(missing)
 

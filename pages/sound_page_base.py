@@ -740,16 +740,16 @@ class SoundPageBase:
         tab_layout = QVBoxLayout(tab)
         tab_layout.setContentsMargins(0, 0, 0, 0)
 
-        scroll = QScrollArea()
+        scroll = QScrollArea(tab)
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
 
-        scroll_widget = QWidget()
+        scroll_widget = QWidget(scroll)
         scroll_outer_layout = QVBoxLayout(scroll_widget)
         scroll_outer_layout.setContentsMargins(6, 6, 6, 6)
         scroll_outer_layout.setSpacing(0)
 
-        list_frame = QFrame()
+        list_frame = QFrame(scroll_widget)
         list_frame.setObjectName("card")
         list_frame_layout = QVBoxLayout(list_frame)
         list_frame_layout.setContentsMargins(10, 10, 10, 10)
@@ -760,6 +760,7 @@ class SoundPageBase:
         responsive_grid = ResponsiveGrid(
             breakpoints=[(1500, 3), (1000, 2), (0, 1)],
             spacing=6,
+            parent=list_frame,
         )
         list_frame_layout.addWidget(responsive_grid)
 
@@ -774,6 +775,7 @@ class SoundPageBase:
                 weapon,
                 all_options,
                 display_style,
+                parent=responsive_grid,
                 **kwargs,
             )
             weapon_row.styleChanged.connect(
