@@ -162,3 +162,7 @@ def test_page_benchmark_destroys_cpp_widgets_and_rejects_missing_pages(qapp, mon
     assert bench._build_once("synthetic_page", "Page") >= 0
     assert not shiboken6.isValid(created[0])
     assert "不可比" in bench.compare({"a": {"中位ms": 5}}, {})
+    import build_search_index
+    indexed_window = QWidget()
+    build_search_index.teardown((indexed_window, qapp))
+    assert not shiboken6.isValid(indexed_window)

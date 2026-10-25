@@ -4764,7 +4764,6 @@ class MainWindow(QMainWindow):
         watchdog.start()
 
         steps = [
-            ("停止音频维护任务", self._stop_audio_tasks_on_close),
             # UP-035: 先退订配置重载广播。总线是模块级的、活得比窗口久,
             # 不退订的话它会一直握着这个已析构窗口的方法引用——
             # 之后任何一次 apply_bundle() 都会往死对象上打,抛 RuntimeError。
@@ -4782,6 +4781,7 @@ class MainWindow(QMainWindow):
             # UP-055: 不能走 self.audio_manager —— 那是惰性属性，本次运行若从没
             # 碰过音频，这一步会为了"清理"反而把 pygame 整套拉起来，把退出拖慢。
             # peek 只看已存在的实例（可能是 GSI 线程建的，不限于本窗口建的）。
+            ("停止音频维护任务", self._stop_audio_tasks_on_close),
             ("清理音频管理器", self._cleanup_audio_manager),
             ("清理击杀图标播放器", lambda: self.kill_icon_player.cleanup() if hasattr(self, 'kill_icon_player') else None),
             # 判 overlay_win 而非 is_visible：SW_HIDE 复用路径下 is_visible=False
