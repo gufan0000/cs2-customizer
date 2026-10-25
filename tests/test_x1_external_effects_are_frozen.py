@@ -73,6 +73,19 @@ def recorded(expected) -> dict:
         "子进程没交出那一行汇总 —— 录不出来就什么都别断言。\n"
         f"rc={proc.returncode}\nstdout 尾部：{(proc.stdout or '')[-600:]}\n"
         f"stderr 尾部：{(proc.stderr or '')[-600:]}")
+    setup_line = next((ln for ln in (proc.stdout or "").splitlines()
+                       if ln.startswith("font_setup=")), None)
+    assert setup_line is not None, "一次性字体初始化的写入也必须有记录"
+    setup_paths = json.loads(setup_line.split("=", 1)[1])
+    # Do not allow arbitrary setup writes to disappear outside the window budget.
+    import qtawesome
+    bundled = {p.name for p in (Path(qtawesome.__file__).parent / "fonts").rglob("*") if p.is_file()}
+    assert len(bundled) >= 1
+    font_root = Path(os.environ["LOCALAPPDATA"]) / "Microsoft/Windows/Fonts"
+    assert len(setup_paths) <= len(bundled)
+    for path in setup_paths:
+        assert Path(path).parent == font_root
+        assert Path(path).name in bundled
     # timers=11 kinds / repeating=3 | threads started=1 alive=0 | procs=0 | writes=0
     nums = [int(x) for x in __import__("re").findall(r"=(\d+)", line)]
     assert len(nums) == 6, f"汇总行格式变了：{line!r}"
@@ -181,7 +194,7 @@ def test_the_window_still_leaves_no_thread_behind(expected, recorded):
 
 
 def test_building_the_window_still_touches_nothing_outside(expected, recorded):
-    """**建一个主窗**不该起进程、不该写盘。冻下来的是 0 / 0。
+    """Qt 和共享图标字体准备后，**建一个主窗**不该起进程、不该写盘，仍是 0 / 0。
 
     ⚠ 这一条钉的是「构造期」，不是「用起来之后」—— 用户点了按钮当然会写盘。
     ⭐ 而构造期碰外面，是那种「一启动就发生、谁都没点过」的事。

@@ -107,7 +107,10 @@ def test_the_guardian_takes_over_when_the_app_is_killed(tmp_path):
             time.sleep(1.5)          # 让守护读完启动数据（真软件里父进程活得远比这久）
             os._exit(0)
     """), encoding="utf-8")
-    env = {k: v for k, v in os.environ.items() if k != "PYTEST_CURRENT_TEST"}
+    # This one child deliberately exercises the guardian, using fake restoration
+    # and its own runtime directory; other tests keep the default opt-out.
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("PYTEST_CURRENT_TEST", "CS2C_NO_EXIT_GUARDIAN")}
     env["CS2C_LOG_DIR"] = str(tmp_path / "logs")
     env["LOCALAPPDATA"] = str(tmp_path / "appdata")   # 守护会写 runtime/exit_guardian.log，别落进用户真目录
     subprocess.run([sys.executable, str(child)], env=env, timeout=60,

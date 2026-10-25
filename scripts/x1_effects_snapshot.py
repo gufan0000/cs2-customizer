@@ -66,6 +66,28 @@ def record() -> dict:
 
     neutral.apply(config)
 
+    # Measure window construction after process-wide Qt/font initialization.
+    # A fresh LOCALAPPDATA makes QtAwesome install its bundled font cache;
+    # older recordings silently inherited an already warm system directory.
+    # Record that cold setup separately so it remains visible, while keeping
+    # the window's zero-write budget unchanged.
+    import builtins
+    import qtawesome as qta
+
+    font_setup_writes = []
+    setup_open = builtins.open
+
+    def font_setup_open(file, mode="r", *a, **kw):
+        if any(m in str(mode) for m in ("w", "a", "x", "+")):
+            font_setup_writes.append(str(file))
+        return setup_open(file, mode, *a, **kw)
+
+    builtins.open = font_setup_open
+    try:
+        qta.icon("fa5s.circle", color="#000000")
+    finally:
+        builtins.open = setup_open
+
     # ---- 拦住四条出口 ----
     seen: dict[str, list] = {"定时器": [], "线程": [], "进程": [], "写盘": []}
 
@@ -125,8 +147,6 @@ def record() -> dict:
             return real_startfile(path, *a, **kw)
         os.startfile = startfile
 
-    import builtins
-
     real_open = builtins.open
 
     def guarded_open(file, mode="r", *a, **kw):
@@ -176,6 +196,7 @@ def record() -> dict:
         "还活着的线程": sorted(alive),
         "进程调用": sorted({p["命令"] for p in seen["进程"]}),
         "写盘次数": len(seen["写盘"]),
+        "字体初始化写盘": font_setup_writes,
     }
 
 
@@ -184,6 +205,7 @@ if __name__ == "__main__":
     ap.add_argument("--write", action="store_true")
     args = ap.parse_args()
     data = record()
+    print("font_setup=" + json.dumps(data["字体初始化写盘"], ensure_ascii=True))
     print("timers=%d kinds / repeating=%d | threads started=%d alive=%d | procs=%d | writes=%d"
           % (len(data["定时器种类"]), data["常驻定时器个数"], data["起线程次数"],
              len(data["还活着的线程"]), len(data["进程调用"]), data["写盘次数"]))

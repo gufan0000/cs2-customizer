@@ -40,6 +40,7 @@ def test_sandbox_does_not_delete_from_a_sibling_prefix(tmp_path, monkeypatch):
     cfg.mkdir(parents=True)
     canary = cfg / "autoexec.cfg"
     canary.write_text("keep")
+    assert len(list(cfg.iterdir())) == 1
     monkeypatch.setattr(mod.tempfile, "gettempdir", lambda: str(temp))
     assert mod.reset_sandbox_game_dir(sibling) == []
     assert canary.read_text() == "keep"

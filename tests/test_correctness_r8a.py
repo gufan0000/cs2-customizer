@@ -122,8 +122,8 @@ def test_restore_rejects_corrupted_snapshot(tmp_path, monkeypatch):
     assert json.loads(cfg_file.read_text(encoding="utf-8"))["v"] == "current"
 
 
-def test_restore_stays_ok_when_reload_fails(tmp_path, monkeypatch):
-    """文件已经换好了就不能报"恢复失败"——那会让用户以为可以继续用旧值。"""
+def test_restore_rolls_back_when_reload_fails(tmp_path, monkeypatch):
+    """重载失败后必须撤销磁盘替换，不能留下磁盘/内存不同步的半次恢复。"""
     cfg_file = _snapshot_env(tmp_path, monkeypatch)
     cfg_file.write_text(json.dumps({"v": "old"}), encoding="utf-8")
     snap = snap_mod.create_snapshot("s")
@@ -139,9 +139,9 @@ def test_restore_stays_ok_when_reload_fails(tmp_path, monkeypatch):
     monkeypatch.setattr(snap_mod, "config", _CfgBoom())
 
     result = snap_mod.restore_snapshot(snap.snapshot_id)
-    assert result.ok, "磁盘上已经换成快照了，却报恢复失败"
-    assert result.error, "重载失败必须如实告知（降级为 warning，不是静默）"
-    assert json.loads(cfg_file.read_text(encoding="utf-8"))["v"] == "old"
+    assert not result.ok
+    assert "rolled back" in result.error
+    assert json.loads(cfg_file.read_text(encoding="utf-8"))["v"] == "current"
 
 
 def test_restore_without_existing_config_reports_no_backup(tmp_path, monkeypatch):

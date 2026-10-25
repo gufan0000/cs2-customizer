@@ -487,7 +487,7 @@ def test_build_requirements_pin_supported_pyinstaller_range():
 
     requirements = (project_root / "requirements-build.txt").read_text(encoding="utf-8").splitlines()
     assert "PyInstaller>=6.21,<7" in requirements
-    assert "setuptools>=83.0.0" in requirements
+    assert "setuptools>=84.1.0" in requirements
 
 
 def test_packaging_guide_uses_pinned_build_requirements():
