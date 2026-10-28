@@ -21,7 +21,8 @@
     "gsi_handler_sounds": [
       "DEATH_SOUND_HOLD_DURATION",
       "DEATH_SOUND_PEAK_MS",
-      "GSIHandlerSounds"
+      "GSIHandlerSounds",
+      "audio_manager"
     ],
     "gsi_handler_special": [
       "GSIHandlerSpecial"
@@ -43,7 +44,7 @@
       "get_receive_stats"
     ]
   },
-  "contract_total": 22,
+  "contract_total": 23,
   "external_use": {
     "gsi_handler_flash": {
       "files": [
@@ -70,16 +71,25 @@
       "files": [
         "main_widget.py",
         "scripts/gsi_full_sim.py",
+        "tests/test_audit_lifecycle.py",
+        "tests/test_deep_audit_runtime.py",
         "tests/test_the_sweep_bugs_stay_fixed.py"
       ],
       "names": {
-        "GSIHandlerHudColor": 3
+        "GSIHandlerHudColor": 5,
+        "GSIHandlerKills": 1,
+        "MusicPlayer": 2,
+        "VoiceOutputManager": 2,
+        "pygame": 1,
+        "sd": 2,
+        "threading": 1
       }
     },
     "gsi_handler_kills": {
       "files": [
         "main_widget.py",
         "scripts/gsi_full_sim.py",
+        "tests/test_audit_lifecycle.py",
         "tests/test_gsi_audio_handlers.py",
         "tests/test_gsi_replay_pipeline.py",
         "tests/test_kill_feedback_channels_are_independent.py",
@@ -114,6 +124,7 @@
         "main_widget.py",
         "scripts/gsi_full_sim.py",
         "tests/test_community_ticket_fixes.py",
+        "tests/test_deep_audit_runtime.py",
         "tests/test_full_auto_guns_are_heard_every_shot.py",
         "tests/test_gsi_audio_handlers.py",
         "tests/test_gsi_edges_after_the_b129_audit.py",
@@ -121,11 +132,22 @@
         "tests/test_gun_sound_chain_after_the_in_game_test.py"
       ],
       "names": {
+        "AfterlifeController": 1,
+        "AudioTaskRunner": 1,
+        "BackgroundLoader": 1,
         "Controller": 1,
         "DEATH_SOUND_HOLD_DURATION": 1,
         "DEATH_SOUND_PEAK_MS": 1,
-        "GSIHandlerSounds": 24,
-        "GUN_SOUND_PROFILES": 1
+        "GSIHandlerSounds": 26,
+        "GUN_SOUND_PROFILES": 1,
+        "MapPresetApplier": 1,
+        "MusicURLResolver": 2,
+        "ResourceManager": 1,
+        "_Task": 1,
+        "audio_manager": 1,
+        "config": 4,
+        "requests": 1,
+        "time": 1
       }
     },
     "gsi_handler_special": {
@@ -172,16 +194,22 @@
         "main_widget.py",
         "pages/about_page.py",
         "tests/test_about_diagnostics_gsi.py",
+        "tests/test_audit_lifecycle.py",
         "tests/test_gun_sound_chain_after_the_in_game_test.py",
+        "tests/test_optimization_lifetimes.py",
         "tests/test_you_can_tell_where_the_game_link_breaks.py"
       ],
       "names": {
-        "GSIServer": 2,
-        "PACKET_RECV_KEY": 2,
+        "GSIServer": 3,
+        "KILL_LEVELS": 1,
+        "KillIconPlayer": 1,
+        "PACKET_RECV_KEY": 3,
+        "_collect_incomplete_kill_styles": 1,
         "_listening_pid": 2,
+        "config": 2,
         "data_queue": 2,
         "describe_port_owner": 1,
-        "flask_app": 2,
+        "flask_app": 5,
         "get_active_port": 1,
         "get_receive_stats": 2
       }
@@ -190,16 +218,16 @@
   "imported_but_no_contract": [],
   "internal_only_modules": [],
   "loc": {
-    "gsi_handler_flash": 155,
-    "gsi_handler_fun": 158,
-    "gsi_handler_hud_color": 191,
-    "gsi_handler_kills": 1164,
-    "gsi_handler_music": 279,
-    "gsi_handler_sounds": 653,
-    "gsi_handler_special": 779,
-    "gsi_handler_stats": 148,
-    "gsi_handler_utility": 742,
-    "gsi_server": 306
+    "gsi_handler_flash": 156,
+    "gsi_handler_fun": 159,
+    "gsi_handler_hud_color": 202,
+    "gsi_handler_kills": 1169,
+    "gsi_handler_music": 280,
+    "gsi_handler_sounds": 667,
+    "gsi_handler_special": 785,
+    "gsi_handler_stats": 149,
+    "gsi_handler_utility": 743,
+    "gsi_server": 329
   },
   "reexport_only_modules": [],
   "surface": {

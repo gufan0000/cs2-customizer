@@ -120,11 +120,7 @@ def test_main_window_marshals_reload_to_gui_thread():
     assert "load_settings" not in _called(fn), "不能在可能的后台线程里直接刷控件"
 
     slot = _func("gui_widget.py", "_on_config_reloaded", "MainWindow")
-    # 槽里是 `getattr(page, "load_settings", None)` 再调用，所以 AST 看不到方法名，
-    # 得去常量里找。（用 getattr 是有意的：并非所有页面都有 load_settings。）
-    consts = {n.value for n in ast.walk(slot)
-              if isinstance(n, ast.Constant) and isinstance(n.value, str)}
-    assert "load_settings" in consts, "槽里没有去刷各页的 load_settings"
+    assert "reload_page_settings" in _called(slot), "GUI 槽必须调用页面重载入口"
 
 
 def test_main_window_unsubscribes_on_exit():
@@ -212,7 +208,7 @@ def test_reset_all_settings_snapshots_before_delete():
                   and n.func.id == "create_snapshot"]
     remove_lines = [n.lineno for n in ast.walk(fn)
                     if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
-                    and n.func.attr == "remove"]
+                         and n.func.attr == "reset_for_restart"]
     assert snap_lines and remove_lines
     assert min(snap_lines) < min(remove_lines), (
         "先删了配置文件再建快照 = 快照里是空的，等于没建"

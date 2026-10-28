@@ -271,6 +271,7 @@ class KillIconPlayer(QObject):
         self._load_token = 0
         self._loading_thread = None
         self._pending_load = None
+        self._pending_play = None
 
         self._play_signal.connect(self._handle_play)
         self._stop_signal.connect(self._handle_stop)
@@ -365,6 +366,9 @@ class KillIconPlayer(QObject):
         logger.info(
             f"击杀图标素材就绪: 风格={style_name}, 等级={sorted(self.animations)}"
         )
+        pending, self._pending_play = self._pending_play, None
+        if pending is not None:
+            self._handle_play(*pending)
         # 设置页靠它把清单板刷新成新风格的数据——不发这一枪，页面会一直显示
         # 上一个风格的帧数与时长，而且不会自己好。
         self.assets_ready.emit(style_name)
@@ -382,17 +386,12 @@ class KillIconPlayer(QObject):
                 info = self._catalog[key]
                 return frames, info.fps, info.hold_seconds
 
-        for key in ((kills, variant), (kills, "")):
-            animation = load_level_animation(self.current_style, kills, key[1])
-            if animation is None:
-                continue
-            width, height = self._target_size_for(animation)
-            frames = scale_animation(animation, width, height)
-            self._scaled[key] = frames
-            self._catalog[key] = LevelInfo(animation.frame_count, animation.fps,
-                                           animation.frame_width, animation.frame_height,
-                                           animation.hold_seconds)
-            return frames, animation.fps, animation.hold_seconds
+        # 冷缓存只请求既有后台装载（包含整套预算缩放），GUI 不解码和缩放图片。
+        if self._catalog_style != self.current_style:
+            with self._assets_lock:
+                loading = self._loading_thread is not None
+            if not loading:
+                self._start_load(self.current_style)
         return (), clamp_fps(None), 0.0
 
     # ============================================================ 播放
@@ -402,6 +401,9 @@ class KillIconPlayer(QObject):
             return
         frames, fps, hold = self._frames_for(int(kills), variant or "")
         if not frames:
+            with self._assets_lock:
+                if self._loading_thread is not None:
+                    self._pending_play = (kills, variant, custom_fps)
             logger.debug(f"击杀图标没有可播的素材: 等级={kills}, 变体={variant!r}")
             return
 
@@ -469,6 +471,7 @@ class KillIconPlayer(QObject):
             self._window.set_frame(self._current_frames[index], opacity)
 
     def _handle_stop(self):
+        self._pending_play = None
         self._playing = False
         self._timer.stop()
         self._last_paint_key = None

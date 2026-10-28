@@ -52,7 +52,10 @@ def _nested_valid(key, value):
     if key == "hud_keymap_enabled":
         return all(type(v) is bool for v in value.values())
     if key == "flash_style_params":
-        return all(_number(v, 0, 1000) for v in value.values())
+        return all(
+            all(_number(param, 0, 1000) for param in v.values())
+            if isinstance(v, dict) else _number(v, 0, 1000)
+            for v in value.values())
     if key == "viewmodel_presets":
         return all(isinstance(p, dict) and all(
             (isinstance(v, str) if k in {"name", "key", "hotkey"}

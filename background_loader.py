@@ -36,14 +36,15 @@ class BackgroundLoader(QThread):
         """执行后台加载（只负责非UI资源）"""
         try:
             # 阶段 2: 音频扫描
-            self._load_stage_2()
+            audio_ready = self._load_stage_2()
             
             # 阶段 3: GSI连接（通过信号在主线程执行）
-            self._load_stage_3()
+            gsi_requested = self._load_stage_3()
             
             # 全部完成
-            self.all_completed.emit()
-            self.logger.info("✅ 所有资源加载完成!")
+            if audio_ready and gsi_requested and not self._is_cancelled:
+                self.all_completed.emit()
+                self.logger.info("音频资源已加载，GSI 连接请求已发出")
             
         except Exception as e:
             self.logger.error(f"后台加载失败: {e}", exc_info=True)
@@ -74,6 +75,7 @@ class BackgroundLoader(QThread):
             self.stage_progress.emit("stage2", 100)
             self.stage_completed.emit("stage2")
             self.logger.info("✓ 阶段 2 完成")
+            return not self._is_cancelled
             
         except Exception as e:
             self.logger.error(f"阶段 2 加载失败: {e}", exc_info=True)
@@ -84,7 +86,7 @@ class BackgroundLoader(QThread):
         if self._is_cancelled:
             return
         
-        self.stage_started.emit("stage3", "GSI服务器启动")
+        self.stage_started.emit("stage3", "GSI连接请求")
         self.logger.info("📦 阶段 3: 请求启动GSI...")
         
         try:
@@ -93,7 +95,8 @@ class BackgroundLoader(QThread):
             
             self.stage_progress.emit("stage3", 100)
             self.stage_completed.emit("stage3")
-            self.logger.info("✓ 阶段 3 完成")
+            self.logger.info("GSI 连接请求已发出，等待主线程连接")
+            return not self._is_cancelled
             
         except Exception as e:
             self.logger.error(f"阶段 3 加载失败: {e}", exc_info=True)

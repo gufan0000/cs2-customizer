@@ -142,10 +142,11 @@ def _governed_control(page, way_out):
     正是 RN-427 那组选择器管的东西。
     """
     from PySide6.QtWidgets import QCheckBox, QSlider
+    from ui_toggle_switch import ToggleSwitch
 
     for kind in (QCheckBox, QSlider):
         for widget in page.findChildren(kind):
-            if widget is way_out or not widget.isVisibleTo(page):
+            if widget is way_out or isinstance(widget, ToggleSwitch) or not widget.isVisibleTo(page):
                 continue
             if widget.width() >= 6 and widget.height() >= 6:
                 return widget

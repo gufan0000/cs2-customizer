@@ -67,6 +67,8 @@ class GSIHandlerSounds:
         #: （`GameAudioDucker` 早就是这个写法）—— 判据里真 sleep 会让「量墙钟」那族变红。
         self._extra_shot_timer_factory = threading.Timer
         self._pending_extra_shots: dict[str, list] = {}
+        self._extra_shot_lock = threading.RLock()
+        self._closed = False
 
     def set_magnifier_component(self, magnifier_component):
         self.magnifier_component = magnifier_component
@@ -118,6 +120,8 @@ class GSIHandlerSounds:
         return str(provider.get("steamid", "") or "").strip()
 
     def process_data(self, data):
+        if self._closed:
+            return
         player_data = data.get("player", {})
         current_steamid = player_data.get("steamid", "")
         provider_steamid = self._self_steamid(data)
@@ -281,9 +285,12 @@ class GSIHandlerSounds:
             )
             timer.daemon = True
             timers.append(timer)
-        self._pending_extra_shots[gun_type] = timers
-        for timer in timers:
-            timer.start()
+        with self._extra_shot_lock:
+            if self._closed:
+                return
+            self._pending_extra_shots[gun_type] = timers
+            for timer in timers:
+                timer.start()
 
     def _play_extra_shot(self, gun_type: str, sound_key: str) -> None:
         """补发那一声。到点时风格已经被关掉/换掉就不响了。"""
@@ -296,13 +303,16 @@ class GSIHandlerSounds:
             style = resolve_gun_sound_style(getattr(config, profile.style_key, "0"))
             if not gun_sound_style_enabled(style) or f"gun-{gun_type}-{style}" != sound_key:
                 return
-            audio_manager.play_sound(
-                sound_key,
-                channel_type="gun_sound",
-                event_type="gun_fire",
-                priority=35,
-                allow_preempt=True,
-            )
+            with self._extra_shot_lock:
+                if self._closed:
+                    return
+                audio_manager.play_sound(
+                    sound_key,
+                    channel_type="gun_sound",
+                    event_type="gun_fire",
+                    priority=35,
+                    allow_preempt=True,
+                )
         except Exception:
             self.logger.debug("补发枪声失败（忽略）", exc_info=True)
 
@@ -648,6 +658,9 @@ class GSIHandlerSounds:
         self.keyboard.release(KeyCode(char="\\"))
 
     def cleanup(self):
+        with self._extra_shot_lock:
+            self._closed = True
+            self._cancel_pending_extra_shots()
         try:
             self._game_audio_ducker.close()
         except Exception as exc:

@@ -26,6 +26,7 @@ import time
 from dataclasses import dataclass
 
 from core.utils.logger import get_logger
+from core.io_validation import atomic_write_text
 
 logger = get_logger("KillIconLibrary")
 
@@ -196,34 +197,31 @@ def delete_level(style_name, kills, variant="", resource_manager=None):
         return None
 
     slot = _new_trash_slot(style_name, kills, variant, resource_manager)
-    moved = []
-    try:
-        if entry.kind == "sheet":
-            for path in (entry.sprite_path, entry.json_path):
-                if os.path.isfile(path):
-                    shutil.move(path, os.path.join(slot, os.path.basename(path)))
-                    moved.append(os.path.basename(path))
-        else:
-            target = os.path.join(slot, os.path.basename(entry.legacy_dir.rstrip("\\/")))
-            shutil.move(entry.legacy_dir, target)
-            moved.append(os.path.basename(target))
-    except OSError as exc:
-        logger.error(f"删除击杀图标素材失败 {style_name}/{kills}{variant}: {exc}")
-        raise
-
+    paths = ([p for p in (entry.sprite_path, entry.json_path) if os.path.isfile(p)]
+             if entry.kind == "sheet" else [entry.legacy_dir])
     manifest = {
-        "style": str(style_name),
-        "kills": int(kills),
-        "variant": str(variant or ""),
-        "kind": entry.kind,
-        "sprite_path": entry.sprite_path,
-        "json_path": entry.json_path,
+        "style": str(style_name), "kills": int(kills), "variant": str(variant or ""),
+        "kind": entry.kind, "sprite_path": entry.sprite_path, "json_path": entry.json_path,
         "legacy_dir": entry.legacy_dir,
-        "moved": moved,
+        "moved": [os.path.basename(p.rstrip("\\/")) for p in paths],
         "deleted_at": time.time(),
     }
-    with open(os.path.join(slot, "restore.json"), "w", encoding="utf-8") as handle:
-        json.dump(manifest, handle, indent=2, ensure_ascii=False)
+    # 先保存恢复信息；写盘失败时不移动任何素材。
+    atomic_write_text(os.path.join(slot, "restore.json"), json.dumps(manifest, ensure_ascii=False, indent=2))
+    moved = []
+    try:
+        for path in paths:
+            target = os.path.join(slot, os.path.basename(path.rstrip("\\/")))
+            shutil.move(path, target)
+            moved.append((target, path))
+    except OSError as exc:
+        for source, target in reversed(moved):
+            try:
+                shutil.move(source, target)
+            except OSError:
+                logger.exception(f"删除回滚失败，素材仍在回收站: {source}")
+        logger.error(f"删除击杀图标素材失败 {style_name}/{kills}{variant}: {exc}")
+        raise
 
     logger.info(f"击杀图标素材已进回收站: {style_name}/{kills}{variant} → {slot}")
     purge_trash(resource_manager=resource_manager)
@@ -238,6 +236,7 @@ def restore_level(token, resource_manager=None):
     if not manifest:
         return False
 
+    restored = []
     try:
         if manifest.get("kind") == "sheet":
             for name in manifest.get("moved", []):
@@ -252,6 +251,7 @@ def restore_level(token, resource_manager=None):
                           else manifest["json_path"])
                 os.makedirs(os.path.dirname(target), exist_ok=True)
                 shutil.move(source, target)
+                restored.append((target, source))
         else:
             names = manifest.get("moved") or []
             if not names:
@@ -263,6 +263,11 @@ def restore_level(token, resource_manager=None):
             os.makedirs(os.path.dirname(target), exist_ok=True)
             shutil.move(source, target)
     except OSError as exc:
+        for source, target in reversed(restored):
+            try:
+                shutil.move(source, target)
+            except OSError:
+                logger.exception(f"恢复回滚失败，素材保留在: {source}")
         logger.error(f"撤销删除失败: {exc}")
         return False
 

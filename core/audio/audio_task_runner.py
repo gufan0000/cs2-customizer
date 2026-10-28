@@ -231,7 +231,8 @@ class AudioTaskRunner(QObject):
         self._check_running()
         self._safe_emit("task_progress", task.task_id, 90, "写入配置")
         if hasattr(config, "save_config_now"):
-            config.save_config_now()
+            if config.save_config_now() is False:
+                raise OSError("音频已加载，但配置保存失败，请检查磁盘后重试")
         else:
             config.save_config()
         task.message = "音频资源重载完成"
@@ -248,7 +249,8 @@ class AudioTaskRunner(QObject):
         self._check_running()
         self._safe_emit("task_progress", task.task_id, 90, "保存配置")
         if hasattr(config, "save_config_now"):
-            config.save_config_now()
+            if config.save_config_now() is False:
+                raise OSError("音频已加载，但配置保存失败，请检查磁盘后重试")
         else:
             config.save_config()
         task.message = "导入后刷新完成"

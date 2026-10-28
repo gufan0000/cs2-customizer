@@ -605,6 +605,7 @@ class VoiceOutputPage(QWidget):
         volume_row.addWidget(volume_label)
 
         self.volume_slider = QSlider(Qt.Horizontal)
+        self.volume_slider.setAccessibleName("语音输出主音量")
         self.volume_slider.setRange(0, 200)
         self.volume_slider.setValue(int(config.voice_output_volume * 100))
         self.volume_slider.setMinimumWidth(160)
@@ -650,6 +651,7 @@ class VoiceOutputPage(QWidget):
         route_options_row.addWidget(mode_label)
 
         self.play_mode_combo = QComboBox()
+        self.play_mode_combo.setAccessibleName("语音播放模式")
         self.play_mode_combo.addItems(["覆盖", "混音", "自动"])
         self.play_mode_combo.setCurrentText(config.voice_output_mode if hasattr(config, 'voice_output_mode') else "覆盖")
         self.play_mode_combo.setFont(QFont("Microsoft YaHei", 11))
@@ -682,6 +684,7 @@ class VoiceOutputPage(QWidget):
         self._apply_compact_label(mic_label, width=58)
         mic_row.addWidget(mic_label)
         self.mic_combo = QComboBox()
+        self.mic_combo.setAccessibleName("麦克风")
         self.mic_combo.addItem("默认")
         self.mic_combo.setFont(QFont("Microsoft YaHei", 11))
         self._apply_compact_combo(self.mic_combo, min_width=240, max_width=620)
@@ -935,7 +938,7 @@ class VoiceOutputPage(QWidget):
             except (TypeError, ValueError):
                 continue
 
-        for i in range(max(self.initial_slots, max_slot_id + 1)):
+        for i in range(min(self.max_slots, max(self.initial_slots, max_slot_id + 1))):
             self._add_slot(auto_init=True)
     
     def _add_slot(self, auto_init=False):
@@ -989,6 +992,7 @@ class VoiceOutputPage(QWidget):
         
         # 音量滑块
         volume_slider = QSlider(Qt.Horizontal)
+        volume_slider.setAccessibleName(f"音板槽位 {slot_id + 1} 音量")
         volume_slider.setRange(0, 200)
         volume_slider.setValue(100)
         volume_slider.setFixedWidth(110)
@@ -1159,7 +1163,10 @@ class VoiceOutputPage(QWidget):
         # 加载音量
         if "volume" in slot_data:
             volume = int(slot_data["volume"] * 100)
+            from PySide6.QtCore import QSignalBlocker
+            blocker = QSignalBlocker(slot["volume_slider"])
             slot["volume_slider"].setValue(volume)
+            blocker.unblock()
             slot["volume_label"].setText(f"{volume}%")
             slot["volume"] = slot_data["volume"]
     
@@ -1600,9 +1607,13 @@ class VoiceOutputPage(QWidget):
                     QMessageBox.warning(self, "导入未完成", "配置文件无法识别或字段类型不正确，请确认是本软件导出的语音配置后重试。")
                     self.logger.warning(f"语音配置导入被拒: {errors}")
                     return
+                previous = {key: getattr(config, key) for key in cleaned}
                 for cfg_key, value in cleaned.items():
                     setattr(config, cfg_key, value)
-                config.save_config()
+                if config.save_config_now() is False:
+                    for key, value in previous.items():
+                        setattr(config, key, value)
+                    raise OSError("语音配置保存失败")
 
                 # 重新加载UI
                 self._reload_slots_from_config()
@@ -1616,7 +1627,19 @@ class VoiceOutputPage(QWidget):
                 self.logger.error(f"导入配置失败: {e}")
 
     def _reload_slots_from_config(self):
-        """从config重新加载槽位到UI"""
+        """从配置重载，包括导入文件中新增加的槽位。"""
+        from widgets.config_reload import block_control_signals
+        slots = getattr(config, "voice_output_slots", {}) or {}
+        last = max((int(key) for key in slots if str(key).isdecimal()), default=-1)
+        while self.current_slot_count <= min(last, self.max_slots - 1):
+            self._add_slot(auto_init=True)
+        with block_control_signals(self):
+            self._reload_slot_values()
+
+    def load_settings(self):
+        self._reload_slots_from_config()
+
+    def _reload_slot_values(self):
         slots_config = config.voice_output_slots if hasattr(config, 'voice_output_slots') else {}
         for slot_id, slot in self.soundboard_slots.items():
             str_id = str(slot_id)
@@ -1641,13 +1664,18 @@ class VoiceOutputPage(QWidget):
                 slot["preview_button"].setEnabled(False)
                 slot["volume_slider"].setValue(100)
                 slot["volume_label"].setText("100%")
+            self._sync_slot_affordance(slot_id)
         # 更新其他设置
-        if hasattr(config, 'voice_output_stop_key') and config.voice_output_stop_key:
-            self.stop_hotkey = config.voice_output_stop_key
-            self.stop_key_button.setText(self.stop_hotkey)
-        if hasattr(config, 'voice_output_ptt_key') and config.voice_output_ptt_key:
-            self.ptt_key = config.voice_output_ptt_key
-            self.ptt_key_button.setText(self.ptt_key)
+        self.stop_hotkey = getattr(config, "voice_output_stop_key", "")
+        self.stop_key_button.setText(self.stop_hotkey or "未设置")
+        self.ptt_key = getattr(config, "voice_output_ptt_key", "")
+        self.ptt_key_button.setText(self.ptt_key or "未设置")
+        self.ptt_enabled = bool(getattr(config, "voice_output_ptt_enabled", False))
+        self.ptt_enabled_check.setChecked(self.ptt_enabled)
+        self.volume_slider.setValue(round(config.voice_output_volume * 100))
+        self.volume_label.setText(format_percent(config.voice_output_volume, hi=2.0))
+        self.play_mode_combo.setCurrentText(config.voice_output_mode)
+        self.also_local_check.setChecked(bool(getattr(config, "voice_output_also_local", True)))
         # 重新注册快捷键
         if hasattr(self, '_register_hotkeys_func'):
             self._register_hotkeys_func()

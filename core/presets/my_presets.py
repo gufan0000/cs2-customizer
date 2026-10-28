@@ -22,13 +22,14 @@ import json
 import os
 import re
 import time
+import threading
 from dataclasses import dataclass, field
 from typing import Dict, List
 
 from core.utils.logger import get_logger
 
 from .preset_center import SUPPORTED_TYPES, apply_bundle, export_bundle, validate_bundle
-from core.io_validation import replace_with_retry
+from core.io_validation import atomic_write_text
 
 __all__ = [
     "MyPreset",
@@ -45,6 +46,9 @@ _logger = get_logger("MyPresets")
 
 MAX_NAME_LEN = 40
 _SLUG_RE = re.compile(r"[^0-9A-Za-z一-鿿_-]+")
+_SAVE_LOCK = threading.RLock()
+_RESERVED = {"con", "prn", "aux", "nul", *(f"com{i}" for i in range(1, 10)),
+             *(f"lpt{i}" for i in range(1, 10))}
 
 
 @dataclass
@@ -71,19 +75,24 @@ def presets_dir() -> str:
 
 def _slugify(name: str) -> str:
     slug = _SLUG_RE.sub("_", str(name or "").strip()).strip("_")
-    return slug[:MAX_NAME_LEN] or "preset"
+    slug = slug[:MAX_NAME_LEN] or "preset"
+    return f"_{slug}" if slug.casefold() in _RESERVED else slug
 
 
 def _unique_id(name: str, exclude_id: str = "") -> str:
     base = _slugify(name)
-    existing = {p.preset_id for p in list_presets() if p.preset_id != exclude_id}
-    if base not in existing:
+    # 损坏的 JSON 也占用文件名，不能因为列表忽略它就覆盖原文件。
+    directory = presets_dir()
+    existing = {os.path.splitext(name)[0].casefold() for name in os.listdir(directory)
+                if name.lower().endswith(".json")} if os.path.isdir(directory) else set()
+    if base.casefold() not in existing:
         return base
-    for i in range(2, 1000):
+    i = 2
+    while True:
         candidate = f"{base}_{i}"
-        if candidate not in existing:
+        if candidate.casefold() not in existing:
             return candidate
-    return f"{base}_{int(time.time())}"
+        i += 1
 
 
 def _now() -> str:
@@ -135,10 +144,7 @@ def _write(preset_id: str, name: str, bundle: Dict[str, object], created_at: str
         "bundle": bundle,
     }
     # 原子写：先写临时文件再 replace，中途断电不会留下半个 json
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as fp:
-        json.dump(payload, fp, ensure_ascii=False, indent=2)
-    replace_with_retry(tmp, path)
+    atomic_write_text(path, json.dumps(payload, ensure_ascii=False, indent=2))
     return MyPreset(
         preset_id=preset_id, name=name,
         types=[str(i.get("type", "")) for i in bundle.get("items", []) or []],
@@ -165,17 +171,19 @@ def save_preset(name: str, selected_types: List[str], *, overwrite_id: str = "")
         raise ValueError("至少要选择一类配置")
 
     bundle = export_bundle(types)
-    created_at = ""
-    if overwrite_id:
-        for item in list_presets():
-            if item.preset_id == overwrite_id:
-                created_at = item.created_at
-                break
-        preset_id = overwrite_id
-    else:
-        preset_id = _unique_id(clean)
-
-    result = _write(preset_id, clean, bundle, created_at=created_at)
+    with _SAVE_LOCK:
+        created_at = ""
+        if overwrite_id:
+            for item in list_presets():
+                if item.preset_id == overwrite_id:
+                    created_at = item.created_at
+                    break
+            else:
+                raise ValueError("要覆盖的预设已不存在，请重新选择")
+            preset_id = overwrite_id
+        else:
+            preset_id = _unique_id(clean)
+        result = _write(preset_id, clean, bundle, created_at=created_at)
     _logger.info(f"[我的预设] 已保存「{clean}」({preset_id})，含 {len(types)} 类")
     return result
 

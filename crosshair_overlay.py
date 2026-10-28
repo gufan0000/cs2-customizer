@@ -1060,6 +1060,12 @@ class CrosshairOverlayManager(QObject):
         self._sync_timer()
         self._recenter_timer.start()
 
+    def reload_settings(self):
+        """整体恢复配置后立即更新已显示的静态准心。"""
+        self._refresh_from_config()
+        self._render_once()
+        self._sync_timer()
+
     def hide_crosshair(self):
         self._visible = False
         self._timer.stop()
@@ -1119,7 +1125,7 @@ class CrosshairOverlayManager(QObject):
         self._state.gap = max(0, int(getattr(cfg, "crosshair_gap", 0) or 0))
         self._state.outline = max(0, int(getattr(cfg, "crosshair_outline", 0) or 0))
         self._state.dot = bool(getattr(cfg, "crosshair_dot", False))
-        self._state.alpha = max(0, min(255, int(getattr(cfg, "crosshair_alpha", 255) or 255)))
+        self._state.alpha = max(0, min(255, int((255 if getattr(cfg, "crosshair_alpha", None) is None else cfg.crosshair_alpha))))
 
     def register_kill_handler(self, gsi_handler_kills):
         if not gsi_handler_kills:

@@ -4,8 +4,7 @@
 
 原则：
 - **绝不自动上传**——发现新崩溃日志后询问用户，用户可"发送/本次不发/不再询问"。
-- 上报内容仅为崩溃堆栈文本（截断 64KB）+ 版本号；`log_filter` 级别的敏感信息
-  本就不会进入 bootstrap_crash 文件。
+- 预览和上传共用脱敏、限长处理；上报内容为堆栈文本 + 版本号。
 - 后端接口未部署（404）或网络失败时静默放弃，日志仍保留在本地。
 
 后端接口约定（/api/crash_report.php，POST JSON）：
@@ -16,11 +15,13 @@
 from __future__ import annotations
 
 import os
+import json
 import time
 from pathlib import Path
 from typing import List, Optional
 
 import requests
+from core.utils.log_filter import redact_text
 
 from service_urls import TELEMETRY_BASE_URL
 
@@ -28,6 +29,24 @@ from service_urls import TELEMETRY_BASE_URL
 # 这样 fork 出去的客户端不会继续打上游作者的服务器；自建服务端的人填上基址即可启用。
 CRASH_REPORT_API_URL = f"{TELEMETRY_BASE_URL}/api/crash_report.php" if TELEMETRY_BASE_URL else ""
 MAX_REPORT_BYTES = 64 * 1024
+MAX_REQUEST_BYTES = 96 * 1024
+
+
+def prepare_report_text(text: str) -> str:
+    """预览与上传使用同一份脱敏文本，同时按 JSON 转义后的大小限长。"""
+    text = redact_text(str(text or ""))
+    text = text.encode("utf-8")[:MAX_REPORT_BYTES].decode("utf-8", errors="ignore")
+    budget = MAX_REQUEST_BYTES - 1024  # 版本、时间戳和字段名
+    if len(json.dumps(text, ensure_ascii=False).encode("utf-8")) > budget:
+        low, high = 0, len(text)
+        while low < high:
+            mid = (low + high + 1) // 2
+            if len(json.dumps(text[:mid], ensure_ascii=False).encode("utf-8")) <= budget:
+                low = mid
+            else:
+                high = mid - 1
+        text = text[:low]
+    return text
 
 
 def _crash_log_dir() -> Path:
@@ -58,14 +77,18 @@ def find_new_crash_logs(since_epoch: float) -> List[Path]:
 def read_report_text(paths: List[Path]) -> str:
     """合并读取崩溃日志文本，整体截断到 MAX_REPORT_BYTES。"""
     parts = []
+    remaining = MAX_REPORT_BYTES
     for p in paths:
+        if remaining <= 0:
+            break
         try:
-            parts.append(f"===== {p.name} =====\n" + p.read_text(encoding="utf-8", errors="replace"))
+            with p.open("rb") as handle:
+                raw = handle.read(remaining)
+            remaining -= len(raw)
+            parts.append(f"===== {p.name} =====\n" + raw.decode("utf-8", errors="replace"))
         except OSError:
             continue
-    text = "\n\n".join(parts)
-    raw = text.encode("utf-8")[:MAX_REPORT_BYTES]
-    return raw.decode("utf-8", errors="ignore")
+    return prepare_report_text("\n\n".join(parts))
 
 
 def send_crash_report(report_text: str, version: str, timeout: int = 8) -> Optional[bool]:
@@ -79,15 +102,16 @@ def send_crash_report(report_text: str, version: str, timeout: int = 8) -> Optio
     if not CRASH_REPORT_API_URL:
         return None
     try:
+        payload = json.dumps({
+            "version": str(version)[:64],
+            "client_ts": int(time.time()),
+            "report": prepare_report_text(report_text),
+        }, ensure_ascii=False).encode("utf-8")
         resp = requests.post(
             CRASH_REPORT_API_URL,
-            json={
-                "version": str(version),
-                "client_ts": int(time.time()),
-                "report": str(report_text or "")[: MAX_REPORT_BYTES],
-            },
+            data=payload,
             timeout=timeout,
-            headers={"User-Agent": "CS2CustomizerDesktop/2.1"},
+            headers={"User-Agent": "CS2CustomizerDesktop/2.1", "Content-Type": "application/json; charset=utf-8"},
         )
         if resp.status_code == 404:
             return None

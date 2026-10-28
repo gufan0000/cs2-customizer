@@ -69,6 +69,8 @@ class MapPresetApplier:
 
     def __init__(self):
         self._last_applied_map = None
+        self._failed_map = None
+        self._retry_after = 0.0
 
     def on_map(self, map_name) -> bool:
         """收到地图名;若需要则应用,返回是否真的应用了。"""
@@ -77,19 +79,28 @@ class MapPresetApplier:
         name = _normalize_map(map_name)
         if not name or name == self._last_applied_map:
             return False
+        if name == self._failed_map and time.monotonic() < self._retry_after:
+            return False
         rule = _rules().get(name)
-        # 无论有没有规则都记住当前图,离图回图才会重新触发
-        self._last_applied_map = name
         if not rule:
+            self._last_applied_map = name
             return False
         bundle = rule.get("bundle")
         if not isinstance(bundle, dict) or not validate_bundle(bundle).ok:
             return False
         result = apply_bundle(bundle, mode="merge")
+        if result.ok:
+            self._last_applied_map = name
+            self._failed_map = None
+        else:
+            self._failed_map = name
+            self._retry_after = time.monotonic() + 2.0
         return bool(result.ok)
 
     def reset(self):
         self._last_applied_map = None
+        self._failed_map = None
+        self._retry_after = 0.0
 
 
 class MapPresetHandler:

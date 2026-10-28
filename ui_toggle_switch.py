@@ -5,18 +5,16 @@ iOS 风格开关组件
 """
 
 from PySide6.QtCore import (
-    Qt, Signal, Property, QPropertyAnimation, QEasingCurve,
+    Qt, Property, QPropertyAnimation, QEasingCurve,
     QVariantAnimation, QSize, QRectF
 )
 from PySide6.QtGui import QPainter, QColor, QPainterPath
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QCheckBox
 from theme_manager import get_theme_manager
 
 
-class ToggleSwitch(QWidget):
+class ToggleSwitch(QCheckBox):
     """iOS 风格的开关组件"""
-
-    toggled = Signal(bool)
 
     # 尺寸常量
     WIDTH = 44
@@ -27,6 +25,8 @@ class ToggleSwitch(QWidget):
     def __init__(self, parent=None, checked=False):
         super().__init__(parent)
         self._checked = checked
+        QCheckBox.setChecked(self, checked)
+        self.setFocusPolicy(Qt.StrongFocus)
         self._knob_x = float(self.WIDTH - self.KNOB_MARGIN - self.KNOB_SIZE if checked else self.KNOB_MARGIN)
         self._bg_color = QColor()
 
@@ -58,6 +58,11 @@ class ToggleSwitch(QWidget):
         if self._checked == checked:
             return
         self._checked = checked
+        blocked = self.blockSignals(True)
+        try:
+            QCheckBox.setChecked(self, checked)
+        finally:
+            self.blockSignals(blocked)
         if animated:
             self._animate(checked)
         else:
@@ -68,6 +73,12 @@ class ToggleSwitch(QWidget):
     def toggle(self):
         self.setChecked(not self._checked)
         self.toggled.emit(self._checked)
+
+    def nextCheckState(self):
+        self.toggle()
+
+    def hitButton(self, pos):
+        return self.rect().contains(pos)
 
     # ========== Qt Property 用于动画 ==========
 
@@ -121,10 +132,6 @@ class ToggleSwitch(QWidget):
 
     # ========== 事件 ==========
 
-    def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton:
-            self.toggle()
-
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
@@ -138,6 +145,10 @@ class ToggleSwitch(QWidget):
         p.setPen(Qt.NoPen)
         p.setBrush(QColor(255, 255, 255))
         p.drawEllipse(QRectF(self._knob_x, self.KNOB_MARGIN, self.KNOB_SIZE, self.KNOB_SIZE))
+        if self.hasFocus():
+            p.setPen(QColor(self._tm.current_theme.colors.accent_primary))
+            p.setBrush(Qt.NoBrush)
+            p.drawRoundedRect(QRectF(1, 1, self.WIDTH - 2, self.HEIGHT - 2), 11, 11)
 
     def sizeHint(self):
         return QSize(self.WIDTH, self.HEIGHT)

@@ -305,18 +305,9 @@ class AudioManager:
         if not self._access_order:
             return
         lru_key = next(iter(self._access_order))
-        info = self._sounds.pop(lru_key, None)
+        self._sounds.pop(lru_key, None)
         self._access_order.pop(lru_key, None)
-        if info and info.sound:
-            # v2.2.1: 别名与规范键共享同一 AudioInfo/Sound 对象——
-            # 若仍有存活的别名/规范键指向该 info，stop() 会截断它正在播放的声音。
-            # 只有当没有任何键再引用这个 info 时才 stop。
-            still_referenced = any(other is info for other in self._sounds.values())
-            if not still_referenced:
-                try:
-                    info.sound.stop()
-                except Exception:
-                    pass
+        # Channel 持有正在播放的 Sound；淘汰仅释放缓存引用，不打断播放。
 
     def _store(self, key: str, sound_obj, path: str, category: str, weapon_id=None, style=None):
         with self._lock:

@@ -42,6 +42,7 @@ class VoiceOutputManager:
         self._ptt_tail_mute = False       # 尾巴期间替麦克风直通持有的那份静音
         # 按组取消：同组里后来的一段取消前一段（回合音效）
         self._group_cancel = {}
+        self._playback_cancels = set()
         self._group_lock = threading.Lock()
 
         # 麦克风静音引用计数：重叠转发时 B 路结束不能把仍在转发的 A 路
@@ -506,8 +507,8 @@ class VoiceOutputManager:
           语音这边照同样的规矩来，否则胜利和 MVP 会在队友耳朵里叠成一团）。
         use_robust_release：旧参数，保留只为兼容调用方；松键统一由保持尾巴负责。
         """
-        if not self.is_initialized:
-            self.logger.warning("[播放协议] 系统未初始化")
+        if self._ptt_shutdown or not self.is_initialized:
+            self.logger.warning("[播放协议] 系统未初始化或已关闭")
             return False
         if not audio_path and not sound_obj:
             self.logger.warning("[播放协议] 未提供音频源")
@@ -526,6 +527,10 @@ class VoiceOutputManager:
         # 每次播放独立的取消令牌：旧实现全部读共享 stop_playback_flag，
         # 音板触发的 stop_playback 会把毫不相干的击杀音效转发拦腰掐断
         cancel_event = threading.Event()
+        with self._group_lock:
+            if self._ptt_shutdown:
+                return False
+            self._playback_cancels.add(cancel_event)
         if not allow_overlap:
             self._current_cancel_event = cancel_event
         if group:
@@ -542,6 +547,8 @@ class VoiceOutputManager:
             # 无条件 release 会误减其他并发转发路的租约，把别人的开麦键切断
             ptt_acquired = False
             try:
+                if cancel_event.is_set():
+                    return
                 if sound_obj:
                     sound_array = pygame.sndarray.array(sound_obj)
                     audio_data = sound_array.astype(np.float32) / 32768.0
@@ -560,6 +567,8 @@ class VoiceOutputManager:
 
                 self.logger.info(f"[播放协议] 线程{thread_id} 开始播放，时长={duration:.2f}秒, mode={mode}, PTT key={ptt_key}, allow_overlap={allow_overlap}")
 
+                if cancel_event.is_set():
+                    return
                 if ptt_key:
                     status = self.press_ptt_key(ptt_key)
                     ptt_acquired = status != self.PTT_FAILED
@@ -608,6 +617,8 @@ class VoiceOutputManager:
                     with self._group_lock:
                         if self._group_cancel.get(group) is cancel_event:
                             del self._group_cancel[group]
+                with self._group_lock:
+                    self._playback_cancels.discard(cancel_event)
 
         playback_thread = threading.Thread(target=playback_worker, daemon=True, name="VoicePlayback")
         if not allow_overlap:
@@ -961,6 +972,12 @@ class VoiceOutputManager:
         ⚠ 拿锁带超时：看门狗（15 秒必退的最后保险）也调这里，要是主线程正卡在
           这把锁里，不带超时看门狗就永远走不到 os._exit。拿不到锁就直接尽力松键。
         """
+        with self._group_lock:
+            self._ptt_shutdown = True
+            for cancel in self._playback_cancels:
+                cancel.set()
+            for cancel in self._group_cancel.values():
+                cancel.set()
         got = self.ptt_lock.acquire(timeout=lock_timeout)
         try:
             self._ptt_shutdown = True

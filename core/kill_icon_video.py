@@ -128,6 +128,9 @@ def read_video_frames(path, fps=None, max_edge=1024, progress=None, cancel=None)
     duration, _w, _h, source_fps = probe_video(path)
     seconds, fps, warnings = plan_sampling(duration, fps or target_fps(source_fps))
     wanted = sample_times_us(seconds, fps)
+    from core.kill_icon_import import _check_frame_budget, _fit
+    width, height = _fit(_w, _h, max_edge)
+    _check_frame_budget(width, height, len(wanted))
     frames = []
     player, sink = _player()
     loop = QEventLoop()

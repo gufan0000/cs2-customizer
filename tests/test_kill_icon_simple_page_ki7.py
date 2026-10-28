@@ -42,7 +42,9 @@ from _denominator import must_scan
 #:   · 提示条 / 进度条 —— 只在导入之后才出现的临时反馈。
 #: 折叠起来的"调整位置和大小"里的三条滑条**算在内**：它们只是默认不可见，
 #: 一点就出来，仍然是这一页的复杂度。
-MAX_VISIBLE_CONTROLS = 10
+# 2026-10-28：既有总开关改用可访问的 QCheckBox 基类后纳入计数。
+# 页面未增加控件；原分母漏掉了 QWidget 实现的这一个开关。
+MAX_VISIBLE_CONTROLS = 11
 
 
 class _StubPlayer:

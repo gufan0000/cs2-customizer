@@ -347,6 +347,8 @@ def _write_bootstrap_crash(exc_type, exc_value, exc_tb) -> None:
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         crash_file = log_dir / f"bootstrap_crash_{ts}.log"
         crash_text = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+        from core.utils.log_filter import redact_text
+        crash_text = redact_text(crash_text)
         crash_file.write_text(crash_text, encoding="utf-8")
         _safe_console_print(f"[FATAL] 未捕获异常，详情已写入: {crash_file.resolve()}")
     except Exception:
@@ -880,8 +882,10 @@ def main():
                 pass
     
     def on_all_completed():
-        logger.info("🎉 所有资源加载完成！")
-        _boot_phase("后台资源全就绪")
+        logger.info("音频资源已加载，GSI 连接请求已发出")
+        _boot_phase("后台扫描完成")
+
+    def on_loader_finished():
         # 2.2.0: 空闲预构建常用页——后台资源就绪后,趁空闲把高频页提前建好,切页零等待
         try:
             window.start_idle_preload()
@@ -1009,6 +1013,7 @@ def main():
     bg_loader.stage_started.connect(on_stage_started)
     bg_loader.stage_completed.connect(on_stage_completed)
     bg_loader.all_completed.connect(on_all_completed)
+    bg_loader.finished.connect(on_loader_finished)
     bg_loader.error_occurred.connect(on_error)
     bg_loader.connect_gsi_requested.connect(connect_gsi_components)
     

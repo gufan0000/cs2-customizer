@@ -1019,7 +1019,7 @@ class AdvancedPage(QWidget):
         )
 
         if reply == QMessageBox.Yes:
-            # 先建快照再删文件——顺序反了就什么都没了
+            # 先建快照再重置——顺序反了就什么都没了
             snapshot_ok = False
             try:
                 from core.config_snapshot_manager import create_snapshot, prune_snapshots
@@ -1043,11 +1043,8 @@ class AdvancedPage(QWidget):
                     return
 
             try:
-                # 删除配置文件
-                config_path = config.get_config_path()
-                if os.path.exists(config_path):
-                    os.remove(config_path)
-                    self.logger.info(f"配置文件已删除: {config_path}")
+                # 原子重置磁盘配置，并阻止退出时写回旧值
+                config.reset_for_restart()
 
                 # 提示重启程序
                 QMessageBox.information(
@@ -1080,7 +1077,10 @@ class AdvancedPage(QWidget):
                 return
             
             # 拷贝配置文件
-            config_path = config.get_config_path()
+            from config import get_config_path
+            if config.save_config_now() is False:
+                raise OSError("当前配置保存失败，未生成备份")
+            config_path = get_config_path()
             if not os.path.exists(config_path):
                 QMessageBox.warning(self, "警告", "配置文件不存在！")
                 return

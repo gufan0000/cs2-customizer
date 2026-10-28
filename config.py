@@ -1639,11 +1639,25 @@ class Config:
     def save_config(self):
         """防抖保存配置（500ms内多次调用只执行一次实际写入）"""
         with self._save_lock:
+            if getattr(self, "_reset_pending", False):
+                return
             if self._save_timer is not None:
                 self._save_timer.cancel()
             self._save_timer = threading.Timer(0.5, self._do_save_config)
             self._save_timer.daemon = True
             self._save_timer.start()
+
+    def reset_for_restart(self):
+        """落盘空配置，重启时使用默认值；退出保存不能把旧值写回来。"""
+        from core.io_validation import atomic_write_text
+        with self._save_lock:
+            path = get_config_path()
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            atomic_write_text(path, "{}\n")
+            self._reset_pending = True
+            if self._save_timer is not None:
+                self._save_timer.cancel()
+                self._save_timer = None
 
     def save_config_now(self):
         """立即保存配置（用于程序退出等需要确保写入的场景）"""
@@ -1709,6 +1723,8 @@ class Config:
 
         with self._save_lock:
             # RN-616：只清当前执行的防抖 timer；不能用 is_alive 判断自己的线程。
+            if getattr(self, "_reset_pending", False):
+                return True
             if self._save_timer is threading.current_thread():
                 self._save_timer = None
             try:

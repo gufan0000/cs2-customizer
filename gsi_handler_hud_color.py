@@ -105,8 +105,8 @@ class GSIHandlerHudColor:
                 color != self.current_color
                 and (now - self._last_write_time) >= self._min_write_interval
             ):
-                self._write_runtime_cfg(color)
-                self.current_color = color
+                if self._write_runtime_cfg(color):
+                    self.current_color = color
                 self._last_write_time = now
 
     def _ensure_effect_timer(self):
@@ -177,7 +177,7 @@ class GSIHandlerHudColor:
     def _write_runtime_cfg(self, color_value):
         cfg_path = self._get_cfg_path()
         if not cfg_path:
-            return
+            return False
         try:
             cfg_dir = os.path.dirname(cfg_path)
             os.makedirs(cfg_dir, exist_ok=True)
@@ -194,7 +194,9 @@ class GSIHandlerHudColor:
                 raise
             color_name = HUD_COLORS.get(color_value, ("未知", "#000000"))[0]
             self.logger.debug(f"[HUD规则] 写入运行时颜色: {color_value} ({color_name})")
+            return True
         except Exception as e:
             # B4: 写 CFG 失败是用户可感知问题，附加堆栈便于诊断
             self.logger.exception(f"[HUD规则] 写入运行时CFG失败: {e}")
+            return False
 

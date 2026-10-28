@@ -18,6 +18,7 @@ import json
 import os
 import socket
 import subprocess
+import threading
 import time
 
 import win32api
@@ -248,6 +249,8 @@ class StickyBrowser:
         self.cdp_port = 0
 
         self.proc = None
+        self._process_lock = threading.Lock()
+        self._launch_cancel = threading.Event()
         self.hwnd = 0
         self._visible = False
         self._owned_pids = set()  # 允许被本对象操作的进程 PID，认窗口的唯一依据
@@ -297,6 +300,8 @@ class StickyBrowser:
             logger.exception("清理遗留浏览器进程失败（继续）")
 
     def launch(self, *, anchor_hwnd=0, start_hidden=True, timeout=25.0):
+        if self._launch_cancel.is_set():
+            return False
         if self.is_alive():
             return True
         exe = find_browser(self.browser_path)
@@ -304,6 +309,8 @@ class StickyBrowser:
             logger.error("找不到 Edge 或 Chrome，贴屏浏览器无法启动")
             return False
         self.kill_leftovers()
+        if self._launch_cancel.is_set():
+            return False
 
         x, y, w, h = self.target_rect(anchor_hwnd)
         # 标题栏高度要等窗口出来才能按其 DPI 算；先按主屏 DPI 预估，就位时再精确重排
@@ -333,13 +340,18 @@ class StickyBrowser:
                 args.append(f"--remote-debugging-port={self.cdp_port}")
 
         try:
-            self.proc = subprocess.Popen(args)
+            with self._process_lock:
+                if self._launch_cancel.is_set():
+                    return False
+                proc = self.proc = subprocess.Popen(args)
         except Exception:
             logger.exception("启动贴屏浏览器进程失败")
             return False
 
-        self._owned_pids = process_tree_pids(self.proc.pid) | self._pids_owning_profile()
-        self.hwnd = self._await_window(self.proc.pid, timeout)
+        self._owned_pids = process_tree_pids(proc.pid) | self._pids_owning_profile()
+        self.hwnd = self._await_window(proc.pid, timeout)
+        if self._launch_cancel.is_set():
+            return False
         if not self.hwnd:
             logger.error("贴屏浏览器窗口未出现，放弃")
             self.close()
@@ -375,7 +387,8 @@ class StickyBrowser:
         deadline = time.time() + timeout
         profile_pids = set()
         while time.time() < deadline:
-            time.sleep(0.3)
+            if self._launch_cancel.wait(0.3):
+                return 0
             owned = process_tree_pids(pid)
             if not profile_pids or time.time() > deadline - timeout / 2:
                 profile_pids = self._pids_owning_profile()
@@ -637,7 +650,9 @@ class StickyBrowser:
 
     def close(self):
         """收尾。只杀自己那棵进程树，绝不按镜像名杀。"""
-        proc, self.proc, self.hwnd, self._visible = self.proc, None, 0, False
+        with self._process_lock:
+            self._launch_cancel.set()
+            proc, self.proc, self.hwnd, self._visible = self.proc, None, 0, False
         self._owned_pids = set()
         if proc is None:
             return

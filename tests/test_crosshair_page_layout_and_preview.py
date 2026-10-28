@@ -31,6 +31,7 @@ def qapp():
 @pytest.fixture
 def page(qapp, monkeypatch):
     monkeypatch.setattr(config, "save_config", lambda: None, raising=False)
+    monkeypatch.setattr(config, "crosshair_animation", "none")
     p = crosshair_page_module.CrosshairPage()
     yield p
     p.deleteLater()

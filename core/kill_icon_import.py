@@ -85,6 +85,14 @@ MAX_FRAMES = 600
 #: 用户从网上拿的动图动辄 1000+ 像素，而图标在屏幕上就 350 宽，
 #: 原样存下来只是白占磁盘和内存。
 MAX_FRAME_EDGE = 1024
+MAX_DECODED_BYTES = 256 * 1024 * 1024
+
+
+def _check_frame_budget(width, height, count=1, retained=0):
+    size = int(width) * int(height) * 4 * int(count) + retained
+    if size > MAX_DECODED_BYTES:
+        raise KillIconImportError("素材解码后超过 256 MiB，请减少帧数或图片尺寸后重试。")
+    return size
 
 #: 图集单行最大宽度（与老的制作工具一致，也是常见 GPU 纹理边长）。
 MAX_SHEET_WIDTH = 4096
@@ -277,6 +285,7 @@ def _read_animation_frames(path, progress=None, cancel=None):
     with source:
         image_format = (source.format or "").upper()
         total = getattr(source, "n_frames", 1) or 1
+        _check_frame_budget(source.width, source.height, min(total, MAX_FRAMES))
         for frame in ImageSequence.Iterator(source):
             _check_cancelled(cancel)
             durations.append(frame.info.get("duration", 0))
@@ -309,6 +318,15 @@ def _read_sequence_frames(directory, progress=None, cancel=None):
         warnings.append(f"帧数超过 {MAX_FRAMES}，只取前 {MAX_FRAMES} 张。")
         paths = paths[:MAX_FRAMES]
 
+    # 在保留任何像素之前累加文件头尺寸；损坏图片仍走原来的逐帧跳过逻辑。
+    retained = 0
+    for path in paths:
+        _check_cancelled(cancel)
+        try:
+            with Image.open(path) as image:
+                retained = _check_frame_budget(image.width, image.height, retained=retained)
+        except (OSError, ValueError):
+            continue
     frames = []
     for index, path in enumerate(paths):
         _check_cancelled(cancel)
@@ -376,11 +394,19 @@ def guess_grid(width, height):
     return None
 
 
-def _read_spritesheet_frames(sprite_path, cols, rows, frame_count, rects=None):
+def _read_spritesheet_frames(sprite_path, cols, rows, frame_count, rects=None, cancel=None):
     """从一张图集里切出 PIL 帧。`rects` 优先（Aseprite 那种不规则分帧）。"""
     Image, _ImageSequence = _pil()
     try:
-        sheet = Image.open(sprite_path).convert("RGBA")
+        with Image.open(sprite_path) as source:
+            sheet_bytes = _check_frame_budget(source.width, source.height)
+            if rects:
+                frame_bytes = sum(w * h * 4 for _x, _y, w, h, _d in rects[:MAX_FRAMES])
+            else:
+                frame_bytes = (source.width // max(1, int(cols))) * (source.height // max(1, int(rows))) * 4 * min(int(frame_count or cols * rows), int(cols * rows), MAX_FRAMES)
+            _check_frame_budget(1, 1, 0, sheet_bytes + frame_bytes)
+            _check_cancelled(cancel)
+            sheet = source.convert("RGBA")
     except (OSError, ValueError) as exc:
         raise KillIconImportError(
             f"图集读不出来：{os.path.basename(sprite_path)}（{exc}）"
@@ -389,6 +415,7 @@ def _read_spritesheet_frames(sprite_path, cols, rows, frame_count, rects=None):
     frames = []
     if rects:
         for x, y, w, h, _duration in rects[:MAX_FRAMES]:
+            _check_cancelled(cancel)
             if w <= 0 or h <= 0 or x + w > sheet.width or y + h > sheet.height:
                 continue
             frames.append(sheet.crop((x, y, x + w, y + h)))
@@ -404,6 +431,7 @@ def _read_spritesheet_frames(sprite_path, cols, rows, frame_count, rects=None):
             )
         total = min(int(frame_count or cols * rows), cols * rows, MAX_FRAMES)
         for index in range(total):
+            _check_cancelled(cancel)
             left = (index % cols) * frame_width
             top = (index // cols) * frame_height
             frames.append(sheet.crop((left, top, left + frame_width, top + frame_height)))
@@ -441,7 +469,7 @@ def _frames_union_bbox(frames):
     return (left, top, right, bottom)
 
 
-def _apply_chroma_key(frames, color, tolerance=DEFAULT_CHROMA_TOLERANCE):
+def _apply_chroma_key(frames, color, tolerance=DEFAULT_CHROMA_TOLERANCE, cancel=None):
     """把接近 `color` 的像素抠成透明。
 
     为什么需要它：从视频转出来的 GIF/WebP 大多是**不透明**的，叠在游戏画面
@@ -452,18 +480,20 @@ def _apply_chroma_key(frames, color, tolerance=DEFAULT_CHROMA_TOLERANCE):
     Image, _ImageSequence = _pil()
     red, green, blue = (int(c) for c in color[:3])
     tolerance = max(0, int(tolerance))
-    keyed = []
-    for frame in frames:
+    from PIL import ImageChops
+    tables = [[255 if abs(value - target) <= tolerance else 0 for value in range(256)]
+              for target in (red, green, blue)]
+    for index, frame in enumerate(frames):
+        _check_cancelled(cancel)
         rgba = frame.convert("RGBA")
-        pixels = rgba.load()
-        for y in range(rgba.height):
-            for x in range(rgba.width):
-                r, g, b, a = pixels[x, y]
-                if a and abs(r - red) <= tolerance and abs(g - green) <= tolerance \
-                        and abs(b - blue) <= tolerance:
-                    pixels[x, y] = (r, g, b, 0)
-        keyed.append(rgba)
-    return keyed
+        channels = rgba.split()
+        mask = Image.new("L", rgba.size, 255)
+        for channel, table in zip(channels[:3], tables):
+            _check_cancelled(cancel)
+            mask = ImageChops.darker(mask, channel.point(table))
+        rgba.putalpha(ImageChops.multiply(channels[3], ImageChops.invert(mask)))
+        frames[index] = rgba
+    return frames
 
 
 def analyze_frames(frames):
@@ -502,7 +532,7 @@ def analyze_frames(frames):
 
 
 def _normalize_frames(frames, trim=False, chroma_key=None,
-                      chroma_tolerance=DEFAULT_CHROMA_TOLERANCE):
+                      chroma_tolerance=DEFAULT_CHROMA_TOLERANCE, cancel=None):
     """把所有帧对齐到同一尺寸，并按需抠背景 / 裁边 / 等比缩小。
 
     尺寸不一的帧序列在老的制作工具里会**默默画歪**——它拿第一张的尺寸当
@@ -513,7 +543,7 @@ def _normalize_frames(frames, trim=False, chroma_key=None,
     warnings = []
 
     if chroma_key:
-        frames = _apply_chroma_key(frames, chroma_key, chroma_tolerance)
+        frames = _apply_chroma_key(frames, chroma_key, chroma_tolerance, cancel)
         warnings.append(
             f"已把接近 RGB{tuple(int(c) for c in chroma_key[:3])} 的背景抠成透明"
             f"（容差 {int(chroma_tolerance)}）。"
@@ -522,7 +552,9 @@ def _normalize_frames(frames, trim=False, chroma_key=None,
     if trim:
         box = _frames_union_bbox(frames)
         if box is not None and box != (0, 0, frames[0].width, frames[0].height):
-            frames = [frame.crop(box) for frame in frames]
+            for index, frame in enumerate(frames):
+                _check_cancelled(cancel)
+                frames[index] = frame.crop(box)
             warnings.append(
                 f"已裁掉四周的全透明边（保留 {box[2] - box[0]}x{box[3] - box[1]}）。"
             )
@@ -538,21 +570,27 @@ def _normalize_frames(frames, trim=False, chroma_key=None,
         )
 
     target_w, target_h = _fit(frame_width, frame_height)
+    # 尺寸各异时会先居中到共同画布，不能只检查缩小后的尺寸。
+    _check_frame_budget(frame_width, frame_height)
     if (target_w, target_h) != (frame_width, frame_height):
         warnings.append(
             f"单帧尺寸 {frame_width}x{frame_height} 超过 {MAX_FRAME_EDGE}px，"
             f"已等比缩小到 {target_w}x{target_h}。"
         )
 
-    normalized = []
-    for frame in frames:
-        canvas = Image.new("RGBA", (frame_width, frame_height), (0, 0, 0, 0))
-        canvas.paste(frame, ((frame_width - frame.width) // 2,
-                             (frame_height - frame.height) // 2))
+    _check_frame_budget(target_w, target_h, len(frames))
+    for index, frame in enumerate(frames):
+        _check_cancelled(cancel)
+        if frame.size == (frame_width, frame_height):
+            canvas = frame
+        else:
+            canvas = Image.new("RGBA", (frame_width, frame_height), (0, 0, 0, 0))
+            canvas.paste(frame, ((frame_width - frame.width) // 2,
+                                (frame_height - frame.height) // 2))
         if (target_w, target_h) != (frame_width, frame_height):
             canvas = canvas.resize((target_w, target_h), Image.LANCZOS)
-        normalized.append(canvas)
-    return normalized, target_w, target_h, warnings
+        frames[index] = canvas
+    return frames, target_w, target_h, warnings
 
 
 # ==================================================== 探测
@@ -855,12 +893,14 @@ def _apply_analysis(probe, frames):
 # ==================================================== 落库
 
 
-def _pack_sheet(frames, frame_width, frame_height):
+def _pack_sheet(frames, frame_width, frame_height, cancel=None):
     Image, _ImageSequence = _pil()
     cols = max(1, min(len(frames), MAX_SHEET_WIDTH // max(1, frame_width)))
     rows = (len(frames) + cols - 1) // cols
+    _check_frame_budget(frame_width * cols, frame_height * rows)
     sheet = Image.new("RGBA", (frame_width * cols, frame_height * rows), (0, 0, 0, 0))
     for index, frame in enumerate(frames):
+        _check_cancelled(cancel)
         sheet.paste(frame, ((index % cols) * frame_width, (index // cols) * frame_height))
     return sheet, cols, rows
 
@@ -886,6 +926,45 @@ def _atomic_write(path, writer):
                 pass
 
 
+def _write_asset_pair(sprite_path, sprite_writer, json_path, metadata, cancel=None):
+    """两份内容都准备好才替换；任一替换失败，恢复已替换的文件。"""
+    staged, backups, installed = [], {}, []
+    try:
+        for path, writer in ((sprite_path, sprite_writer),
+                             (json_path, lambda tmp: _write_json(tmp, metadata))):
+            directory = os.path.dirname(os.path.abspath(path))
+            os.makedirs(directory, exist_ok=True)
+            fd, temporary = tempfile.mkstemp(prefix=".cs2customizer-icon-", dir=directory)
+            os.close(fd)
+            staged.append((temporary, path))
+            writer(temporary)
+            _check_cancelled(cancel)
+            if os.path.exists(path):
+                fd, backup = tempfile.mkstemp(prefix=".cs2customizer-icon-backup-", dir=directory)
+                os.close(fd)
+                backups[path] = backup
+                shutil.copyfile(path, backup)
+        for temporary, path in staged:
+            replace_with_retry(temporary, path)
+            installed.append(path)
+    except BaseException:
+        for path in reversed(installed):
+            backup = backups.pop(path, None)
+            try:
+                if backup:
+                    replace_with_retry(backup, path)
+                else:
+                    os.remove(path)
+            except OSError:
+                # 回滚也失败时保留备份供恢复，绝不清理唯一的旧内容。
+                logger.exception(f"图标回滚失败，原内容保留在 {backup}: {path}")
+        raise
+    finally:
+        for temporary in [p for p, _ in staged] + list(backups.values()):
+            if os.path.exists(temporary):
+                os.remove(temporary)
+
+
 def _read_source_frames(source, probe, progress=None, cancel=None):
     """按探测出来的形态把帧读进来。返回 `(帧列表, 素材自带 fps, 警告)`。"""
     if probe.kind == "sequence":
@@ -909,11 +988,11 @@ def _read_source_frames(source, probe, progress=None, cancel=None):
         rects = _aseprite_rects(data) if not _as_int(data.get("frame_width")) else None
         cols, rows = _json_sheet_grid(data, sprite_path, probe.frame_count)
         frames = _read_spritesheet_frames(sprite_path, cols, rows,
-                                          probe.frame_count, rects=rects)
+                                          probe.frame_count, rects=rects, cancel=cancel)
         return frames, probe.fps, []
 
     cols, rows = probe.grid or (1, 1)
-    frames = _read_spritesheet_frames(str(source), cols, rows, probe.frame_count)
+    frames = _read_spritesheet_frames(str(source), cols, rows, probe.frame_count, cancel=cancel)
     return frames, probe.fps, []
 
 
@@ -967,7 +1046,11 @@ def convert_to_style(source, style_name, kills, *, fps=None, duration=None,
     if verbatim:
         # 我们自己格式的图集原样搬进来，不重新编码——重编码只会掉画质。
         source_sheet = _resolve_sheet_image(probe.path, _load_json(probe.path))
-        _atomic_write(sprite_path, lambda tmp: shutil.copyfile(source_sheet, tmp))
+        Image, _ = _pil()
+        with Image.open(source_sheet) as image:
+            _check_frame_budget(image.width, image.height)
+        def sprite_writer(tmp):
+            shutil.copyfile(source_sheet, tmp)
         metadata = _load_json(probe.path)
         frame_count = int(metadata.get("frames") or probe.frame_count)
         warnings = list(probe.warnings)
@@ -990,7 +1073,7 @@ def convert_to_style(source, style_name, kills, *, fps=None, duration=None,
         frames, source_fps, warnings = _read_source_frames(source, probe, progress, cancel)
         _check_cancelled(cancel)
         frames, frame_width, frame_height, extra = _normalize_frames(
-            frames, trim=trim, chroma_key=chroma_key, chroma_tolerance=chroma_tolerance
+            frames, trim=trim, chroma_key=chroma_key, chroma_tolerance=chroma_tolerance, cancel=cancel
         )
         warnings = list(warnings) + list(extra)
 
@@ -1003,9 +1086,11 @@ def convert_to_style(source, style_name, kills, *, fps=None, duration=None,
         )
 
         _report(progress, len(frames), len(frames), "处理帧")
-        sheet, cols, rows = _pack_sheet(frames, frame_width, frame_height)
+        sheet, cols, rows = _pack_sheet(frames, frame_width, frame_height, cancel)
+        frames.clear()  # 图集已持有最终像素，不再同时保留整套独立帧。
         _check_cancelled(cancel)
-        _atomic_write(sprite_path, lambda tmp: sheet.save(tmp, "PNG", optimize=True))
+        def sprite_writer(tmp):
+            sheet.save(tmp, "PNG", optimize=True)
         _report(progress, 1, 1, "打包图集")
         metadata = {
             "frame_width": frame_width,
@@ -1019,10 +1104,7 @@ def convert_to_style(source, style_name, kills, *, fps=None, duration=None,
             "version": 1,
         }
 
-    _atomic_write(
-        json_path,
-        lambda tmp: _write_json(tmp, metadata),
-    )
+    _write_asset_pair(sprite_path, sprite_writer, json_path, metadata, cancel)
 
     # 老格式的逐帧目录会**优先**被 has_kill_icon_level_assets 之外的路径认出来吗？
     # 不会——装载顺序是「图集优先、逐帧目录兜底」。但同一等级同时存在两种格式

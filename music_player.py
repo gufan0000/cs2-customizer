@@ -698,27 +698,31 @@ class MusicPlayer:
                 self.on_track_change(loading_track)
             
             # 启动异步加载
-            with self._transition_lock:
-                if generation != self._transition_generation:
-                    return
-                self.loader_thread = MusicLoaderThread(self, track)
-                self.loader_thread.start()
+            self._start_loader_when_ready(track, generation)
 
         except Exception as e:
             self.logger.error(f"准备播放失败: {e}", exc_info=True)
             # 延迟调用next避免立即触发
             self._schedule_transition(0.5, self.next, generation=generation)
 
+    def _start_loader_when_ready(self, track, generation):
+        with self._transition_lock:
+            if generation != self._transition_generation:
+                return
+            loader = getattr(self, "loader_thread", None)
+            if loader is not None and loader.is_alive():
+                # 复用已有的代次调度；等待下载退出不占用 GUI，也不积攒下载线程。
+                self._schedule_transition(0.1, lambda: self._start_loader_when_ready(track, generation),
+                                          generation=generation)
+                return
+            self.loader_thread = MusicLoaderThread(self, track)
+            self.loader_thread.start()
+
     def cancel_loading(self):
         """取消当前的加载任务"""
         loader = getattr(self, "loader_thread", None)
         if loader and loader.is_alive():
             loader.cancel()
-            if loader is not threading.current_thread():
-                loader.join(timeout=0.5)
-            with self._transition_lock:
-                if self.loader_thread is loader:
-                    self.loader_thread = None
             self._debug_log("已取消之前的加载任务")
 
     def _on_track_loaded(self, track: Dict, audio_path: str):

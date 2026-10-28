@@ -98,6 +98,8 @@ def ctl(monkeypatch, qapp, tmp_path):
     controller = af.AfterlifeController(_Cfg())
     monkeypatch.setattr(controller, "_build_browser", lambda: fake)
     monkeypatch.setattr(controller, "profile_dir", lambda: str(tmp_path))
+    # 状态机使用同步执行器；真实后台执行另有取消/GUI 响应回归。
+    monkeypatch.setattr(controller, "_run_background", lambda job: job())
     return controller, fake
 
 
@@ -306,7 +308,7 @@ def test_ensure_feed_survives_unreadable_url(ctl):
     controller.preheat()
     fake.url_value = ""
     fake.calls.clear()
-    assert controller.ensure_feed() is False
+    assert controller.ensure_feed() is True  # 请求已提交，结果不再阻塞 GUI 返回。
     assert "eval_js" not in fake.calls
 
 
@@ -315,7 +317,8 @@ def test_ensure_feed_survives_js_failure(ctl):
     controller, fake = ctl
     controller.preheat()
     fake.js_result = "not-found"
-    assert controller.ensure_feed() is False
+    assert controller.ensure_feed() is True
+    assert fake.visible is False
 
 
 def test_ensure_feed_noop_without_browser(ctl):

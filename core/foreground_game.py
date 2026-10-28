@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import ctypes
 import os
+import time
 from ctypes import wintypes
 
 #: 和 `core/audio/game_audio_ducker.DEFAULT_TARGET_PROCESS_NAMES` 保持同一份口径
@@ -28,7 +29,8 @@ _MAX_PATH_WIDE = 32768
 
 #: pid → 进程名。开镜是热路径（一局上百次），每次都 OpenProcess 太贵；
 #: pid 在进程活着期间不变，游戏也不会一局换好几次 pid。
-_pid_name_cache: dict[int, str] = {}
+_pid_name_cache: dict[int, tuple[str, float]] = {}
+_PID_CACHE_TTL = 1.0
 #: 缓存不封顶就是泄漏：桌面上每点一次右键都可能是一个新 pid。
 _PID_CACHE_LIMIT = 64
 
@@ -46,8 +48,8 @@ def _process_name_for_pid(pid: int) -> str:
     if pid <= 0:
         return ""
     cached = _pid_name_cache.get(pid)
-    if cached is not None:
-        return cached
+    if cached is not None and time.monotonic() - cached[1] < _PID_CACHE_TTL:
+        return cached[0]
 
     name = ""
     kernel32 = _kernel32()
@@ -66,7 +68,7 @@ def _process_name_for_pid(pid: int) -> str:
     if name:
         if len(_pid_name_cache) >= _PID_CACHE_LIMIT:
             _pid_name_cache.clear()
-        _pid_name_cache[pid] = name
+        _pid_name_cache[pid] = (name, time.monotonic())
     return name
 
 

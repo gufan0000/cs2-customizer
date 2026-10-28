@@ -205,6 +205,9 @@ class StyleApplier:
     
     def _style_checkbox(self, checkbox: QCheckBox):
         """统一复选框样式"""
+        from ui_toggle_switch import ToggleSwitch
+        if isinstance(checkbox, ToggleSwitch):
+            return  # 自绘开关保留自己的绘制和命名，只复用原生可访问性。
         if not checkbox.objectName():
             checkbox.setObjectName("checkBox")
         

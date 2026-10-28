@@ -455,6 +455,7 @@ def test_the_page_refreshes_itself_when_the_assets_land(qapp, monkeypatch):
 
     player = kp.KillIconPlayer.__new__(kp.KillIconPlayer)
     kp.QObject.__init__(player)
+    player._pending_play = None
     player.current_style = "classic"
     player._catalog = {}
     player._catalog_style = None

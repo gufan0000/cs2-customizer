@@ -243,7 +243,6 @@ class CrosshairPage(QWidget):
         self._burst_animator = None
 
         self._init_ui()
-        self.load_settings()
 
         # R1-8: 拖 .xchr/.json 准心文件进页面即导入
         try:
@@ -261,7 +260,7 @@ class CrosshairPage(QWidget):
             for names in self.STYLE_DEAD_SLIDERS.values() for attr in names
             if getattr(self, attr, None) is not None
         }
-        self._sync_slider_availability()
+        self.load_settings()
 
         self.logger.info("准心设置页面初始化完成")
     
@@ -865,6 +864,7 @@ class CrosshairPage(QWidget):
         layout.addLayout(size_header)
         
         self.size_slider = QSlider(Qt.Horizontal)
+        self.size_slider.setAccessibleName("准心大小")
         self.size_slider.setMinimum(5)
         self.size_slider.setMaximum(50)
         self.size_slider.setValue(config.crosshair_size)
@@ -882,6 +882,7 @@ class CrosshairPage(QWidget):
         layout.addLayout(thickness_header)
         
         self.thickness_slider = QSlider(Qt.Horizontal)
+        self.thickness_slider.setAccessibleName("准心粗细")
         self.thickness_slider.setMinimum(1)
         self.thickness_slider.setMaximum(10)
         self.thickness_slider.setValue(config.crosshair_thickness)
@@ -899,6 +900,7 @@ class CrosshairPage(QWidget):
         layout.addLayout(gap_header)
 
         self.gap_slider = QSlider(Qt.Horizontal)
+        self.gap_slider.setAccessibleName("中心间隙")
         self.gap_slider.setMinimum(0)
         self.gap_slider.setMaximum(20)
         self.gap_slider.setValue(int(getattr(config, "crosshair_gap", 0) or 0))
@@ -916,6 +918,7 @@ class CrosshairPage(QWidget):
         layout.addLayout(outline_header)
 
         self.outline_slider = QSlider(Qt.Horizontal)
+        self.outline_slider.setAccessibleName("黑色描边")
         self.outline_slider.setMinimum(0)
         self.outline_slider.setMaximum(4)
         self.outline_slider.setValue(int(getattr(config, "crosshair_outline", 0) or 0))
@@ -929,16 +932,17 @@ class CrosshairPage(QWidget):
         alpha_header.addWidget(alpha_title)
         alpha_header.addStretch()
         self.alpha_value_label = QLabel(
-            f"{int(getattr(config, 'crosshair_alpha', 255) or 255) * 100 // 255}%"
+            f"{int((255 if getattr(config, 'crosshair_alpha', None) is None else config.crosshair_alpha)) * 100 // 255}%"
         )
         alpha_header.addWidget(self.alpha_value_label)
         layout.addLayout(alpha_header)
 
         self.alpha_slider = QSlider(Qt.Horizontal)
-        self.alpha_slider.setMinimum(10)
+        self.alpha_slider.setAccessibleName("不透明度")
+        self.alpha_slider.setMinimum(0)
         self.alpha_slider.setMaximum(100)
         self.alpha_slider.setValue(
-            max(10, int(getattr(config, "crosshair_alpha", 255) or 255) * 100 // 255)
+            max(0, int((255 if getattr(config, "crosshair_alpha", None) is None else config.crosshair_alpha)) * 100 // 255)
         )
         self.alpha_slider.valueChanged.connect(self._on_alpha_changed)
         layout.addWidget(self.alpha_slider)
@@ -983,11 +987,11 @@ class CrosshairPage(QWidget):
             radio = QRadioButton(style_name)
             self.style_group.addButton(radio)
             radio.setProperty("style_value", style_value)
-            radio.toggled.connect(lambda checked, s=style_value: self._on_style_changed(s) if checked else None)
             style_layout.addWidget(radio)
 
             if style_value == config.crosshair_style:
                 radio.setChecked(True)
+            radio.toggled.connect(lambda checked, s=style_value: self._on_style_changed(s) if checked else None)
 
         # FlowLayout 没有 addStretch——它本来就是左对齐 + 自动换行
         layout.addWidget(style_wrap)
@@ -1036,11 +1040,11 @@ class CrosshairPage(QWidget):
                     radio = QRadioButton(color_name)
                     self.color_group.addButton(radio)
                     radio.setProperty("color_value", color_code)
-                    radio.toggled.connect(lambda checked, c=color_code: self._on_color_changed(c) if checked else None)
                     row_layout.addWidget(radio)
                     
                     if color_code == config.crosshair_color:
                         radio.setChecked(True)
+                    radio.toggled.connect(lambda checked, c=color_code: self._on_color_changed(c) if checked else None)
             
             row_layout.addStretch()
             layout.addLayout(row_layout)
@@ -1093,6 +1097,7 @@ class CrosshairPage(QWidget):
         row_layout.addWidget(label)
         
         self.animation_combo = QComboBox()
+        self.animation_combo.setAccessibleName("准心动画")
         animation_options = [
             "无动画", "呼吸效果", "脉冲效果", "变色效果", "旋转效果",
             "扩散效果", "弹跳效果", "闪烁效果", "抖动效果"
@@ -1133,6 +1138,7 @@ class CrosshairPage(QWidget):
         row_layout.addWidget(label)
         
         self.kill_effect_combo = QComboBox()
+        self.kill_effect_combo.setAccessibleName("击杀联动效果")
         kill_effect_options = [
             "关闭联动", "脉冲效果", "爆炸效果", "旋转效果", "抖动效果",
             "X形闪烁", "彩虹冲击波", "破碎重组", "多重脉冲", "霓虹扩散",
@@ -1228,6 +1234,7 @@ class CrosshairPage(QWidget):
         row = QHBoxLayout()
         row.setSpacing(10)
         self.sharecode_edit = QLineEdit()
+        self.sharecode_edit.setAccessibleName("准心分享码")
         self.sharecode_edit.setPlaceholderText("粘贴游戏里复制的 CSGO-xxxxx-xxxxx-xxxxx-xxxxx-xxxxx")
         self.sharecode_edit.setClearButtonEnabled(True)
         self.sharecode_edit.returnPressed.connect(self._import_sharecode)
@@ -1607,7 +1614,7 @@ class CrosshairPage(QWidget):
                 gap=max(0, int(getattr(config, "crosshair_gap", 0) or 0)),
                 outline=max(0, int(getattr(config, "crosshair_outline", 0) or 0)),
                 dot=bool(getattr(config, "crosshair_dot", False)),
-                alpha=max(0, min(255, int(getattr(config, "crosshair_alpha", 255) or 255))),
+                alpha=max(0, min(255, int((255 if getattr(config, "crosshair_alpha", None) is None else config.crosshair_alpha)))),
             )
             # now=0.0 且动画器是全新的 → 相位 0 = 各动画的静止形态，结果确定
             # RN-116：示意播放期间沿用**同一个** animator 并推进相位，
@@ -1778,8 +1785,12 @@ class CrosshairPage(QWidget):
                 return
 
             # 更新准心数据
+            previous = config.crosshair_custom_data, config.crosshair_style
             config.crosshair_custom_data = cleaned["crosshair_custom_data"]
-            config.save_config()
+            config.crosshair_style = "custom"
+            if config.save_config_now() is False:
+                config.crosshair_custom_data, config.crosshair_style = previous
+                raise OSError("准心配置保存失败")
             
             # 切换到自定义准心样式
             for button in self.style_group.buttons():
@@ -1801,20 +1812,30 @@ class CrosshairPage(QWidget):
             self.logger.error(f"加载准心失败: {e}")
     
     def load_settings(self):
-        """加载设置"""
+        """加载设置，不把控件显示精度写回配置。"""
+        from widgets.config_reload import block_control_signals
+        with block_control_signals(self):
+            self._load_settings_values()
+
+    def _load_settings_values(self):
         # 加载大小和粗细
         self.size_slider.setValue(config.crosshair_size)
         self.thickness_slider.setValue(config.crosshair_thickness)
         self.gap_slider.setValue(int(getattr(config, "crosshair_gap", 0) or 0))
         self.outline_slider.setValue(int(getattr(config, "crosshair_outline", 0) or 0))
         self.alpha_slider.setValue(
-            max(10, int(getattr(config, "crosshair_alpha", 255) or 255) * 100 // 255)
+            max(0, int((255 if getattr(config, "crosshair_alpha", None) is None else config.crosshair_alpha)) * 100 // 255)
         )
         self.dot_checkbox.setChecked(bool(getattr(config, "crosshair_dot", False)))
         self._sync_custom_color_button()
         
-        # 加载样式（已在创建时设置）
-        # 加载颜色（已在创建时设置）
+        for name in ("size", "thickness", "gap", "outline"):
+            getattr(self, f"{name}_value_label").setText(str(getattr(config, f"crosshair_{name}")))
+        self.alpha_value_label.setText(f"{self.alpha_slider.value()}%")
+        for group, key, prop in ((self.style_group, "crosshair_style", "style_value"),
+                                 (self.color_group, "crosshair_color", "color_value")):
+            for button in group.buttons():
+                button.setChecked(button.property(prop) == getattr(config, key))
         
         # 加载动画设置
         animation_map = {
@@ -1859,4 +1880,5 @@ class CrosshairPage(QWidget):
         self._sync_overview_status()
         
         self.logger.debug("准心设置加载完成")
+        self._sync_slider_availability()
 

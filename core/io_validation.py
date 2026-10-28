@@ -10,7 +10,9 @@ JSON 导入限大小、校验顶层类型、逐字段校验类型再赋值(防�
 from __future__ import annotations
 
 import json
+import math
 import os
+import tempfile
 import time
 from typing import Dict, List, Optional, Tuple
 
@@ -69,6 +71,20 @@ def replace_with_retry(src: str, dst: str) -> None:
     os.replace(src, dst)
 
 
+def atomic_write_text(path: str, text: str, *, errors: str = "strict") -> None:
+    """在同目录写完并刷新后替换；写入失败保留原文件。"""
+    fd, temporary = tempfile.mkstemp(prefix=".cs2customizer-write-", dir=os.path.dirname(os.path.abspath(path)))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", errors=errors, newline="") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        replace_with_retry(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.remove(temporary)
+
+
 def load_json_checked(path: str, max_bytes: int = MAX_IMPORT_JSON_BYTES) -> Dict:
     """读取并基本校验 JSON：限大小 + 顶层必须是对象。失败抛 ValueError。"""
     try:
@@ -93,10 +109,27 @@ def validate_voice_config(data: Dict) -> Tuple[bool, Dict, List[str]]:
         return False, {}, ["配置文件格式不正确(应为 JSON 对象)"]
 
     if "slots" in data:
-        if isinstance(data["slots"], (list, dict)):
-            cleaned["voice_output_slots"] = data["slots"]
-        else:
+        slots = data["slots"]
+        if isinstance(slots, list):
+            slots = {str(i): slot for i, slot in enumerate(slots)}
+        if not isinstance(slots, dict) or len(slots) > 50:
             errors.append("slots 字段类型不正确")
+        else:
+            normalized = {}
+            for slot_id, slot in slots.items():
+                if (not isinstance(slot_id, str) or not slot_id.isdecimal()
+                        or not 0 <= int(slot_id) < 50 or str(int(slot_id)) != slot_id
+                        or not isinstance(slot, dict)):
+                    errors.append("槽位必须是 0–49 编号的对象")
+                    continue
+                if any(not isinstance(slot.get(k, ""), str) for k in ("key", "audio", "name")):
+                    errors.append(f"槽位 {slot_id} 的按键、音频或名称无效")
+                volume = slot.get("volume", 1.0)
+                if (type(volume) not in (int, float) or not math.isfinite(volume)
+                        or not 0 <= volume <= 2):
+                    errors.append(f"槽位 {slot_id} 的音量应为 0–2")
+                normalized[slot_id] = dict(slot)
+            cleaned["voice_output_slots"] = normalized
     for key, cfg_key in (
         ("stop_key", "voice_output_stop_key"),
         ("ptt_key", "voice_output_ptt_key"),
@@ -114,11 +147,17 @@ def validate_voice_config(data: Dict) -> Tuple[bool, Dict, List[str]]:
             errors.append("ptt_enabled 字段应为布尔值")
     if "volume" in data:
         v = data["volume"]
-        if isinstance(v, (int, float)) and not isinstance(v, bool):
+        if type(v) in (int, float) and math.isfinite(v) and 0 <= v <= 2:
             cleaned["voice_output_volume"] = float(v)
         else:
             errors.append("volume 字段应为数字")
 
+    if "voice_output_mode" in cleaned:
+        mode = cleaned["voice_output_mode"]
+        mode = {"auto": "自动", "mix": "混音", "overwrite": "覆盖"}.get(mode, mode)
+        if mode not in {"自动", "混音", "覆盖"}:
+            errors.append("播放模式无效")
+        cleaned["voice_output_mode"] = mode
     if errors:
         return False, {}, errors
     if not cleaned:
@@ -133,7 +172,8 @@ def validate_crosshair_import(data: Dict) -> Tuple[bool, Dict, List[str]]:
     if "crosshair_data" not in data:
         return False, {}, ["缺少 crosshair_data 字段"]
     cd = data["crosshair_data"]
-    if not isinstance(cd, (list, dict, str)):
+    from core.presets.payload_validation import validate_payload
+    if validate_payload({"crosshair_custom_data": cd}, {"crosshair_custom_data"}):
         return False, {}, ["crosshair_data 字段类型不正确"]
     return True, {"crosshair_custom_data": cd}, []
 

@@ -49,11 +49,13 @@
       "_channel_state_key",
       "_clear_fade_effect",
       "_evict_lru_locked",
+      "_forward_to_voice",
       "_get_info",
       "_init_mixer",
       "_load_count_file",
       "_load_first_available_generic_kill_sound",
       "_load_first_available_generic_kill_voice",
+      "_load_numbered_variants",
       "_load_range",
       "_load_sound_by_key",
       "_load_voice_by_key",
@@ -197,6 +199,9 @@
       "resolve_priority"
     ],
     "core.audio.audio_resource_health": [
+      "KILL_LEVELS",
+      "REQUIRED_AUDIO_DIRS",
+      "_collect_incomplete_kill_styles",
       "apply_conservative_audio_fix",
       "check_gsi_cfg_match_stats",
       "collect_audio_resource_health",
@@ -205,6 +210,7 @@
     "core.audio.audio_task_runner": [
       "AudioTaskRunner",
       "get_audio_task_runner",
+      "stop_audio_tasks",
       "submit_import_refresh_task",
       "submit_reload_audio_task"
     ],
@@ -248,7 +254,7 @@
       "validate_style_name"
     ]
   },
-  "contract_total": 57,
+  "contract_total": 61,
   "external_use": {
     "core.audio.__init__": {
       "files": [],
@@ -258,14 +264,16 @@
       "files": [
         "pages/audio_replay_page.py",
         "tests/test_audio_event_timeline.py",
+        "tests/test_audio_fade_channel_owner.py",
         "tests/test_expert_audio_pages_catch_you_when_empty.py",
         "tests/test_replay_filters_are_pickable.py",
+        "tests/test_the_replay_says_when_old_records_were_pushed_out.py",
         "tests/test_tool_pages_ui_polish.py",
         "tests/test_ui_replay_page_smoke.py"
       ],
       "names": {
         "AudioEvent": 6,
-        "AudioEventTimeline": 1,
+        "AudioEventTimeline": 3,
         "get_audio_event_timeline": 5
       }
     },
@@ -284,6 +292,7 @@
         "pages/sound_page_base.py",
         "pages/switch_weapon_page.py",
         "tests/test_audio_file_utils.py",
+        "tests/test_optimization_lifetimes.py",
         "tests/test_special_sound_events.py"
       ],
       "names": {
@@ -291,9 +300,9 @@
         "find_audio_by_stem": 5,
         "find_audio_by_tokens": 2,
         "find_first_audio_file": 6,
-        "has_audio_files": 1,
+        "has_audio_files": 2,
         "is_audio_filename": 1,
-        "list_audio_files": 1,
+        "list_audio_files": 2,
         "list_style_dirs_with_audio": 4,
         "list_unique_audio_stems": 2
       }
@@ -308,18 +317,21 @@
         "tests/test_audio_preload_budget.py",
         "tests/test_category_volume_and_norm.py",
         "tests/test_community_ticket_fixes.py",
+        "tests/test_deep_audit_runtime.py",
         "tests/test_full_auto_guns_are_heard_every_shot.py",
         "tests/test_gsi_edge_loss_fixes.py",
         "tests/test_gun_sound_cache_budget.py",
         "tests/test_gun_sound_chain_after_the_in_game_test.py",
         "tests/test_gun_sound_variants_rotate.py",
         "tests/test_kill_sound_loss_fixes.py",
+        "tests/test_kill_sounds_vary_and_voices_take_turns.py",
         "tests/test_special_sound_events.py",
-        "tests/test_the_things_the_audit_left_open.py"
+        "tests/test_the_things_the_audit_left_open.py",
+        "tests/test_voice_ptt_release_and_mix_fallback.py"
       ],
       "names": {
         "AudioInfo": 1,
-        "AudioManager": 24,
+        "AudioManager": 28,
         "GUN_SOUND_CACHE_HEADROOM": 1,
         "_NullChannel": 2,
         "get_audio_manager": 5
@@ -343,12 +355,21 @@
         "core/runtime/system_status_service.py",
         "gui_widget.py",
         "pages/audio_status_badge.py",
-        "tests/test_audio_resource_health.py"
+        "tests/test_audio_resource_health.py",
+        "tests/test_no_bundled_assets.py",
+        "tests/test_optimization_lifetimes.py"
       ],
       "names": {
+        "KILL_LEVELS": 1,
+        "KillIconPlayer": 1,
+        "PACKET_RECV_KEY": 1,
+        "REQUIRED_AUDIO_DIRS": 1,
+        "_collect_incomplete_kill_styles": 1,
         "apply_conservative_audio_fix": 2,
         "check_gsi_cfg_match_stats": 2,
         "collect_audio_resource_health": 6,
+        "config": 2,
+        "flask_app": 3,
         "format_audio_resource_health": 2
       }
     },
@@ -358,18 +379,21 @@
         "pages/audio_import_wizard_page.py",
         "pages/audio_task_panel_page.py",
         "tests/test_audio_task_runner.py",
+        "tests/test_optimization_lifetimes.py",
         "tests/test_the_audio_task_thread_survives_a_dead_host.py",
         "tests/test_ui_audio_task_panel_smoke.py"
       ],
       "names": {
-        "AudioTaskRunner": 3,
+        "AudioTaskRunner": 4,
         "get_audio_task_runner": 1,
+        "stop_audio_tasks": 1,
         "submit_import_refresh_task": 1,
         "submit_reload_audio_task": 1
       }
     },
     "core.audio.game_audio_ducker": {
       "files": [
+        "core/runtime/exit_guardian.py",
         "gsi_handler_sounds.py",
         "tests/test_game_audio_ducker.py"
       ],
@@ -377,7 +401,7 @@
         "DEFAULT_GUN_SOUND_DUCK_RATIO": 1,
         "DEFAULT_GUN_SOUND_DUCK_RELEASE_MS": 1,
         "GameAudioDucker": 2,
-        "_SessionAudioBackend": 1,
+        "_SessionAudioBackend": 3,
         "clamp_gun_sound_duck_ratio": 1,
         "clamp_gun_sound_duck_time_ms": 1
       }
@@ -403,11 +427,12 @@
         "tests/test_audio_compat.py",
         "tests/test_audio_resource_health.py",
         "tests/test_gun_sound_series.py",
-        "tests/test_runtime_audio.py"
+        "tests/test_runtime_audio.py",
+        "tests/test_the_sweep_bugs_stay_fixed.py"
       ],
       "names": {
         "get_legacy_audio_manager": 2,
-        "get_runtime_audio_manager": 19,
+        "get_runtime_audio_manager": 20,
         "peek_runtime_audio_manager": 1
       }
     },
@@ -433,6 +458,7 @@
         "tests/test_apply_one_style_to_every_weapon.py",
         "tests/test_gun_special_sound_truth.py",
         "tests/test_health_report_speaks_user_language.py",
+        "tests/test_kill_sounds_vary_and_voices_take_turns.py",
         "tests/test_special_sound_events.py",
         "tests/test_the_special_sound_guide_follows_the_tab.py",
         "tests/test_the_things_the_audit_left_open.py",
@@ -442,7 +468,7 @@
         "SOUND_EVENTS": 6,
         "config_defaults": 5,
         "events_in_group": 9,
-        "get_event": 2,
+        "get_event": 3,
         "round_event_keys": 1,
         "sound_key": 3,
         "style_dir_parts": 1,
@@ -472,18 +498,18 @@
   "imported_but_no_contract": [],
   "internal_only_modules": [],
   "loc": {
-    "core.audio.__init__": 104,
-    "core.audio.audio_event_timeline": 113,
-    "core.audio.audio_file_utils": 232,
-    "core.audio.audio_manager": 1968,
-    "core.audio.audio_playback_policy": 152,
-    "core.audio.audio_resource_health": 407,
-    "core.audio.audio_task_runner": 240,
-    "core.audio.game_audio_ducker": 869,
-    "core.audio.runtime_audio": 45,
-    "core.audio.safe_soundfile": 122,
-    "core.audio.special_events": 209,
-    "core.audio.style_creator": 328
+    "core.audio.__init__": 105,
+    "core.audio.audio_event_timeline": 127,
+    "core.audio.audio_file_utils": 243,
+    "core.audio.audio_manager": 2039,
+    "core.audio.audio_playback_policy": 153,
+    "core.audio.audio_resource_health": 412,
+    "core.audio.audio_task_runner": 285,
+    "core.audio.game_audio_ducker": 884,
+    "core.audio.runtime_audio": 46,
+    "core.audio.safe_soundfile": 123,
+    "core.audio.special_events": 218,
+    "core.audio.style_creator": 329
   },
   "reexport_only_modules": [],
   "surface": {
@@ -593,6 +619,7 @@
       ],
       "functions": [
         "get_audio_task_runner",
+        "stop_audio_tasks",
         "submit_import_refresh_task",
         "submit_reload_audio_task"
       ]

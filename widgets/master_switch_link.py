@@ -104,6 +104,7 @@ class MasterSwitchRow(QWidget):
         # ⭐ **需要用文字指路的控件，就是放错了地方** —— 指路是症状，不是修法。
         # 左上角是这张卡的第一个扫视落点，总开关就该在那儿。
         self._toggle = ToggleSwitch(checked=self._config_value())
+        self._toggle.setAccessibleName(f"{feature_name}总开关")
         self._toggle.toggled.connect(self._on_user_toggled)
         layout.addWidget(self._toggle)
 

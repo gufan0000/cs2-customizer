@@ -75,6 +75,10 @@ class SettingsRow(QWidget):
         self.row.addWidget(self.label_widget)
 
         self.control_widget = control
+        if control is not None:
+            self.label_widget.setBuddy(control)
+            if not control.accessibleName():
+                control.setAccessibleName(label)
         self.value_widget: QLabel | None = None
         self.hint_widget: QLabel | None = None
 

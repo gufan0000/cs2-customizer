@@ -719,7 +719,7 @@ class MainWindow(QMainWindow):
                 return
             newest_ts = max(p.stat().st_mtime for p in logs)
             report_text = read_report_text(logs[-3:])  # 最多带最近 3 份
-            preview = "\n".join(report_text.splitlines()[:20])
+            preview = report_text
 
             from PySide6.QtCore import Qt
             from PySide6.QtWidgets import QMessageBox
@@ -730,7 +730,7 @@ class MainWindow(QMainWindow):
             box.setWindowTitle("发现崩溃记录")
             box.setIcon(QMessageBox.Question)
             box.setText(f"上次运行检测到 {len(logs)} 份崩溃日志。是否发送给开发者帮助修复？")
-            box.setInformativeText("仅发送崩溃堆栈文本（不含任何个人隐私信息）。")
+            box.setInformativeText("发送版本号和脱敏后的崩溃堆栈。发送前可在详情中检查完整内容。")
             box.setDetailedText(preview)
             send_btn = box.addButton("发送并帮助改进", QMessageBox.AcceptRole)
             box.addButton("本次不发", QMessageBox.RejectRole)
@@ -2176,6 +2176,7 @@ class MainWindow(QMainWindow):
             row_layout.addWidget(label)
 
             toggle = ToggleSwitch(checked=getattr(self.config, config_key, False))
+            toggle.setAccessibleName(text)
             toggle.toggled.connect(
                 lambda checked, key=config_key: self._on_switch_changed(key, checked)
             )
@@ -4235,14 +4236,19 @@ class MainWindow(QMainWindow):
         那样反而制造出"一半新一半旧"的更糟状态。
         """
         refreshed, failed = 0, []
+        changed_switches = []
+        for key in getattr(self, "_switch_id_by_config_key", {}):
+            toggle = self._find_feature_switch(key)
+            value = bool(getattr(self.config, key, False))
+            if toggle is not None and toggle.isChecked() != value:
+                changed_switches.append((key, value))
         for page_id in list(getattr(self, "_loaded_pages", ())):
             page = self.pages.get(page_id)
-            loader = getattr(page, "load_settings", None) if page is not None else None
-            if not callable(loader):
+            if page is None:
                 continue
             try:
-                loader()
-                refreshed += 1
+                from widgets.config_reload import reload_page_settings
+                refreshed += int(reload_page_settings(page))
             except Exception:
                 failed.append(page_id)
                 self.logger.exception(f"[配置重载] 页面 {page_id} 刷新失败")
@@ -4250,6 +4256,25 @@ class MainWindow(QMainWindow):
             f"[配置重载] {reason}: 已刷新 {refreshed} 个已加载页面"
             + (f"，{len(failed)} 个失败: {failed}" if failed else "")
         )
+        for key, value in changed_switches:
+            # 恢复配置也走原有功能启停入口，避免界面已更新而运行时仍持有旧状态。
+            try:
+                self._on_switch_changed(key, value)
+            except Exception:
+                self.logger.exception(f"[配置重载] 功能 {key} 同步失败")
+        for key in getattr(self, "_switch_id_by_config_key", {}):
+            self.sync_feature_switch(key)
+        for page in getattr(self, "pages", {}).values():
+            row = getattr(page, "master_switch_row", None)
+            if row is not None:
+                row.refresh()
+                self.sync_feature_switch(row.config_key)
+        overlay = getattr(self, "screen_effect_overlay", None)
+        if overlay is not None:
+            overlay.update_settings_from_config()
+        crosshair = getattr(self, "crosshair_animation", None)
+        if crosshair is not None:
+            crosshair.reload_settings()
         # 首页概览与状态条也读配置,一并同步
         for hook in ("_sync_basic_page_overview", "_tick_system_status_strip"):
             fn = getattr(self, hook, None)

@@ -40,6 +40,25 @@ def test_owns_hwnd_false_without_owned_pids(browser, monkeypatch):
     assert browser._owns_hwnd(12345) is False
 
 
+def test_close_during_launch_preparation_prevents_process_start(browser, monkeypatch):
+    """关闭动作发生在启动耗时步骤中，后续不得再创建孤儿进程。"""
+    monkeypatch.setattr(sticky, "find_browser", lambda _: "fake-browser.exe")
+    monkeypatch.setattr(browser, "kill_leftovers", browser.close)
+    def forbidden(*args, **kwargs):
+        raise AssertionError("cancelled launch spawned a process")
+    monkeypatch.setattr(sticky.subprocess, "Popen", forbidden)
+    assert browser.launch() is False
+    assert browser.proc is None
+
+
+def test_cancelled_window_wait_does_not_enumerate_user_windows(browser, monkeypatch):
+    browser.close()
+    def forbidden(*args, **kwargs):
+        raise AssertionError("cancelled launch continued window enumeration")
+    monkeypatch.setattr(sticky.win32gui, "EnumWindows", forbidden)
+    assert browser._await_window(4242, 25) == 0
+
+
 def test_owns_hwnd_rejects_foreign_window(browser, monkeypatch):
     """核心回归：别的进程的窗口一律拒绝。"""
     browser._owned_pids = {4242, 4243}

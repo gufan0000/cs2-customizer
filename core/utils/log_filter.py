@@ -30,6 +30,14 @@ __all__ = ["SensitiveFilter", "redact_text"]
 
 # 每条规则是 (pattern, replacement)；pattern 使用命名分组以便替换保留上下文
 _RULES: Final[Tuple[Tuple[Pattern[str], str], ...]] = (
+    (
+        re.compile(
+            r"(?P<key>password|passwd|pwd|access[_-]?token|refresh[_-]?token|api[_-]?key|secret|token)"
+            r"(?P<sep>[\"']?\s*[:=]\s*)(?P<quote>[\"'])(?P<val>.*?)(?P=quote)",
+            re.IGNORECASE,
+        ),
+        r"\g<key>\g<sep>\g<quote>***\g<quote>",
+    ),
     # token / api_key / password / secret = "xxxx" 或 = xxxx 或 : xxxx
     # 也兼容 JSON 风格："token": "xxxx"（key 后可带闭合引号）
     (

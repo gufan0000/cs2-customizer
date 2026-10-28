@@ -1147,10 +1147,14 @@ REVERTS = [
         "core/kill_icon_import.py",
         "        box = _frames_union_bbox(frames)\n"
         "        if box is not None and box != (0, 0, frames[0].width, frames[0].height):\n"
-        "            frames = [frame.crop(box) for frame in frames]",
+        "            for index, frame in enumerate(frames):\n"
+        "                _check_cancelled(cancel)\n"
+        "                frames[index] = frame.crop(box)",
         "        box = _frames_union_bbox(frames)\n"
         "        if box is not None and box != (0, 0, frames[0].width, frames[0].height):\n"
-        "            frames = [frame.crop(frame.getbbox() or box) for frame in frames]",
+        "            for index, frame in enumerate(frames):\n"
+        "                _check_cancelled(cancel)\n"
+        "                frames[index] = frame.crop(frame.getbbox() or box)",
         "tests/test_kill_icon_compat_ki4.py::"
         "test_trim_uses_the_union_box_so_the_animation_does_not_jitter",
         "每一帧的内容都被推到画格正中，播放时整个动画在原地抖",
@@ -11146,6 +11150,41 @@ Revert(
         "拖进一个坏 mp4：页面只认 KillIconImportError，别的异常就是一个没人接的崩溃框",
     ),
 ]
+
+
+REVERTS.extend([
+    Revert("AUD28", "预设重新按大小写区分占名", "core/presets/my_presets.py",
+           "existing = {os.path.splitext(name)[0].casefold() for name in os.listdir(directory)",
+           "existing = {os.path.splitext(name)[0] for name in os.listdir(directory)",
+           "tests/test_deep_audit_data_safety.py::test_preset_new_names_do_not_overwrite_case_or_corrupt_files",
+           "F01：Windows 同名文件被静默覆盖"),
+    Revert("AUD28", "撤销忽略后续内容改变", "core/resource_import_wizard.py",
+           "if not expected or digest.hexdigest() != expected:", "if False:",
+           "tests/test_deep_audit_data_safety.py::test_undo_preserves_later_edits",
+           "F02：撤销删除用户后来编辑的素材"),
+    Revert("AUD28", "图标第二步失败不回滚", "core/kill_icon_import.py",
+           "for path in reversed(installed):", "for path in ():",
+           "tests/test_deep_audit_data_safety.py::test_icon_second_replace_failure_rolls_back",
+           "F03：图片与元数据处于不同版本"),
+    Revert("AUD28", "配置重载又让控件回写", "widgets/config_reload.py",
+           "blockers = [QSignalBlocker(obj) for obj in [page, *page.findChildren(QObject)]]",
+           "blockers = []",
+           "tests/test_deep_audit_controls.py::test_private_loader_is_included_and_control_signals_are_blocked",
+           "F06：重载产生保存副作用和精度损失"),
+    Revert("AUD28", "帧序列跳过解码预算", "core/kill_icon_import.py",
+           "retained = _check_frame_budget(image.width, image.height, retained=retained)",
+           "retained = 0",
+           "tests/test_deep_audit_icon_budget.py::test_sequence_budget_is_checked_before_decoding",
+           "F15：预算拒绝之前已经解码大批图片"),
+    Revert("AUD28", "关闭后仍允许补发枪声", "gsi_handler_sounds.py",
+           "            self._closed = True", "            self._closed = False",
+           "tests/test_deep_audit_runtime.py::test_extra_shot_cleanup_cancels_and_blocks_late_callback",
+           "F18：清理后迟到定时器仍播放"),
+    Revert("AUD28", "重置被退出保存覆盖", "config.py",
+           "            self._reset_pending = True", "            self._reset_pending = False",
+           "tests/test_deep_audit_controls.py::test_reset_survives_debounce_and_exit_flush",
+           "F21：重启后又恢复重置前的配置"),
+])
 
 
 def run_pytest(selector: str) -> bool:

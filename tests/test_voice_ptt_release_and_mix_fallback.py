@@ -153,6 +153,21 @@ def _secs(path) -> float:
     return float(str(path).rsplit("_", 1)[-1].replace("s.wav", ""))
 
 
+@pytest.mark.parametrize("group", [None, "round"])
+def test_shutdown_cancels_overlap_and_rejects_new_playback(manager, monkeypatch, group):
+    entered, stopped = threading.Event(), threading.Event()
+    def playback(*args, cancel_event, **kwargs):
+        entered.set()
+        if cancel_event.wait(2):
+            stopped.set()
+    monkeypatch.setattr(manager, "_play_file_data", playback)
+    assert manager.play_audio_with_ptt_protocol(audio_path="test_0.1s.wav", allow_overlap=True, group=group)
+    assert entered.wait(2)
+    manager.shutdown()
+    assert stopped.wait(2)
+    assert manager.play_audio_with_ptt_protocol(audio_path="test_0.1s.wav", allow_overlap=True) is False
+
+
 @pytest.fixture
 def qapp_offscreen():
     """离屏 QApplication —— 不弹真窗口（CLAUDE.md §3）。"""

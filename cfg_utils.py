@@ -4,6 +4,7 @@ import platform
 import re
 
 from core import crosshair_reset
+from core.io_validation import atomic_write_text
 from core.utils.logger import get_logger
 
 logger = get_logger("CfgUtils")
@@ -245,13 +246,11 @@ def ensure_cfg_exists(csgo_dir, cfg_filename="gamestate_integration_cs2customize
                 existing_content = f.read()
             if existing_content.strip() != desired_content.strip():
                 logger.info(f"Overwriting existing GSI configuration file at: {cfg_path}")
-                with open(cfg_path, "w", encoding="utf-8") as f:
-                    f.write(desired_content)
+                atomic_write_text(cfg_path, desired_content)
             else:
                 logger.info(f"GSI configuration file is up-to-date at: {cfg_path}")
         else:
-            with open(cfg_path, "w", encoding="utf-8") as f:
-                f.write(desired_content)
+            atomic_write_text(cfg_path, desired_content)
             logger.info(f"GSI configuration file created at: {cfg_path}")
         return True
     except Exception as e:
@@ -291,7 +290,7 @@ def plan_autoexec(csgo_dir) -> dict:
     if exists:
         # 统一 utf-8：默认走系统区域编码（中文 Windows 为 GBK），
         # 已有 UTF-8 的 autoexec 会解码失败 → 判存失败 → 每次启动重复追加
-        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+        with open(path, "r", encoding="utf-8", errors="surrogateescape") as f:
             before = f.read()
     if not exists:
         after = exec_command + "\n"
@@ -333,8 +332,8 @@ def setup_autoexec(csgo_dir, allow_edit: bool = True):
                     import shutil
 
                     shutil.copyfile(autoexec_path, bak)      # 逐字节原样
-            with open(autoexec_path, "w", encoding="utf-8") as f:
-                f.write(plan["after"])
+            os.makedirs(os.path.dirname(autoexec_path), exist_ok=True)
+            atomic_write_text(autoexec_path, plan["after"], errors="surrogateescape")
             logger.info(f"autoexec.cfg 已改：{plan['lines']}")
         else:
             logger.info("autoexec.cfg already contains 'exec cs2customizer.cfg'")
@@ -373,7 +372,7 @@ def detect_alias_conflicts(csgo_dir):
             return None
 
     try:
-        with open(autoexec_path, "r", encoding="utf-8", errors="ignore") as fh:
+        with open(autoexec_path, "r", encoding="utf-8", errors="surrogateescape") as fh:
             autoexec_text = fh.read()
     except OSError:
         return []
@@ -390,7 +389,7 @@ def ensure_cs2customizer_exec_is_last(csgo_dir):
     if not os.path.exists(autoexec_path):
         return False
     try:
-        with open(autoexec_path, "r", encoding="utf-8", errors="ignore") as fh:
+        with open(autoexec_path, "r", encoding="utf-8", errors="surrogateescape") as fh:
             original = fh.read()
     except OSError as exc:
         logger.error(f"读 autoexec.cfg 失败: {exc}")
@@ -400,8 +399,7 @@ def ensure_cs2customizer_exec_is_last(csgo_dir):
     moved = rewritten != original
     if moved:
         try:
-            with open(autoexec_path, "w", encoding="utf-8") as fh:
-                fh.write(rewritten)
+            atomic_write_text(autoexec_path, rewritten, errors="surrogateescape")
             logger.info("已把 'exec cs2customizer.cfg' 挪到 autoexec.cfg 末尾"
                         "（同名 alias 后执行的生效，排在前面等于被后面的 cfg 覆盖）")
         except OSError as exc:

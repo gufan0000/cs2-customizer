@@ -43,12 +43,12 @@ def test_voice_config_rejects_wrong_types():
 
 def test_voice_config_accepts_valid():
     ok, cleaned, errors = validate_voice_config(
-        {"slots": {"1": "a"}, "volume": 0.5, "ptt_enabled": True, "mode": "auto"}
+        {"slots": {"1": {"audio": "a.wav", "volume": 1.0}}, "volume": 0.5, "ptt_enabled": True, "mode": "auto"}
     )
     assert ok is True
     assert cleaned["voice_output_volume"] == 0.5
     assert cleaned["voice_output_ptt_enabled"] is True
-    assert cleaned["voice_output_slots"] == {"1": "a"}
+    assert cleaned["voice_output_slots"] == {"1": {"audio": "a.wav", "volume": 1.0}}
 
 
 def test_voice_config_bool_not_treated_as_number():
@@ -62,8 +62,8 @@ def test_crosshair_requires_field():
 
 
 def test_crosshair_accepts_list():
-    ok, cleaned, _ = validate_crosshair_import({"crosshair_data": [{"x": 1}]})
-    assert ok is True and cleaned["crosshair_custom_data"] == [{"x": 1}]
+    ok, cleaned, _ = validate_crosshair_import({"crosshair_data": [[1, 2]]})
+    assert ok is True and cleaned["crosshair_custom_data"] == [[1, 2]]
 
 
 def test_audio_rejects_executable(tmp_path):

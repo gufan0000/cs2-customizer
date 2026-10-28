@@ -13,6 +13,7 @@
 窗口只在第一次用时启动一次：冷启动要 3-5 秒，摊到每次死亡上会毁掉节奏。
 """
 import os
+import threading
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
@@ -35,6 +36,7 @@ class AfterlifeController(QObject):
     _death_edge = Signal()
     _respawn_edge = Signal()
     _abort_edge = Signal(str)
+    _launch_finished = Signal(object, object, bool)
 
     statusChanged = Signal(str)  # 供设置页显示当前状态
 
@@ -46,6 +48,12 @@ class AfterlifeController(QObject):
         self._failures = 0
         self._session_disabled = False
         self._dead = False
+        self._launch_cancel = None
+        self._launch_browser = None
+        self._browser_work_lock = threading.Lock()
+        self._pending_action = None
+        self._feed_busy = False
+        self._launch_finished.connect(self._on_launch_finished)
         self._show_timer = QTimer(self)
         self._show_timer.setSingleShot(True)
         self._show_timer.timeout.connect(self._show_now)
@@ -99,7 +107,7 @@ class AfterlifeController(QObject):
         网址和 UA 都是**启动参数**，运行中的窗口改不了，只能整个重开。
         没开启或没预热过就什么都不做，免得在设置页点两下就白白拉起一个进程。
         """
-        if self.browser is None:
+        if self.browser is None and self._launch_cancel is None:
             return False
         self.shutdown()
         self._failures = 0
@@ -109,28 +117,73 @@ class AfterlifeController(QObject):
     # ---- 生命周期 ----
 
     def preheat(self):
-        """提前把窗口开好并隐藏，死亡时只剩一次显示，延迟从数秒压到毫秒级。"""
+        """提交预热请求；窗口/CDP 等待在后台，结果回到 Qt 线程处理。"""
         if self._session_disabled or not bool(getattr(self.config, "fun_afterlife_enabled", False)):
             return False
         if self.browser and self.browser.is_alive():
             return True
+        if self._launch_cancel is not None:
+            return True
         if not find_browser(str(getattr(self.config, "fun_afterlife_browser_path", "") or "")):
-            logger.warning("未找到 Edge/Chrome，死亡刷短视频功能不可用")
             self.statusChanged.emit("未找到 Edge 或 Chrome 浏览器")
             return False
-        self.browser = self._build_browser()
-        anchor = find_game_window()
-        ok = self.browser.launch(anchor_hwnd=anchor, start_hidden=True)
-        if ok:
-            # 预热完立刻暂停：此时页面可能已自动起播，不暂停会一直在后台放
-            self.browser.pause()
-            self.statusChanged.emit("已就绪")
-            # 等首屏渲染完再纠正 tab；窗口此刻是隐藏的，用户看不到这个切换过程
-            self._feed_timer.start(9000)
-        else:
-            self.browser = None
+        browser = self._build_browser()
+        cancel = threading.Event()
+        self._launch_cancel = cancel
+        self._launch_browser = browser
+        self.statusChanged.emit("浏览器启动中…")
+        def prepare():
+            ok = False
+            with self._browser_work_lock:
+                try:
+                    if not cancel.is_set():
+                        ok = browser.launch(anchor_hwnd=find_game_window(), start_hidden=True)
+                        if ok:
+                            browser.pause()
+                except Exception:
+                    logger.exception("浏览器预热失败")
+                if cancel.is_set() or not ok:
+                    self._close_browser(browser)
+                    ok = False
+            try:
+                self._launch_finished.emit(browser, cancel, ok)
+            except RuntimeError:
+                self._close_browser(browser)
+        self._run_background(prepare)
+        return self.browser is not None or self._launch_cancel is not None
+
+    @staticmethod
+    def _run_background(job):
+        threading.Thread(target=job, name="AfterlifeBrowser", daemon=True).start()
+
+    @staticmethod
+    def _close_browser(browser):
+        try:
+            browser.close()
+        except Exception:
+            logger.exception("关闭贴屏浏览器失败")
+
+    def _on_launch_finished(self, browser, cancel, ok):
+        if cancel is not self._launch_cancel or cancel.is_set():
+            if ok:
+                self._run_background(lambda: self._close_browser(browser))
+            return
+        self._launch_cancel = None
+        self._launch_browser = None
+        if not ok:
+            self._pending_action = None
             self.statusChanged.emit("浏览器启动失败")
-        return ok
+            return
+        self.browser = browser
+        self.statusChanged.emit("已就绪")
+        self._feed_timer.start(9000)
+        action, self._pending_action = self._pending_action, None
+        if action == "death" and self._dead:
+            self._show_now()
+        elif action == "preview":
+            self.preview()
+        elif action == "login":
+            self.open_login()
 
     def ensure_feed(self):
         """把页面从"落错的 tab"切到视频流。
@@ -147,15 +200,35 @@ class AfterlifeController(QObject):
             return False
         if self.browser is None or not self.browser.is_alive():
             return False
-        url = self.browser.current_url()
+        if self._feed_busy:
+            return False
+        self._feed_busy = True
+        browser = self.browser
+        def adjust():
+            try:
+                with self._browser_work_lock:
+                    if browser is self.browser:
+                        self._ensure_feed_now(browser, feed_js, wrong_landing)
+            except Exception:
+                logger.exception("页面调整失败")
+            finally:
+                self._feed_busy = False
+        self._run_background(adjust)
+        return True
+
+    def _ensure_feed_now(self, browser, feed_js, wrong_landing):
+        url = browser.current_url()
         if not url:
             logger.debug("读不到当前页面地址，跳过 tab 纠正")
             return False
         if wrong_landing not in url:
             return True  # 已经在视频流上，不用动
-        result = self.browser.eval_js(feed_js)
+        if browser is not self.browser:
+            return False
+        result = browser.eval_js(feed_js)
         if result == "clicked":
-            self.browser.pause()  # 切过去会自动起播，隐藏期间不能出声
+            if browser is self.browser and not browser.visible:
+                browser.pause()  # 隐藏期间不能出声；已显示时保持播放。
             logger.info("已把页面切到视频流")
             return True
         logger.info(f"页面 tab 纠正未生效（{result}），保持原样")
@@ -164,6 +237,13 @@ class AfterlifeController(QObject):
     def shutdown(self):
         """软件退出 / 功能关闭时才真正结束浏览器进程。"""
         self._dead = False
+        self._pending_action = None
+        if self._launch_cancel is not None:
+            self._launch_cancel.set()
+            self._launch_cancel = None
+        if self._launch_browser is not None:
+            self._close_browser(self._launch_browser)
+            self._launch_browser = None
         self._show_timer.stop()
         self._feed_timer.stop()
         self._stay_timer.stop()
@@ -185,9 +265,12 @@ class AfterlifeController(QObject):
         self._show_timer.start(delay)
 
     def _show_now(self):
-        if self._session_disabled or not self._dead:
+        if (self._session_disabled or not self._dead
+                or not bool(getattr(self.config, "fun_afterlife_enabled", False))):
             return
-        if not self.preheat():
+        if self.browser is None or not self.browser.is_alive():
+            self._pending_action = "death"
+            self.preheat()
             return
         self.game_hwnd = find_game_window() or self.game_hwnd
         ok = self.browser.show(anchor_hwnd=self.game_hwnd, take_focus=True)
@@ -219,6 +302,7 @@ class AfterlifeController(QObject):
     def _retract(self, reason):
         """暂停播放 + 隐藏 + 焦点还给游戏。不关进程，下次接着播。"""
         self._dead = False
+        self._pending_action = None
         self._show_timer.stop()
         self._stay_timer.stop()
         if not self.browser or not self.browser.is_alive():
@@ -243,8 +327,9 @@ class AfterlifeController(QObject):
         原先写死 20 秒后自动收回，用户正看着它就自己消失了，像出了故障。
         预览是用来慢慢看和调位置的，收回交给「收回窗口」按钮。
         """
-        if not self.preheat():
-            return False
+        if self.browser is None or not self.browser.is_alive():
+            self._pending_action = "preview"
+            return self.preheat()
         self.game_hwnd = find_game_window() or self.game_hwnd
         self._stay_timer.stop()
         ok = self.browser.show(anchor_hwnd=self.game_hwnd, take_focus=True)
@@ -262,8 +347,9 @@ class AfterlifeController(QObject):
         以后每次死亡弹出来都是已登录的推荐流。凭据全程只在浏览器里，
         本软件不经手、不读取。
         """
-        if not self.preheat():
-            return False
+        if self.browser is None or not self.browser.is_alive():
+            self._pending_action = "login"
+            return self.preheat()
         self.game_hwnd = find_game_window() or self.game_hwnd
         self._stay_timer.stop()  # 登录要花时间，不能中途被超时收回
         return self.browser.show(anchor_hwnd=self.game_hwnd, take_focus=True)

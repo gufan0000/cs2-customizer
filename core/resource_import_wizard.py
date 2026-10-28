@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import os
+import hashlib
 import shutil
 import tempfile
 import uuid
@@ -283,6 +284,7 @@ def apply_resource_import_plan(
             os.makedirs(os.path.dirname(target_abs_path), exist_ok=True)
             fd, partial = tempfile.mkstemp(prefix=".cs2customizer-import-", dir=os.path.dirname(target_abs_path))
             backup = None
+            digest = hashlib.sha256()
             try:
                 with os.fdopen(fd, "wb") as sink, open(source_path, "rb") as source:
                     while chunk := source.read(1024 * 1024):
@@ -290,6 +292,7 @@ def apply_resource_import_plan(
                             raise ImportCancelled()
                         copied_bytes = check_import_size(len(chunk), copied_bytes)
                         sink.write(chunk)
+                        digest.update(chunk)
                 shutil.copystat(source_path, partial)
                 if exists:
                     backup = target_abs_path + f".backup-{uuid.uuid4().hex}"
@@ -301,6 +304,7 @@ def apply_resource_import_plan(
             copied.append(
                 {
                     "backup_path": backup,
+                    "imported_sha256": digest.hexdigest(),
                     "source_path": source_path,
                     "target_abs_path": target_abs_path,
                     "target_rel_path": target_rel_path,
@@ -380,9 +384,7 @@ def undo_import(import_result: Dict[str, object]) -> Dict[str, object]:
     - 冲突跳过的（`skipped_conflicts`）本来就没写进去，删了就是删用户的旧素材；
     - 目录只在**空了**的时候才收，非空说明里面还有别人的东西。
 
-    ⚠ 删之前不比对内容：两次导入之间用户可能编辑过那个文件。
-    ⭐ 但撤销紧跟着导入发生，而"删掉刚放进来的"正是用户按下去时期待的事 ——
-    真要防，该防的是"隔了很久还能撤销"，所以 UI 那边点一次就把按钮收掉。
+    撤销前核对导入内容。后来编辑或替换的文件保留，并返回冲突；成功的记录只消费一次。
     """
     copied = list((import_result or {}).get("copied", []) or [])
     removed: List[str] = []
@@ -391,16 +393,30 @@ def undo_import(import_result: Dict[str, object]) -> Dict[str, object]:
 
     for item in copied:
         target = str(item.get("target_abs_path") or "")
-        if not target:
+        if not target or item.get("undone"):
             continue
         try:
+            expected = item.get("imported_sha256")
+            if os.path.isfile(target):
+                digest = hashlib.sha256()
+                with open(target, "rb") as handle:
+                    for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                        digest.update(chunk)
+                if not expected or digest.hexdigest() != expected:
+                    failed.append({"target_abs_path": target, "reason": "文件在导入后已改变，已保留，请手动处理"})
+                    continue
             backup = item.get("backup_path")
-            if backup and os.path.isfile(backup):
+            if backup:
+                if not os.path.isfile(backup):
+                    failed.append({"target_abs_path": target, "reason": "原文件备份已不存在，已保留当前文件"})
+                    continue
                 replace_with_retry(backup, target)
             elif os.path.isfile(target):
                 os.remove(target)
             else:
+                item["undone"] = True
                 continue
+            item["undone"] = True
             removed.append(target)
             directories.add(os.path.dirname(target))
         except OSError as exc:
