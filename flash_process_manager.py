@@ -581,6 +581,29 @@ class FlashProcessManager:
             logger.error(f"发送强制清除命令失败: {e}")
             return False
     
+    def sync_from_config(self):
+        """配置被整体恢复后，把缓存和运行中的进程同步到配置值。不写配置。"""
+        cfg = self.config
+        self.update_settings(
+            bg_color=cfg.flash_bg_color,
+            max_opacity=cfg.flash_max_opacity,
+            image_opacity=cfg.flash_image_opacity,
+            image_position=cfg.flash_image_position,
+            image_size=cfg.flash_image_size,
+        )
+        self.update_fade_settings(cfg.flash_fade_in_enabled, cfg.flash_fade_out_enabled)
+        self.update_flash_style(cfg.flash_style)
+        self.update_style_parameters(self._style_parameters_for(cfg.flash_style))
+        self.update_image_rotation(cfg.flash_image_rotation)
+        image_style = cfg.flash_image_style or "none"
+        if image_style != getattr(self, "_pending_flash_image_style", None):
+            self.load_flash_image(image_style)
+        self.update_audio_enabled(cfg.flash_audio_enabled)
+        if cfg.flash_audio_style != self.audio_style:
+            self.update_audio_style(cfg.flash_audio_style)
+        self.update_audio_volume(cfg.flash_audio_volume)
+        self.update_auto_stop_setting(cfg.flash_audio_auto_stop)
+
     def update_flash_style(self, style):
         """更新闪光样式"""
         if not self.is_running or not self.command_queue:

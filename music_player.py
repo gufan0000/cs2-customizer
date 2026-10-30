@@ -303,6 +303,20 @@ class MusicPlayer:
         if self.on_playlist_update:
             self.on_playlist_update()
     
+    def sync_from_config(self):
+        """配置被整体恢复后同步当前列表。不写配置；列表没变就不打断播放。"""
+        name = config.music_current_playlist
+        if name not in config.music_playlists:
+            return
+        playlist = config.music_playlists[name].copy()
+        if name == self.current_playlist_name and playlist == self.playlist:
+            return
+        index = config.music_current_index
+        self.stop()
+        self.current_playlist_name = name
+        self.playlist = playlist
+        self.current_index = index if 0 <= index < len(playlist) else -1
+
     def get_all_playlists(self) -> List[str]:
         """获取所有播放列表名称"""
         return list(config.music_playlists.keys())
@@ -710,7 +724,8 @@ class MusicPlayer:
             if generation != self._transition_generation:
                 return
             loader = getattr(self, "loader_thread", None)
-            if loader is not None and loader.is_alive():
+            # 本地歌不下载：旧网络请求已取消，结果会被身份检查拒收，不必等它读完。
+            if loader is not None and loader.is_alive() and track.get("type") != "local":
                 # 复用已有的代次调度；等待下载退出不占用 GUI，也不积攒下载线程。
                 self._schedule_transition(0.1, lambda: self._start_loader_when_ready(track, generation),
                                           generation=generation)

@@ -64,6 +64,8 @@ KILL_LEVELS = tuple(range(1, 6))
 #: 爆头变体的资源后缀：`<风格>/3hs.png` + `3hs.json`。
 #: 没有这个文件就退回普通图标——变体是**可选覆写**，不是新的必需资源。
 HEADSHOT_VARIANT = "hs"
+#: 素材还在装时的击杀，最多等这么久还补播；再晚就和战斗对不上了。
+PENDING_PLAY_MAX_AGE_SECONDS = 1.0
 
 
 def with_user_opacity(fade_opacity: float) -> float:
@@ -368,7 +370,11 @@ class KillIconPlayer(QObject):
         )
         pending, self._pending_play = self._pending_play, None
         if pending is not None:
-            self._handle_play(*pending)
+            kills, variant, custom_fps, pending_style, requested_at, preview = pending
+            # 玩家要看的是刚刚这一杀：换过风格或等太久的就不补播了。
+            if (pending_style == style_name
+                    and time.monotonic() - requested_at <= PENDING_PLAY_MAX_AGE_SECONDS):
+                self._handle_play(kills, variant, custom_fps, preview)
         # 设置页靠它把清单板刷新成新风格的数据——不发这一枪，页面会一直显示
         # 上一个风格的帧数与时长，而且不会自己好。
         self.assets_ready.emit(style_name)
@@ -396,14 +402,17 @@ class KillIconPlayer(QObject):
 
     # ============================================================ 播放
 
-    def _handle_play(self, kills, variant, custom_fps):
-        if not getattr(config, "kill_icon_enabled", False):
+    def _handle_play(self, kills, variant, custom_fps, preview=False):
+        if not preview and not getattr(config, "kill_icon_enabled", False):
             return
         frames, fps, hold = self._frames_for(int(kills), variant or "")
         if not frames:
+            # 看的是「这个风格的素材收下了没有」：装载线程刚退出、结果还在排队时也要登记。
             with self._assets_lock:
-                if self._loading_thread is not None:
-                    self._pending_play = (kills, variant, custom_fps)
+                loading = self._loading_thread is not None
+            if loading or self._catalog_style != self.current_style:
+                self._pending_play = (kills, variant, custom_fps, self.current_style,
+                                      time.monotonic(), preview)
             logger.debug(f"击杀图标没有可播的素材: 等级={kills}, 变体={variant!r}")
             return
 
@@ -500,6 +509,8 @@ class KillIconPlayer(QObject):
             ResourceManager.has_kill_icon_level_assets(style_name, kills)
             for kills in KILL_LEVELS
         )
+        if style_name != self.current_style:
+            self._pending_play = None
         self.current_style = style_name
         self._start_load(style_name)
         return style_found
@@ -549,15 +560,8 @@ class KillIconPlayer(QObject):
         老实现要靠 `threading.Timer` 到点去 stop——因为它那边"播完"这件事
         没人管。现在动画自己会走完时间轴并隐藏，不需要外部计时器。
         """
-        was_enabled = getattr(config, "kill_icon_enabled", False)
-        if not was_enabled:
-            config.kill_icon_enabled = True
-        try:
-            self.play_icon(kills)
-        finally:
-            if not was_enabled:
-                # 只放行这一次预览；别把用户的总开关改掉
-                QTimer.singleShot(50, lambda: setattr(config, "kill_icon_enabled", was_enabled))
+        # 只放行这一次预览，不动用户的总开关；素材还在装时待播也带着这个放行。
+        self._handle_play(int(kills), "", -1, True)
 
     def cleanup(self):
         with self._assets_lock:

@@ -1388,17 +1388,22 @@ class FlashPage(QWidget):
             self.logger.info(f"图片轮换模式已更新: {rotation}")
         self._sync_overview_status()
     
+    def _sync_audio_controls(self):
+        """音频开关和风格决定哪些音频控件可用。"""
+        enabled = self.audio_enabled_checkbox.isChecked()
+        self.audio_style_combo.setEnabled(enabled)
+        self.audio_rotation_combo.setEnabled(enabled)
+        self.audio_volume_slider.setEnabled(enabled)
+        self.audio_auto_stop_checkbox.setEnabled(enabled)
+        self.audio_preview_btn.setEnabled(enabled and self.audio_style_combo.currentData() != "none")
+
     def _on_audio_enabled_toggled(self, checked):
         """音频开关"""
         config.flash_audio_enabled = checked
         config.save_config()
         
-        self.audio_style_combo.setEnabled(checked)
-        self.audio_rotation_combo.setEnabled(checked)
-        self.audio_volume_slider.setEnabled(checked)
-        self.audio_auto_stop_checkbox.setEnabled(checked)
-        self.audio_preview_btn.setEnabled(checked and self.audio_style_combo.currentData() != "none")
-        
+        self._sync_audio_controls()
+
         # 通知进程管理器更新
         if hasattr(self, 'process_manager') and self.process_manager:
             self.process_manager.update_audio_enabled(checked)
@@ -1410,9 +1415,9 @@ class FlashPage(QWidget):
         style = self.audio_style_combo.currentData()
         config.flash_audio_style = style
         config.save_config()
-        
+
         self.audio_preview_btn.setEnabled(self.audio_enabled_checkbox.isChecked() and style != "none")
-        
+
         # 通知进程管理器更新
         if hasattr(self, 'process_manager') and self.process_manager:
             self.process_manager.update_audio_style(style)
@@ -1693,6 +1698,22 @@ class FlashPage(QWidget):
         self.audio_volume_slider.setValue(int(config.flash_audio_volume * 100))
         self.audio_auto_stop_checkbox.setChecked(config.flash_audio_auto_stop)
         self._sync_overview_status()
+
+    def sync_after_config_reload(self):
+        """配置被整体恢复后补同步：数值标签、联动控件和运行中的闪光（重载时信号被挡住）。"""
+        self.opacity_label.setText(f"{self.opacity_slider.value()}%")
+        self.image_opacity_label.setText(f"{self.image_opacity_slider.value()}%")
+        self.image_x_label.setText(format_percent(self.image_x_slider.value() / 100.0))
+        self.image_y_label.setText(format_percent(self.image_y_slider.value() / 100.0))
+        self.image_w_label.setText(format_percent(self.image_w_slider.value() / 100.0))
+        self.image_h_label.setText(format_percent(self.image_h_slider.value() / 100.0))
+        self.audio_volume_label.setText(f"{self.audio_volume_slider.value()}%")
+        self._show_style_params(self.style_combo.currentText())
+        self._sync_audio_controls()
+        if hasattr(self, 'process_manager') and self.process_manager:
+            self.process_manager.sync_from_config()
+        self._sync_overview_status()
+        self._sync_basic_preview()
 
     def cleanup(self):
         """清理资源：停止闪光效果进程"""

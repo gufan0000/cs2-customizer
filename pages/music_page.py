@@ -1368,6 +1368,14 @@ class MusicPage(QWidget):
         self._sync_overview_status()
         
         self.logger.info("音乐播放器设置已加载")
+
+    def sync_after_config_reload(self):
+        """配置被整体恢复后补同步播放器（重载时信号被挡住，切列表回调不会跑）。"""
+        self.selected_indices = set()
+        self.player.sync_from_config()
+        self.refresh_playlist_display()
+        self._sync_overview_status()
+
     def closeEvent(self, event):
         self._detach_player_callbacks()
         super().closeEvent(event)

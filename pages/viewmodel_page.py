@@ -625,7 +625,11 @@ class ViewmodelPage(QWidget):
             "fov": fov_slider,
             "x": x_slider,
             "y": y_slider,
-            "z": z_slider
+            "z": z_slider,
+            "fov_label": fov_value_label,
+            "x_label": x_value_label,
+            "y_label": y_value_label,
+            "z_label": z_value_label,
         })
         
         return card
@@ -890,7 +894,17 @@ class ViewmodelPage(QWidget):
             self.logger.info("视角设置已加载")
         except Exception as e:
             self.logger.error(f"加载设置失败: {e}")
-    
+
+    def sync_after_config_reload(self):
+        """配置被整体恢复后补同步：数值标签和自动切换线程（重载时信号被挡住）。"""
+        for preset in self.preset_vars:
+            preset["fov_label"].setText(str(preset["fov"].value()))
+            for axis in ("x", "y", "z"):
+                preset[f"{axis}_label"].setText(f"{preset[axis].value() / 10:.1f}")
+        if self.auto_switch_checkbox.isChecked():
+            self._start_auto_switch()
+        else:
+            self._stop_auto_switch()
 
     def cleanup(self):
         """清理资源"""
