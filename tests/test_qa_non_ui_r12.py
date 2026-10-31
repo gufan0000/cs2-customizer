@@ -483,15 +483,16 @@ def test_qa010_dirty_snapshot_keep_does_not_brick_startup(tmp_path, monkeypatch,
     结果是**没界面、没提示、没自愈**，用户只能自己去
     %LOCALAPPDATA%\\CS2Customizer\\config.json 手改或删掉。
 
-    行为判据：真造一份脏配置，真构造一次 Config，断言不抛且回落到默认值。
-    把 config.py 里那个 try 去掉，这条必红。
+    行为判据：真造一份脏配置，真构造一次 Config，断言不抛、回落到默认值、别的设置还在。
+    把 load_config 开头的 `_coerce_scalar` 去掉，这条必红。
     """
     import importlib
 
     cfg_dir = tmp_path / "config"
     cfg_dir.mkdir()
     (cfg_dir / "config.json").write_text(
-        json.dumps({"config_snapshot_max_keep": dirty}, ensure_ascii=False),
+        json.dumps({"config_snapshot_max_keep": dirty, "kill_sound_enabled": False},
+                   ensure_ascii=False),
         encoding="utf-8",
     )
     monkeypatch.setenv("CS2C_CONFIG_DIR", str(cfg_dir))
@@ -500,6 +501,7 @@ def test_qa010_dirty_snapshot_keep_does_not_brick_startup(tmp_path, monkeypatch,
     config_mod = importlib.import_module("config")
     obj = config_mod.Config()          # 不抛异常，就是"软件起得来"
     assert obj.config_snapshot_max_keep == 20, "脏值没有回落到默认 20"
+    assert obj.kill_sound_enabled is False, "一个脏数字让别的设置也被重置了"
 
 
 @pytest.mark.parametrize("value,expected", [(50, 50), (1, 1), (0, 20), (-5, 20), (10**9, 20)])
@@ -523,58 +525,32 @@ def test_qa010_snapshot_keep_range_is_clamped(tmp_path, monkeypatch, value, expe
     assert config_mod.Config().config_snapshot_max_keep == expected
 
 
-def test_qa010_no_bare_numeric_cast_left_in_load_config():
-    """`load_config` 里**每一个** int()/float() 都必须有兜底。
+def test_qa010_no_bare_numeric_cast_left_in_load_config(tmp_path, monkeypatch):
+    """每个数值配置项同时变脏，软件也要起得来，其他设置也要留下。
 
-    QA-010 是孤例（20 个转换里 19 个本来就有防护），但孤例正是最容易复发的地方——
-    下次谁再加一个 `int(config_data.get(...))` 就又是一次"配置脏了就起不来"。
-    这条守住整片：要么外面套着 try...except (TypeError, ValueError)，
-    要么前面有 isinstance 校验。
+    脏值由 `load_config` 开头的 `_coerce_scalar` 统一回落。少了这一层，ValueError 会让
+    整份配置被隔离重置，TypeError 会让 import config 直接抛。
     """
-    src = (ROOT / "config.py").read_text(encoding="utf-8")
-    fn = _func("config.py", "load_config")
-    # ⭐ 分母是 `load_config` 里的数值转换。这个函数被拆小 / 转换整体搬走之后，
-    #   「没有裸转换」会因为**一个 int()/float() 都不剩**而变成真的。
-    must_scan([n for n in ast.walk(fn)
-               if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
-               and n.func.id in ("int", "float")],
-              "load_config 里的 int()/float() 转换", least=5)
+    import importlib
 
-    # 收集所有「兜住了 TypeError/ValueError 的 try」的行号区间
-    guarded_ranges = []
-    for node in ast.walk(fn):
-        if not isinstance(node, ast.Try):
-            continue
-        for handler in node.handlers:
-            names = []
-            t = handler.type
-            if isinstance(t, ast.Tuple):
-                names = [getattr(e, "id", "") for e in t.elts]
-            elif isinstance(t, ast.Name):
-                names = [t.id]
-            elif t is None:
-                names = ["BaseException"]
-            if {"TypeError", "ValueError"} & set(names) or "Exception" in names \
-                    or "BaseException" in names:
-                for stmt in node.body:
-                    guarded_ranges.append((stmt.lineno, stmt.end_lineno or stmt.lineno))
-
-    # isinstance 前置校验的 If 区间同样算安全
-    for node in ast.walk(fn):
-        if isinstance(node, ast.If) and _calls(node.test, "isinstance"):
-            for stmt in node.body:
-                guarded_ranges.append((stmt.lineno, stmt.end_lineno or stmt.lineno))
-
-    def guarded(lineno: int) -> bool:
-        return any(a <= lineno <= b for a, b in guarded_ranges)
-
-    naked = []
-    for node in ast.walk(fn):
-        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-                and node.func.id in ("int", "float") and not guarded(node.lineno)):
-            naked.append((node.lineno, src.splitlines()[node.lineno - 1].strip()[:90]))
-
-    assert not naked, (
-        "load_config 里有没兜底的数值转换，配置脏了会让整个软件起不来（QA-010）：\n"
-        + "\n".join(f"  第 {ln} 行: {code}" for ln, code in naked)
-    )
+    config_mod = importlib.import_module("config")
+    for dirty in ("abc", {"a": 1}):
+        cfg_dir = tmp_path / type(dirty).__name__
+        cfg_dir.mkdir()
+        monkeypatch.setenv("CS2C_CONFIG_DIR", str(cfg_dir))
+        monkeypatch.setenv("CS2C_LOG_DIR", str(tmp_path / "logs"))
+        defaults = config_mod.Config()
+        numeric = {k: v for k, v in vars(defaults).items()
+                   if not k.startswith("_") and type(v) in (int, float)}
+        # 分母：数值配置项被拆走或改名后，这条不能因为没有东西可扫而变绿。
+        must_scan(list(numeric), "Config 上的数值配置项", least=5)
+        (cfg_dir / "config.json").write_text(
+            json.dumps({**dict.fromkeys(numeric, dirty),
+                        "kill_sound_enabled": not defaults.kill_sound_enabled}),
+            encoding="utf-8",
+        )
+        obj = config_mod.Config()
+        assert obj.kill_sound_enabled is not defaults.kill_sound_enabled, "别的设置被一起重置了"
+        assert not list(cfg_dir.glob("config.json.corrupt-*")), "一个脏数字让整份配置被隔离了"
+        changed = {k: getattr(obj, k) for k, v in numeric.items() if getattr(obj, k) != v}
+        assert not changed, f"脏值没有回落到默认值：{changed}"

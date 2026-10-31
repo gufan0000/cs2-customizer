@@ -749,52 +749,28 @@ REVERTS = [
         "QA-008：单个文件回退成明文没人知道，构建照样 exit 0，明文随安装包出货",
     ),
     Revert(
-        "QA", "快照上限的 int() 又变回裸的",
+        "QA", "配置读入时不再校验数值类型（脏快照上限）",
         "config.py",
-        "                try:\n"
-        "                    _snap_keep = int(\n"
-        "                        config_data.get(\"config_snapshot_max_keep\", "
-        "self.config_snapshot_max_keep) or 20\n"
-        "                    )\n"
-        "                    self.config_snapshot_max_keep = "
-        "_snap_keep if 1 <= _snap_keep <= 1000 else 20\n"
-        "                except (TypeError, ValueError):\n"
-        "                    self.config_snapshot_max_keep = 20",
-        "                self.config_snapshot_max_keep = int(\n"
-        "                    config_data.get(\"config_snapshot_max_keep\", "
-        "self.config_snapshot_max_keep) or 20\n"
-        "                )",
+        "                        config_data[key] = self._coerce_scalar(value, getattr(self, key))",
+        "                        config_data[key] = value",
         "tests/test_qa_non_ui_r12.py::test_qa010_dirty_snapshot_keep_does_not_brick_startup",
         "QA-010：config.json 里一个非数值让 import config 直接抛异常，软件永久起不来且无任何提示",
     ),
     Revert(
-        # 同一处回退，换一条判据来验：上面那条是行为判据（造脏值看起不起得来），
-        # 这条是整片扫描（load_config 里还有没有没兜底的 int()/float()）。
-        # 两条都必须红，否则"整片扫描"那条就是摆设。
-        "QA", "快照上限的 int() 又变回裸的（整片扫描视角）",
+        # 同一处回退，换一条判据来验：上面那条只造脏的快照上限，这条让每个数值项同时变脏。
+        "QA", "配置读入时不再校验数值类型（全部数值项）",
         "config.py",
-        "                try:\n"
-        "                    _snap_keep = int(\n"
-        "                        config_data.get(\"config_snapshot_max_keep\", "
-        "self.config_snapshot_max_keep) or 20\n"
-        "                    )\n"
-        "                    self.config_snapshot_max_keep = "
-        "_snap_keep if 1 <= _snap_keep <= 1000 else 20\n"
-        "                except (TypeError, ValueError):\n"
-        "                    self.config_snapshot_max_keep = 20",
-        "                self.config_snapshot_max_keep = int(\n"
-        "                    config_data.get(\"config_snapshot_max_keep\", "
-        "self.config_snapshot_max_keep) or 20\n"
-        "                )",
+        "                        config_data[key] = self._coerce_scalar(value, getattr(self, key))",
+        "                        config_data[key] = value",
         "tests/test_qa_non_ui_r12.py::test_qa010_no_bare_numeric_cast_left_in_load_config",
-        "QA-010：下次谁再往 load_config 加一个裸 int()，整片扫描判据必须逮住",
+        "QA-010：一个脏数字不许让软件起不来，也不许让整份配置被隔离重置",
     ),
     Revert(
         "QA", "快照上限不再钳范围",
         "config.py",
-        "                    self.config_snapshot_max_keep = "
+        "                self.config_snapshot_max_keep = "
         "_snap_keep if 1 <= _snap_keep <= 1000 else 20",
-        "                    self.config_snapshot_max_keep = _snap_keep",
+        "                self.config_snapshot_max_keep = _snap_keep",
         "tests/test_qa_non_ui_r12.py::test_qa010_snapshot_keep_range_is_clamped",
         "QA-010：0 或负数会让 prune_snapshots 把用户的快照全部删光（快照是唯一的后悔药）",
     ),
@@ -7719,10 +7695,11 @@ REVERTS = [
         "⭐ 注释说「这些也走这里」，而那条规则什么都没给它们",
     ),
     Revert(
-        "RN", "建页那次标记不再推迟一拍（又被 polish 覆盖回去）",
-        "gui_widget.py",
-        "                _QTimer.singleShot(0, lambda p=page: mark_compact_buttons(p))",
-        "                mark_compact_buttons(page)",
+        # 批 139 搬家：建页和切页两处标记现在互相兜底，推迟与否、拆掉哪一处判据都还绿。
+        "RN", "紧凑标记不干活了（高度方向又比调用点声明的高）",
+        "ui_style_applier.py",
+        "    changed = 0\n    for b in root.findChildren(QAbstractButton):",
+        "    changed = 0\n    for b in []:",
         "tests/test_a_declared_width_is_not_a_dead_letter.py::"
         "test_no_button_is_taller_than_its_caller_declared",
         "⭐⭐⭐ RN-547：同一个顺序问题绊了四次（`_style_button` / `_load_page` / "
@@ -11221,6 +11198,11 @@ REVERTS.extend([
            "self._handle_play(int(kills), \"\", -1, False)",
            "tests/test_config_reload_keeps_pages_and_runtime_in_step.py::test_preview_with_the_master_switch_off_survives_a_cold_cache",
            "总开关关着时第一次预览没反应"),
+    Revert("B139", "图标字体又装进用户字体目录", "widgets/icon_provider.py",
+           "        _skip_user_font_install()\n",
+           "",
+           "tests/test_icons_do_not_install_fonts.py::test_a_clean_profile_gets_real_icons_and_no_installed_fonts",
+           "新机器首次启动主窗要等 1.8~8.8 秒"),
     Revert("AUD28", "帧序列跳过解码预算", "core/kill_icon_import.py",
            "retained = _check_frame_budget(image.width, image.height, retained=retained)",
            "retained = 0",

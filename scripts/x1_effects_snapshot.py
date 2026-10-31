@@ -72,7 +72,7 @@ def record() -> dict:
     # Record that cold setup separately so it remains visible, while keeping
     # the window's zero-write budget unchanged.
     import builtins
-    import qtawesome as qta
+    from widgets.icon_provider import get_icon
 
     font_setup_writes = []
     setup_open = builtins.open
@@ -84,7 +84,7 @@ def record() -> dict:
 
     builtins.open = font_setup_open
     try:
-        qta.icon("fa5s.circle", color="#000000")
+        get_icon("fa5s.circle", color="#000000")
     finally:
         builtins.open = setup_open
 

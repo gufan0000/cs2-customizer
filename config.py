@@ -1534,24 +1534,12 @@ class Config:
                         self.config_snapshot_auto_before_risky_ops,
                     )
                 )
-                # QA-010: 这里原来是**裸 int()**，是 load_config 里 20 个数值转换中
-                # 唯一一个没兜底的（其余 19 个要么有局部 except (TypeError, ValueError)，
-                # 要么像 window_geometry 那样有 isinstance 前置校验）。
-                # 后果不是"这个值不对"，而是**整个软件起不来**：
-                # 模块级 `config = Config()` 在 import 时就跑 load_config，
-                # 而下面那个 except 只兜 (FileNotFoundError, JSONDecodeError, KeyError)，
-                # ValueError/TypeError 一路冒泡到 import config —— 没界面、没提示、
-                # 没自愈，用户只能自己去 %LOCALAPPDATA%\CS2Customizer\config.json 手改或删掉。
-                # 实测：值为 "abc" → ValueError；值为 {"a":1} → TypeError；
-                #       ""/[]/null/"20"/20 靠后面的 `or 20` 侥幸兜住。
-                # 顺手把范围也钳住：负数/0 会让 prune_snapshots 把快照全删光。
-                try:
-                    _snap_keep = int(
-                        config_data.get("config_snapshot_max_keep", self.config_snapshot_max_keep) or 20
-                    )
-                    self.config_snapshot_max_keep = _snap_keep if 1 <= _snap_keep <= 1000 else 20
-                except (TypeError, ValueError):
-                    self.config_snapshot_max_keep = 20
+                # QA-010：脏值在开头的 `_coerce_scalar` 就回落成默认值，这里只管范围：
+                # 负数/0 会让 prune_snapshots 把快照全删光。
+                _snap_keep = int(
+                    config_data.get("config_snapshot_max_keep", self.config_snapshot_max_keep) or 20
+                )
+                self.config_snapshot_max_keep = _snap_keep if 1 <= _snap_keep <= 1000 else 20
                 self.audio_policy_profile = str(
                     config_data.get("audio_policy_profile", self.audio_policy_profile) or "kill_preempt_v1"
                 )

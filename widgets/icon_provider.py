@@ -34,12 +34,24 @@ _qta = None
 _qta_load_error: Optional[str] = None
 
 
+def _skip_user_font_install() -> None:
+    """图标字体只从包内加载，不装进用户字体目录。
+
+    qtawesome 默认在界面线程把 12 个字体复制到用户字体目录、写 HKCU 并逐个广播，
+    新机器首次启动主窗因此要等 1.8~8.8 秒。它加载时读的是字体数据，装不装结果一样。
+    """
+    from qtawesome.iconic_font import IconicFont
+
+    IconicFont._install_fonts = lambda self, fonts_directory, system_wide=False: fonts_directory
+
+
 def _try_load_qtawesome():
     global _qta, _qta_load_error
     if _qta is not None or _qta_load_error is not None:
         return _qta
     try:
         import qtawesome as qta
+        _skip_user_font_install()
         _qta = qta
     except Exception as e:
         _qta_load_error = str(e)
