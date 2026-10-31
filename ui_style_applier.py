@@ -156,11 +156,20 @@ class StyleApplier:
                 label.setObjectName("label")  # 字段标签
             elif len(text) < 20 and ('提示' in text or '说明' in text or '注意' in text):
                 label.setObjectName("hintLabel")  # 提示标签
-            elif label.font().pixelSize() > 14 or label.font().pointSize() > 14:
+            elif self._looks_like_title(label):
                 label.setObjectName("titleLabel")  # 标题标签
             else:
                 label.setObjectName("label")  # 普通标签
     
+    @staticmethod
+    def _looks_like_title(label: QLabel) -> bool:
+        """比正文字号大才算标题。门槛跟字号档位走：写死 14 时，110% / 125% 下的普通标签
+        （15 / 18px）全被认成标题，下次刷新样式就变成 35px，把数值和枪名撑坏。"""
+        from ui_design_system import get_font_scale
+
+        body = round(14 * get_font_scale())
+        return label.font().pixelSize() > body or label.font().pointSize() > body
+
     def _style_lineedit(self, lineedit: QLineEdit):
         """统一输入框样式"""
         if not lineedit.objectName():

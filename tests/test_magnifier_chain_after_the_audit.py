@@ -561,6 +561,23 @@ def test_the_listening_badge_tracks_whether_hotkeys_are_really_registered(page):
     assert page._current_runtime_text()[0] =="待命"
 
 
+def test_a_failed_hotkey_shows_on_the_visible_badge(page, monkeypatch):
+    """F-096：「热键没挂上」原来只写进隐藏的 status_label，徽章还写「待命」，用户按了没反应也不知道。
+    挂上之后要退回去，否则一次失败就永远报警。"""
+    from core.hotkeys import registry
+
+    monkeypatch.setattr(registry, "bindings_for_key", lambda *a, **k: [], raising=False)
+    monkeypatch.setattr(registry, "register_key", lambda *a, **k: None)
+    monkeypatch.setattr(registry, "register_mouse", lambda *a, **k: None)
+    assert page._register_hotkeys("右键", "右键") is False
+    assert page._current_runtime_text() == ("热键没挂上", "warn")
+
+    monkeypatch.setattr(registry, "register_key", lambda *a, **k: object())
+    monkeypatch.setattr(registry, "register_mouse", lambda *a, **k: object())
+    assert page._register_hotkeys("右键", "右键") is True
+    assert page._current_runtime_text()[0] != "热键没挂上"
+
+
 # --------------------------------------------------------------- 配置重载
 
 

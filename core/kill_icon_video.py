@@ -24,6 +24,7 @@ DEFAULT_FPS = 30
 MIN_FPS = 12                     # 再低就不像动画了 ⇒ 宁可截短
 DECODE_RATE = 4.0                # 解码时的播放倍速（实测 4 倍速不丢帧）
 LOAD_TIMEOUT_MS = 8000
+DECODE_THREAD_NAME = "KillIconVideoDecode"
 
 
 class VideoError(Exception):
@@ -120,8 +121,40 @@ def _to_pil(frame, max_edge):
                             image.bytesPerLine(), 1).copy()
 
 
+def _in_qthread(fn):
+    """在一条真正的 QThread 里跑 `fn` 并等它连同线程一起结束（RN-727）。
+
+    `QVideoFrame.toImage()` 会给当前线程建一个线程局部的 QRhi（D3D11）。在 Python 线程里，
+    它要等线程退出才析构，而那一刻系统正持有 loader lock；AMD 驱动析构时等自己的线程退出，
+    那些线程又要 loader lock ⇒ 永久死锁，之后全进程建不了新线程（界面、GSI 全停）。
+    QThread 的线程局部清理在 `finish` 里跑，不在 loader lock 内。离屏没有 RHI，复现不出来。
+    """
+    from PySide6.QtCore import QThread
+
+    box = {}
+
+    class _Decode(QThread):
+        def run(self):
+            try:
+                box["value"] = fn()
+            except BaseException as exc:  # 交回调用方那条线程再抛
+                box["error"] = exc
+
+    thread = _Decode()
+    thread.setObjectName(DECODE_THREAD_NAME)
+    thread.start()
+    thread.wait()
+    if "error" in box:
+        raise box["error"]
+    return box["value"]
+
+
 def read_video_frames(path, fps=None, max_edge=1024, progress=None, cancel=None):
     """解码成 `(帧列表 PIL RGBA, 帧率, 警告)`。闸门在解码之前（`plan_sampling`）。"""
+    return _in_qthread(lambda: _read_video_frames(path, fps, max_edge, progress, cancel))
+
+
+def _read_video_frames(path, fps, max_edge, progress, cancel):
     from PySide6.QtCore import QEventLoop, QTimer, QUrl
     from PySide6.QtMultimedia import QMediaPlayer
 

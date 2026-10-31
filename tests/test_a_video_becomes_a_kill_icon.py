@@ -80,6 +80,57 @@ def test_the_fixture_video_decodes_into_frames(qt):
     assert frames[0].tobytes() != frames[-1].tobytes(), "每一帧都一样 —— testsrc 是会动的"
 
 
+def _decode_on_a_python_thread(path, seen=None):
+    """照导入任务的样子：从 `threading.Thread` 里调解码，把结果或异常带回来。"""
+    import threading
+
+    from core import kill_icon_video
+
+    box = {}
+    real_to_pil = kill_icon_video._to_pil
+
+    def spy(frame, max_edge):
+        if seen is not None:
+            from PySide6.QtCore import QThread
+            seen.add(QThread.currentThread().objectName())
+        return real_to_pil(frame, max_edge)
+
+    def work():
+        try:
+            box["value"] = kill_icon_video.read_video_frames(path, fps=20)
+        except Exception as exc:
+            box["error"] = exc
+
+    kill_icon_video._to_pil = spy
+    try:
+        thread = threading.Thread(target=work, daemon=True)
+        thread.start()
+        thread.join(60)
+        assert not thread.is_alive(), "解码线程 60 秒没回来"
+    finally:
+        kill_icon_video._to_pil = real_to_pil
+    return box
+
+
+def test_frames_are_never_converted_on_a_python_thread(qt):
+    """RN-727：`toImage()` 建的线程局部 QRhi 在 Python 线程退出时、loader lock 内析构，
+    AMD 驱动在那里等自己的线程 ⇒ 全进程永久建不了新线程。离屏和没有 AMD 的机器复现不出死锁，
+    所以钉前提：转帧必须发生在解码专用的 QThread 里（Qt 领养的 Python 线程类名也叫 QThread，只能认名字）。"""
+    from core.kill_icon_video import DECODE_THREAD_NAME
+    seen = set()
+    box = _decode_on_a_python_thread(str(FIXTURE), seen)
+    assert "value" in box, box
+    assert len(box["value"][0]) >= 25
+    assert seen == {DECODE_THREAD_NAME}, seen
+
+
+def test_a_decode_error_still_reaches_the_caller(qt, tmp_path):
+    """换了线程不能把错误吞掉：调用方要接到原来那个 VideoError，才有人话提示。"""
+    from core.kill_icon_video import VideoError
+    box = _decode_on_a_python_thread(str(tmp_path / "没有这个.mp4"))
+    assert isinstance(box.get("error"), VideoError), box
+
+
 def test_a_higher_target_rate_holds_frames_through_the_last_one(qt):
     """20fps 源取 30fps：1.5 秒应是 45 帧。只比帧的起点会漏掉片尾那一个时刻（实测 44）。"""
     from core.kill_icon_video import read_video_frames

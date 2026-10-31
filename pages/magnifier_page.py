@@ -171,6 +171,7 @@ class MagnifierPage(QWidget):
         # 而那个线程注册完热键就只剩空转（见 _setup_key_detection）。
         # 现在记的是**热键到底挂上了没有** —— 徽章上的「监听中」问的本来就是这件事。
         self._hotkeys_registered = False
+        self._hotkey_problem = False    # status_label 是隐藏的，这件事要靠「运行」徽章说出来
         self._mouse_hooks = []
         # RN-657：测试按钮那颗 3 秒自动关闭定时器。以前既不跟踪也不 daemon，
         # 到点时无条件关放大——可能关掉的是用户此刻正按着热键维持的那一次。
@@ -237,6 +238,8 @@ class MagnifierPage(QWidget):
             if self.current_active_type == "secondary":
                 return "手枪激活", "success"
             return "放大中", "success"
+        if self._hotkey_problem:
+            return "热键没挂上", "warn"
         if self._hotkeys_registered:
             return "监听中", "info"
         return "待命", "info"
@@ -1616,13 +1619,16 @@ class MagnifierPage(QWidget):
                 self.logger.error("开镜热键注册失败: " + "、".join(not_registered))
             if conflict_notes:
                 status_text += " ⚠️ " + "；".join(conflict_notes)
+            self._hotkey_problem = bool(not_registered)
             self.status_label.setText(status_text)
             self.logger.info(f"热键设置完成 - 主武器: {primary_key}, 副武器: {secondary_key}")
             return not not_registered
         except ImportError:
+            self._hotkey_problem = True
             self.status_label.setText("未安装keyboard/mouse库")
             self.logger.warning("未安装keyboard/mouse库")
         except Exception as e:
+            self._hotkey_problem = True
             self.status_label.setText(f"热键错误: {e}")
             self.logger.error(f"热键错误: {e}")
         return False

@@ -445,9 +445,9 @@ class FlashProcessManager:
             # 选择新图片
             self._rotate_flash_image()
             
-            # 闪光开始，播放音频
-            if self.audio_enabled and self.audio_style != "none":
-                self.play_audio()
+        # Audio starts independently of optional image rotation.
+        if flash_starting and self.audio_enabled and self.audio_style != "none":
+            self.play_audio()
         
         # 如果闪光结束且启用了自动停止音频，停止音频
         if flash_ending and self.audio_enabled and self.audio_auto_stop:
