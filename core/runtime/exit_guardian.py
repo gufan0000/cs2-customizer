@@ -88,6 +88,38 @@ def _guardian_main() -> None:
         _log(f"恢复时出错：{exc!r}")
 
 
+def _parent_is_gone(argv) -> bool:
+    """子进程命令行里的 `parent_pid=` 那个进程是否已退出（读不出 / 没有就当它还在，不去碰音量）。"""
+    import _winapi
+
+    pid = next((a.split("=", 1)[1] for a in argv if str(a).startswith("parent_pid=")), "")
+    if not pid.isdigit():
+        return False
+    try:
+        handle = _winapi.OpenProcess(_winapi.SYNCHRONIZE, False, int(pid))
+    except OSError:
+        return True
+    # 报错时它可能正在退出：多等一小会儿再判（句柄随本进程退出释放）
+    return _winapi.WaitForSingleObject(handle, 2000) == _winapi.WAIT_OBJECT_0
+
+
+def freeze_support_quietly(freeze_support, argv) -> None:
+    """RN-723：`freeze_support` 的外壳。子进程还没连上父进程父进程就死了时，它会在我们任何代码之前抛异常；
+    打包版没人接就弹一个不会自己关的错误框。这里接住：父进程真不在了就顶守护的班，然后安静退出。"""
+    try:
+        freeze_support()
+    except Exception as exc:
+        if "--multiprocessing-fork" not in argv:
+            raise
+        _log(f"子进程没连上父进程：{exc!r}")
+        try:
+            if _parent_is_gone(argv):
+                restore_after_parent_death()
+        except Exception as restore_exc:
+            _log(f"恢复时出错：{restore_exc!r}")
+        os._exit(0)
+
+
 def _spawn() -> None:
     global _process, _starting
     try:

@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import os
 import subprocess
@@ -151,6 +152,67 @@ def test_the_guardian_really_restores_and_says_so_in_its_log(monkeypatch, tmp_pa
     assert vol.v == 1.0
     log = (tmp_path / "CS2Customizer" / "runtime" / "exit_guardian.log").read_text(encoding="utf-8")
     assert "还回 1 个" in log and "0.198" in log, log
+
+
+def _run_child_that_lost_its_parent(tmp_path, parent_pid):
+    """真的走 PyInstaller 同款入口：`sys.frozen` + `--multiprocessing-fork`，由 `spawn_main` 自己抛异常。"""
+    mark = tmp_path / "restored.txt"
+    child = tmp_path / "child.py"
+    child.write_text(textwrap.dedent(f"""
+        import sys
+        sys.path.insert(0, {str(ROOT)!r})
+        sys.frozen = True
+        import core.runtime.exit_guardian as g
+        def fake_restore():
+            open({str(mark)!r}, "w").write("ok")
+            return 1
+        g.restore_after_parent_death = fake_restore
+        import multiprocessing
+        g.freeze_support_quietly(multiprocessing.freeze_support, sys.argv)
+        print("不该走到主程序")
+    """), encoding="utf-8")
+    env = {k: v for k, v in os.environ.items() if k != "PYTEST_CURRENT_TEST"}
+    env["LOCALAPPDATA"] = str(tmp_path / "appdata")
+    done = subprocess.run(
+        [sys.executable, str(child), "--multiprocessing-fork", f"parent_pid={parent_pid}", "pipe_handle=999999"],
+        env=env, timeout=60, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    return done, mark
+
+
+def test_a_child_that_lost_its_parent_restores_the_volume_and_leaves_quietly(tmp_path):
+    """RN-723：批 140 进游戏实测，首次压声后约 1 秒内强杀 ⇒ 打包版弹错误框、残留进程、音量停在压低值。"""
+    dead = subprocess.Popen([sys.executable, "-c", "pass"])
+    dead.wait()
+    done, mark = _run_child_that_lost_its_parent(tmp_path, dead.pid)
+    assert done.returncode == 0 and "Traceback" not in done.stderr, done.stderr
+    assert "不该走到主程序" not in done.stdout
+    assert mark.exists(), "父进程已死，子进程没有顶班恢复音量"
+    log = (tmp_path / "appdata" / "CS2Customizer" / "runtime" / "exit_guardian.log").read_text(encoding="utf-8")
+    assert "没连上父进程" in log, log
+
+
+def test_a_child_that_failed_while_its_parent_lives_does_not_touch_the_volume(tmp_path):
+    """父进程还活着时音量归它管：子进程起不来只是少了兜底，不许替它恢复。"""
+    done, mark = _run_child_that_lost_its_parent(tmp_path, os.getpid())
+    assert done.returncode == 0 and "Traceback" not in done.stderr, done.stderr
+    assert not mark.exists()
+
+
+def test_the_main_process_still_sees_a_real_freeze_support_error():
+    """接异常只限子进程：主进程这里出错要照常报。"""
+    from core.runtime import exit_guardian
+
+    def boom():
+        raise RuntimeError("boom")
+
+    with pytest.raises(RuntimeError):
+        exit_guardian.freeze_support_quietly(boom, ["CS2 Customizer.exe"])
+
+
+def test_the_app_entry_goes_through_the_quiet_freeze_support():
+    tree = ast.parse((ROOT / "main_widget.py").read_text(encoding="utf-8"))
+    called = {n.func.id for n in ast.walk(tree) if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
+    assert "freeze_support_quietly" in called
 
 
 def test_the_utility_display_process_leaves_when_the_app_is_gone(monkeypatch):

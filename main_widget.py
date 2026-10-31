@@ -1270,5 +1270,7 @@ def main():
 
 if __name__ == "__main__":
     # 添加对PyInstaller打包的多进程支持
-    multiprocessing.freeze_support()
+    from core.runtime.exit_guardian import freeze_support_quietly
+
+    freeze_support_quietly(multiprocessing.freeze_support, sys.argv)
     sys.exit(main())
