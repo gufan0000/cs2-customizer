@@ -285,6 +285,7 @@ class VoiceOutputPage(QWidget):
         少了这一下，开关动了而徽章不动 —— 同屏两处说法不一致（RN-107 族）。
         """
         self._sync_overview_status()
+        self._refresh_sfx_forwarding_requirements()
         # ⛔ 热键跟着总开关走：以前只有 showEvent 重注册 ⇒ 页面建过之后在首页（或本页）关掉，
         #    音板键照样放声、照样吞键，直到下次进这一页。断点 `--only SWEEP`。
         if hasattr(self, "_register_hotkeys_func"):

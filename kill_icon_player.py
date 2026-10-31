@@ -342,6 +342,10 @@ class KillIconPlayer(QObject):
                 self._pending_load = style_name
                 return
             self._pending_load = None
+            # Keep the active animation alive, but release other old levels before
+            # allocating the replacement budget (B142: old + new exceeded 1 GiB).
+            self._scaled = {}
+            self._catalog_style = None
             thread = threading.Thread(
                 target=self._load_worker,
                 args=(style_name, token),
@@ -483,6 +487,7 @@ class KillIconPlayer(QObject):
         self._pending_play = None
         self._playing = False
         self._timer.stop()
+        self._current_frames = ()
         self._last_paint_key = None
         if self._window is not None:
             self._window.hide()

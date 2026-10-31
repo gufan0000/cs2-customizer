@@ -367,6 +367,17 @@ def test_the_forwarding_hint_is_refreshed_when_the_switch_changes():
     assert "_refresh_sfx_forwarding_requirements" in called
 
 
+def test_the_forwarding_hint_follows_the_master_switch():
+    """批 142 进游戏：页面上开了「语音播放」，那行字还说「总开关还没开」。"""
+    fn = _function(_tree("pages/voice_output_page.py"), "on_master_switch_synced")
+    called = [
+        node.func.attr
+        for node in ast.walk(fn)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+    ]
+    assert "_refresh_sfx_forwarding_requirements" in called
+
+
 # ───────────────────────────── 空转守卫
 
 def test_these_judges_would_notice_if_the_throwables_went_away():
