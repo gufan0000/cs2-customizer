@@ -84,7 +84,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _ui_mode as _um  # noqa: E402  界面模式（普通/专家）的唯一真相源，见 RN-134
 from _pristine_config import use_pristine_config_dir  # noqa: E402
 
-_tmp = use_pristine_config_dir("cs2customizer_layout_audit")
+# 直接运行时无条件用自己的目录：下面会往配置目录播种假风格（_audit_seed），
+# CI 整个作业共用一个 CS2C_CONFIG_DIR，播下的风格会留给后面的索引检查（批 152 CI 红）。
+_tmp = use_pristine_config_dir("cs2customizer_layout_audit", force=__name__ == "__main__")
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 try:

@@ -221,6 +221,31 @@ def test_every_tool_that_builds_pages_uses_the_shared_helper():
         "它们会建真实页面，配置目录必须是可复现的全新用户目录。")
 
 
+def test_the_seeding_audit_and_the_index_own_their_dir_when_run_directly():
+    """CI 整个作业共用一个 CS2C_CONFIG_DIR（批 152 CI 红）。
+
+    排版审计往配置目录播种假风格，索引检查在它后面跑，读到的就不是全新用户的库，
+    逐字比对当场红；本机每个脚本各起一份目录，复现不出来。
+    ⇒ 这两支直接运行时必须 `force`；被 pytest 进程内导入时仍听外面的。
+    """
+    def forced_when_main(name: str) -> bool:
+        tree = ast.parse((SCRIPTS / name).read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Call) and getattr(node.func, "id", "") == "use_pristine_config_dir"):
+                for keyword in node.keywords:
+                    value = keyword.value
+                    if (keyword.arg == "force" and isinstance(value, ast.Compare)
+                            and getattr(value.left, "id", "") == "__name__"
+                            and getattr(value.comparators[0], "value", None) == "__main__"):
+                        return True
+        return False
+
+    names = must_scan(["layout_overflow_audit.py", "build_search_index.py"],
+                      "直接运行时必须自带配置目录的工装", least=2)
+    missing = [name for name in names if not forced_when_main(name)]
+    assert not missing, f"{missing} 直接运行时会读写 CI 共用的配置目录，播种的风格会串到下一步"
+
+
 def _rejected_textual_rule_kept_as_a_note():
     """⛔ RN-632（批 91）：这里**曾经**有一条文本判据，量完误报率之后撤掉了。
 

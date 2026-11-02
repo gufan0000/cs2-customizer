@@ -84,7 +84,8 @@ os.environ.setdefault("CS2C_SAFE_MODE_ACTIVE", "1")
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _pristine_config import use_pristine_config_dir  # noqa: E402
 
-_tmp = use_pristine_config_dir("cs2customizer_search_index")
+# 直接运行时无条件用自己的目录：CI 整个作业共用一个配置目录，前面的审计会往里播种（批 152 CI 红）。
+_tmp = use_pristine_config_dir("cs2customizer_search_index", force=__name__ == "__main__")
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))

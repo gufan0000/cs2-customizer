@@ -19,9 +19,8 @@ class CollapsingFrame(QFrame):
     这时判「空」会把自己藏起来，而之后没有任何事件能把它叫回来。
     """
 
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._collapse_armed = False
+    #: 放在类上：构造途中 Qt 就可能来问 eventFilter，那时实例属性还没赋值（批 152 开源 CI 红）。
+    _collapse_armed = False
 
     def childEvent(self, event):
         super().childEvent(event)

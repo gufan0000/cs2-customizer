@@ -261,6 +261,13 @@ def test_a_strip_does_not_judge_before_it_is_first_shown(qapp):
     assert not strip.isHidden()
 
 
+def test_a_strip_can_be_asked_before_its_init_finishes():
+    """开源 CI 上 eventFilter 在 `__init__` 赋值之前就被问到了（批 152）：默认值要在类上。"""
+    from widgets.status_strip import CollapsingFrame
+
+    assert vars(CollapsingFrame).get("_collapse_armed") is False
+
+
 def test_the_bottom_bar_stays_silent_unless_told_to_speak(qapp):
     host = QWidget()
     bar = PageActionBar(host)

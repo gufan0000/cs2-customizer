@@ -219,6 +219,26 @@ REVERTS = [
            "tests/test_empty_library_points_at_the_community.py::"
            "test_a_build_without_the_community_falls_back_to_a_real_path",
            "开源版换成武器板后空库只剩一句「选一个风格」"),
+    Revert("B152", "B152状态条的默认值又只在实例上", "widgets/status_strip.py",
+           "    #: 放在类上：构造途中 Qt 就可能来问 eventFilter，那时实例属性还没赋值（批 152 开源 CI 红）。\n"
+           "    _collapse_armed = False\n",
+           "    def __init__(self, parent=None):\n"
+           "        super().__init__(parent)\n"
+           "        self._collapse_armed = False\n",
+           "tests/test_the_page_chrome_says_less.py::test_a_strip_can_be_asked_before_its_init_finishes",
+           "eventFilter 在 __init__ 赋值前被问到，AttributeError"),
+    Revert("B152", "B152索引检查又读CI共用的配置目录", "scripts/build_search_index.py",
+           '_tmp = use_pristine_config_dir("cs2customizer_search_index", force=__name__ == "__main__")',
+           '_tmp = use_pristine_config_dir("cs2customizer_search_index")',
+           "tests/test_pristine_config_for_tooling.py::"
+           "test_the_seeding_audit_and_the_index_own_their_dir_when_run_directly",
+           "排版审计播下的假风格串进索引检查，CI 上逐字比对红"),
+    Revert("B152", "B152排版审计又往CI共用的配置目录播种", "scripts/layout_overflow_audit.py",
+           '_tmp = use_pristine_config_dir("cs2customizer_layout_audit", force=__name__ == "__main__")',
+           '_tmp = use_pristine_config_dir("cs2customizer_layout_audit")',
+           "tests/test_pristine_config_for_tooling.py::"
+           "test_the_seeding_audit_and_the_index_own_their_dir_when_run_directly",
+           "播种落进 CI 共用的配置目录，后面的步骤量到的不是全新用户"),
     Revert("B152", "B152没有社区站时空库又说当场生效", "pages/sound_page_base.py",
            "        self.master_switch_row.set_has_content(not self._library_is_empty())\n",
            "        self.master_switch_row.set_has_content(not applied)\n",
@@ -2009,7 +2029,7 @@ REVERTS = [
     Revert(
         "RN", "又有第二份工装自己写 CS2C_CONFIG_DIR",
         "scripts/layout_overflow_audit.py",
-        '_tmp = use_pristine_config_dir("cs2customizer_layout_audit")',
+        '_tmp = use_pristine_config_dir("cs2customizer_layout_audit", force=__name__ == "__main__")',
         'import tempfile as _tf\n'
         '_tmp = Path(_tf.gettempdir()) / "cs2customizer_layout_audit"\n'
         '(_tmp / "config").mkdir(parents=True, exist_ok=True)\n'
@@ -11341,8 +11361,8 @@ REVERTS.extend([
            'tests/test_the_page_chrome_says_less.py::test_an_empty_strip_takes_no_room_and_comes_back',
            'RN-734：什么都不说也占一条缝'),
     Revert("B145", '状态条还在搭就判空', 'widgets/status_strip.py',
-           '        self._collapse_armed = False',
-           '        self._collapse_armed = True',
+           '    _collapse_armed = False',
+           '    _collapse_armed = True',
            'tests/test_the_page_chrome_says_less.py::test_a_strip_does_not_judge_before_it_is_first_shown',
            'RN-734：把自己藏起来之后没有事件能叫回来'),
     Revert("B145", '底栏消息又常驻', 'widgets/page_action_bar.py',
