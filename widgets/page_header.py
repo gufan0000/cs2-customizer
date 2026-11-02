@@ -4,7 +4,7 @@
 替代散在每个 page 顶部的样板代码:
     title = QLabel("基础设置")
     title.setObjectName("titleLabel")
-    title.setFont(QFont("Microsoft YaHei", 24, QFont.Bold))
+    title.setFont(QFont(UI_FONT_FAMILY, 24, QFont.Bold))
     header_row = QHBoxLayout()
     header_row.addWidget(title)
     header_row.addStretch()
@@ -27,6 +27,7 @@ from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QVBoxLayout, QWidget
 )
+from core.utils.app_fonts import UI_FONT_FAMILY
 
 
 class PageHeader(QWidget):
@@ -92,7 +93,7 @@ class PageHeader(QWidget):
         # 显式设字号:对齐多数 page 旧写法(QFont Bold).
         # Phase 4 token 升级后 QSS 会接管,这里仅保留兼容.
         if title_font_size is not None:
-            self.title_label.setFont(QFont("Microsoft YaHei", title_font_size, QFont.Bold))
+            self.title_label.setFont(QFont(UI_FONT_FAMILY, title_font_size, QFont.Bold))
         self.title_row.addWidget(self.title_label)
         self.title_row.addStretch()
         layout.addLayout(self.title_row)
@@ -102,11 +103,18 @@ class PageHeader(QWidget):
             self.description_label = QLabel(description)
             self.description_label.setObjectName("pageLeadLabel")
             self.description_label.setWordWrap(True)
+            # 批 145：说明不再占首屏，`install_help_panel` 把这段字放进「?」开头。
+            # 个别页面这一行说的是当下要看的话（账号页的操作结果、击杀图标的空库），由页面自己 show。
+            self.description_label.hide()
             layout.addWidget(self.description_label)
 
     def add_title_action(self, widget: QWidget) -> None:
         """在标题右侧追加 action(如帮助按钮)."""
         self.title_row.addWidget(widget)
+
+    def dock_beside_title(self, widget: QWidget) -> None:
+        """紧贴标题右边放一个控件（总开关），它占掉这一行剩下的宽度。"""
+        self.title_row.insertWidget(self.title_row.indexOf(self.title_label) + 1, widget, 1)
 
     def set_title(self, text: str) -> None:
         self.title_label.setText(text)

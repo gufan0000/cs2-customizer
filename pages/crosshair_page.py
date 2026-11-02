@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-                               QSlider, QRadioButton, QComboBox, QPushButton,
+                               QSlider, QComboBox, QPushButton,
                                QFrame, QScrollArea, QButtonGroup, QDialog,
-                               QMessageBox, QFileDialog, QSizePolicy, QCheckBox)
-from PySide6.QtCore import Qt, QTimer
+                               QMessageBox, QFileDialog, QSizePolicy, QCheckBox,
+                               QGridLayout, QStyle)
+from PySide6.QtCore import Qt, QTimer, QEvent
 from PySide6.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QMouseEvent
 from config import config, get_app_data_dir
 from core.utils.logger import get_logger
@@ -15,7 +16,10 @@ from widgets.page_header import PageHeader
 from widgets.page_action_bar import PageActionBar
 import os
 import json
+from widgets.crosshair_stage import SCENE_LABELS, ColorSwatch, CrosshairStage, SegmentRadio
 from widgets.overlay_requirement import make_overlay_requirement_label
+from widgets.status_strip import StatusStrip
+from ui_style_applier import keep_single_line
 
 #: RN-429：准心由 `crosshair_overlay` 画在游戏画面上。
 DRAWS_OVER_THE_GAME = True
@@ -217,6 +221,7 @@ class CrosshairPage(QWidget):
     #: RN-116：换动画之后预览示意多久（毫秒）。**有限**是这条设计的全部要害——
     #: 用户裁定里明确否决了"常驻定时器"那个方案。
     PREVIEW_BURST_MS = 1500
+    PANEL_MIN_WIDTH = 348
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -325,107 +330,16 @@ class CrosshairPage(QWidget):
         main_layout.addWidget(header)
         install_help_panel(header.title_row, header.body, PAGE_HELP_TEXTS["crosshair"])
         
-        # 创建滚动区域
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setFrameShape(QFrame.NoFrame)
-        
-        # 滚动内容容器
-        scroll_widget = QWidget()
-        scroll_layout = QVBoxLayout(scroll_widget)
-        scroll_layout.setSpacing(12)
-        scroll_layout.setContentsMargins(0, 0, 6, 0)
+        main_layout.addWidget(self._create_overview_card())
 
-        overview_card = self._create_overview_card()
-        scroll_layout.addWidget(overview_card)
-        
-        top_tools_row = QHBoxLayout()
-        top_tools_row.setSpacing(12)
-        preview_card = self._create_preview_card()
-        # v5 Phase 7: 重新分配空间.原 280-340px 限制让预览太瘦,改为 Expanding 让 4:5 stretch.
-        preview_card.setMinimumWidth(360)
-        preview_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
-        # ⚠ **创建顺序 = Tab 焦点顺序**，所以它必须跟着版面顺序走。
-        # RN-115 把「样式/颜色」提到「大小与粗细」前面之后，这里如果还按老顺序建，
-        # 焦点就会先跳到下面的滑块再跳回上面的单选钮 ——
-        # `tests/test_tab_order_model_r8d.py` 当场逮住（要 3 步才能排成阅读顺序）。
-        # ⇒ 改版面时**同时**问一句：键盘走一遍还是这个顺序吗？
-        style_card = self._create_style_card()
-        color_card = self._create_color_card()
-        animation_card = self._create_animation_card()
-        kill_effect_card = self._create_kill_effect_card()
-        size_thickness_card = self._create_size_thickness_card()
-        for _card in (style_card, color_card, animation_card,
-                      kill_effect_card, size_thickness_card):
-            _card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
-
-        controls_column = QWidget()
-        # ⚠ 这个 objectName 不是样式钩子，是给**焦点巡检**用的：
-        # Tab 是一列一列走的，而审计默认把并排两列的卡片按 y 交错成"阅读序"，
-        # 于是本页被判"焦点错位 3 处"（RN-122）。标出"我是一列"之后，
-        # 审计按它自己写着的原则「读完左列再读右列」分组，与键盘实际行为一致。
-        controls_column.setObjectName("layoutColumn")
-        controls_column_layout = QVBoxLayout(controls_column)
-        controls_column_layout.setContentsMargins(0, 0, 0, 0)
-        controls_column_layout.setSpacing(12)
-
-        # UP-067(R5): 原本是写死的两列 QHBoxLayout。QHBoxLayout 的最小宽度是
-        # 两张卡最小宽之和,于是"样式+颜色"这一行把 controls_column 顶到 600px,
-        # 加上 preview_card 的 360px 下限,整行最小 972px —— 1.25 字号档下
-        # 超出可视区 16px,而本页滚动区是纵向滚,右边那一小条就够不到了。
-        # 换成 ResponsiveGrid:窄的时候自动落成单列,最小宽只等于较宽的那一张卡。
-        from widgets.responsive_grid import ResponsiveGrid
-
-        style_color_grid = ResponsiveGrid(breakpoints=[(560, 2), (0, 1)], spacing=12)
-        style_color_grid.addItem(style_card)
-        style_color_grid.addItem(color_card)
-
-        # RN-115（用户裁定 2026-08-19）：**先让人选准心，再让人调参数。**
-        # 原顺序是「大小与粗细」在前、「样式/颜色」在后，于是这一页最核心的选择
-        # 落在首屏之外（完整档视口 546px，样式卡从 y=630 起；紧凑档视口只有 386px）。
-        # 外审两档 10 发都指着这块，措辞是"被截断/被遮挡"——实测机制是**可滚的首屏之外**。
-        controls_column_layout.addWidget(style_color_grid)
-        controls_column_layout.addWidget(size_thickness_card)
-        controls_column_layout.addStretch(1)
-
-        # RN-114：预览卡只有 239px 高，而右边这一列 570px —— 差出来的部分在完整档里
-        # 就是左半列一块 455×203、什么都没有的方块。把两张效果卡挪进左列填上。
-        preview_column = QWidget()
-        preview_column.setObjectName("layoutColumn")     # 同上（RN-122）
-        preview_column_layout = QVBoxLayout(preview_column)
-        preview_column_layout.setContentsMargins(0, 0, 0, 0)
-        preview_column_layout.setSpacing(12)
-        preview_column_layout.addWidget(preview_card)
-        preview_column_layout.addWidget(animation_card)
-        preview_column_layout.addWidget(kill_effect_card)
-        preview_column_layout.addStretch(1)
-        self.preview_column = preview_column
-
-        # v5 Phase 7: 4:5 stretch 让预览和控件区接近 50/50
-        top_tools_row.addWidget(preview_column, 4, Qt.AlignTop)
-        top_tools_row.addWidget(controls_column, 5)
-        scroll_layout.addLayout(top_tools_row)
-
-
-        # 批 130：CS2 官方分享码导入 / 导出（建在自定义卡之前 ⇒ Tab 顺序与版面一致）
-        sharecode_card = self._create_sharecode_card()
-        sharecode_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
-        scroll_layout.addWidget(sharecode_card)
-
-        # 自定义准心操作卡片
-        custom_card = self._create_custom_card()
-        custom_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
-        scroll_layout.addWidget(custom_card)
-        scroll_layout.addStretch()
-        
-        scroll_area.setWidget(scroll_widget)
-        main_layout.addWidget(scroll_area, 1)
-
-        self.action_bar = PageActionBar(self)
-        self.action_bar.secondary_btn.setMinimumWidth(116)
-        self.action_bar.primary_btn.setMinimumWidth(132)
-        main_layout.addWidget(self.action_bar, 0)
-
+        # 批 146：左边一大块预览，右边一栏参数。调参数时预览一直在眼前，不用来回滚。
+        body = QHBoxLayout()
+        body.setSpacing(16)
+        self.preview_column = self._create_preview_column()
+        body.addWidget(self.preview_column, 1)
+        self.parameter_scroll = self._create_parameter_panel()
+        body.addWidget(self.parameter_scroll, 0)
+        main_layout.addLayout(body, 1)
 
     def _custom_style_is_blank(self):
         """样式选的是「自定义」，而一个点都还没画 —— 此刻屏幕上什么都不会有。
@@ -508,8 +422,7 @@ class CrosshairPage(QWidget):
         #   —— 闪光页「启动」→「前往效果预览」就是（RN-192，外审驱动的改法）。
         #   而「绘制」和「导出」不是一条流程的两步，是两件无关的事共用一个槽。
         #
-        # 「绘制准心」只留在自定义准心卡片里那一颗 —— 用户想「我要自己画一个」
-        # 的时候人就在那张卡上（那里有点数摘要和格式说明）。
+        # 「绘制准心」只留在参数栏最下面那一颗。
         #
         # ⚠⚠ 第一版修法（把主按钮固定成「导出准心」、没数据时置灰）**当场被外审否掉**：
         #   「置灰的『导出准心』极易被误认为是『保存/应用』按钮，
@@ -520,7 +433,7 @@ class CrosshairPage(QWidget):
         #   ⇒ 我把 5/6 票那条原始困惑**换了个样子留在原地**。
         #
         # 现在：底栏**不放主按钮**。导入 / 导出都是次级，位置固定、两种状态都在场。
-        # 全页唯一的紫按钮是自定义准心卡片里那颗「绘制准心」——
+        # 全页唯一的紫按钮是参数栏里那颗「绘制准心」——
         # 那也确实是这一页唯一一个"点了会发生新事情"的动作（RN-139/RN-186：
         # **「主」是相对的，两颗紫的等于零颗**）。
         # ⚠ 「导出准心」没数据时**置灰而不是藏掉**：藏掉的话用户看到的是
@@ -531,12 +444,12 @@ class CrosshairPage(QWidget):
         # ⭐ 解释要放在困惑发生的地方；这颗按钮就是困惑发生的地方。
         self.action_bar.extra_btn.setToolTip(
             "收本软件导出的 .xchr（.json 也能直接拖进页面）；"
-            "CS2 官方分享码（CSGO-…）暂不支持。")
+            "CS2 官方分享码（CSGO-…）在上面「CS2 分享码」一栏粘贴。")
         self.action_bar.configure_secondary("导出准心", self._export_crosshair, visible=True)
         self.action_bar.secondary_btn.setEnabled(custom_points > 0)
         self.action_bar.secondary_btn.setToolTip(
             "" if custom_points > 0
-            else "还没有自定义准心数据——先在「自定义准心」卡片里绘制一个")
+            else f"还没有自定义准心数据——先点「{self.draw_button.text()}」画一个")
         self.action_bar.configure_primary("", None, visible=False)
 
         # ⭐ RN-174：底栏这行字要**先回答那个 5/6 票的困惑**（"我改的东西保存了吗"），
@@ -560,67 +473,19 @@ class CrosshairPage(QWidget):
         self.action_bar.set_message(action_message)
 
     def _sync_panel_summaries(self):
-        enabled = bool(getattr(config, "crosshair_enabled", False))
-        style_value = str(getattr(config, "crosshair_style", "crosshair") or "crosshair")
-        color_value = str(getattr(config, "crosshair_color", "green") or "green")
-        animation_value = str(getattr(config, "crosshair_animation", "none") or "none")
-        kill_effect_value = str(getattr(config, "crosshair_kill_effect", "none") or "none")
-        size_value = int(getattr(config, "crosshair_size", 20) or 20)
-        thickness_value = int(getattr(config, "crosshair_thickness", 2) or 2)
         custom_points = len(getattr(config, "crosshair_custom_data", []) or [])
-
-        if hasattr(self, "preview_summary_label"):
-            preview_text = (
-                f"当前预览：{self._format_style_text(style_value)} · {self._format_color_text(color_value)}"
-                f" · {size_value}/{thickness_value} · {'显示已启用' if enabled else '显示未启用'}"
-            )
-            self.preview_summary_label.setText(preview_text)
-            self.preview_summary_label.setToolTip(preview_text)
-
-        if hasattr(self, "size_summary_label"):
-            size_text = f"当前档位：大小 {size_value} · 粗细 {thickness_value}"
-            self.size_summary_label.setText(size_text)
-            self.size_summary_label.setToolTip(size_text)
-
-        if hasattr(self, "style_summary_label"):
-            style_text = f"当前样式：{self._format_style_text(style_value)}"
-            if self._custom_style_is_blank():
-                # RN-406：他刚点完「自定义」，这张卡要当场回答
-                # 「所以现在屏幕上是什么」——答案是**什么都没有**。
-                # ⚠ 主句是后果，不是指路：批 10 刚实测过「补一句指路」票数一票不掉。
-                style_text += " —— 还没画过，屏幕上不会出现准心"
-            elif custom_points:
-                style_text += f" · 已保存 {custom_points} 个自定义点"
-            self.style_summary_label.setText(style_text)
-            self.style_summary_label.setToolTip(style_text)
-
-        if hasattr(self, "color_summary_label"):
-            color_text = f"当前颜色：{self._format_color_text(color_value)} · 建议优先选择高反差颜色"
-            self.color_summary_label.setText(color_text)
-            self.color_summary_label.setToolTip(color_text)
-
-        if hasattr(self, "animation_summary_label"):
-            animation_text = f"当前动画：{self._format_animation_text(animation_value)}"
-            self.animation_summary_label.setText(animation_text)
-            self.animation_summary_label.setToolTip(animation_text)
-
-        if hasattr(self, "kill_effect_summary_label"):
-            kill_text = f"当前联动：{self._format_kill_effect_text(kill_effect_value)}"
-            self.kill_effect_summary_label.setText(kill_text)
-            self.kill_effect_summary_label.setToolTip(kill_text)
-
-        if hasattr(self, "custom_summary_label"):
-            if custom_points > 0:
-                custom_text = f"当前已保存 {custom_points} 个自定义点，可继续微调后导入或导出。"
-            elif self._custom_style_is_blank():
-                # RN-406：样式已经切到「自定义」了，这里就不再是一句软建议。
-                # ⭐ 同一句话在两种状态下的**性质**不同：一种是"这样会更好"，
-                # 另一种是"不做这件事，功能就是坏的"。
-                custom_text = "样式已选「自定义」，但一个点都还没画 —— 现在准心不会显示。"
-            else:
-                custom_text = "当前还没有自定义点，先绘制一个常用模板会更高效。"
-            self.custom_summary_label.setText(custom_text)
-            self.custom_summary_label.setToolTip(custom_text)
+        if custom_points > 0:
+            custom_text = f"已保存 {custom_points} 个自定义点，可继续微调后导入或导出。"
+        elif self._custom_style_is_blank():
+            # RN-406：样式已经切到「自定义」了，这里就不再是一句软建议。
+            # ⭐ 同一句话在两种状态下的**性质**不同：一种是"这样会更好"，
+            # 另一种是"不做这件事，功能就是坏的"。
+            custom_text = "样式已选「自定义」，但一个点都还没画 —— 现在准心不会显示。"
+        else:
+            custom_text = ""
+        self.custom_summary_label.setText(custom_text)
+        self.custom_summary_label.setToolTip(custom_text)
+        self.custom_summary_label.setVisible(bool(custom_text))
 
     def on_master_switch_synced(self):
         """总开关被别处拨动后，把本页那条状态文案重算一遍。
@@ -670,26 +535,6 @@ class CrosshairPage(QWidget):
             ),
         ]
 
-        compact_parts = [
-            self._format_style_text(style_value),
-            self._format_color_text(color_value),
-            f"{size_value}/{thickness_value}",
-            self._format_kill_effect_text(kill_effect_value),
-        ]
-        if animation_value != "none":
-            compact_parts.append(self._format_animation_text(animation_value))
-        if style_value == "custom":
-            # ⚠⚠ 原来是 `if style_value == "custom" and custom_points:` ——
-            # **有点时才说，0 点时整句消失**。⭐ 一个在最需要说话的时候恰好闭嘴的
-            # 提示，比没有这个提示更糟：它让「一切正常」和「什么都画不出来」
-            # 在紧凑档里长得一模一样。
-            compact_parts.append(
-                f"自定义 {custom_points} 点" if custom_points else "自定义未绘制")
-
-        compact_summary = " · ".join(compact_parts)
-        if not enabled:
-            compact_summary = f"显示关闭 · {compact_summary}"
-        self.crosshair_summary_label.setText(compact_summary)
 
         detail_parts = [
             f"当前为“{self._format_style_text(style_value)}”准心",
@@ -703,16 +548,15 @@ class CrosshairPage(QWidget):
             detail_parts.append(f"已保存 {custom_points} 个自定义像素点")
         detail_text = "，".join(detail_parts) + "。"
         render_badges(self.status_badge_label, badges, detail_tooltip=detail_text)
-        self.crosshair_summary_label.setToolTip(detail_text)
         self.status_card.setToolTip(detail_text)
         self._sync_panel_summaries()
         self._sync_action_bar()
 
     def _create_overview_card(self):
-        card = self._create_card()
+        card = StatusStrip()
         self.status_card = card
         layout = QVBoxLayout(card)
-        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
 
         # RN-144 升级版（第二稿）：总开关**独占卡片第一行、贴左边**。
@@ -722,16 +566,6 @@ class CrosshairPage(QWidget):
         # ⭐ 同一个角落位置，装什么都会被判"够不着" —— **位置本身就是那个缺陷**。
         self.master_switch_row = make_master_switch_row(
             self, "crosshair_enabled", "准心")
-        layout.addWidget(self.master_switch_row)
-
-        status_row = QHBoxLayout()
-
-        title = QLabel("当前状态")
-        title.setObjectName("statusLabel")
-        status_row.addWidget(title)
-        status_row.addStretch()
-
-        layout.addLayout(status_row)
 
         self.status_badge_label = create_badge_label()
         layout.addWidget(self.status_badge_label)
@@ -741,11 +575,6 @@ class CrosshairPage(QWidget):
         #   —— 那句话让人更相信「装好就能用」。外审改前一轮 6 发判高。
         layout.addWidget(make_overlay_requirement_label("准心"))
 
-        self.crosshair_summary_label = QLabel("")
-        self.crosshair_summary_label.setObjectName("hintLabel")
-        self.crosshair_summary_label.setWordWrap(True)
-        self.crosshair_summary_label.hide()
-        layout.addWidget(self.crosshair_summary_label)
 
         return card
     
@@ -753,272 +582,158 @@ class CrosshairPage(QWidget):
         """创建标准卡片"""
         card = QFrame()
         card.setObjectName("card")
-        shadow = self._create_shadow()
-        card.setGraphicsEffect(shadow)
         return card
     
-    def _create_shadow(self):
-        """创建阴影效果"""
-        from PySide6.QtWidgets import QGraphicsDropShadowEffect
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(10)
-        shadow.setColor(QColor(0, 0, 0, 30))
-        shadow.setOffset(0, 2)
-        return shadow
-    
-    def _create_preview_card(self):
-        """创建预览卡片"""
-        card = self._create_card()
-        card.setToolTip("这里展示当前配置的静态预览；游戏里显不显示，看总开关。")
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(14, 14, 14, 14)
+    def _create_preview_column(self):
+        """左边：预览舞台和底色切换。调参数时它一直在眼前。"""
+        column = QWidget()
+        # ⚠ 这个 objectName 不是样式钩子，是给**焦点巡检**用的：Tab 是一列一列走的（RN-122）
+        column.setObjectName("layoutColumn")
+        layout = QVBoxLayout(column)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
-        
-        # 标题
-        title = QLabel("准心预览")
-        title.setObjectName("cardTitle")
-        layout.addWidget(title)
 
-        self.preview_summary_label = QLabel("")
-        self.preview_summary_label.setObjectName("hintLabel")
-        self.preview_summary_label.setWordWrap(True)
-        layout.addWidget(self.preview_summary_label)
-
-        # 预览框
-        preview_frame = QFrame()
-        preview_frame.setFixedSize(156, 156)
-        self.preview_frame = preview_frame
-        
-        preview_layout = QVBoxLayout(preview_frame)
-        preview_layout.setContentsMargins(0, 0, 0, 0)
-        
+        self.preview_frame = CrosshairStage()
+        self.preview_frame.setAccessibleName("准心预览")
+        stage_layout = QVBoxLayout(self.preview_frame)
+        stage_layout.setContentsMargins(0, 0, 0, 0)
         self.preview_label = QLabel()
+        self.preview_label.setObjectName("crosshairPreviewLabel")
         self.preview_label.setAlignment(Qt.AlignCenter)
-        preview_layout.addWidget(self.preview_label)
+        keep_single_line(self.preview_label)
+        stage_layout.addWidget(self.preview_label, 0, Qt.AlignCenter)
 
         # ⭐⭐ RN-414（批 27）：选中「自定义」而一个点都没画时，**这块预览框就是入口**。
-        #
-        # 天然对照实验（同一页、同一状态、同一个模型，变量只有"看不看得见折线以下"）：
-        #     窗口图（用户真正看到的那一屏） ①3/3「不知道」 ②3/3「不知道」
-        #     整页无折线图                  ①3/3「绘制准心」②3/3「知道，在这一屏上」
-        # ⇒ 入口不是难找，是**根本不在第一屏上**（实测：单选 y=456、按钮 y=948，
-        #   相距 492px，而可视区只有 750px）。
-        #
         # ⚠ 不能就地再放一颗「绘制准心」：`test_draw_crosshair_appears_exactly_once`
-        #   明令这一屏只许有一颗（RN-404 族 —— 同页两颗同名同功能的按钮）。
-        # ⭐⭐ 而登记册里记着批 12 我自己造的那半条：给预览框加空状态文字之后，
-        #   4 发改说「大面积黑框**看着像画板却点不动**」。
-        #   ⇒ 那句抱怨是对的，而修法不是把它变得不像画板 —— 是**让它真的可点**。
-        #   批 26 立的是「不可点的东西不许长按钮的形状」，这里是它的反面：
-        #   **看着可点的东西，要么真的可点，要么别长那个样子。**
+        #   明令这一屏只许有一颗（RN-404 族）。
+        # ⭐ **看着可点的东西，要么真的可点，要么别长那个样子。**
         self.preview_frame.setToolTip("")
         self.preview_frame.mouseReleaseEvent = self._on_preview_clicked
         self._preview_is_entry = False
-        preview_frame.setObjectName("crosshairPreviewFrame")
-        
-        # 居中预览框
-        preview_container = QHBoxLayout()
-        preview_container.addStretch()
-        preview_container.addWidget(preview_frame)
-        preview_container.addStretch()
-        layout.addLayout(preview_container)
+        layout.addWidget(self.preview_frame, 1)
+
+        row = QHBoxLayout()
+        row.setSpacing(12)
+        self.scene_group = QButtonGroup(self)
+        scene_radios = []
+        for scene, name in SCENE_LABELS.items():
+            radio = SegmentRadio(name)
+            radio.setToolTip("换个底色，看准心在亮处、暗处和烟里还清不清楚")
+            radio.setChecked(scene == self.preview_frame.scene())
+            radio.toggled.connect(
+                lambda checked, s=scene: self.preview_frame.set_scene(s) if checked else None)
+            self.scene_group.addButton(radio)
+            scene_radios.append(radio)
+        row.addWidget(self._make_segment_frame(scene_radios), 0)
 
         # RN-407 第③件：预览**照常画**，但要说清楚它意味着什么。
         # ⚠ 候选 C 那一轮试的是「关着就别渲染」，6/6 判高「失去反馈，与底栏矛盾」
         #   —— 比它想修的那条还重。⭐ 说后果，别撤反馈。
-        # 位置在预览框**紧下方**：解释性文字要放在困惑发生的地方，
-        # 放页尾等于没放（官网那两轮 6 发的判词是「藏在底部小字里」）。
         from widgets.master_switch_effect import make_preview_effect_caption
 
         self.preview_effect_caption = make_preview_effect_caption()
-        layout.addWidget(self.preview_effect_caption)
-        layout.addStretch()
+        row.addWidget(self.preview_effect_caption, 1)
+        layout.addLayout(row)
+        return column
 
-        return card
-    
-    def _create_size_thickness_card(self):
-        """创建准心大小和粗细卡片（合并）"""
-        card = self._create_card()
-        card.setToolTip("建议先确定整体大小，再微调粗细，这样更容易找到既清晰又不遮挡视线的平衡点。")
-        layout = QVBoxLayout(card)
+    @staticmethod
+    def _make_segment_frame(radios):
+        frame = QFrame()
+        frame.setObjectName("segmentGroup")
+        frame.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        row = QHBoxLayout(frame)
+        row.setContentsMargins(2, 2, 2, 2)
+        row.setSpacing(2)
+        for radio in radios:
+            row.addWidget(radio)
+        return frame
+
+    @staticmethod
+    def _make_section_title(text, search_text=""):
+        title = QLabel(text)
+        title.setObjectName("panelSectionTitle")
+        keep_single_line(title)
+        if search_text:
+            title.setProperty("fp_search_text", search_text)
+        return title
+
+    @staticmethod
+    def _make_divider():
+        line = QFrame()
+        line.setObjectName("panelDivider")
+        line.setFixedHeight(1)
+        return line
+
+    def _create_parameter_panel(self):
+        """右边：一栏参数。窗口矮时只有这一栏滚，预览不动。
+
+        RN-115（用户裁定 2026-08-19）：**先让人选准心，再让人调参数**，样式和颜色排最上面。
+        ⚠ **创建顺序 = Tab 焦点顺序**：这里的调用顺序就是从上到下的版面顺序。
+        """
+        panel = self._create_card()
+        layout = QVBoxLayout(panel)
         layout.setContentsMargins(14, 14, 14, 14)
-        layout.setSpacing(8)
+        layout.setSpacing(10)
 
-        title = QLabel("大小与粗细")
-        title.setObjectName("cardTitle")
-        layout.addWidget(title)
+        self._add_style_section(layout)
+        self._add_color_section(layout)
+        layout.addWidget(self._make_divider())
+        self._add_slider_section(layout)
+        layout.addWidget(self._make_divider())
+        self._add_effect_section(layout)
+        layout.addWidget(self._make_divider())
+        self._add_sharecode_section(layout)
+        layout.addWidget(self._make_divider())
+        self._add_custom_section(layout)
+        layout.addStretch(1)
 
-        self.size_summary_label = QLabel("")
-        self.size_summary_label.setObjectName("hintLabel")
-        self.size_summary_label.setWordWrap(True)
-        layout.addWidget(self.size_summary_label)
+        scroll = QScrollArea()
+        scroll.setObjectName("layoutColumn")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setWidget(panel)
+        return scroll
 
-        # 大小设置
-        size_header = QHBoxLayout()
-        size_title = QLabel("准心大小")
-        size_header.addWidget(size_title)
-        size_header.addStretch()
-        
-        self.size_value_label = QLabel(str(config.crosshair_size))
-        size_header.addWidget(self.size_value_label)
-        layout.addLayout(size_header)
-        
-        self.size_slider = QSlider(Qt.Horizontal)
-        self.size_slider.setAccessibleName("准心大小")
-        self.size_slider.setMinimum(5)
-        self.size_slider.setMaximum(50)
-        self.size_slider.setValue(config.crosshair_size)
-        self.size_slider.valueChanged.connect(self._on_size_changed)
-        layout.addWidget(self.size_slider)
-        
-        # 粗细设置
-        thickness_header = QHBoxLayout()
-        thickness_title = QLabel("准心粗细")
-        thickness_header.addWidget(thickness_title)
-        thickness_header.addStretch()
-        
-        self.thickness_value_label = QLabel(str(config.crosshair_thickness))
-        thickness_header.addWidget(self.thickness_value_label)
-        layout.addLayout(thickness_header)
-        
-        self.thickness_slider = QSlider(Qt.Horizontal)
-        self.thickness_slider.setAccessibleName("准心粗细")
-        self.thickness_slider.setMinimum(1)
-        self.thickness_slider.setMaximum(10)
-        self.thickness_slider.setValue(config.crosshair_thickness)
-        self.thickness_slider.valueChanged.connect(self._on_thickness_changed)
-        layout.addWidget(self.thickness_slider)
+    def _sync_panel_width(self):
+        """参数栏宽度：下限和内容最小宽取大的。
 
-        # 中心间隙。默认 0 = 两条线穿过圆心，正好糊住你要瞄的那个点；
-        # 这是这次补齐里对实战影响最直接的一项。
-        gap_header = QHBoxLayout()
-        gap_title = QLabel("中心间隙")
-        gap_header.addWidget(gap_title)
-        gap_header.addStretch()
-        self.gap_value_label = QLabel(str(getattr(config, "crosshair_gap", 0)))
-        gap_header.addWidget(self.gap_value_label)
-        layout.addLayout(gap_header)
+        ⚠ 滚动区的最小宽不看内容，横向滚动条又关着：字号放大时内容会被裁掉，所以要现算。
+        """
+        panel = self.parameter_scroll.widget()
+        bar = self.parameter_scroll.style().pixelMetric(
+            QStyle.PM_ScrollBarExtent, None, self.parameter_scroll)
+        self.parameter_scroll.setFixedWidth(
+            max(self.PANEL_MIN_WIDTH, panel.minimumSizeHint().width() + bar))
 
-        self.gap_slider = QSlider(Qt.Horizontal)
-        self.gap_slider.setAccessibleName("中心间隙")
-        self.gap_slider.setMinimum(0)
-        self.gap_slider.setMaximum(20)
-        self.gap_slider.setValue(int(getattr(config, "crosshair_gap", 0) or 0))
-        self.gap_slider.setToolTip("准星中心留空多少像素。0 表示两条线穿过圆心，会挡住瞄准点。")
-        self.gap_slider.valueChanged.connect(self._on_gap_changed)
-        layout.addWidget(self.gap_slider)
+    def showEvent(self, event):
+        self._sync_panel_width()
+        super().showEvent(event)
 
-        # 描边。纯色细线在亮地板/沙地上基本看不见，这是可见性的主要手段。
-        outline_header = QHBoxLayout()
-        outline_title = QLabel("黑色描边")
-        outline_header.addWidget(outline_title)
-        outline_header.addStretch()
-        self.outline_value_label = QLabel(str(getattr(config, "crosshair_outline", 0)))
-        outline_header.addWidget(self.outline_value_label)
-        layout.addLayout(outline_header)
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() in (QEvent.StyleChange, QEvent.FontChange) and hasattr(self, "parameter_scroll"):
+            self._sync_panel_width()
 
-        self.outline_slider = QSlider(Qt.Horizontal)
-        self.outline_slider.setAccessibleName("黑色描边")
-        self.outline_slider.setMinimum(0)
-        self.outline_slider.setMaximum(4)
-        self.outline_slider.setValue(int(getattr(config, "crosshair_outline", 0) or 0))
-        self.outline_slider.setToolTip("给准星描一圈黑边，亮色地面上更容易看清。0 为不描边。")
-        self.outline_slider.valueChanged.connect(self._on_outline_changed)
-        layout.addWidget(self.outline_slider)
-
-        # 透明度
-        alpha_header = QHBoxLayout()
-        alpha_title = QLabel("不透明度")
-        alpha_header.addWidget(alpha_title)
-        alpha_header.addStretch()
-        self.alpha_value_label = QLabel(
-            f"{int((255 if getattr(config, 'crosshair_alpha', None) is None else config.crosshair_alpha)) * 100 // 255}%"
-        )
-        alpha_header.addWidget(self.alpha_value_label)
-        layout.addLayout(alpha_header)
-
-        self.alpha_slider = QSlider(Qt.Horizontal)
-        self.alpha_slider.setAccessibleName("不透明度")
-        self.alpha_slider.setMinimum(0)
-        self.alpha_slider.setMaximum(100)
-        self.alpha_slider.setValue(
-            max(0, int((255 if getattr(config, "crosshair_alpha", None) is None else config.crosshair_alpha)) * 100 // 255)
-        )
-        self.alpha_slider.valueChanged.connect(self._on_alpha_changed)
-        layout.addWidget(self.alpha_slider)
-
-        self.dot_checkbox = QCheckBox("显示中心点")
-        self.dot_checkbox.setToolTip("在准星中心叠一个实心点，配合中心间隙使用效果最好")
-        self.dot_checkbox.setChecked(bool(getattr(config, "crosshair_dot", False)))
-        self.dot_checkbox.toggled.connect(self._on_dot_toggled)
-        layout.addWidget(self.dot_checkbox)
-
-        return card
-    
-    def _create_style_card(self):
-        """创建准心样式卡片"""
-        card = self._create_card()
-        card.setToolTip("普通样式适合快速切换，自定义样式更适合长期固定使用。")
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(14, 14, 14, 14)
-        layout.setSpacing(8)
-        
-        # 标题
-        title = QLabel("准心样式")
-        title.setObjectName("cardTitle")
-        layout.addWidget(title)
-
-        self.style_summary_label = QLabel("")
-        self.style_summary_label.setObjectName("hintLabel")
-        self.style_summary_label.setWordWrap(True)
-        layout.addWidget(self.style_summary_label)
-
-        # 样式选择（Radio Buttons）
-        # 用 FlowLayout 而不是 QHBoxLayout：QHBoxLayout 的最小宽度是所有子项之和，
-        # R9-A 加到第五个样式后，1.25 倍字号下实测把本页撑出 10 处水平溢出。
-        # FlowLayout 的最小宽度只等于最宽的那一个，放不下自动换行。（同 UP-017）
-        from widgets.flow_layout import make_flow_container
-
-        style_wrap, style_layout = make_flow_container(h_spacing=10, v_spacing=6)
-
+    def _add_style_section(self, layout):
+        layout.addWidget(self._make_section_title("样式", "准心样式"))
         self.style_group = QButtonGroup(self)
-
+        radios = []
         for style_value, style_name in CROSSHAIR_STYLE_LABELS.items():
-            radio = QRadioButton(style_name)
+            radio = SegmentRadio(style_name)
             self.style_group.addButton(radio)
             radio.setProperty("style_value", style_value)
-            style_layout.addWidget(radio)
-
             if style_value == config.crosshair_style:
                 radio.setChecked(True)
             radio.toggled.connect(lambda checked, s=style_value: self._on_style_changed(s) if checked else None)
+            radios.append(radio)
+        layout.addWidget(self._make_segment_frame(radios))
 
-        # FlowLayout 没有 addStretch——它本来就是左对齐 + 自动换行
-        layout.addWidget(style_wrap)
+    def _add_color_section(self, layout):
+        from crosshair_overlay import COLOR_MAP
 
-        return card
-    
-    def _create_color_card(self):
-        """创建准心颜色卡片"""
-        card = self._create_card()
-        card.setToolTip("优先选择与你常用地图和显示器环境反差更稳定的颜色。")
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(14, 14, 14, 14)
-        layout.setSpacing(8)
-        
-        # 标题
-        title = QLabel("准心颜色")
-        title.setObjectName("cardTitle")
-        layout.addWidget(title)
-
-        self.color_summary_label = QLabel("")
-        self.color_summary_label.setObjectName("hintLabel")
-        self.color_summary_label.setWordWrap(True)
-        layout.addWidget(self.color_summary_label)
-
-        # 颜色选择（Radio Buttons）
+        layout.addWidget(self._make_section_title("颜色", "准心颜色"))
         self.color_group = QButtonGroup(self)
-        
         colors = [
             ("red", "红色"),
             ("green", "绿色"),
@@ -1027,41 +742,29 @@ class CrosshairPage(QWidget):
             ("cyan", "青色"),
             ("white", "白色")
         ]
-        
-        # 分两行显示
-        for row in range(2):
-            row_layout = QHBoxLayout()
-            row_layout.setSpacing(10)
-            
-            for col in range(3):
-                idx = row * 3 + col
-                if idx < len(colors):
-                    color_code, color_name = colors[idx]
-                    radio = QRadioButton(color_name)
-                    self.color_group.addButton(radio)
-                    radio.setProperty("color_value", color_code)
-                    row_layout.addWidget(radio)
-                    
-                    if color_code == config.crosshair_color:
-                        radio.setChecked(True)
-                    radio.toggled.connect(lambda checked, c=color_code: self._on_color_changed(c) if checked else None)
-            
-            row_layout.addStretch()
-            layout.addLayout(row_layout)
+        row = QHBoxLayout()
+        row.setSpacing(2)
+        for color_code, color_name in colors:
+            radio = ColorSwatch(COLOR_MAP[color_code], color_name)
+            self.color_group.addButton(radio)
+            radio.setProperty("color_value", color_code)
+            row.addWidget(radio)
+            if color_code == config.crosshair_color:
+                radio.setChecked(True)
+            radio.toggled.connect(lambda checked, c=color_code: self._on_color_changed(c) if checked else None)
+        row.addStretch()
+        layout.addLayout(row)
 
         # 六个固定色名之外的任意颜色。留着色名不动，清空自定义色就回到色名——
         # 存量配置指向的是那六个名字，不能替换掉。
         custom_row = QHBoxLayout()
         custom_row.setSpacing(8)
         self.custom_color_btn = QPushButton("自定义颜色…")
-        self.custom_color_btn.setFixedHeight(32)
         style_as_secondary_button(self.custom_color_btn)
         self.custom_color_btn.clicked.connect(self._on_custom_color_picked)
         custom_row.addWidget(self.custom_color_btn)
 
         self.clear_custom_color_btn = QPushButton("恢复")
-        self.clear_custom_color_btn.setFixedWidth(64)
-        self.clear_custom_color_btn.setFixedHeight(32)
         style_as_secondary_button(self.clear_custom_color_btn)
         self.clear_custom_color_btn.clicked.connect(self._on_custom_color_cleared)
         custom_row.addWidget(self.clear_custom_color_btn)
@@ -1069,192 +772,163 @@ class CrosshairPage(QWidget):
         layout.addLayout(custom_row)
         self._sync_custom_color_button()
 
-        return card
+    def _add_slider_row(self, grid, row, title, accessible_name, value_range, value, on_change,
+                        value_text, tip=""):
+        label = QLabel(title)
+        keep_single_line(label)
+        # 这一页不用再写「准心大小」，可用户搜的还是这几个字（索引和跳转都读它）
+        label.setProperty("fp_search_text", accessible_name)
+        grid.addWidget(label, row, 0)
+        slider = QSlider(Qt.Horizontal)
+        slider.setAccessibleName(accessible_name)
+        slider.setMinimum(value_range[0])
+        slider.setMaximum(value_range[1])
+        slider.setValue(value)
+        if tip:
+            slider.setToolTip(tip)
+        slider.valueChanged.connect(on_change)
+        grid.addWidget(slider, row, 1)
+        value_label = QLabel(value_text)
+        value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        keep_single_line(value_label)
+        grid.addWidget(value_label, row, 2)
+        return slider, value_label
 
-    def _create_animation_card(self):
-        """创建动画效果卡片"""
-        card = self._create_card()
-        card.setToolTip("动画只影响显示节奏，不会改变准心的基础形态。")
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(14, 14, 14, 14)
-        layout.setSpacing(8)
-        
-        # 标题
-        title = QLabel("动画效果")
-        title.setObjectName("cardTitle")
-        layout.addWidget(title)
+    def _add_slider_section(self, layout):
+        grid = QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(6)
+        grid.setColumnStretch(1, 1)
 
-        self.animation_summary_label = QLabel("")
-        self.animation_summary_label.setObjectName("hintLabel")
-        self.animation_summary_label.setWordWrap(True)
-        layout.addWidget(self.animation_summary_label)
+        self.size_slider, self.size_value_label = self._add_slider_row(
+            grid, 0, "大小", "准心大小", (5, 50), config.crosshair_size,
+            self._on_size_changed, str(config.crosshair_size),
+            "建议先确定整体大小，再微调粗细，这样更容易找到既清晰又不遮挡视线的平衡点。")
+        self.thickness_slider, self.thickness_value_label = self._add_slider_row(
+            grid, 1, "粗细", "准心粗细", (1, 10), config.crosshair_thickness,
+            self._on_thickness_changed, str(config.crosshair_thickness))
+        # 中心间隙。默认 0 = 两条线穿过圆心，正好糊住你要瞄的那个点；
+        # 这是这次补齐里对实战影响最直接的一项。
+        gap = int(getattr(config, "crosshair_gap", 0) or 0)
+        self.gap_slider, self.gap_value_label = self._add_slider_row(
+            grid, 2, "中心间隙", "中心间隙", (0, 20), gap,
+            self._on_gap_changed, str(gap),
+            "准星中心留空多少像素。0 表示两条线穿过圆心，会挡住瞄准点。")
+        # 描边。纯色细线在亮地板/沙地上基本看不见，这是可见性的主要手段。
+        outline = int(getattr(config, "crosshair_outline", 0) or 0)
+        self.outline_slider, self.outline_value_label = self._add_slider_row(
+            grid, 3, "黑色描边", "黑色描边", (0, 4), outline,
+            self._on_outline_changed, str(outline),
+            "给准星描一圈黑边，亮色地面上更容易看清。0 为不描边。")
+        alpha = max(0, int((255 if getattr(config, "crosshair_alpha", None) is None else config.crosshair_alpha)) * 100 // 255)
+        self.alpha_slider, self.alpha_value_label = self._add_slider_row(
+            grid, 4, "不透明度", "不透明度", (0, 100), alpha,
+            self._on_alpha_changed, f"{alpha}%")
+        layout.addLayout(grid)
 
-        # 动画选择下拉框
-        row_layout = QHBoxLayout()
-        row_layout.setSpacing(8)
-        
-        label = QLabel("动画")
-        row_layout.addWidget(label)
-        
+        self.dot_checkbox = QCheckBox("显示中心点")
+        self.dot_checkbox.setToolTip("在准星中心叠一个实心点，配合中心间隙使用效果最好")
+        self.dot_checkbox.setChecked(bool(getattr(config, "crosshair_dot", False)))
+        self.dot_checkbox.toggled.connect(self._on_dot_toggled)
+        layout.addWidget(self.dot_checkbox)
+
+    def _add_effect_section(self, layout):
+        grid = QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(6)
+        grid.setColumnStretch(1, 1)
+
+        animation_label = QLabel("动画")
+        animation_label.setProperty("fp_search_text", "动画效果")
+        keep_single_line(animation_label)
+        grid.addWidget(animation_label, 0, 0)
         self.animation_combo = QComboBox()
         self.animation_combo.setAccessibleName("准心动画")
-        animation_options = [
+        self.animation_combo.setToolTip("动画只影响显示节奏，不会改变准心的基础形态。")
+        self.animation_combo.addItems([
             "无动画", "呼吸效果", "脉冲效果", "变色效果", "旋转效果",
             "扩散效果", "弹跳效果", "闪烁效果", "抖动效果"
-        ]
-        self.animation_combo.addItems(animation_options)
-        self.animation_combo.setFixedHeight(36)
+        ])
         self.animation_combo.currentIndexChanged.connect(self._on_animation_changed)
-        row_layout.addWidget(self.animation_combo)
-        
-        row_layout.addStretch()
-        layout.addLayout(row_layout)
-        
-        return card
-    
-    def _create_kill_effect_card(self):
-        """创建击杀联动卡片"""
-        card = self._create_card()
-        card.setToolTip("测试前需要先打开总开关，否则看不到联动效果。")
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(14, 14, 14, 14)
-        layout.setSpacing(8)
-        
-        # 标题
-        title = QLabel("击杀联动")
-        title.setObjectName("cardTitle")
-        layout.addWidget(title)
+        grid.addWidget(self.animation_combo, 0, 1, 1, 2)
 
-        self.kill_effect_summary_label = QLabel("")
-        self.kill_effect_summary_label.setObjectName("hintLabel")
-        self.kill_effect_summary_label.setWordWrap(True)
-        layout.addWidget(self.kill_effect_summary_label)
-
-        # 击杀联动选择
-        row_layout = QHBoxLayout()
-        row_layout.setSpacing(8)
-        
-        label = QLabel("联动")
-        row_layout.addWidget(label)
-        
+        kill_label = QLabel("击杀联动")
+        keep_single_line(kill_label)
+        grid.addWidget(kill_label, 1, 0)
         self.kill_effect_combo = QComboBox()
         self.kill_effect_combo.setAccessibleName("击杀联动效果")
-        kill_effect_options = [
+        self.kill_effect_combo.addItems([
             "关闭联动", "脉冲效果", "爆炸效果", "旋转效果", "抖动效果",
             "X形闪烁", "彩虹冲击波", "破碎重组", "多重脉冲", "霓虹扩散",
             "十字星辉"
-        ]
-        self.kill_effect_combo.addItems(kill_effect_options)
-        self.kill_effect_combo.setFixedHeight(36)
+        ])
         self.kill_effect_combo.currentIndexChanged.connect(self._on_kill_effect_changed)
-        row_layout.addWidget(self.kill_effect_combo)
-        
-        # 测试按钮
-        test_btn = QPushButton("测试")
-        test_btn.setFixedWidth(80)
-        test_btn.setFixedHeight(36)
+        grid.addWidget(self.kill_effect_combo, 1, 1)
+
+        test_btn = QPushButton("试一下")
+        test_btn.setToolTip("要先打开总开关，否则看不到联动效果。")
         style_as_secondary_button(test_btn)
         test_btn.clicked.connect(self._test_kill_effect)
-        row_layout.addWidget(test_btn)
-        
-        row_layout.addStretch()
-        layout.addLayout(row_layout)
-        
-        return card
-    
-    def _create_custom_card(self):
-        """创建自定义准心操作卡片"""
-        card = self._create_card()
-        card.setToolTip("绘制完成后会自动切换到自定义样式；导入和导出可用于保留常用模板。")
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(14, 14, 14, 14)
-        layout.setSpacing(8)
-        
-        # 标题
-        title = QLabel("自定义准心")
-        title.setObjectName("cardTitle")
-        layout.addWidget(title)
+        grid.addWidget(test_btn, 1, 2)
+        layout.addLayout(grid)
 
-        self.custom_summary_label = QLabel("")
-        self.custom_summary_label.setObjectName("hintLabel")
-        self.custom_summary_label.setWordWrap(True)
-        layout.addWidget(self.custom_summary_label)
-
-        # 按钮行
-        # Phase1-1.7: 去重——"导入/导出准心"已由页面底部操作栏统一承担
-        # （导入常驻、导出在有自定义点时出现），卡片内只保留情境动作"绘制准心"。
-        btn_layout = QHBoxLayout()
-        btn_layout.setSpacing(10)
-
-        # 绘制准心按钮
-        draw_btn = QPushButton("绘制准心")
-        draw_btn.setFixedWidth(112)
-        draw_btn.setFixedHeight(36)
-        style_as_primary_button(draw_btn)
-        draw_btn.clicked.connect(self._open_custom_editor)
-        btn_layout.addWidget(draw_btn)
-
-        btn_layout.addStretch()
-        layout.addLayout(btn_layout)
-
-        # RN-119（用户裁定 2026-08-19）：说清楚导入到底收什么。
-        # 玩家手里的准心几乎都是 CS2 官方分享码（CSGO-xxxxx-…），而这里只认
-        # 本软件导出的 json —— 不写明就是"点了才发现不支持"。
-        # ⚠ 措辞不许承诺没做的事：分享码解码没实现，就写"暂不支持"，
-        #   判据 test_the_copy_does_not_promise_share_code_support 盯着这件事。
-        # ⚠⚠ RN-410（批 27）：这句话原来写「只认本软件导出的 **.json**」——
-        # **那是假的**。导出默认写 `my_crosshair.xchr`，两个文件对话框都只列
-        # `*.xchr`；`.json` 只有**拖拽**那条路收（`enable_file_drop`）。
-        # ⭐ 于是唯一一句解释这件事的话，让用户去找一个软件根本不产出的文件。
-        # ⚠ 而它同时是**放错地方**的：实测这句在 y=1000，而「导入准心」按钮在
-        #   y=681 —— 它在按钮**下方 319px**，且在 750px 折线之外。
-        #   ⭐ **解释性文字放在困惑发生的位置之前，不是页尾；放页尾 = 没放。**
-        #   ⇒ 同一句话现在也挂在那颗按钮身上（见 `_sync_action_bar`）。
-        self.custom_hint_label = QLabel(
-            "导入 / 导出在页面底部操作栏，收本软件导出的 .xchr"
-            "（.json 也能直接拖进来）；CS2 官方分享码（CSGO-…）在上面「CS2 分享码」一栏粘贴。"
-        )
-        self.custom_hint_label.setObjectName("hintLabel")
-        self.custom_hint_label.setWordWrap(True)
-        layout.addWidget(self.custom_hint_label)
-
-        return card
-
-    def _create_sharecode_card(self):
+    def _add_sharecode_section(self, layout):
         """批 130：粘贴 CS2 分享码套到 CS2 Customizer 准心；把当前准心导出成分享码（复制到剪贴板）。"""
         from PySide6.QtWidgets import QLineEdit
 
-        card = self._create_card()
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(14, 14, 14, 14)
-        layout.setSpacing(8)
-        title = QLabel("CS2 分享码")
-        title.setObjectName("cardTitle")
-        layout.addWidget(title)
+        layout.addWidget(self._make_section_title("CS2 分享码"))
         row = QHBoxLayout()
-        row.setSpacing(10)
+        row.setSpacing(8)
         self.sharecode_edit = QLineEdit()
         self.sharecode_edit.setAccessibleName("准心分享码")
-        self.sharecode_edit.setPlaceholderText("粘贴游戏里复制的 CSGO-xxxxx-xxxxx-xxxxx-xxxxx-xxxxx")
+        self.sharecode_edit.setPlaceholderText("粘贴 CSGO- 开头的分享码")
+        self.sharecode_edit.setToolTip(
+            "导入只换样式、颜色、粗细、长度、间隙、描边和中心点；"
+            "游戏里在「准星 → 分享或导入」粘贴导出的码。")
         self.sharecode_edit.setClearButtonEnabled(True)
         self.sharecode_edit.returnPressed.connect(self._import_sharecode)
         row.addWidget(self.sharecode_edit, 1)
         import_btn = QPushButton("导入")
-        import_btn.setFixedHeight(36)
+        style_as_secondary_button(import_btn)
         import_btn.clicked.connect(self._import_sharecode)
         row.addWidget(import_btn)
-        export_btn = QPushButton("复制当前准心的分享码")
-        export_btn.setFixedHeight(36)
-        export_btn.clicked.connect(self._export_sharecode)
-        row.addWidget(export_btn)
         layout.addLayout(row)
-        self.sharecode_result_label = QLabel(
-            "导入只换样式、颜色、粗细、长度、间隙、描边和中心点；游戏里在「准星 → 分享或导入」粘贴导出的码。")
+        export_btn = QPushButton("复制当前准心的分享码")
+        style_as_secondary_button(export_btn)
+        export_btn.clicked.connect(self._export_sharecode)
+        layout.addWidget(export_btn)
+        self.sharecode_result_label = QLabel("")
         self.sharecode_result_label.setObjectName("hintLabel")
         self.sharecode_result_label.setWordWrap(True)
         self.sharecode_result_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.sharecode_result_label.hide()
         layout.addWidget(self.sharecode_result_label)
-        return card
+
+    def _show_sharecode_result(self, text):
+        self.sharecode_result_label.setText(text)
+        self.sharecode_result_label.show()
+
+    def _add_custom_section(self, layout):
+        """自己画的准心和导入导出。全页唯一的紫按钮是「绘制准心」（RN-139/RN-186）。"""
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        self.draw_button = QPushButton("绘制准心")
+        self.draw_button.setToolTip("画完会自动切到「自定义」样式")
+        self.draw_button.clicked.connect(self._open_custom_editor)
+        row.addWidget(self.draw_button)
+        self.action_bar = PageActionBar(None, inline=True)
+        self.action_bar.adopt_button(self.draw_button, primary=True)
+        style_as_primary_button(self.draw_button)
+        row.addWidget(self.action_bar, 1)
+        layout.addLayout(row)
+
+        self.custom_summary_label = QLabel("")
+        self.custom_summary_label.setObjectName("hintLabel")
+        self.custom_summary_label.setWordWrap(True)
+        self.custom_summary_label.hide()
+        layout.addWidget(self.custom_summary_label)
 
     @staticmethod
     def _screen_height_px() -> int:
@@ -1273,7 +947,7 @@ class CrosshairPage(QWidget):
         try:
             values, notes = cs.to_cs2customizer(code, self._screen_height_px())
         except cs.ShareCodeError as e:
-            self.sharecode_result_label.setText(f"⚠️ 没导入：{e}")
+            self._show_sharecode_result(f"⚠️ 没导入：{e}")
             return
         for key, value in values.items():
             setattr(config, key, value)
@@ -1287,7 +961,7 @@ class CrosshairPage(QWidget):
         self._update_preview()
         self._sync_overview_status()
         tail = ("；" + "；".join(notes)) if notes else ""
-        self.sharecode_result_label.setText(
+        self._show_sharecode_result(
             f"✓ 已导入：{self._format_style_text(values['crosshair_style'])} · {values['crosshair_color_custom']} · "
             f"粗 {values['crosshair_thickness']} · 间隙 {values['crosshair_gap']} · 全长 {values['crosshair_size']}{tail}")
         self.logger.info(f"准心分享码已导入: {code} → {values}；{notes}")
@@ -1300,11 +974,11 @@ class CrosshairPage(QWidget):
         try:
             code = cs.from_cs2customizer(config, self._screen_height_px())
         except cs.ShareCodeError as e:
-            self.sharecode_result_label.setText(f"⚠️ 没导出：{e}")
+            self._show_sharecode_result(f"⚠️ 没导出：{e}")
             return
         QGuiApplication.clipboard().setText(code)
         self.sharecode_edit.setText(code)
-        self.sharecode_result_label.setText(
+        self._show_sharecode_result(
             f"✓ 已复制到剪贴板：{code}（游戏里在「准星 → 分享或导入」粘贴）")
 
     def _on_size_changed(self, value):
@@ -1423,10 +1097,11 @@ class CrosshairPage(QWidget):
         self.preview_frame.setProperty("clickable", "true" if is_entry else None)
         self.preview_frame.setToolTip(
             "点这里打开绘制板，画一个自己的准心" if is_entry else "")
-        style = self.preview_frame.style()
-        if style is not None:
-            style.unpolish(self.preview_frame)
-            style.polish(self.preview_frame)
+        for widget in (self.preview_frame, self.preview_label):
+            style = widget.style()
+            if style is not None:
+                style.unpolish(widget)
+                style.polish(widget)
 
     def _sync_slider_availability(self):
         """让「改不动画面的滑块」在那个样式下**看得出来改不动**。
@@ -1657,7 +1332,6 @@ class CrosshairPage(QWidget):
                 # 而实测的困惑发生在**还没移过去**的时候（3/3「不知道」）。
                 self.preview_label.setText(
                     "还没画过自定义准心\n游戏里不会显示准心\n\n点这里开始画")
-                self.preview_label.setWordWrap(True)
             else:
                 self.preview_label.setText("")
                 pixmap = QPixmap.fromImage(image)
@@ -1881,4 +1555,3 @@ class CrosshairPage(QWidget):
         
         self.logger.debug("准心设置加载完成")
         self._sync_slider_availability()
-

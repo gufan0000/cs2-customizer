@@ -68,10 +68,7 @@ def overlay_requirement_text(thing: str, *, exclusive_now: bool = False) -> str:
             f"⚠ 先去 CS2 把显示模式改成「无边框窗口化」，{thing}才画得到游戏画面上"
             f"——读到你现在正是「独占全屏」，它会把{thing}整个盖住，什么都不会显示。"
         )
-    return (
-        f"⚠ 先去 CS2 把显示模式选成「无边框窗口化」，{thing}才画得到游戏画面上"
-        f"——独占全屏会把它整个盖住，什么都不会显示。"
-    )
+    return f"⚠ CS2 显示模式要选「无边框窗口化」，独占全屏会把{thing}整个盖住。"
 
 
 def overlay_requirement_rich(text: str) -> str:
@@ -90,8 +87,10 @@ def make_overlay_requirement_label(thing: str) -> QLabel:
     """
     from core.cs2_video_mode import overlay_is_invisible_now
 
-    label = QLabel(overlay_requirement_rich(overlay_requirement_text(
-        thing, exclusive_now=overlay_is_invisible_now())))
+    exclusive_now = overlay_is_invisible_now()
+    text = overlay_requirement_text(thing, exclusive_now=exclusive_now)
+    # 批 145：平时一行小字；只有确证此刻正是独占全屏，它才是这一页最要紧的话，才放大（RN-681）
+    label = QLabel(overlay_requirement_rich(text) if exclusive_now else html.escape(text))
     label.setTextFormat(Qt.TextFormat.RichText)
     label.setObjectName(OVERLAY_HINT_OBJECT_NAME)
     label.setWordWrap(True)

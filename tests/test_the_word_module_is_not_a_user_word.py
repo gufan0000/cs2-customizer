@@ -54,7 +54,7 @@ def test_the_replacement_words_are_really_there():
     """阳性对照：换上去的词得在，不然上面那条可能绿在「整段文案被删了」上。"""
     special = (ROOT / "pages" / "special_sound_page.py").read_text(encoding="utf-8")
     preset = (ROOT / "pages" / "preset_center_page.py").read_text(encoding="utf-8")
-    assert "功能已开启" in special and "功能已关闭（配了也不会响）" in special
+    assert "配了也不会响：上面的开关还关着。" in special
     assert 'f"功能 · {enabled_modules}/4"' in special
     assert "应用精选预设?" in preset
 

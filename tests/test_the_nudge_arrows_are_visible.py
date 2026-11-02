@@ -165,7 +165,7 @@ def test_the_arrows_really_do_carry_text():
     答不了「看不看得见」这个问题。**
     """
     src = (REPO / "pages" / "magnifier_page.py").read_text(encoding="utf-8")
-    assert '("<", \'x\'' in src or '"<"' in src, (
+    assert '("←", "向左"' in src, (
         "方向键的文字没了 —— 那这条缺陷就换成真的「按钮没内容」了，"
         "上面几条颜色判据一条都拦不住它。")
 

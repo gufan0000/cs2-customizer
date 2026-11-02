@@ -30,6 +30,17 @@ def app():
     yield QApplication.instance() or QApplication([])
 
 
+@pytest.fixture(autouse=True)
+def _expert_mode_goes_back():
+    """`_shown_window` 钉的档在这里还回去：配置落盘到几路 worker 共用的那份测试配置。"""
+    from config import config
+
+    before = config.ui_expert_mode
+    yield
+    config.ui_expert_mode = before
+    config.save_config_now()
+
+
 #: 本机 offscreen 平台的字体库是**空的**，不补一个真字体的话度量全是假的
 #: ——实测侧栏导航按钮会被量成 480px 高（比视口还高），于是
 #: "当前项在不在可视区"这个判据**永远不可能为真**，回退验证直接把它抓成假绿。
@@ -57,7 +68,10 @@ def _shown_window(app):
     from PySide6.QtCore import Qt
 
     import gui_widget
+    from config import config
 
+    # 批 145：普通模式 23 项一屏放得下；还要滚动的是专家模式（28 项），这份判据量的就是滚动
+    config.ui_expert_mode = True
     win = gui_widget.MainWindow(auto_background_preload=False)
     win.setAttribute(Qt.WA_DontShowOnScreen, True)
     win.show()
@@ -265,6 +279,7 @@ def test_sidebar_mode_button_is_not_squeezed_into_a_square(app):
     修完重跑截图才发现——**给共用 objectName 加盒模型约束前，先搜谁在用。**
     """
     from PySide6.QtGui import QFontMetrics
+    from PySide6.QtWidgets import QStyle, QStyleOptionButton
 
     _need_real_fonts(app)
     win = _shown_window(app)
@@ -274,8 +289,12 @@ def test_sidebar_mode_button_is_not_squeezed_into_a_square(app):
         # 于是"宽度 ≥ sizeHint"恒成立——回退验证第一次就是这么抓到这条假绿的。
         # 拿字体度量做基准才独立于盒模型。
         need = QFontMetrics(btn.font()).horizontalAdvance(btn.text())
-        assert btn.width() >= need, (
-            f"侧栏模式按钮实际宽 {btn.width()}px，装不下「{btn.text()}」"
+        # 批 145：量外框是假绿 —— 48 宽写得下两个字，通用内边距一扣只剩 18px，字真的被裁了。
+        opt = QStyleOptionButton()
+        btn.initStyleOption(opt)
+        have = btn.style().subElementRect(QStyle.SE_PushButtonContents, opt, btn).width()
+        assert have >= need, (
+            f"侧栏模式按钮文字可用区 {have}px，装不下「{btn.text()}」"
             f"所需的 {need}px —— 文字会被裁成残字")
     finally:
         win.close()
@@ -337,6 +356,8 @@ def test_nav_button_nudge_does_not_trust_a_not_yet_laid_out_height(app):
         # ⭐⭐⭐ **一条判据的阳性对照，可能正是缺陷本身；缺陷修好那天，对照就没了。**
         #   （本批同一形状第三次：`w >= 110` 是缺陷的量级、`_CONTENT_H` 是缺陷时的高度）
         # ⇒ 不再碰运气：**解出**让某颗按钮跨在视口边缘上的那个滚动值。
+        # ⚠ 批 145：项高降到 24，顶边离视口底 24 时底边正好贴边、谁都不用校正 ⇒ 改成 12，真切一半。
+        CLIPPED_AT = 12
         #   `want` 落在 [0, maximum] 之内就说明这个局面造得出来。
         content = scroll.widget()
         chosen = None
@@ -344,7 +365,7 @@ def test_nav_button_nudge_does_not_trust_a_not_yet_laid_out_height(app):
             cand = win.nav_buttons.get(pid)
             if cand is None or not cand.isVisible():
                 continue
-            want = cand.mapTo(content, QPoint(0, 0)).y() - (viewport.height() - 24)
+            want = cand.mapTo(content, QPoint(0, 0)).y() - (viewport.height() - CLIPPED_AT)
             if 0 <= want <= bar.maximum():
                 chosen = (pid, cand, want)
                 break
@@ -359,8 +380,8 @@ def test_nav_button_nudge_does_not_trust_a_not_yet_laid_out_height(app):
 
         hint_h = btn.sizeHint().height()
         assert hint_h > 0, "sizeHint 高度为 0，判据自身失效"
-        # 造出 runner 上的局面：按钮顶边距视口底 24px（正是 CI 上那个 y），且高度尚未定
-        bar.setValue(btn.mapTo(content, QPoint(0, 0)).y() - (viewport.height() - 24))
+        # 造出 runner 上的局面：按钮顶边离视口底只剩一点，且高度尚未定
+        bar.setValue(btn.mapTo(content, QPoint(0, 0)).y() - (viewport.height() - CLIPPED_AT))
         app.processEvents()
         # 造"布局还没给它定高"的状态。
         # ⚠ 试过两种更直白的写法，都不行，别再走回头路：

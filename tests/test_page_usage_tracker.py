@@ -69,9 +69,13 @@ def test_mainwindow_frequent_group_builds(tmp_path):
 
     from PySide6.QtWidgets import QApplication
 
+    from config import config
+
     app = QApplication.instance() or QApplication([])
     import gui_widget
 
+    # 批 145 起默认关（RN-733），这条量的是开着时的样子
+    config.nav_frequent_enabled = True
     win = gui_widget.MainWindow(auto_background_preload=False)
     try:
         assert win.frequent_group is not None
@@ -81,6 +85,7 @@ def test_mainwindow_frequent_group_builds(tmp_path):
         assert win.content_stack.currentWidget() is win.pages["crosshair"]
         assert win._frequent_buttons["crosshair"].isChecked()
     finally:
+        config.nav_frequent_enabled = False
         win.close()
         win.deleteLater()
         app.processEvents()

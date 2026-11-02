@@ -26,6 +26,7 @@ from pages.audio_status_badge import create_badge_label, render_badges
 from widgets.page_action_bar import PageActionBar
 from widgets.settings_card import SettingsCard
 from widgets.page_header import PageHeader
+from widgets.status_strip import StatusStrip
 
 
 class ConfigSnapshotPage(QWidget):
@@ -75,7 +76,7 @@ class ConfigSnapshotPage(QWidget):
             #   它不会渲染成粗体，会原样显示两个星号（我第一版就这么写的）。
             description=("给这个软件自己的设置「拍照」存档（就是 config.json），"
                          "改坏了随时一键回滚；不碰 CS2 里的任何游戏配置。"
-                         "点右上角「?」看用法。"),
+                         ""),
             title_font_size=None,
             spacing=12,
         )
@@ -83,61 +84,48 @@ class ConfigSnapshotPage(QWidget):
         layout.addWidget(header)
         install_help_panel(header.title_row, header.body, PAGE_HELP_TEXTS["config_snapshot"])
 
-        card, card_layout = SettingsCard.make("当前状态")
+        card = StatusStrip()
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(0, 0, 0, 0)
+        card_layout.setSpacing(8)
         self.status_card = card
 
         self.status_badge_label = create_badge_label()
         card_layout.addWidget(self.status_badge_label)
 
-        self.summary_label = QLabel("暂无快照")
-        self.summary_label.setObjectName("hintLabel")
-        self.summary_label.hide()
-        card_layout.addWidget(self.summary_label)
         layout.addWidget(card)
 
-        actions_card, actions_layout = SettingsCard.make(
-            "快照操作",
-            "手动创建适合做版本节点，恢复前先确认选中的条目是否是你要回退的那一份。",
-        )
+        list_card, list_layout = SettingsCard.make("快照列表")
+
+        # RN-526：一份都没有时这里原来是一大片全黑的空表，外审两个视口 6/6 判高，
+        # 逐字「极易被误认为数据加载失败或软件卡死」。⇒ 空时藏表、显一句话（同 `audio_replay_page`）。
+        # ⛔ 不加按钮：三个动作全留在这张卡里，空态再放一颗「创建快照」就是纯副本。
+        # ⚠ 按钮名从按钮上读（批 48：改了按钮名，点名它的句子留在原地）。
+        self.empty_hint_label = QLabel("")
+        self.empty_hint_label.setObjectName("hintLabel")
+        self.empty_hint_label.setWordWrap(True)
+        list_layout.addWidget(self.empty_hint_label)
 
         action_row = QHBoxLayout()
         action_row.setSpacing(8)
-        # ⚠⚠ **这一颗我撤过一次，外审 12/12 判高，改完复跑当场逮住。**
-        #   撤的理由是批 31 规则②「留离它作用的对象最近的那一颗」，
-        #   我判断「创建快照作用的对象是**当前设置**，跟这张卡没有比底栏更近的关系」。
-        #   ⭐⭐⭐ **判错了：那张卡的副标题就是它的语境** ——
-        #     副标题逐字写着「**手动创建**适合做版本节点」，
-        #     而撤掉这颗之后，卡里说了「创建」、卡里却没有创建按钮。
-        #     外审 12 发全部报同一句：「文案提示『手动创建』，卡片内却只有
-        #     置灰的『恢复选中』与『刷新』，核心动作被孤立在右下角底栏」。
-        #   ⭐⭐ **我撤掉一颗按钮，让它旁边那句话变成了假话**（批 43 RN-502 同形第二次）。
-        # ⇒ 三个动作全留卡内，底栏**不放按钮**、只留回执（同批 31 在 voice_output 的处置）。
-        #   这一颗是这一页的主动作 ⇒ 它就是这一屏唯一那颗紫的。
+        # ⛔ 三个动作全留卡内，底栏不放按钮、只留回执（同批 31 在 voice_output 的处置）。
+        #   这一颗撤过一次：外审 12/12 判高。它是这一页的主动作，也就是这一屏唯一那颗紫的。
         self.create_btn = QPushButton("创建快照")
         self.create_btn.setObjectName("primaryButton")
-        self.create_btn.setMinimumHeight(34)
         self.create_btn.clicked.connect(self._create_snapshot)
         action_row.addWidget(self.create_btn)
 
         self.restore_btn = QPushButton("恢复选中")
         self.restore_btn.setObjectName("secondaryButton")
-        self.restore_btn.setMinimumHeight(34)
         self.restore_btn.clicked.connect(self._restore_selected)
         action_row.addWidget(self.restore_btn)
 
         self.refresh_btn = QPushButton("刷新")
         self.refresh_btn.setObjectName("secondaryButton")
-        self.refresh_btn.setMinimumHeight(34)
         self.refresh_btn.clicked.connect(self._reload)
         action_row.addWidget(self.refresh_btn)
         action_row.addStretch()
-        actions_layout.addLayout(action_row)
-        layout.addWidget(actions_card)
-
-        list_card, list_layout = SettingsCard.make(
-            "快照列表",
-            "列表按时间倒序展示，状态卡会同步显示当前选中的快照编号。",
-        )
+        list_layout.addLayout(action_row)
 
         self.table = QTableWidget(0, 5)
         self.table.setHorizontalHeaderLabels(["ID", "时间", "原因", "大小", "哈希"])
@@ -149,31 +137,12 @@ class ConfigSnapshotPage(QWidget):
         self.table.itemSelectionChanged.connect(self._sync_status_strip)
         list_layout.addWidget(self.table)
 
-        # ⭐⭐⭐ RN-526：一份快照都没有时，这里原来是**一大片全黑的空表格** ——
-        #   外审两个视口 6/6 判高，逐字「极易被误认为数据加载失败或软件卡死」。
-        # ⭐ 照 `audio_replay_page` 那个先例做（空时藏表、显一句话），
-        #   **不另起一套**：那一页解决的正是「表空了怎么办」这同一个形状。
-        # ⛔ 而这里**不加按钮**：本页 RN-102/506 已裁定「三个动作全留在
-        #   「快照操作」卡里，底栏一颗不放」—— 空态再放一颗「创建快照」
-        #   就是那条裁定要防的纯副本。⇒ 只给一句**点名那颗按钮**的话。
-        # ⚠ 按名字指路，不按位置指路（RN-081）：不写「上面那张卡」。
-        # ⚠ 按钮名**从按钮上读**，不在这里抄一份字面量 —— 批 48 实测过：
-        #   改了按钮名而点名它的这句话留在原地，两处同时出现、指的是同一颗。
-        self.empty_hint_label = QLabel("")
-        self.empty_hint_label.setObjectName("hintLabel")
-        self.empty_hint_label.setAlignment(Qt.AlignCenter)
-        self.empty_hint_label.setWordWrap(True)
-        self.empty_hint_label.setMinimumHeight(110)
-        list_layout.addWidget(self.empty_hint_label)
-
         layout.addWidget(list_card)
         layout.addStretch()
         scroll.setWidget(content)
         root.addWidget(scroll, 1)
 
         self.action_bar = PageActionBar(self)
-        self.action_bar.secondary_btn.setMinimumWidth(116)
-        self.action_bar.primary_btn.setMinimumWidth(132)
         root.addWidget(self.action_bar, 0)
 
     def _compact_snapshot_id(self, snapshot_id: str) -> str:
@@ -213,7 +182,7 @@ class ConfigSnapshotPage(QWidget):
         if selected_id:
             action_message = (
                 f"当前选中：{self._compact_snapshot_id(selected_id)} · 共 {snapshot_count} 份快照；"
-                f"要回退就点上面「快照操作」里的「{self.restore_btn.text()}」——"
+                f"要回退就点「{self.restore_btn.text()}」——"
                 "恢复前请确认这就是要回退的版本。"
             )
         else:
@@ -246,10 +215,6 @@ class ConfigSnapshotPage(QWidget):
             f"{latest_text}"
         )
         render_badges(self.status_badge_label, badges, detail_tooltip=detail_text)
-        self.summary_label.setText(
-            f"快照数: {snapshot_count} · 保留上限 {keep_count} · 选中 {selected_id or '无'}"
-        )
-        self.summary_label.setToolTip(detail_text)
         if hasattr(self, "status_card"):
             self.status_card.setToolTip(detail_text)
         self._sync_action_bar()
@@ -268,8 +233,8 @@ class ConfigSnapshotPage(QWidget):
             self.empty_hint_label.setVisible(not has_any)
             if not has_any:
                 self.empty_hint_label.setText(
-                    f"还没有快照。「快照操作」卡里的「{self.create_btn.text()}」"
-                    f"会存下第一份 —— 存的是这个软件自己的设置，不是游戏里的存档。")
+                    f"还没有快照。点「{self.create_btn.text()}」存下第一份，"
+                    f"存的是这个软件自己的设置，不是游戏里的存档。")
         self._sync_status_strip()
 
     def _selected_snapshot_id(self) -> str:

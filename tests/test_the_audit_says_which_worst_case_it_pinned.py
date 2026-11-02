@@ -33,6 +33,8 @@
 ② 报告行**逐字说明钉的是哪一档** —— 这正是当初骗过我的那一行；
 ③ `MODE_PRISTINE` 不受影响（基线要的是可复现，不是最坏）。
 
+批 145：减字之后那 44 处全部还清，申报表清空，展开档也一处都不许有。
+
 （本项目测试逐文件跑：
  `python -m pytest tests/test_the_audit_says_which_worst_case_it_pinned.py`）
 """
@@ -205,23 +207,13 @@ def test_pristine_mode_is_not_dragged_into_this(window):
 # ⚠ 展开档按**页**对账，不按页签：那 34 处页签级缺口全部来自同一个动作
 #   （展开控制条吃掉 86px），逐页签记 34 行只是把同一件事抄 34 遍。
 
-def test_the_expanded_mode_hits_are_declared_not_forgotten():
-    """展开档那 40 / 4 处必须**在表里**，而且表只覆盖这一档。"""
+def test_the_expanded_mode_owes_nothing():
+    """批 145：减字之后展开档不欠债了，几张表都必须是空的，不许再长回来。"""
     import layout_overflow_audit as audit
 
-    compact = audit.KNOWN_EXPANDED_DEBT_COMPACT
-    full = audit.KNOWN_EXPANDED_DEBT_FULL
-    assert compact and full, "展开档申报表是空的 —— 那 44 处又变回了没人记的数"
-    assert not audit.KNOWN_COMPACT_DEBT, (
-        "阻断档那张表不空了。⚠ 别把展开档的债倒进阻断档 —— "
-        "两档的裁定不一样（一个不可逆、一个一键可回退）。")
-    for table, name in ((compact, "紧凑"), (full, "完整")):
-        for (pid, kind), (px, why) in table.items():
-            assert kind == "clip", f"{name}档 {pid} 记成了 {kind}，展开档只有纵向缺口"
-            assert px > 0 and why.strip(), f"{name}档 {pid} 少了数或少了理由"
-    assert set(full) <= set(compact), (
-        "完整档冒出了紧凑档没有的页 —— 紧凑档可视区更小，它该是超集。"
-        f"多出来的：{set(full) - set(compact)}")
+    assert not audit.KNOWN_EXPANDED_DEBT_COMPACT, "紧凑档的展开档申报表又有东西了"
+    assert not audit.KNOWN_EXPANDED_DEBT_FULL, "完整档的展开档申报表又有东西了"
+    assert not audit.KNOWN_COMPACT_DEBT, "阻断档那张表不空了"
 
 
 @pytest.mark.parametrize("label, expanded, expect", [
@@ -248,8 +240,8 @@ def test_a_worse_number_still_turns_the_gate_red():
     """申报表是**棘轮**，不是豁免：变坏要红，不再命中只提醒。"""
     import layout_overflow_audit as audit
 
-    table = audit.KNOWN_EXPANDED_DEBT_COMPACT
-    (pid, _kind), (px, _why) = sorted(table.items())[0]
+    pid, px = "kill_sound", 29
+    table = {(pid, "clip"): (px, "判据自带的样本（真表批 145 清空了）")}
 
     fresh, worse, loose = audit._split_known([(pid, px)], "clip", table)
     assert not fresh and not worse, f"原数照抄却判红了：{fresh} {worse}"
@@ -268,46 +260,36 @@ def test_a_worse_number_still_turns_the_gate_red():
 
 
 def test_no_page_falls_off_the_cliff_unannounced():
-    """⭐⭐⭐ 真的**跑一遍**展开档，确认没有申报表之外的页面掉下去。
+    """⭐⭐⭐ 真的**跑一遍**展开档，确认没有页面掉下去。
 
-    ⚠ 这条判据是被自己的破坏验证逼出来的：上面那条
-    `test_the_expanded_mode_hits_are_declared_not_forgotten` 只看表的**形状**，
-    我把 `magnifier` 那一行整个删掉，它照样绿 ——
-    ⭐⭐⭐ **一张声明表只有在有人跑那一档时才是棘轮，否则它只是一段文档。**
+    ⭐⭐⭐ **一道门只有在有人跑那一档时才是门，否则它只是一段文档。**
     而 RN-408 / 468 / 560 / 567 同族四次都证明：写进收工清单的那一格会被跳过。
     ⇒ 只能让它自动跑。**用审计自己的默认主题×字号，一个参数都不许我挑**：
     实测挑参数当场出事 —— `--themes dark --scales 1.0` 只要 11 秒，可那一档下
-    六页**一页都不命中**，我把 `magnifier` 整行删掉它照样绿；换成 `dark/1.25`
-    覆盖五页，仍然漏掉 `magnifier`。
+    六页**一页都不命中**。
     ⭐⭐⭐ **一个我自己挑出来的参数档，会给出一个分母为空的绿。**
-    （同批 40：折线判据绿在「我给自己多要的 100px」上。）
     ⇒ 走默认六个组合，**两档各一轮**（紧凑 ~26s + 完整 ~32s）。
 
-    ⚠ 批 73 起跑**两档**：以前只跑紧凑那一档，于是完整档那张申报表
-    （`KNOWN_EXPANDED_DEBT_FULL`）建出来之后**一次都没被执行过** —— 见
-    `_check_one_expanded_run` 的说明。
-
-
-    ⚠⚠ **只判「有没有新页面」，不判「像素有没有变大」。** 后者是一台机器的事实：
-    2026-08-22 公开仓 `e265ab1` 上，四页纵向债在 CI 那台机器上**根本不复现**
-    （字体度量不同，同一份代码量出来的像素就不同），当场把整道门判红。
-    ⭐ 像素棘轮留在审计里给跑它的人看；这条判据守的是**分母**
-    —— 一个页面从「没事」变成「掉下去」，那是结构变了，不是字体宽了 2px。
+    ⚠⚠ **只判「有没有页面掉下去」，不判「差了几个像素」。** 后者是一台机器的事实：
+    2026-08-22 公开仓 `e265ab1` 上，四页纵向债在 CI 那台机器上**根本不复现**。
     """
-    import layout_overflow_audit as audit
-
-    covered = {}
     for compact in (True, False):
-        table = (audit.KNOWN_EXPANDED_DEBT_COMPACT if compact
-                 else audit.KNOWN_EXPANDED_DEBT_FULL)
-        which, reproduced = _check_one_expanded_run(compact=compact, table=table)
-        covered[which] = reproduced
+        _check_one_expanded_run(compact=compact)
 
-    # ⭐ 让「两档都真的跑过」这件事**在测试体里可断言**，而不是只能靠读代码相信。
-    #   （批 73 之前，「完整档那张表有没有人跑」正是靠读代码才发现是没有的。）
-    assert set(covered) == {"紧凑档", "完整档"}, f"少跑了一档：{sorted(covered)}"
-    for which, consulted in covered.items():
-        assert consulted, f"[{which}] 申报表没被比对过 —— 分母为空"
+
+def test_the_audit_also_measures_the_pages_with_content():
+    """批 146：干净配置下音效页是空库，武器板不显示。审计要再量一遍有风格的样子，而且要真量到。"""
+    output = _run_audit_in_a_box(["--themes", "dark", "--scales", "1.25", "--no-dialogs"])
+    assert "有内容的一遍" in output, output[-2000:]
+    assert "造的风格没进页面" not in output, output[-2000:]
+
+
+def test_the_seed_covers_every_page_with_a_library():
+    """干净配置下这些页都是空库，版面从来没被量过（批 146 的盲区，批 147 三页改版后更大）。"""
+    import _audit_seed
+
+    assert {"kill_sound", "kill_voice", "switch_weapon", "reload_sound",
+            "death_sound", "gun_sound", "special_sound"} <= set(_audit_seed.PAGES)
 
 
 def _run_audit_in_a_box(extra_args: list[str]) -> str:
@@ -363,54 +345,8 @@ def _run_audit_in_a_box(extra_args: list[str]) -> str:
     return proc.stdout + proc.stderr
 
 
-def _table_was_consulted(out: str, declared: set[str]) -> tuple[set[str], set[str]]:
-    """这一轮里，申报表**被比对过**的证据：(复现出来的, 报「不再命中」的)。
-
-    ⭐⭐⭐ 阳性对照该问的是「**那张表有没有被真的比对过**」，
-    **不是**「有没有页命中」—— 后者是**这台机器的事实**，不是代码的事实。
-
-    ⚠⚠ 这一条是 CI 教的，而且教得很准：我第一版断言「至少一页复现」，
-    本机绿、**CI 当场红** —— 因为 CI 那台机器字体度量不同，
-    在册那几页**一条都不复现**（判据自己的注释里早记着 e265ab1 那次）。
-    ⭐ 断言一个「只在我这台机器上为真」的事实，等于把门禁钉死在我的字体上。
-    ⇒ 改成：命中（fresh/worse/在册行）**或**「不再命中」名单，两者**至少有一样**
-      提到申报表里的页 —— 那才证明比对真的发生过。两样都没有 ⇒ 表压根没被读。
-
-    ⚠⚠⚠ 第三版。第二版写的是 `declared - loose` —— 它默认「**没出现在「不再命中」
-    名单里的就是命中了**」，于是**那张表压根没被读时（输出里两样都没有），
-    它照样算出一个非空集合**，断言照样通过。
-    ⭐⭐⭐ **我为了防「分母为空的绿」写的这个函数，自己就是第三个。**
-    ⇒ 只认**输出里正面出现的证据**，一律不做减法：
-      ① 「不再命中」名单里点了名；② 「ℹ 在册 N 条 … : `<页>·clipNpx`」那一行点了名；
-      ③ 「(新)」/「(变坏)」行点了名。三者都没有 ⇒ 这张表没被比对过。
-    """
-    def _named(pattern: str) -> set[str]:
-        seen: set[str] = set()
-        for chunk in re.findall(pattern, out, re.M):
-            for token in re.split(r"[、,]", chunk):
-                token = token.strip().split("·")[0].split("（")[0].strip()
-                if token in declared:
-                    seen.add(token)
-        return seen
-
-    loose = _named(r"不再命中.*?删掉: (.+)$")
-    listed = _named(r"ℹ 在册 \d+ 条 —— .*?动刀: (.+)$")
-    flagged = _named(r"\[([^\]]+)\] \((?:新|变坏)\)")
-    return (listed | flagged) - loose, loose
-
-
-def _check_one_expanded_run(*, compact: bool, table: dict) -> tuple[str, set[str]]:
-    """跑一档展开审计并核它。`compact=False` 那一档是批 73 才补上的（见下）。
-
-    ⭐⭐⭐ **批 73 补正：`KNOWN_EXPANDED_DEBT_FULL` 建出来就没人跑过。**
-    唯一带 `--music-bar-expanded` 的调用（就是这里）同时带着 `--compact`，
-    而 `main()` 里是 `KNOWN_EXPANDED_DEBT_COMPACT if args.compact else ..._FULL`
-    ⇒ 那个 `else` 分支**一次都没被执行过**；CI 那两条命令则压根不带展开开关。
-    ⇒ 于是同一批里我**两次犯了同一个错**：修 RN-196 时立的规矩是
-      「一张声明表只有在有人跑那一档时才是棘轮」，而我为它补的第二张表
-      自己就是一段没人跑的文档。
-    实测：那四行是**真命中的**（10/11/11/11px），完整档单跑 **32 秒** ⇒ 修得起。
-    """
+def _check_one_expanded_run(*, compact: bool) -> None:
+    """跑一档展开审计并核它。`compact=False` 那一档是批 73 才补上的（那之前一次都没跑过）。"""
     args = ["--music-bar-expanded"] + (["--compact"] if compact else [])
     which = "紧凑档" if compact else "完整档"
     out = _run_audit_in_a_box(args)
@@ -420,7 +356,7 @@ def _check_one_expanded_run(*, compact: bool, table: dict) -> tuple[str, set[str
     assert verdict, (
         f"[{which}] 审计没给出裁定行 —— 它可能在给出结论之前就死了：\n{out[-2000:]}")
 
-    # ⭐ 阳性对照第一层：这一轮真的跑在**展开**档上（认槽位，不认那两个字）。
+    # ⭐ 阳性对照：这一轮真的跑在**展开**档上（认槽位，不认那两个字）。
     shape = re.search(r"（展开，占 (\d+)px）", out)
     assert shape, (
         f"[{which}] 报告行里没有「（展开，占 Npx）」这个槽位 —— 这一轮多半跑在"
@@ -430,78 +366,14 @@ def _check_one_expanded_run(*, compact: bool, table: dict) -> tuple[str, set[str
         f"[{which}] 钉出来的音乐条只有 {shape.group(1)}px —— "
         f"折叠 42px、展开 112~128px，这个数说明它并没有真的展开。")
 
-    # ⭐⭐⭐ 阳性对照第二层：**这一轮真的把申报表拿去比对过。**
-    declared = {pid for (pid, kind) in table if kind == "clip"}
-    assert declared, f"[{which}] 展开档申报表是空的 —— 分母为空"
-    hit, loose = _table_was_consulted(out, declared)
-    assert hit or loose, (
-        f"[{which}] 申报表里那 {len(declared)} 页**既没命中、也没出现在「不再命中」名单里**"
-        f" —— 说明这一轮压根没把这张表拿去比对，下面两条否定断言守的是一个空分母。\n"
-        f"⇒ 要么接线断了（`debt` 选错了表 / 没跑到展开档），要么那张表被删空了。\n"
-        f"{out[-1500:]}")
-
-    # ⚠ 「变坏」也要红：申报表宣称「只能变小」，而下面那条只查「新页面」。
-    worse = re.findall(r"\[([^\]]+)\] \(变坏\) (\d+)px → (\d+)px", out)
-    assert not worse, (
-        f"[{which}] 申报表里的页变坏了：{worse}\n"
-        f"⇒ 那张表宣称「只能变小」。要么这一页真的退步了，要么这台机器的字体度量不同"
-        f"（`_split_known` 记过 e265ab1 那次）—— 两种都要人看一眼，不许静默。")
+    # 批 145：外壳的那一路接着没有，看报告行那个数（这一轮真的量了）。
+    assert re.search(r"含外壳 [1-9]\d* 个", out), (
+        f"[{which}] 报告行说外壳一个都没量 —— `_shell_scopes` 那一路断了。\n{out[-1500:]}")
 
     # ⚠ 批 73：打印里去掉了「整页」两个字（展开档下那个 pid 可能是页签折算上来的，
     #   写「整页」会让人拿着一个在整页上量不出来的数去复现）。
     fresh = re.findall(r"\[([^\]]+)\] \(新\) 最小高超出可视区 (\d+)px", out)
     assert not fresh, (
-        f"[{which}] 展开档冒出了申报表之外的页面：{fresh}\n"
-        f"⇒ 要么这一页真的变坏了，要么那张申报表被删了行。\n"
-        f"⭐ 那 44 处是 RN-571 裁定「不落刀但要记数」的产物 —— "
-        f"记的数少一个，就等于悄悄多豁免了一页。")
-
-    return which, (hit | loose)
-
-
-_DECLARED = {"kill_sound", "kill_voice"}
-
-_LOOSE_LINE = ("  ! 这些在册的纵向存量债在**这台机器上**不再命中，请人工确认是"
-               "「修好了」还是「环境不同」，前者请从 KNOWN_EXPANDED_DEBT_FULL 删掉: ")
-_LISTED_LINE = ("  ℹ 在册 2 条 —— 展开档申报表（RN-571：申报档，非阻断档），"
-                "待裁定后随各页动刀: ")
-_FRESH_LINE = "     [kill_sound] (新) 最小高超出可视区 30px(可视 462px)"
-
-#: `(名字, 审计输出片段, 期望的 (有正面证据的, 报「不再命中」的))`
-_CONSULT_CASES = [
-    ("全部不再命中（CI 那台机器就是这样）—— 算比对过",
-     _LOOSE_LINE + "kill_sound, kill_voice", (set(), _DECLARED)),
-    ("在册行点了名 —— 算比对过",
-     _LISTED_LINE + "kill_sound·clip10px、kill_voice·clip11px", (_DECLARED, set())),
-    ("一半在册行点名、一半不再命中",
-     _LOOSE_LINE + "kill_sound\n" + _LISTED_LINE + "kill_voice·clip11px",
-     ({"kill_voice"}, {"kill_sound"})),
-    ("冒出「(新)」行 —— 也算比对过", _FRESH_LINE, ({"kill_sound"}, set())),
-    ("⛔ 输出里什么都没有 ⇒ 这张表根本没被读", "", (set(), set())),
-    ("⛔ 名单里只有别的页 ⇒ 同样没被读", _LOOSE_LINE + "别的页", (set(), set())),
-]
-
-
-@pytest.mark.parametrize("why, body, expect",
-                         _CONSULT_CASES, ids=[c[0] for c in _CONSULT_CASES])
-def test_the_positive_control_asks_whether_the_table_was_consulted(why, body, expect):
-    """⭐⭐⭐ **阳性对照自己也要有对照 —— 而且它得问对问题。**
-
-    这条阳性对照被改过两次，两次都是被逮出来的：
-
-    ① 批 72 那版读的是「音乐条展开了没有」—— 那件事**永远为真**（`pin` 会把它
-       推到展开），于是它证明不了「有没有任何一页真的掉下去」。
-       ⭐ **我补的阳性对照，对的是另一件事。**
-    ② 批 73 我改成「至少一页复现」，**本机绿、CI 当场红** ——
-       CI 那台机器字体度量不同，在册那几页一条都不复现（e265ab1 那次记过）。
-       ⭐⭐⭐ **断言一个「只在我这台机器上为真」的事实，
-         等于把门禁钉死在我的字体上。**
-    ③ 第二版的实现是 `declared - loose`，它默认「没被点名 = 命中了」——
-       于是**输出里什么都没有时它照样算出非空**。
-       ⭐⭐⭐ **我为了防「分母为空的绿」写的这个函数，自己就是第三个。**
-
-    ⇒ 最终只认**输出里正面出现的证据**，一律不做减法。
-      那是**代码**的事实，不是机器的事实。
-    """
-    out = "== 完整模式 ==\n" + body + "\nRESULT layout rc=0\n"
-    assert _table_was_consulted(out, _DECLARED) == expect, f"[{why}] 解析不对"
+        f"[{which}] 展开档有页面掉下去了：{fresh}\n"
+        f"⇒ 批 145 起这一档一处都不欠。要么这一页真的变坏了，要么这台机器的字体度量不同"
+        f"（`_split_known` 记过 e265ab1 那次）—— 两种都要人看一眼，不许静默。")

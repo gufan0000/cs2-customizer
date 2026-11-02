@@ -142,8 +142,9 @@ def test_enable_switch_lives_on_the_page(page, monkeypatch):
     assert row is not None, "击杀图标页没有总开关行 —— 又只能去首页开了"
     assert row.config_key == "kill_icon_enabled", (
         f"总开关行拨的是 {row.config_key!r}，不是击杀图标的总开关")
-    assert page.status_card.isAncestorOf(row), (
-        "总开关不在状态卡里 —— 状态在一处、动作在另一处，等于没修")
+    from widgets.page_header import PageHeader
+
+    assert isinstance(row.parentWidget(), PageHeader), "总开关不在页头里（批 145，RN-734）"
 
 
 def test_status_strip_says_when_the_master_switch_is_off(page):

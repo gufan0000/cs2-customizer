@@ -318,8 +318,8 @@ def test_soundboard_does_not_claim_to_play_without_the_driver():
     said = emitted[0]
     assert "▶ 播放" not in said, f"驱动没装却报告在播放：{said!r}"
     assert "VB-Cable" in said, f"没告诉用户真正的原因：{said!r}"
-    # ⛔ 只写 status_label 不算数 —— 它在折叠线以下（见下一条判据）
-    assert toasted, "只写了状态栏，而状态栏在滚动区折叠线以下，用户看不见"
+    # ⛔ 只写底栏不算数 —— 用户按音板快捷键时眼睛多半还在游戏里（见下一条判据）
+    assert toasted, "只写了底栏，用户这时候眼睛还在游戏里"
     assert "VB-Cable" in toasted[0], f"浮层没说原因：{toasted[0]!r}"
 
 
@@ -327,12 +327,9 @@ def test_soundboard_does_not_claim_to_play_without_the_driver():
 def test_the_failure_notice_does_not_hide_below_the_fold(qapp_offscreen):
     """播不出去的提示必须有一路是用户当场看得见的。
 
-    ⭐ 实测：`status_label` 映射到整页坐标 y≈1009，而滚动区视口只有 746 ——
-      它在折叠线**以下 200 多像素**。`isVisible()` 返回 True，`isHidden()`
-      返回 False，两个都骗人（RN-673 同形，第二次）。
-      用户按下音板快捷键时眼睛多半还在游戏里，更不会滚到页底去找。
-    ⇒ 这条判据钉两件事：那个标签确实在折叠线以下（所以不能只靠它），
-      且失败路径确实另走了一条浮层。
+    ⭐ 原来那个状态标签映射到整页坐标 y≈1009，而滚动区视口只有 746 —— 它在折叠线**以下 200 多像素**
+      （RN-673 同形）。批 150 把它撤了，状态说在一直露着的底栏上。
+      用户按下音板快捷键时眼睛多半还在游戏里，所以另有一路浮层。
     """
     from pages.voice_output_page import VoiceOutputPage
 
@@ -340,18 +337,15 @@ def test_the_failure_notice_does_not_hide_below_the_fold(qapp_offscreen):
     page.resize(1280, 800)
     page.show()
     qapp_offscreen.processEvents()
-    lab = page.status_label
-    bottom = lab.mapTo(page, lab.rect().bottomRight()).y()
-    viewport_h = page.height()
-    page.close()
-
-    if bottom <= viewport_h:
-        pytest.skip("status_label 已经挪进首屏了 —— 这条判据的前提不再成立，"
-                    "请连同 _toast_error_signal 一起重新评估")
-    assert hasattr(VoiceOutputPage, "_toast_playback_failure"), (
-        f"状态栏底边在 y={bottom} 而视口只有 {viewport_h}（折叠线以下 "
-        f"{bottom - viewport_h}px），却没有任何一条浮在界面上的反馈路径"
-    )
+    try:
+        page._set_status_text("VB-Cable 没装，播不出去")
+        label = page.action_bar.message_label
+        assert label.isVisibleTo(page) and "VB-Cable" in label.text()
+        bottom = label.mapTo(page, label.rect().bottomRight()).y()
+        assert bottom <= page.height(), f"底栏那句话也跑到了折叠线以下：y={bottom}"
+    finally:
+        page.close()
+    assert hasattr(VoiceOutputPage, "_toast_playback_failure"), "没有任何一条浮在界面上的反馈路径"
 
 
 # ── ⑥ 转发被拒也要在台账里留痕 ────────────────────────────

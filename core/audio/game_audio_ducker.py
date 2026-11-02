@@ -270,7 +270,7 @@ class _SessionAudioBackend:
                 # `fallback_backend`（`build_hotkey_ducker` 在产品代码里零调用方），
                 # 所以 pycaw 不在时是**完全不压声**，不是换了一种压法（批 103）。
                 self._logger.warning(
-                    f"未检测到 pycaw：枪声播放正常，但**不会压低游戏原声**"
+                    f"未检测到 pycaw：枪声播放正常，但不会压低游戏原声"
                     f"（自定义枪声会和游戏枪声叠在一起）。原因: {exc}"
                 )
                 self._import_error_logged = True

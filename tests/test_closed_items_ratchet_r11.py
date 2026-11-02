@@ -86,7 +86,8 @@ ROOT = Path(__file__).resolve().parents[1]
 #   前导词 —— magnifier 改前 6/6 把这排读成「切换到另一个页面」）、
 #   `settingsSearchBox` 6 行（RN-550）+ 注释与空行 3。
 #   叙事已按规矩压进档案（`档案/X2_主题与设计系统.md`），代码里只留「为什么是这个数」。
-GENERATE_STYLESHEET_MAX_LINES = 1638
+# ⚠ 批 145：1638 → **1562**，换皮删掉的（渐变、发光、hint 限宽）。棘轮高于现状就不是棘轮，回退验证当场逮到。
+GENERATE_STYLESHEET_MAX_LINES = 1562
 
 
 def test_generate_stylesheet_does_not_grow():
@@ -115,8 +116,8 @@ def test_generate_stylesheet_does_not_grow():
 #: 上面那段注释白纸黑字写着 KI-6 那次一模一样的事。
 #: ⭐ **一条"只许减不许增"的棘轮，会被每一次真实的减少悄悄放松。**
 #:   减少是好事，可它同时就是这条判据失效的时刻，而没有任何东西会提醒你。
-#: ⇒ 现在的数 = pages 43 + widgets 4 + dialogs 1。
-HANDROLLED_CARD_MAX = 48
+#: ⇒ 现在的数 = pages 27 + widgets 4 + dialogs 1（批 145 把 23 页的状态卡换成 StatusStrip，一次少 15 处）。
+HANDROLLED_CARD_MAX = 7
 
 #: ⚠ 它数的是**字面形态**，分不出「这是在调用」还是「这是在注释里谈论它」。
 #: 2026-08-27（批 16）实测：`widgets/master_switch_effect.py` 的一句解释性注释

@@ -233,10 +233,19 @@ def test_nothing_claims_ready_while_the_driver_is_not(main_window, qapp):
     def _asserts_ready(text: str) -> bool:
         if text == "就绪":
             return True
-        return "状态：就绪" in text or "状态 就绪" in text
+        return any(claim in text for claim in ("状态：就绪", "状态 就绪", "最近操作：就绪"))
 
+    import pages.voice_output_page as voice_page
+
+    page._set_status_text(voice_page.NO_OPERATION_TEXT)
+    qapp.processEvents()
     offenders = [lb.text().strip() for lb in _visible(page, QLabel)
                  if _asserts_ready(lb.text().strip())]
+    # 批 150：没事的时候这句只进底栏的 tooltip，悬停还读得到
+    bar_tip = page.action_bar.message_label.toolTip()
+    assert "最近操作" in bar_tip, f"底栏的 tooltip 变了：{bar_tip!r}"
+    if _asserts_ready(bar_tip):
+        offenders.append(bar_tip)
 
     assert not offenders, (
         "驱动还没装，而这一屏上有人在说「就绪」：\n  "

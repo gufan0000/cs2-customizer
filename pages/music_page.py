@@ -6,14 +6,12 @@
 """
 
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea, QFrame, 
-    QComboBox, QCheckBox, QPushButton, QSlider, QGroupBox, QListWidget, 
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea, QFrame,
+    QComboBox, QCheckBox, QPushButton, QSlider, QListWidget,
     QListWidgetItem, QRadioButton, QButtonGroup, QFileDialog, QMessageBox,
-    QBoxLayout,
-    QInputDialog, QSizePolicy, QGridLayout
+    QInputDialog
 )
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont
 
 from config import config
 from core.utils.logger import get_logger
@@ -24,6 +22,9 @@ from page_theme_helper import style_as_danger_button, style_as_secondary_button
 from ui_help_panel import install_help_panel, PAGE_HELP_TEXTS
 from widgets.page_header import PageHeader
 from widgets.page_action_bar import PageActionBar
+from widgets.settings_card import SettingsCard
+from widgets.settings_row import plain_row
+from widgets.status_strip import StatusStrip
 import os
 import weakref
 
@@ -127,7 +128,7 @@ class MusicPage(QWidget):
         # 上方：设置区域（带滚动）
         settings_container = QWidget()
         settings_layout = QVBoxLayout(settings_container)
-        settings_layout.setContentsMargins(16, 16, 16, 0)
+        settings_layout.setContentsMargins(20, 16, 20, 0)
         settings_layout.setSpacing(12)
         
         # 页面标题
@@ -145,7 +146,7 @@ class MusicPage(QWidget):
             # 没歌当然放不了，那一档把问题遮住了）。
             description="放本地音乐或在线 URL，双击列表里的歌就开始放；"
                         "放起来之后窗口底部会常驻一条控制栏管暂停/切歌/音量。"
-                        "「音乐联动」只管游戏要不要自动接管。",
+                        "打开之后游戏才会自动接管。",
             title_font_size=None,
             spacing=12,
         )
@@ -163,12 +164,11 @@ class MusicPage(QWidget):
         scroll_layout.setContentsMargins(0, 0, 0, 16)
         scroll_layout.setSpacing(12)
 
-        overview_card = QFrame()
-        overview_card.setObjectName("card")
+        overview_card = StatusStrip()
         self.music_overview_card = overview_card
         self.status_card = overview_card
         overview_layout = QVBoxLayout(overview_card)
-        overview_layout.setContentsMargins(14, 12, 14, 12)
+        overview_layout.setContentsMargins(0, 0, 0, 0)
         overview_layout.setSpacing(8)
 
         # RN-189：就地总开关。首页「功能开关」里有「音乐联动」，而这一页
@@ -177,8 +177,7 @@ class MusicPage(QWidget):
         from widgets.master_switch_link import make_master_switch_row
 
         self.master_switch_row = make_master_switch_row(
-            self, "music_enabled", "音乐联动")
-        overview_layout.addWidget(self.master_switch_row)
+            self, "music_enabled", "音乐播放", header=header)
 
         # ⚠⚠⚠ RN-462（批 33 改完复跑逼出来的）：撤掉那颗子开关之后，
         # 屏幕上说这件事的只剩「总开关」三个字 —— 而这一页有**两件事**
@@ -207,9 +206,6 @@ class MusicPage(QWidget):
 
         status_row = QHBoxLayout()
         status_row.setSpacing(10)
-        overview_title = QLabel("当前状态")
-        overview_title.setObjectName("statusLabel")
-        status_row.addWidget(overview_title)
 
         self.status_badge_label = create_badge_label()
         status_row.addWidget(self.status_badge_label, 1)
@@ -241,32 +237,10 @@ class MusicPage(QWidget):
         playlist_group = self._create_playlist_management()
         scroll_layout.addWidget(playlist_group)
 
-        self.top_settings_row = QBoxLayout(QBoxLayout.LeftToRight)
-        self.top_settings_row.setSpacing(12)
-        game_link_group = self._create_game_link_settings()
         play_settings_group = self._create_play_settings()
-        game_link_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
-        play_settings_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
-
-        self.game_link_column = QWidget()
-        self.game_link_column.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
-        game_link_column_layout = QVBoxLayout(self.game_link_column)
-        game_link_column_layout.setContentsMargins(0, 0, 0, 0)
-        game_link_column_layout.setSpacing(0)
-        game_link_column_layout.addWidget(game_link_group)
-        game_link_column_layout.addStretch(1)
-
-        self.play_settings_column = QWidget()
-        self.play_settings_column.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
-        play_settings_column_layout = QVBoxLayout(self.play_settings_column)
-        play_settings_column_layout.setContentsMargins(0, 0, 0, 0)
-        play_settings_column_layout.setSpacing(0)
-        play_settings_column_layout.addWidget(play_settings_group)
-        play_settings_column_layout.addStretch(1)
-
-        self.top_settings_row.addWidget(self.game_link_column, 3)
-        self.top_settings_row.addWidget(self.play_settings_column, 2)
-        scroll_layout.addLayout(self.top_settings_row)
+        scroll_layout.addWidget(play_settings_group)
+        game_link_group = self._create_game_link_settings()
+        scroll_layout.addWidget(game_link_group)
 
         scroll_layout.addStretch()
         scroll.setWidget(scroll_content)
@@ -283,75 +257,8 @@ class MusicPage(QWidget):
         self.action_bar = PageActionBar(self)
         self.action_bar.configure_secondary("刷新列表", self._refresh_playlist_catalog, visible=True)
         self.action_bar.configure_primary("添加音乐", self._add_local_files, visible=True)
-        self.action_bar.secondary_btn.setMinimumWidth(136)
-        self.action_bar.primary_btn.setMinimumWidth(136)
 
         main_layout.addWidget(self.action_bar, 0)
-        self._update_compact_layout()
-
-    def _update_compact_layout(self):
-        """Keep the top settings area readable without horizontal clipping."""
-        if not hasattr(self, "top_settings_row"):
-            return
-
-        available_width = self.width()
-        scroll = getattr(self, "settings_scroll", None)
-        if scroll is not None and scroll.viewport() is not None:
-            available_width = max(available_width, scroll.viewport().width())
-
-        compact = available_width < 1210
-        direction = QBoxLayout.TopToBottom if compact else QBoxLayout.LeftToRight
-        if self.top_settings_row.direction() != direction:
-            self.top_settings_row.setDirection(direction)
-
-        self.top_settings_row.setSpacing(10 if compact else 12)
-        self.top_settings_row.setStretch(0, 0 if compact else 3)
-        self.top_settings_row.setStretch(1, 0 if compact else 2)
-
-        if hasattr(self, "link_content_layout"):
-            link_direction = QBoxLayout.TopToBottom if compact else QBoxLayout.LeftToRight
-            if self.link_content_layout.direction() != link_direction:
-                self.link_content_layout.setDirection(link_direction)
-            self.link_content_layout.setSpacing(8 if compact else 10)
-            self.link_content_layout.setStretch(0, 0 if compact else 1)
-            self.link_content_layout.setStretch(1, 0 if compact else 1)
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        self._update_compact_layout()
-
-    def _create_badge_label(self):
-        badge = QLabel()
-        badge.setObjectName("badgeLabel")
-        badge.setAlignment(Qt.AlignCenter)
-        return badge
-
-    def _set_badge_state(self, label, text, tone="info"):
-        label.setText(text)
-        label.setProperty("tone", tone)
-        label.style().unpolish(label)
-        label.style().polish(label)
-        label.update()
-
-    def _create_panel_card(self, title, description=None):
-        card = QFrame()
-        card.setObjectName("card")
-        card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(8)
-
-        title_label = QLabel(title)
-        title_label.setObjectName("statusLabel")
-        layout.addWidget(title_label)
-
-        if description:
-            description_label = QLabel(description)
-            description_label.setObjectName("hintLabel")
-            description_label.setWordWrap(True)
-            layout.addWidget(description_label)
-
-        return card, layout
 
     def _format_play_mode_text(self):
         mode_map = {
@@ -471,11 +378,7 @@ class MusicPage(QWidget):
         render_badges(self.playlist_status_badge_label, badges, detail_tooltip=detail_text)
         self.playlist_group.setToolTip(detail_text)
         self.playlist_widget.setToolTip(detail_text)
-        if hasattr(self, "playlist_meta_label"):
-            self.playlist_meta_label.setText(
-                f"当前曲目：{current_track_title} · 状态 {current_track_state} · 来源 本地 {local_count} / URL {url_count}"
-            )
-            self.playlist_meta_label.setToolTip(detail_text)
+        self._sync_danger_buttons(bool(playlist), bool(selected_count))
 
         if hasattr(self, "action_bar"):
             if playlist:
@@ -492,56 +395,6 @@ class MusicPage(QWidget):
             else:
                 action_message = f"当前列表：{playlist_name} · 还没有曲目；先添加本地音乐，再按需补充 URL。"
             self.action_bar.set_message(action_message)
-
-    def _sync_game_link_panel(self):
-        if not hasattr(self, "link_policy_label"):
-            return
-
-        link_enabled = bool(getattr(config, "music_enabled", False))
-        death_action = str(getattr(config, "music_death_action", "play") or "play")
-        death_action_text = "阵亡后自动开始/继续播放" if death_action == "play" else "阵亡后不自动改动"
-        death_volume_text = (
-            f"自定义音量 {format_percent(getattr(config, 'music_death_volume', 1.0))}"
-            if bool(getattr(config, "music_death_volume_custom", False))
-            else "正常音量 100%"
-        )
-
-        alive_action = str(getattr(config, "music_revive_action", "lower") or "lower")
-        if alive_action == "pause":
-            alive_action_text = "存活时自动暂停播放"
-        elif alive_action == "keep":
-            alive_action_text = "存活时不自动改动"
-        else:
-            alive_action_text = f"存活时自动降低到 {format_percent(getattr(config, 'music_revive_volume', 0.4))}"
-
-        fade_available = alive_action in {"pause", "lower"}
-        fade_enabled = fade_available and bool(getattr(config, "music_fade_enabled", False))
-        fade_text = (
-            f"淡出 {float(getattr(config, 'music_fade_out_duration', 0.5)):.1f} 秒"
-            if fade_enabled
-            else ("不附加淡出" if fade_available else "当前策略无需淡出")
-        )
-
-        # ⚠ RN-407 家族：**总开关关着的时候，「已启用」是一句假话。**
-        # `link_enabled` 只是那颗**子开关**的值，它不看总开关 `music_enabled`；
-        # 于是总开关写着「未开启」而这里写着「联动已启用」——同一屏自相矛盾。
-        # ⭐ 三态才是真话：关着 + 子开关开 = 「**已配置**」（配好了，但没在跑）。
-        summary_text = (
-            f"当前策略：联动{_link_state_word(link_enabled)} · "
-            f"{death_action_text} · {alive_action_text} · {fade_text}"
-        )
-        self.link_policy_label.setText(summary_text)
-        self.link_policy_label.setToolTip(summary_text)
-
-        if hasattr(self, "death_summary_label"):
-            death_text = f"{death_action_text} · {death_volume_text}"
-            self.death_summary_label.setText(death_text)
-            self.death_summary_label.setToolTip(death_text)
-
-        if hasattr(self, "alive_summary_label"):
-            alive_text = f"{alive_action_text} · {fade_text}"
-            self.alive_summary_label.setText(alive_text)
-            self.alive_summary_label.setToolTip(alive_text)
 
     def _sync_play_settings_panel(self):
         if not hasattr(self, "play_mode_badge_label"):
@@ -614,17 +467,11 @@ class MusicPage(QWidget):
         # RN-458：详情只往用户够得着的两处送 —— 胶囊条的 tooltip 和卡片的 tooltip。
         if hasattr(self, "music_overview_card"):
             self.music_overview_card.setToolTip(detail_text)
-        self._sync_game_link_panel()
         self._sync_play_settings_panel()
         self._sync_playlist_panel_status()
     
     def _create_game_link_settings(self):
         """创建游戏状态联动设置"""
-        group = self._create_group_box("游戏内自动联动")
-        layout = QVBoxLayout(group)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(10)
-        
         # ⚠⚠ RN-454（批 33）：这里原来有一颗复选框「允许游戏状态自动控制音乐」，
         # 它是页面顶部那颗总开关的**第二个入口** —— AST 实测两者在
         # `gsi_handler_music.process_data` 里是紧挨着的两行 AND，
@@ -637,86 +484,38 @@ class MusicPage(QWidget):
         #   ⭐⭐ **那 27 个置灰今天就存在，只是由子开关触发，
         #     所以只拨总开关的那一轮普查结构上扫不到它。**
         #   现在这张卡由既有的 `masterOff` 降权管。
-        desc_label = QLabel(
-            "总开关开着时，游戏里的死活状态会自动播放 / 暂停 / 调整音量；"
-            "关着时这些设置照常可以先调好，只是游戏里还不生效。"
+        group, layout = SettingsCard.make(
+            "游戏内自动联动",
+            "总开关开着时，游戏里的死活状态会自动播放 / 暂停 / 调整音量。",
         )
-        desc_label.setWordWrap(True)
-        desc_label.setObjectName("hintLabel")
-        layout.addWidget(desc_label)
+        self.link_content_frame = group
 
-        self.link_policy_label = QLabel("")
-        self.link_policy_label.setObjectName("hintLabel")
-        self.link_policy_label.setWordWrap(True)
-        layout.addWidget(self.link_policy_label)
-        
-        # 联动内容框架
-        self.link_content_frame = QFrame()
-        self.link_content_frame.setObjectName("card")
-        self.link_content_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
-        self.link_content_layout = QBoxLayout(QBoxLayout.LeftToRight, self.link_content_frame)
-        self.link_content_layout.setContentsMargins(12, 12, 12, 12)
-        self.link_content_layout.setSpacing(10)
-
-        death_card, death_layout = self._create_panel_card(
-            "死亡时",
-            "决定阵亡后是否继续播，以及是否把底部播放器压到指定音量。",
-        )
-        self.death_summary_label = QLabel("")
-        self.death_summary_label.setObjectName("hintLabel")
-        self.death_summary_label.setWordWrap(True)
-        death_layout.addWidget(self.death_summary_label)
-
-        death_control_layout = QHBoxLayout()
-        death_control_layout.addWidget(QLabel("播放控制:"))
-        
         self.death_action_group = QButtonGroup()
         death_play_radio = QRadioButton("自动开始/继续播放")
         death_keep_radio = QRadioButton("不自动改动")
         self.death_action_group.addButton(death_play_radio, 0)
         self.death_action_group.addButton(death_keep_radio, 1)
         self.death_action_group.idClicked.connect(self._on_death_action_changed)
-        death_control_layout.addWidget(death_play_radio)
-        death_control_layout.addWidget(death_keep_radio)
-        death_control_layout.addStretch()
-        death_layout.addLayout(death_control_layout)
-        
-        death_volume_layout = QHBoxLayout()
-        death_volume_layout.addWidget(QLabel("音量设置:"))
-        
+        layout.addWidget(plain_row("死亡时", death_play_radio, death_keep_radio, width=None))
+
         self.death_volume_group = QButtonGroup()
-        death_normal_radio = QRadioButton("正常音量 (100%)")
-        death_custom_radio = QRadioButton("自定义音量:")
+        death_normal_radio = QRadioButton("正常音量（100%）")
+        death_custom_radio = QRadioButton("自定义音量")
         self.death_volume_group.addButton(death_normal_radio, 0)
         self.death_volume_group.addButton(death_custom_radio, 1)
         self.death_volume_group.idClicked.connect(self._on_death_volume_mode_changed)
-        death_volume_layout.addWidget(death_normal_radio)
-        death_volume_layout.addWidget(death_custom_radio)
-        
+
         self.death_volume_slider = QSlider(Qt.Horizontal)
         self.death_volume_slider.setRange(0, 100)
         self.death_volume_slider.setValue(int(config.music_death_volume * 100))
-        self.death_volume_slider.setMaximumWidth(150)
+        self.death_volume_slider.setFixedWidth(120)
         self.death_volume_slider.valueChanged.connect(self._on_death_volume_changed)
-        death_volume_layout.addWidget(self.death_volume_slider)
-        
+
         self.death_volume_label = QLabel(format_percent(config.music_death_volume))
-        death_volume_layout.addWidget(self.death_volume_label)
-        death_volume_layout.addStretch()
-        death_layout.addLayout(death_volume_layout)
+        layout.addWidget(plain_row(
+            "死亡时音量", death_normal_radio, death_custom_radio,
+            self.death_volume_slider, self.death_volume_label, width=None))
 
-        alive_card, alive_layout = self._create_panel_card(
-            "存活时",
-            "游戏进行中或复活后，决定是暂停、压低音量还是保持当前播放状态。",
-        )
-        self.alive_summary_label = QLabel("")
-        self.alive_summary_label.setObjectName("hintLabel")
-        self.alive_summary_label.setWordWrap(True)
-        alive_layout.addWidget(self.alive_summary_label)
-
-        alive_control_layout = QHBoxLayout()
-        alive_control_layout.addWidget(QLabel("播放控制:"))
-        
         self.alive_action_group = QButtonGroup()
         alive_pause_radio = QRadioButton("自动暂停播放")
         alive_lower_radio = QRadioButton("自动降低音量")
@@ -725,64 +524,36 @@ class MusicPage(QWidget):
         self.alive_action_group.addButton(alive_lower_radio, 1)
         self.alive_action_group.addButton(alive_keep_radio, 2)
         self.alive_action_group.idClicked.connect(self._on_alive_action_changed)
-        alive_control_layout.addWidget(alive_pause_radio)
-        alive_control_layout.addWidget(alive_lower_radio)
-        alive_control_layout.addWidget(alive_keep_radio)
-        alive_control_layout.addStretch()
-        alive_layout.addLayout(alive_control_layout)
-        
-        self.alive_volume_layout = QHBoxLayout()
-        self.alive_volume_layout.addWidget(QLabel("降低至:"))
-        
+        layout.addWidget(plain_row("存活时", alive_pause_radio, alive_lower_radio, alive_keep_radio, width=None))
+
         self.alive_volume_slider = QSlider(Qt.Horizontal)
         self.alive_volume_slider.setRange(0, 100)
         self.alive_volume_slider.setValue(int(config.music_revive_volume * 100))
-        self.alive_volume_slider.setMaximumWidth(150)
         self.alive_volume_slider.valueChanged.connect(self._on_alive_volume_changed)
-        self.alive_volume_layout.addWidget(self.alive_volume_slider)
-        
+
         self.alive_volume_label = QLabel(format_percent(config.music_revive_volume))
-        self.alive_volume_layout.addWidget(self.alive_volume_label)
-        self.alive_volume_layout.addStretch()
-        alive_layout.addLayout(self.alive_volume_layout)
-        
-        self.alive_fade_layout = QHBoxLayout()
+        layout.addWidget(plain_row("降低至", self.alive_volume_slider, self.alive_volume_label))
+
         self.alive_fade_checkbox = QCheckBox("淡出效果")
         self.alive_fade_checkbox.toggled.connect(self._on_fade_toggled)
-        self.alive_fade_layout.addWidget(self.alive_fade_checkbox)
-        
+
         self.fade_out_slider = QSlider(Qt.Horizontal)
         self.fade_out_slider.setRange(1, 20)  # 0.1-2.0秒，步长0.1
         self.fade_out_slider.setValue(int(config.music_fade_out_duration * 10))
-        self.fade_out_slider.setMaximumWidth(100)
+        self.fade_out_slider.setFixedWidth(120)
         self.fade_out_slider.valueChanged.connect(self._on_fade_out_duration_changed)
-        self.alive_fade_layout.addWidget(self.fade_out_slider)
-        
-        self.fade_out_label = QLabel(f"{config.music_fade_out_duration:.1f}秒")
-        self.alive_fade_layout.addWidget(self.fade_out_label)
-        self.alive_fade_layout.addStretch()
-        alive_layout.addLayout(self.alive_fade_layout)
 
-        self.death_link_card = death_card
-        self.alive_link_card = alive_card
-        self.link_content_layout.addWidget(self.death_link_card, 1)
-        self.link_content_layout.addWidget(self.alive_link_card, 1)
-        
-        layout.addWidget(self.link_content_frame)
+        self.fade_out_label = QLabel(f"{config.music_fade_out_duration:.1f}秒")
+        layout.addWidget(plain_row("", self.alive_fade_checkbox, self.fade_out_slider, self.fade_out_label, width=None))
         return group
-    
+
     def _create_play_settings(self):
         """创建播放设置"""
-        group = self._create_group_box("播放设置")
+        group, layout = SettingsCard.make(
+            "播放模式",
+            "只影响底部常驻播放器的默认切歌策略，不会覆盖你手动切歌。",
+        )
         self.play_settings_group = group
-        layout = QVBoxLayout(group)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(8)
-
-        # 播放模式
-        mode_title = QLabel("播放模式")
-        mode_title.setObjectName("subtitleLabel")
-        layout.addWidget(mode_title)
 
         self.play_mode_badge_label = create_badge_label()
         layout.addWidget(self.play_mode_badge_label)
@@ -799,91 +570,29 @@ class MusicPage(QWidget):
         single_radio = QRadioButton("单曲循环")
         loop_radio = QRadioButton("列表循环")
 
-        for radio in (sequential_radio, random_radio, single_radio, loop_radio):
-            radio.setFont(QFont("Microsoft YaHei", 10))
-            radio.setMinimumHeight(30)
-
         self.play_mode_group.addButton(sequential_radio, 0)
         self.play_mode_group.addButton(random_radio, 1)
         self.play_mode_group.addButton(single_radio, 2)
         self.play_mode_group.addButton(loop_radio, 3)
         self.play_mode_group.idClicked.connect(self._on_play_mode_changed)
 
-        mode_grid = QGridLayout()
-        mode_grid.setContentsMargins(0, 2, 0, 0)
-        mode_grid.setHorizontalSpacing(18)
-        mode_grid.setVerticalSpacing(8)
-        mode_grid.addWidget(sequential_radio, 0, 0)
-        mode_grid.addWidget(random_radio, 0, 1)
-        mode_grid.addWidget(single_radio, 1, 0)
-        mode_grid.addWidget(loop_radio, 1, 1)
-        mode_grid.setColumnStretch(0, 1)
-        mode_grid.setColumnStretch(1, 1)
-
-        mode_card, mode_layout = self._create_panel_card(
-            "模式选择",
-            "只影响底部常驻播放器的默认切歌策略，不会覆盖你手动切歌。",
-        )
-        mode_layout.addLayout(mode_grid)
-        layout.addWidget(mode_card)
+        mode_row = QHBoxLayout()
+        mode_row.setSpacing(16)
+        for radio in (sequential_radio, random_radio, single_radio, loop_radio):
+            mode_row.addWidget(radio)
+        mode_row.addStretch()
+        layout.addLayout(mode_row)
         # ⚠ 这里原来还有一句 `group.setToolTip("这里只决定底部全局播放器…")`，
         # 而 `_sync_play_settings_panel` 每次同步都对同一个 group `setToolTip(detail_text)`
         # ——它在 `load_settings()` 里就被调过了。⇒ **那句静态 tooltip 从建页那一刻起
         # 就被覆盖掉，一次都没生效过。**又一个「写了没人看得到」（RN-009 同族）。
         return group
-    
+
     def _create_playlist_management(self):
         """创建播放列表管理区。"""
-        group = self._create_group_box("播放列表")
+        group, layout = SettingsCard.make("播放列表")
         self.playlist_group = group
-        layout = QVBoxLayout(group)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(10)
 
-        toolbar_card, toolbar_layout = self._create_panel_card(
-            "列表切换",
-            "双击列表项可立刻切歌；列表管理只影响当前选中的播放列表。",
-        )
-        top_control_layout = QHBoxLayout()
-        top_control_layout.setSpacing(8)
-        top_control_layout.addWidget(QLabel("当前列表:"))
-
-        self.playlist_combo = QComboBox()
-        self.playlist_combo.setMinimumWidth(180)
-        self.playlist_combo.setFixedHeight(36)
-        self.playlist_combo.currentTextChanged.connect(self._on_playlist_changed)
-        top_control_layout.addWidget(self.playlist_combo)
-
-        new_btn = QPushButton("新建")
-        new_btn.setMaximumWidth(72)
-        new_btn.setFixedHeight(34)
-        style_as_secondary_button(new_btn)
-        new_btn.clicked.connect(self._create_new_playlist)
-        top_control_layout.addWidget(new_btn)
-
-        rename_btn = QPushButton("重命名")
-        rename_btn.setMaximumWidth(92)
-        rename_btn.setFixedHeight(34)
-        style_as_secondary_button(rename_btn)
-        rename_btn.clicked.connect(self._rename_playlist)
-        top_control_layout.addWidget(rename_btn)
-
-        delete_btn = QPushButton("删除")
-        delete_btn.setMaximumWidth(72)
-        delete_btn.setFixedHeight(34)
-        # R7/D-06: 删掉的是用户手工攒的整张歌单（含手动加的在线 URL），
-        # 只有 8 秒 toast_undo 窗口，超时即永久丢失。
-        style_as_danger_button(delete_btn)
-        delete_btn.clicked.connect(self._delete_playlist)
-        top_control_layout.addWidget(delete_btn)
-
-        top_control_layout.addStretch()
-        toolbar_layout.addLayout(top_control_layout)
-
-        self.playlist_meta_label = QLabel("")
-        self.playlist_meta_label.setObjectName("hintLabel")
-        self.playlist_meta_label.setWordWrap(True)
-        toolbar_layout.addWidget(self.playlist_meta_label)
         self.playlist_status_badge_label = create_badge_label()
         layout.addWidget(self.playlist_status_badge_label)
 
@@ -909,39 +618,68 @@ class MusicPage(QWidget):
         delete_selected_btn = QPushButton("删除选中")
         # R7/D-06: 直接从 config.music_playlists 摘曲目并落盘，同样只有 8 秒 undo
         style_as_danger_button(delete_selected_btn)
-        delete_selected_btn.setFixedHeight(38)
         delete_selected_btn.clicked.connect(self._delete_selected)
         bottom_control_layout.addWidget(delete_selected_btn)
 
         clear_btn = QPushButton("清空列表")
         # R7/D-06 明文点名的场景，而且是这三兄弟里**唯一完全没有 undo 兜底**的
         style_as_danger_button(clear_btn)
-        clear_btn.setFixedHeight(38)
         clear_btn.clicked.connect(self._clear_playlist)
         bottom_control_layout.addWidget(clear_btn)
 
         layout.addLayout(bottom_control_layout)
 
-        # ⚠⚠ RN-456 第二刀（批 32 二版）：这张「列表切换」卡原来排在**这一组的最前面**，
+        # ⚠⚠ RN-456 第二刀（批 32 二版）：列表切换这一行原来排在**这一组的最前面**，
         # 占掉 ~230px，把曲目列表往下顶。二版复跑 B 场景 ux 4/4 + render 4/4 报
         # 「歌曲列表被挤出视口」——⚠ **那句话假一半**：实测前 3 首清清楚楚，
         # 第 3 首被折线切一半，真相是「5 首只看得见 3 首」。
         # ⭐ 但机制被外审自己点破了：「把歌单管理（新建/重命名/删除）放在正中，
         #   导致新手把『歌单』误当成『歌曲』，找不到真正的曲目列表。」
         # ⇒ 同一条规则再降一层：**内容在前，管理在后。**
-        # ⭐ 一个改动同时解决两条：列表往上顶 ~230px，而那颗删整张歌单的红按钮
-        #   （12 发里 6 发点名它是第一屏最扎眼的东西）跟着退出第一屏。
-        layout.addWidget(toolbar_card)
+        self.playlist_combo = QComboBox()
+        self.playlist_combo.currentTextChanged.connect(self._on_playlist_changed)
+
+        new_btn = QPushButton("新建")
+        style_as_secondary_button(new_btn)
+        new_btn.clicked.connect(self._create_new_playlist)
+
+        rename_btn = QPushButton("重命名")
+        style_as_secondary_button(rename_btn)
+        rename_btn.clicked.connect(self._rename_playlist)
+
+        delete_btn = QPushButton("删除")
+        # R7/D-06: 删掉的是用户手工攒的整张歌单（含手动加的在线 URL），
+        # 只有 8 秒 toast_undo 窗口，超时即永久丢失。
+        style_as_danger_button(delete_btn)
+        delete_btn.clicked.connect(self._delete_playlist)
+        layout.addWidget(plain_row("当前列表", self.playlist_combo, new_btn, rename_btn, delete_btn))
+
+        #: (按钮, 看「有曲目」还是「有选中」) —— `_sync_danger_buttons` 用
+        self._track_danger_buttons = (clear_btn, delete_btn)
+        self._selection_danger_button = delete_selected_btn
+
         self.playlist_widget.setToolTip("支持本地文件和 URL，双击列表项即可立即切换到对应曲目。")
         group.setToolTip("支持本地文件和 URL，双击列表项即可立即切换到对应曲目。")
         return group
 
-    def _create_group_box(self, title):
-        """创建统一样式的分组框"""
-        group = QGroupBox(title)
-        group.setFont(QFont("Microsoft YaHei", 14, QFont.Bold))
-        return group
-    
+    def _sync_danger_buttons(self, has_tracks: bool, has_selection: bool):
+        """红色跟着「有没有东西可丢」走（语音输出页 `_sync_slot_affordance` 同一条，批 29）。
+
+        空列表的第一屏上原来亮着三颗红按钮，要删的东西一样都不存在（批 150）。
+        ⚠ 不禁用：改的只是警报级别，点了照样有回应。
+        """
+        pairs = [(button, has_tracks) for button in self._track_danger_buttons]
+        pairs.append((self._selection_danger_button, has_selection))
+        for button, has_something in pairs:
+            want = None if has_something else "true"
+            if button.property("nothingToLose") == want:
+                continue
+            button.setProperty("nothingToLose", want)
+            style = button.style()
+            if style is not None:
+                style.unpolish(button)
+                style.polish(button)
+
     # ===== 事件处理器 =====
     
     def _on_death_action_changed(self, action_id):
@@ -1278,7 +1016,7 @@ class MusicPage(QWidget):
 
         if not playlist:
             # RN-455：原来只讲怎么加，不讲加完怎么放 —— 而这一页没有任何播放控件。
-            item = QListWidgetItem("播放列表为空\n点右下角「添加音乐」，加完双击歌名就开始放")
+            item = QListWidgetItem("播放列表为空\n点「添加音乐」，加完双击歌名就开始放")
             item.setTextAlignment(Qt.AlignCenter)
             item.setFlags(Qt.NoItemFlags)
             self.playlist_widget.addItem(item)

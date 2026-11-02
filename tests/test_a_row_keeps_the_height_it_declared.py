@@ -107,8 +107,12 @@ def test_the_denominator_is_not_empty(compact_win):
     """分母守卫：底栏或那颗紧凑档按钮建不出来时必须喊出来。"""
     bars = _action_bars(compact_win)
     assert bars, "一条 PageActionBar 都没建出来 —— 这条判据在空转"
-    btns = [b for bar in bars for b in bar.findChildren(QPushButton)
-            if b.isVisibleTo(bar) and b.text().strip()]
+    # 可选社区入口、空库和总开关会改变可见性，但暂时隐藏的按钮也会再出现。
+    # 检查所有已构造按钮的声明，比只量某发行版默认可见的三颗覆盖更全。
+    for bar in bars:
+        for name in ("primary_btn", "secondary_btn", "extra_btn"):
+            assert isinstance(getattr(bar, name, None), QPushButton), f"操作条缺 {name}"
+    btns = [b for bar in bars for b in bar.findChildren(QPushButton)]
     assert len(btns) >= 3, (
         f"底栏只量到 {len(btns)} 颗按钮（批 66 实测 gun_sound 紧凑档 3 颗）—— 分母塌了")
 
@@ -133,8 +137,6 @@ def test_every_action_bar_button_declares_a_row_height(compact_win):
     bad, scanned = [], 0
     for bar in _action_bars(compact_win):
         for b in bar.findChildren(QPushButton):
-            if not b.isVisibleTo(bar) or not b.text().strip():
-                continue
             scanned += 1
             mx = b.maximumHeight()
             if mx >= NO_MAX:

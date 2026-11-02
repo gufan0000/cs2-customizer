@@ -209,13 +209,12 @@ def test_the_status_strip_does_not_name_a_style_that_is_not_installed(empty_page
 
     stale = str(getattr(config, "kill_icon_style", "") or "")
     assert stale, "夹具没留下那个「config 里有、机器上没有」的风格名，这条判据在空转"
-    detail = empty_page.summary_label.text()
+    detail = empty_page.status_card.toolTip()
     summary = empty_page.style_summary_label.text()
     # ⚠ **首屏那颗徽章自己的文字**必须一起判 —— 只判 tooltip 和详情的话，
     # 徽章退回 `风格 · 默认` 这条判据照样绿（回退验证当场逮住过一次 0/1）。
     # ⭐ 判据要盯用户**看得见**的那一处，不是它旁边那些藏起来的副本。
-    chips = [lbl.text() for lbl in empty_page.status_badge_label.findChildren(QLabel)
-             if lbl.objectName() == "audioStatusChip"]
+    chips = empty_page.status_badge_label.badge_texts()
     assert chips, "一颗徽章都没读到，这条判据在空转"
     assert f"风格 · {stale}" not in chips, (
         f"库是空的，徽章却写着「风格 · {stale}」，而同一张卡上另一行写着"

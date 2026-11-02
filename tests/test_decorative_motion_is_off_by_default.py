@@ -17,7 +17,7 @@ config 里 `ui_decorative_motion` 可覆盖。
 """
 from __future__ import annotations
 
-from PySide6.QtWidgets import QFrame, QLineEdit, QPushButton, QSlider, QSpinBox, QWidget
+from PySide6.QtWidgets import QLineEdit, QPushButton, QSlider, QSpinBox, QWidget
 
 import ui_motion
 
@@ -62,19 +62,6 @@ def test_nothing_decorative_gets_installed_when_the_switch_is_off(monkeypatch):
     install_slider_bubble(slider)
     assert not hasattr(slider, "_bubble_installed")
     assert not hasattr(slider, "_value_bubble")
-
-
-def test_the_card_border_flash_does_nothing_when_off(monkeypatch):
-    from config import config
-    monkeypatch.setattr(config, ui_motion.CONFIG_KEY, None, raising=False)
-    import gui_widget
-
-    card = QFrame()
-    card.setObjectName("card")
-    child = QWidget(card)
-    # 开关关着时函数在碰 self 之前就返回 —— 所以 self 给 None 也不该炸
-    gui_widget.MainWindow._flash_card_border(None, child)
-    assert not hasattr(card, "_flash_overlay")
 
 
 def test_it_is_a_switch_not_a_deletion(monkeypatch):

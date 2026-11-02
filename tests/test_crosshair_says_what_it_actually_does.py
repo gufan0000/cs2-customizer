@@ -298,10 +298,10 @@ def test_no_sentence_claims_we_export_a_format_we_do_not(main_window, qapp):
     page = _open_page(main_window, qapp)
     exported = _export_extension()
     lying, examined = [], 0
-    for label in page.findChildren(QLabel):
-        if not label.isVisibleTo(page):
-            continue
-        text = label.text() or ""
+    # 批 146：那句话只留在导入按钮的 tooltip 上了（RN-410：解释放在困惑发生的地方）
+    sentences = [label.text() or "" for label in page.findChildren(QLabel) if label.isVisibleTo(page)]
+    sentences.append(page.action_bar.extra_btn.toolTip() or "")
+    for text in sentences:
         # ⚠ 只取**紧跟在「导出的」后面**的那个扩展名。
         # 第一版收的是「这句话里出现过的所有扩展名」，于是修好之后
         # 「收本软件导出的 .xchr（**.json** 也能直接拖进来）」里那个

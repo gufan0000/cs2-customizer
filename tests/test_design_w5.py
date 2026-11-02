@@ -48,7 +48,7 @@ def main_window(qapp):
 
 @pytest.fixture
 def main_window_wide(main_window, qapp):
-    """同一个窗口拉宽到 2200 —— UP-053 的限宽只在宽屏上才看得出来。"""
+    """同一个窗口拉宽到 2200。"""
     main_window.resize(2200, 800)
     qapp.processEvents()
     yield main_window
@@ -94,41 +94,25 @@ def test_qss_uses_no_css_only_keywords():
 
 # ---------------------------------------------------------------- UP-053
 
-def test_hint_label_width_is_capped_on_wide_window(qapp, main_window_wide):
-    """宽屏下页面正文说明必须被限宽；动作条里的状态位则**不**限宽。
+def test_hint_label_is_not_capped_on_wide_window(qapp, main_window_wide):
+    """提示标签不限宽：限了的话，长度在上限和整列宽之间的那些句子第二行被裁成半截。
 
-    实测依据：2200px 窗口下 hintLabel 单行原本拉到 1936px（约 242 个中文字），
-    远超舒适行长。限的是文字不是内容区——给内容区限宽会让 4 个页面掉列（R7 实测）。
+    UP-053 给它加过 `max-width: 720`（2200px 窗口下单行太长），批 145 撤掉：
+    布局按整列宽算折行高度（`QWidgetItem::heightForWidth` 不看上限），裁字比行长更要紧。
     """
     from PySide6.QtWidgets import QLabel
 
-    from ui_design_system import get_design_system
-    from widgets.page_action_bar import PageActionBar
-
     win = main_window_wide
-    cap = get_design_system().container.hint_max_width
-
     win.show_page("screen_effects", animated=False)
     qapp.processEvents()
     page = win.pages.get("screen_effects")
     assert page is not None
 
-    in_page, in_bar = [], []
-    for label in page.findChildren(QLabel):
-        if label.objectName() != "hintLabel" or not label.isVisible() or not label.text():
-            continue
-        parent = label.parentWidget()
-        (in_bar if isinstance(parent, PageActionBar) else in_page).append(label)
-
-    assert in_page, "没找到页面正文里的 hintLabel，判据落空了"
-    for label in in_page:
-        assert label.width() <= cap, (
-            f"正文说明宽 {label.width()}px 超过上限 {cap}px：{label.text()[:20]}"
-        )
-
-    # 动作条是横向单行状态位，限宽会让它换行、把常驻动作条顶高——必须豁免
-    for label in in_bar:
-        assert label.maximumWidth() > cap, "动作条里的 hintLabel 不该被限宽"
+    hints = [label for label in page.findChildren(QLabel)
+             if label.objectName() == "hintLabel" and label.isVisible() and label.text()]
+    assert hints, "没找到页面正文里的 hintLabel，判据落空了"
+    for label in hints:
+        assert label.maximumWidth() > 10000, f"{label.text()[:20]} 被限宽到 {label.maximumWidth()}"
 
 
 # ---------------------------------------------------------------- UP-045
@@ -141,7 +125,7 @@ def test_all_pages_share_one_content_left_edge(qapp, main_window):
     后者全站有 170 多处、大多是嵌套层，数它们说明不了用户看见什么。
     """
     from PySide6.QtCore import QPoint
-    from PySide6.QtWidgets import QFrame
+    from PySide6.QtWidgets import QFrame, QTabWidget
 
     from widgets.settings_card import SettingsCard
 
@@ -159,13 +143,22 @@ def test_all_pages_share_one_content_left_edge(qapp, main_window):
         if page is None:
             continue
         cards = [c for c in page.findChildren(SettingsCard) if c.isVisible()]
+        # 批 146：准心页左边是预览舞台，不是卡片
         cards += [f for f in page.findChildren(QFrame)
-                  if f.objectName() == "card" and f.isVisible()]
+                  if f.objectName() in ("card", "crosshairPreviewFrame") and f.isVisible()]
         if not cards:
             continue
         cards.sort(key=lambda w: (w.mapTo(win, QPoint(0, 0)).y(),
                                   w.mapTo(win, QPoint(0, 0)).x()))
-        edges[pid] = cards[0].mapTo(win, QPoint(0, 0)).x()
+        first = cards[0]
+        # 批 145：状态卡撤了，第一张卡可能在页签里（页签内容自带边距）⇒ 量页签自己
+        node = first.parentWidget()
+        while node is not None and node is not page:
+            if isinstance(node, QTabWidget):
+                first = node
+                break
+            node = node.parentWidget()
+        edges[pid] = first.mapTo(win, QPoint(0, 0)).x()
 
     assert edges, "一个页面都没量到，判据落空了"
     distinct = sorted(set(edges.values()))

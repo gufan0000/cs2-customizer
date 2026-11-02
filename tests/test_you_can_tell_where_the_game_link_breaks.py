@@ -104,34 +104,19 @@ def test_the_game_side_config_is_checked_for_existence_and_port(tmp_path):
 
 # ──────────────────────────── 首页 / 关于页 ────────────────────────────
 
-def test_the_home_badge_follows_the_link_state(monkeypatch):
-    from PySide6.QtWidgets import QApplication, QLabel
+def test_the_home_strip_follows_the_link_state():
+    """批 148：说的是「断在哪一环」，不是「处理线程活着」。线程一直活着，四种状态得说四句不同的话。"""
+    from core.runtime.system_status_service import RuntimeStatus, readiness_view
 
-    import gui_widget
-    from core.utils.logger import get_logger
-    from pages.audio_status_badge import create_badge_label
-
-    QApplication.instance() or QApplication([])
-    dummy = types.SimpleNamespace(
-        system_status_label=QLabel(), basic_status_badge_label=create_badge_label(),
-        basic_gsi_badge=QLabel(), basic_audio_badge=QLabel(), basic_config_badge=QLabel(),
-        logger=get_logger("B116"))
-    dummy._set_badge_label_state = (
-        lambda label, text, tone="info": gui_widget.MainWindow._set_badge_label_state(dummy, label, text, tone))
-    dummy._update_basic_status_summary_label = (
-        lambda: gui_widget.MainWindow._update_basic_status_summary_label(dummy))
     seen = {}
-    for link, audio_ok in (("connected", True), ("silent", True), ("cfg_missing", True), ("silent", False)):
-        monkeypatch.setattr(gui_widget, "collect_runtime_status", lambda _mw, link=link, ok=audio_ok: types.SimpleNamespace(
-            gsi={"running": True}, audio_health={"ok": ok, "missing_directories": 0 if ok else 3},
-            config_dirty=False, last_error="", level="ok" if ok else "warn", gsi_link=link))
-        gui_widget.MainWindow._refresh_system_status_strip(dummy)
-        seen[(link, audio_ok)] = (dummy.basic_gsi_badge.text(), dummy.system_status_label.text())
-    assert seen[("connected", True)][0] == "GSI · 已连接"
-    assert seen[("silent", True)][0] == "GSI · 没收到" and "代理" in seen[("silent", True)][1]
-    assert seen[("cfg_missing", True)][0] == "GSI · 未装好" and "CS2 目录" in seen[("cfg_missing", True)][1]
-    # 联动断了比缺音频更根本：两件同时发生时，那一句先说联动
-    assert "代理" in seen[("silent", False)][1], seen[("silent", False)]
+    for link, cfg in (("connected", "ok"), ("silent", "ok"), ("cfg_missing", "missing")):
+        view = readiness_view(RuntimeStatus(
+            gsi={"running": True, "startup_error": ""}, audio_health={"ok": True}, config_dirty=False,
+            last_error="", level="ok", gsi_link=link, gsi_cfg={"status": cfg}))
+        seen[link] = (dict((c[0], c[1]) for c in view.checks)["游戏联动"], view.detail)
+    assert seen["connected"][0] == "已连接"
+    assert seen["silent"][0] == "没收到" and "代理" in seen["silent"][1]
+    assert seen["cfg_missing"][0] == "未装好" and "CS2 目录" in seen["cfg_missing"][1]
 
 
 def test_the_diagnostics_line_tells_support_whether_cs2_is_pushing(fresh_stats):

@@ -65,7 +65,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.stdout.reconfigure(encoding="utf-8")
 
 from PySide6.QtCore import Qt  # noqa: E402
-from PySide6.QtWidgets import QApplication, QLayout, QWidget  # noqa: E402
+from PySide6.QtWidgets import QApplication, QLayout, QScrollArea, QWidget  # noqa: E402
 
 # 应用一共有多少个页面。这是**覆盖面的分母**，必须和 `gui_widget._page_names`
 # 对得上——`tests/test_audit_coverage_r11.py` 会盯着它，对不上就红。
@@ -184,7 +184,10 @@ BLOCK_TYPES = {"SettingsCard", "PageActionBar", "QScrollArea", "QTabWidget"}
 
 
 def is_block(w) -> bool:
-    return w.objectName() in BLOCK_NAMES or type(w).__name__ in BLOCK_TYPES
+    # QScrollArea 用 isinstance：武器板的滚动区是它的子类，不算块的话里面的控件会和
+    # 滚动区本身摊平排（滚动区跨满全页，行被桥接成一行）。
+    return (w.objectName() in BLOCK_NAMES or type(w).__name__ in BLOCK_TYPES
+            or isinstance(w, QScrollArea))
 
 
 def focusable_chain(root: QWidget):

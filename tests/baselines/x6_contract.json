@@ -70,16 +70,19 @@
     "gsi_handler_hud_color": {
       "files": [
         "main_widget.py",
+        "scripts/bench_gsi_packet.py",
         "scripts/gsi_full_sim.py",
         "tests/test_audit_lifecycle.py",
         "tests/test_deep_audit_runtime.py",
+        "tests/test_ingame_overhead_p2.py",
         "tests/test_the_sweep_bugs_stay_fixed.py"
       ],
       "names": {
-        "GSIHandlerHudColor": 5,
+        "GSIHandlerHudColor": 9,
         "GSIHandlerKills": 1,
         "MusicPlayer": 2,
         "VoiceOutputManager": 2,
+        "config": 3,
         "pygame": 1,
         "sd": 2,
         "threading": 1
@@ -122,6 +125,7 @@
     "gsi_handler_sounds": {
       "files": [
         "main_widget.py",
+        "scripts/bench_gsi_packet.py",
         "scripts/gsi_full_sim.py",
         "tests/test_community_ticket_fixes.py",
         "tests/test_deep_audit_runtime.py",
@@ -138,11 +142,12 @@
         "Controller": 1,
         "DEATH_SOUND_HOLD_DURATION": 1,
         "DEATH_SOUND_PEAK_MS": 1,
-        "GSIHandlerSounds": 26,
+        "GSIHandlerSounds": 27,
         "GUN_SOUND_PROFILES": 1,
         "MapPresetApplier": 1,
         "MusicURLResolver": 2,
         "ResourceManager": 1,
+        "SUPPORTED_GUN_SOUND_PROFILE_LIST": 2,
         "_Task": 1,
         "audio_manager": 1,
         "config": 4,
@@ -220,7 +225,7 @@
   "loc": {
     "gsi_handler_flash": 156,
     "gsi_handler_fun": 159,
-    "gsi_handler_hud_color": 202,
+    "gsi_handler_hud_color": 232,
     "gsi_handler_kills": 1169,
     "gsi_handler_music": 280,
     "gsi_handler_sounds": 667,

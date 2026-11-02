@@ -82,13 +82,7 @@ def test_switch_sound_page_load_settings_keeps_explicit_disabled(monkeypatch):
 def test_gun_sound_page_load_settings_keeps_explicit_disabled(monkeypatch):
     page = gun_sound_page.GunSoundPage.__new__(gun_sound_page.GunSoundPage)
     page.weapon_configs = {"awp": gun_sound_page.GUN_SOUND_PROFILES["awp"]}
-    page.weapon_rows = {
-        "awp": {
-            "style_combo": _DummyCombo({"0": 0, "styleGun": 1}),
-            "duration_slider": _DummySlider(),
-            "duration_label": _DummyLabel(),
-        }
-    }
+    page.weapon_rows = {"awp": SimpleNamespace(style_combo=_DummyCombo({"0": 0, "styleGun": 1}))}
     page.weapon_styles = {"awp": ["styleGun"]}
     page.logger = SimpleNamespace(info=lambda *_a, **_k: None)
     page._refresh_status_badge = lambda: None
@@ -99,13 +93,12 @@ def test_gun_sound_page_load_settings_keeps_explicit_disabled(monkeypatch):
     page.load_settings()
 
     assert config.awp_style == "0"
-    assert page.weapon_rows["awp"]["style_combo"].index == 0
+    assert page.weapon_rows["awp"].style_combo.index == 0
 
 
 def test_death_sound_page_style_change_saves_config(monkeypatch):
     saved = []
     page = death_sound_page.DeathSoundPage.__new__(death_sound_page.DeathSoundPage)
-    page.style_combo = SimpleNamespace(currentData=lambda: "styleDeath")
     page._refresh_status_badge = lambda: None
     page.logger = SimpleNamespace(info=lambda *_a, **_k: None)
 
@@ -137,13 +130,7 @@ def test_gun_sound_page_style_change_saves_config(monkeypatch):
 def test_gun_sound_page_load_settings_supports_new_weapon_profile(monkeypatch):
     page = gun_sound_page.GunSoundPage.__new__(gun_sound_page.GunSoundPage)
     page.weapon_configs = {"xm1014": gun_sound_page.SUPPORTED_GUN_SOUND_PROFILES["xm1014"]}
-    page.weapon_rows = {
-        "xm1014": {
-            "style_combo": _DummyCombo({"0": 0, "styleAk": 1}),
-            "duration_slider": _DummySlider(),
-            "duration_label": _DummyLabel(),
-        }
-    }
+    page.weapon_rows = {"xm1014": SimpleNamespace(style_combo=_DummyCombo({"0": 0, "styleAk": 1}))}
     page.weapon_styles = {"xm1014": ["styleAk"]}
     page.logger = SimpleNamespace(info=lambda *_a, **_k: None)
     page._refresh_status_badge = lambda: None
@@ -153,9 +140,7 @@ def test_gun_sound_page_load_settings_supports_new_weapon_profile(monkeypatch):
 
     page.load_settings()
 
-    assert page.weapon_rows["xm1014"]["style_combo"].index == 1
-    assert page.weapon_rows["xm1014"]["duration_slider"].value == 30
-    assert page.weapon_rows["xm1014"]["duration_label"].text == "0.30秒"
+    assert page.weapon_rows["xm1014"].style_combo.index == 1
 
 
 def test_reload_and_switch_style_change_save_config(monkeypatch):

@@ -89,70 +89,32 @@ def test_my_presets_has_a_direction_switcher_and_the_page_calls_it():
 # ------------------------------------------------- UP-100 special_sound 页签
 
 
-def test_special_sound_tabs_have_a_single_scroll_root():
-    """四个页签的内容都必须在滚动区**里面**，不许把头部卡钉在外面。
+def test_special_sound_tabs_have_a_single_scroll_root(qapp):
+    """四个页签的内容都必须在滚动区**里面**，不许把东西钉在外面。
 
-    「回合」「投掷物」两个页签原本是 `layout.addWidget(header_card)` 后再放滚动区。
+    「回合」「投掷物」两个页签原本是头部卡钉在外面、再放滚动区。
     完整模式下看不出问题（可视 750px 富余），紧凑模式下页签内容区只剩 186px，
     而「回合」的头部卡自己最小高就是 169px（1.25 档 188px）——
     滚动区被挤成**视口只有 62px 的舷窗**，里面装着 542px 的内容。
     审计报的"超出 71px"读起来像"滚一下就好"，实际是没法用。
 
-    另外两个页签（C4 / 血量警告）本来就是这个形状，所以这也是把四个页签拉齐。
+    批 147：卡片没了，原来「不许出现 header_card 这个名字」的扫描量不到东西了，
+    改成直接问页面。
     """
-    src = (ROOT / "pages" / "special_sound_page.py").read_text(encoding="utf-8")
-    tree = ast.parse(src)
-    offenders = []
-    for name in must_scan(("_create_grenade_tab", "_create_c4_tab",
-                           "_create_health_tab", "_create_round_tab"),
-                          "special_sound 的四个页签构造函数", least=4):
-        fn = next(n for n in ast.walk(tree)
-                  if isinstance(n, ast.FunctionDef) and n.name == name)
-        # 页签根布局（变量名 layout / outer）上不许再挂 header_card
-        for call in _calls_named(fn, "addWidget"):
-            f = call.func
-            owner = getattr(f.value, "id", "") if isinstance(f, ast.Attribute) else ""
-            arg = call.args[0] if call.args else None
-            argname = getattr(arg, "id", "")
-            if owner in ("layout", "outer") and argname.endswith("header_card"):
-                offenders.append(f"{name}:{call.lineno}")
-    assert not offenders, (
-        "这些页签又把头部卡挂回了滚动区外面：" + ", ".join(offenders) +
-        "。紧凑模式下它会把滚动区挤成几十像素的舷窗（UP-100）。"
-    )
+    from PySide6.QtWidgets import QScrollArea
 
+    from pages.special_sound_page import SpecialSoundPage
 
-# ------------------------------------------------------- UP-102 flash Tab 序
-
-
-def test_flash_basic_tab_order_is_pinned():
-    """flash 页「基础设置」的 Tab 顺序必须显式钉死。
-
-    网格里「过渡方式」在第 0 行第 3 列、「背景不透明度」在第 1 行，
-    但**创建顺序**是 颜色 → 不透明度 → 过渡，而 Qt 的默认焦点链跟的是创建顺序、
-    不是网格位置。于是按 Tab 会从「背景颜色」跳到下一行的滑块，再跳回上一行的
-    两个复选框。排版毫无异常，坏的只有键盘顺序——和 R8d 在 music 页查出的
-    那 2 处是同一类。
-
-    ⚠ 顺带钉住位置：`setTabOrder` 必须排在 `addLayout(controls_grid)` **之后**。
-    写在前面时这些控件还没有父控件，等布局挂到卡片上会按插入顺序**重建焦点链**，
-    把 setTabOrder 的结果冲掉——第一版就是这么写的，判据照旧报红。
-    """
-    fn = _func("pages/flash_page.py", "_create_basic_tab")
-    orders = _calls_named(fn, "setTabOrder")
-    assert len(orders) >= 3, (
-        f"flash 页「基础设置」的 setTabOrder 只剩 {len(orders)} 处（应 ≥3）——"
-        "Tab 顺序会退回按创建顺序跳行（UP-102）"
-    )
-    add_grid = [
-        c for c in _calls_named(fn, "addLayout")
-        if c.args and getattr(c.args[0], "id", "") == "controls_grid"
-    ]
-    assert add_grid, "找不到 addLayout(controls_grid) —— 判据的前提变了，先去看代码"
-    assert min(c.lineno for c in orders) > add_grid[0].lineno, (
-        "setTabOrder 写在了 addLayout(controls_grid) 之前。"
-        "那时控件还没有父控件，reparent 会重建焦点链把它冲掉——等于没写。"
-    )
+    page = SpecialSoundPage()
+    try:
+        tabs = page.tab_widget
+        must_scan(range(tabs.count()), "special_sound 的页签", least=4)
+        for index in range(tabs.count()):
+            assert isinstance(tabs.widget(index), QScrollArea), (
+                f"「{tabs.tabText(index)}」页签的根不是滚动区：紧凑模式下东西会被挤成舷窗（UP-100）。")
+    finally:
+        page.deleteLater()
+        qapp.processEvents()
 
 
 def test_status_chips_are_never_squashed_flat_in_compact_mode(qapp, monkeypatch):
@@ -177,6 +139,8 @@ def test_status_chips_are_never_squashed_flat_in_compact_mode(qapp, monkeypatch)
     """
     from PySide6.QtCore import Qt
     from PySide6.QtWidgets import QLabel, QWidget
+
+    from pages.audio_status_badge import render_badges
 
     import sys as _sys
 
@@ -220,15 +184,21 @@ def test_status_chips_are_never_squashed_flat_in_compact_mode(qapp, monkeypatch)
             for bar in page.findChildren(QWidget):
                 if bar.__class__.__name__ != "AudioStatusBadgeBar":
                     continue
+                # 批 145：常态只显示问题（RN-734），这里给一排问题，量的是出事那一刻还读不读得到
+                render_badges(bar, [("danger", "资源 · 异常 1"), ("warn", "素材 · 有空目录"),
+                                    ("warn", "结果 · 跳过 2")])
+                for _ in range(3):
+                    qapp.processEvents()
                 chips = [c for c in bar.findChildren(QLabel)
                          if not c.isHidden() and c.text().strip()]
                 if not chips:
                     continue
                 checked += 1
                 need = max(c.sizeHint().height() for c in chips)
-                if need > bar.height() + 2:
+                # 批 145：减字之后 860×480 也压不扁它了，把下限拆掉照样绿 ⇒ 一起量下限本身
+                if need > min(bar.height(), bar.minimumHeight()) + 2:
                     offenders.append(
-                        f"{page_id}: 徽章条只有 {bar.height()}px，芯片要 {need}px "
+                        f"{page_id}: 徽章条高 {bar.height()}px、下限 {bar.minimumHeight()}px，芯片要 {need}px "
                         f"（{[c.text().strip() for c in chips][:2]}…）")
 
         assert checked >= 3, (

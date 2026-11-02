@@ -317,7 +317,8 @@ def harvest_runtime(include_unsafe: bool = False, verbose: bool = True):
             for i in range(tw.count()):
                 w = tw.widget(i)
                 if w is not None and (w is widget or w.isAncestorOf(widget)):
-                    return normalize(tw.tabText(i))
+                    # 原文：`_activate_page_tab` 按原文比，normalize 还会把「C4」滤成空串
+                    return tw.tabText(i).strip()
         return ""
 
     items = []
@@ -334,10 +335,12 @@ def harvest_runtime(include_unsafe: bool = False, verbose: bool = True):
             # 页签本身也是可搜的落点（"C4"、"手雷" 这些页签名）
             for tw in page.findChildren(QTabWidget):
                 for i in range(tw.count()):
-                    text = normalize(tw.tabText(i))
+                    raw = tw.tabText(i).strip()
+                    # 页签名是起好的稳定名字，「C4」也算
+                    text = normalize(raw) or (raw if len(raw) >= MIN_LEN else "")
                     if text:
                         items.append({"page": pid, "text": text, "card": "",
-                                      "tab": text, "kind": "tab", "src": "runtime"})
+                                      "tab": raw, "kind": "tab", "src": "runtime"})
 
             for widget in page.findChildren(QWidget):
                 if isinstance(widget, QCheckBox):
@@ -354,6 +357,7 @@ def harvest_runtime(include_unsafe: bool = False, verbose: bool = True):
                     continue
                 try:
                     raw = widget.title() if isinstance(widget, QGroupBox) else widget.text()
+                    raw = widget.property("fp_search_text") or raw
                 except Exception:
                     continue
                 if not keep_raw(raw):

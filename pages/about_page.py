@@ -21,6 +21,7 @@ from page_theme_helper import style_as_secondary_button
 from widgets.page_header import PageHeader
 from widgets.page_action_bar import PageActionBar
 from widgets.settings_card import SettingsCard
+from widgets.status_strip import StatusStrip
 
 #: RN-519（上游批 51）：正文里那句「本页下方的…」要点名它，而正文比按钮先建
 #: ⇒ 名字只留一份。
@@ -99,8 +100,6 @@ class AboutPage(QWidget):
             ("info", f"许可证 · {PROJECT_LICENSE}"),
         ]
         render_badges(self.status_badge_label, badges, detail_tooltip=detail_text)
-        self.summary_label.setText(detail_text)
-        self.summary_label.setToolTip(detail_text)
         self.status_card.setToolTip(detail_text)
         self._sync_action_bar()
 
@@ -129,8 +128,8 @@ class AboutPage(QWidget):
         page_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         page_widget = QWidget()
         layout = QVBoxLayout(page_widget)
-        # UP-045: 左右 20→16,与其余 19 页对齐到内容左边界 216px
-        layout.setContentsMargins(16, 16, 16, 20)
+        # 与其余页保持同一内容左边界。
+        layout.setContentsMargins(20, 16, 20, 20)
         layout.setSpacing(12)
 
         # UP-047: 页头改用 PageHeader。
@@ -152,28 +151,18 @@ class AboutPage(QWidget):
 
         install_help_panel(header.title_row, header.body, PAGE_HELP_TEXTS["about"])
 
-        status_card = QFrame()
-        status_card.setFrameShape(QFrame.StyledPanel)
-        status_card.setObjectName("card")
+        status_card = StatusStrip()
         status_layout = QVBoxLayout(status_card)
-        status_layout.setContentsMargins(14, 14, 14, 14)
-        status_layout.setSpacing(10)
+        status_layout.setContentsMargins(0, 0, 0, 0)
+        status_layout.setSpacing(8)
         status_row = QHBoxLayout()
         status_row.setSpacing(10)
-        status_title = QLabel("当前状态")
-        status_title.setObjectName("statusLabel")
-        status_row.addWidget(status_title)
         self.status_badge_label = create_badge_label()
         status_row.addWidget(self.status_badge_label, 1)
         status_row.addStretch()
         status_layout.addLayout(status_row)
         self.status_card = status_card
 
-        self.summary_label = QLabel("")
-        self.summary_label.setObjectName("hintLabel")
-        self.summary_label.setWordWrap(True)
-        self.summary_label.hide()
-        status_layout.addWidget(self.summary_label)
         layout.addWidget(status_card)
 
         intro_card, intro_layout = SettingsCard.make(

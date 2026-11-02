@@ -6,6 +6,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, Property, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QLinearGradient, QFont
 from PySide6.QtWidgets import QSizePolicy, QWidget
+from core.utils.app_fonts import UI_FONT_FAMILY
 
 
 COLOR_MAP = {
@@ -143,7 +144,7 @@ class FlashPreviewWidget(QWidget):
 
         # 6) 顶部右上小标签（提示）
         painter.setPen(QColor(255, 255, 255, 120))
-        f = QFont("Microsoft YaHei", 9)
+        f = QFont(UI_FONT_FAMILY, 9)
         painter.setFont(f)
         label = f"实时预览 · {self._bg_color_name} · {self._opacity_pct}%   ▷ 点击模拟一次淡入"
         painter.drawText(rect.adjusted(12, 8, -12, 0), Qt.AlignTop | Qt.AlignLeft, label)

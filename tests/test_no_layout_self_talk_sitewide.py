@@ -28,6 +28,8 @@ from pathlib import Path
 
 import pytest
 
+from widgets.settings_row import SettingsRow
+
 REPO = Path(__file__).resolve().parent.parent
 
 #: 「A、B 和 C **摆在**某处」这个模板本身就是自白，逐词列举永远列不全。
@@ -141,11 +143,11 @@ def _self_talk() -> list[tuple[str, int, list[str], str]]:
 def test_the_extractor_actually_sees_the_subtitles():
     """空转守卫①：总量还在数量级上。
 
-    93 是 2026-08-17 的实测数；这里只要求"数量级还在"，不钉死具体值。
+    93 是 2026-08-17 的实测数，批 150 减字之后 58；这里只要求"数量级还在"，不钉死具体值。
     """
     total = sum(len(_subtitle_literals(p)) for p in _copy_sources())
-    assert total >= 60, (
-        f"只摘到 {total} 条卡片副标题，实测应有 90+ —— "
+    assert total >= 50, (
+        f"只摘到 {total} 条卡片副标题，批 150 实测 58 —— "
         "抽取器（很可能是那个 card/panel/header 名字白名单）瞎了，下面那条判据在空转。")
 
 
@@ -163,7 +165,7 @@ def test_the_extractor_actually_sees_the_variant_factories():
     for path in _copy_sources():
         for _lineno, _text, branch in _subtitle_literals(path):
             by_branch[branch] = by_branch.get(branch, 0) + 1
-    assert by_branch.get("变体工厂", 0) >= 4, (
+    assert by_branch.get("变体工厂", 0) >= 2, (  # 批 150：这几个工厂大多撤了，实测 2
         f"私有工厂（`_create_inner_panel_card` / `_create_panel_card` / "
         f"`_create_section_card` 这一类）只出了 {by_branch.get('变体工厂', 0)} 条副标题。 "
         f"各分支实际出货：{by_branch}。 "
@@ -412,7 +414,9 @@ def test_field_labels_never_wrap_into_two_lines(qapp, monkeypatch):
                 text = label.text().strip()
                 if not text or label.isHidden():
                     continue
-                if not (text[-1] in ":：" and len(text) <= 16):
+                in_plain_row = isinstance(label.parentWidget(), SettingsRow) and \
+                    label.parentWidget().label_widget is label
+                if not (in_plain_row or (text[-1] in ":：" and len(text) <= 16)):
                     continue
                 checked += 1
                 # ⚠ 断言的是**规则本身**（字段标签不许开折行），不是"此刻被挤没被挤"。

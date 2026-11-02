@@ -459,6 +459,7 @@ def test_sidebar_never_shows_a_half_cut_nav_item_at_either_edge(qapp, monkeypatc
 
         offenders = []
         scrolled_pages = 0
+        needs_scroll = []
         at_bottom = []
         for page_id in list(win._page_names.keys()):
             win.show_page(page_id, animated=False)
@@ -467,6 +468,13 @@ def test_sidebar_never_shows_a_half_cut_nav_item_at_either_edge(qapp, monkeypatc
             bar = scroll.verticalScrollBar()
             if bar.value() > 0:
                 scrolled_pages += 1
+            cur = win.nav_buttons.get(page_id)
+            # 用实际导航几何确定哪些项必须滚动，不把含账号页那版的页数当门槛。
+            if cur is not None and cur.isVisible():
+                bottom = cur.mapTo(scroll.widget(), QPoint(0, 0)).y() + cur.height()
+                if bottom > scroll.height() - 2 * scroll.frameWidth():
+                    needs_scroll.append(page_id)
+                    assert bar.value() > 0, f"{page_id} 在初始视口外，却没有滚动"
             # ⚠ 滚到底这一页**曾经**被豁免，理由是"结构性无解"。RN-178 之后
             # 余数被视口底边距吃掉，滚到底也不再撞上边界，实测这个分支已经
             # 一次都不走（`about` 停在 531，而 maximum 是 541）。
@@ -501,7 +509,8 @@ def test_sidebar_never_shows_a_half_cut_nav_item_at_either_edge(qapp, monkeypatc
                         f"(y={cy} 高={cur.height()} 视口={viewport.height()}) —— "
                         "RN-008 优先于边缘对齐")
 
-        assert scrolled_pages >= 5, (
+        assert needs_scroll, "这档窗口下没有必须滚动的导航项，前提不成立"
+        assert scrolled_pages >= len(needs_scroll), (
             f"只有 {scrolled_pages} 页滚动过 —— 前提不成立，这条判据量不到东西")
         assert len(at_bottom) <= 1, (
             f"滚到底的页不止一个：{at_bottom} —— 豁免范围只该是导航列表最后一项，"

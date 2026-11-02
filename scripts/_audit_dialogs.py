@@ -78,7 +78,7 @@ def _sample_groups():
             paths=[f"AK47/burst/{i}.wav" for i in range(1, 13)],
             shape="dir2/audio",
             guesses=[Guess("gun_sounds", "枪声替换", UNSURE,
-                           ["这 12 个文件都在 `AK47/` 下，分成 3 个子目录",
+                           ["这 12 个文件都在「AK47/」下，分成 3 个子目录",
                             "全是 .wav，采样率一致"])],
             common_dir="AK47",
         ),

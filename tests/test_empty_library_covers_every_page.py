@@ -273,7 +273,7 @@ EMPTY_SYNC = {
 DEAD_BUTTON_WORDS = ("测试", "试听", "预览", "播放")
 
 #: 下拉框里等于"什么都没选"的占位项。只剩这些 = 没得选。
-PLACEHOLDER_ITEMS = {"不启用", "未启用", "不使用", "无", "关闭", "默认", ""}
+PLACEHOLDER_ITEMS = {"不启用", "未选风格", "未启用", "不使用", "无", "关闭", "默认", ""}
 
 
 def _combo_has_nothing_to_pick(combo) -> bool:
@@ -315,6 +315,10 @@ def _combo_driving(button, page):
             return None
         anc = anc.parentWidget()
     return None
+
+
+#: 这一页没有下拉：风格是一张张卡，只对存在的风格才有卡（批 147）。
+NO_COMBO_ON_PURPOSE = {"death_sound_page.py"}
 
 
 def _build_empty_page(filename, qapp, monkeypatch):
@@ -405,6 +409,9 @@ def test_empty_library_leaves_no_control_that_does_nothing(filename, qapp,
         from PySide6.QtWidgets import QComboBox
 
         probe = next(iter(page.findChildren(QComboBox)), None)
+        if filename in NO_COMBO_ON_PURPOSE:
+            assert probe is None
+            return
         assert probe is not None, (
             f"{filename} 上一个下拉框都没有 —— 造不出 A/B，这条反面在空转。")
         # 先把它推回一个**干净的亮着的起点**：给一项让共用件把它还原、

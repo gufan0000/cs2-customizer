@@ -293,14 +293,25 @@ def test_the_requirement_does_not_fade_with_the_master_switch(main_window, qapp)
         row = getattr(page, "master_switch_row", None)
         if row is None:
             continue
+        # ⚠ 泵三下：flash 开着时状态条上多一颗徽章，关掉之后这一条要等上层重新布局才收回去，
+        #   只泵一下时这句话还顶着旧高度（38 → 84），量到的是过渡态不是淡没淡（批 145 实测）
         row.set_checked_by_user(True)
-        qapp.processEvents()
+        for _ in range(3):
+            qapp.processEvents()
+        # ⚠ 开关一关页面可能变短、滚动条消失，这条就宽 10 px，圆角边框落到别的列上
+        #   （批 150 死亡刷短视频）。钉住宽度再比：量的是淡没淡，不是宽没宽。
+        label.setFixedWidth(label.width())
+        for _ in range(3):
+            qapp.processEvents()
         on = label.grab().toImage()
         on_px = on.constBits().tobytes()
         row.set_checked_by_user(False)
-        qapp.processEvents()
+        for _ in range(3):
+            qapp.processEvents()
         off = label.grab().toImage()
         off_px = off.constBits().tobytes()
+        label.setMinimumWidth(0)
+        label.setMaximumWidth(16777215)
         checked.append(page_id)
         assert on_px == off_px, (
             f"{page_id}：总开关一关，这条运行前提就跟着变淡了 —— "
@@ -331,49 +342,40 @@ def test_the_declaration_has_not_quietly_emptied_itself():
         )
 
 
-def test_the_action_is_its_own_bigger_line(main_window, qapp):
-    """⑤ RN-681：那句前提的**动作**单独成第一行、字号比后果那行大；字一个不少。
+def test_the_action_is_its_own_bigger_line(qapp, monkeypatch):
+    """⑤ RN-681：确证此刻正是独占全屏时，**动作**单独成第一行、字号比后果那行大；字一个不少。
 
     整圈边框 + 加粗之后外审 S4 仍 5/6 说「前提淹没在长句里、会被跳过」——
     动作和后果同一个字重、同一段。量的是 Qt 解析出来的文档，不是源码里的标签。
+    批 145（RN-734）：平时一行小字（这句常驻 7 页，页页放大就是页页在喊），只有那一刻才放大。
     """
     from PySide6.QtGui import QTextDocument
 
-    from widgets.overlay_requirement import (overlay_requirement_label,
+    from widgets.overlay_requirement import (make_overlay_requirement_label,
                                              overlay_requirement_text)
 
-    checked = []
-    for path in _declared_pages(True):
-        page_id = _PAGE_IDS[path.stem]
-        main_window.ensure_page_loaded(page_id)
-        main_window.show_page(page_id, animated=False, force=True)
-        qapp.processEvents()
-        label = overlay_requirement_label(main_window.pages.get(page_id))
-        if label is None:          # advanced 用自己的话写的
-            continue
-        doc = QTextDocument()
-        doc.setDefaultFont(label.font())
-        doc.setHtml(label.text())
-        lines = doc.toPlainText().split("\n")
-        assert len(lines) == 2 and all(lines), (
-            f"{page_id}：动作和后果没分成两行：{doc.toPlainText()!r}")
-        head, rest = lines
-        assert "无边框窗口" in head and "独占全屏" not in head, (
-            f"{page_id}：第一行必须只是动作：{head!r}")
-        thing = rest.split("才画得到", 1)[0]
-        assert head + "，" + rest in (overlay_requirement_text(thing, exclusive_now=e)
-                                     for e in (False, True)), (
-            f"{page_id}：拆行时丢了字 / 改了字（RN-429 的原话不许动）：{head!r} / {rest!r}")
-        # ⚠ 不量几何：行高被「⚠」的备用字体撑高（去掉放大照样「高」，回退验证逮到的假绿）；
-        #   而 pytest 环境里汉字排出来宽度是 0（字库里没有中文字形）。
-        #   ⇒ 量 Qt 解析后每段字的字号级别（`<big>` = +1）—— 读的是解析结果，不是源码里的标签。
-        head_level = _size_level(doc, "显")
-        rest_level = _size_level(doc, "画")
-        assert head_level > rest_level, (
-            f"{page_id}：动作那行字号级别 {head_level} 没比后果那行 {rest_level} 大 —— "
-            "又是一整段同字号")
-        checked.append(page_id)
-    assert len(checked) >= 4, f"只量到 {checked} —— 分母塌了"
+    monkeypatch.setattr("core.cs2_video_mode.overlay_is_invisible_now", lambda: False)
+    usual = make_overlay_requirement_label("准心")
+    assert "<big>" not in usual.text(), "平时也放大，这句常驻的话就成了每页都在喊"
+
+    monkeypatch.setattr("core.cs2_video_mode.overlay_is_invisible_now", lambda: True)
+    label = make_overlay_requirement_label("准心")
+    doc = QTextDocument()
+    doc.setDefaultFont(label.font())
+    doc.setHtml(label.text())
+    lines = doc.toPlainText().split("\n")
+    assert len(lines) == 2 and all(lines), f"动作和后果没分成两行：{doc.toPlainText()!r}"
+    head, rest = lines
+    assert "无边框窗口" in head and "独占全屏" not in head, f"第一行必须只是动作：{head!r}"
+    assert head + "，" + rest == overlay_requirement_text("准心", exclusive_now=True), (
+        f"拆行时丢了字 / 改了字（RN-429 的原话不许动）：{head!r} / {rest!r}")
+    # ⚠ 不量几何：行高被「⚠」的备用字体撑高（去掉放大照样「高」，回退验证逮到过），
+    #   而 pytest 环境里汉字排出来宽度是 0（字库里没有中文字形）。
+    #   ⇒ 量 Qt 解析后每段字的字号级别（`<big>` = +1）—— 读的是解析结果，不是源码里的标签。
+    head_level = _size_level(doc, "显")
+    rest_level = _size_level(doc, "画")
+    assert head_level > rest_level, (
+        f"动作那行字号级别 {head_level} 没比后果那行 {rest_level} 大 —— 又是一整段同字号")
 
 
 def _size_level(doc, char: str) -> int:

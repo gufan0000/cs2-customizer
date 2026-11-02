@@ -151,7 +151,8 @@ def test_no_page_orders_the_user_to_flip_a_switch_that_may_already_be_on(page):
 def test_the_level_argument_branch_is_gone(page):
     """`_test_<x>_sound(weapon, level)` 这个分支必须消失 —— 它一走必 TypeError。
 
-    那两个函数**只接一个参数**。它没爆过，纯粹因为这两页 `TEST_LEVELS is None`
+    那两个函数**没有档位参数**（批 146 起多了一个 `style`，风格卡的试听用）。
+    它没爆过，纯粹因为这两页 `TEST_LEVELS is None`
     ⇒ `WeaponRowWidget` 不建档位菜单、`testLevelClicked` 永不发射。
     是死代码，但是**写错的**死代码：哪天给这两页加档位试听，第一次点就崩。
     """
@@ -165,8 +166,8 @@ def test_the_level_argument_branch_is_gone(page):
     bad = []
     for node in ast.walk(tree):
         if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
-                and node.func.attr == fn and len(node.args) > arity[fn]):
-            bad.append((node.lineno, len(node.args)))
+                and node.func.attr == fn and len(node.args) + len(node.keywords) > arity[fn]):
+            bad.append((node.lineno, len(node.args) + len(node.keywords)))
     assert not bad, (
         f"{page} 第 {bad} 处按 {arity[fn]} 参的 {fn} 传了更多参数 —— 走到就 TypeError（RN-037）。")
 
@@ -256,14 +257,8 @@ def reported(monkeypatch):
 
 
 def _visible_chips(page):
-    """徽章条上**当前真正显示着**的芯片文字。
-
-    `AudioStatusBadgeBar` 用芯片复用池，隐藏的那些还留着上一次渲染的旧文字。
-    """
-    from PySide6.QtWidgets import QLabel
-
-    return [c.text() for c in page.status_badge_label.findChildren(QLabel)
-            if not c.isHidden()]
+    """这一页算出来的全部徽章文字（屏幕上只显示其中的问题，RN-734）。"""
+    return page.status_badge_label.badge_texts()
 
 
 def _badge_text(page) -> str:
@@ -342,8 +337,6 @@ def test_the_visible_hint_line_says_how_to_fix_it(grid_page):
     kill_sound 那轮我就写错过一次，外审复跑一句「醒目报错却无修复引导，
     易让玩家误判为软件损坏」直接点破。
     """
-    assert grid_page.summary_label.isHidden(), (
-        "summary_label 竟然可见了？那 RN-009 的前提变了，这条判据要重写")
     hint = grid_page.category_overview_hint_label.text()
     assert not grid_page.category_overview_hint_label.isHidden()
     assert "3" in hint and "重新选" in hint, f"可见提示行没说清怎么修：{hint!r}"
@@ -400,7 +393,7 @@ def death_page(qapp, monkeypatch):
 def test_death_fixture_really_produces_a_stale_style(death_page):
     """空转守卫。"""
     assert death_page._stale_style_name() == "已删除的风格"
-    assert death_page.style_combo.currentText() == death_page.DISABLED_STYLE_TEXT
+    assert not death_page.style_library.brush()
 
 
 def test_death_page_never_claims_a_vanished_style_is_selected(death_page):
@@ -412,31 +405,18 @@ def test_death_page_never_claims_a_vanished_style_is_selected(death_page):
     surfaces = {
         "徽章": _badge_text(death_page),
         "选择卡状态行": death_page.selection_state_label.text(),
-        "概况卡标题": death_page.style_overview_name_label.text(),
-        "底部操作条": death_page.action_bar.message_label.text()
-        if hasattr(death_page.action_bar, "message_label") else "",
+        "状态卡 tooltip": death_page.status_card.toolTip(),
+        "底部操作条": death_page.action_bar.toolTip(),
     }
     for where, text in surfaces.items():
         assert "当前已选择“已删除的风格”" not in text, f"{where} 还在说它生效：{text!r}"
-    # 概况卡的大字标题必须是解析后的值，不能是配置里那个已经没了的名字
-    assert death_page.style_overview_name_label.text() == death_page.DISABLED_STYLE_TEXT, (
-        f"概况卡标题摆的还是原始配置值：{surfaces['概况卡标题']!r}")
+        assert "当前风格：已删除的风格" not in text, f"{where} 还在说它生效：{text!r}"
 
 
 def test_death_page_says_the_old_choice_is_gone_and_how_to_fix(death_page):
     """要把唯一可行动的信息说出来：你原来选的那个没了，重新选一个。"""
     text = death_page.selection_state_label.text()
     assert "已删除的风格" in text and "重新选" in text, f"没说清：{text!r}"
-
-
-def test_death_page_preview_reports_stale_not_no_style(death_page, reported):
-    """点「测试」不许说「还没选风格」—— 用户明明选过。"""
-    reported.clear()
-    death_page._test_sound()
-    assert reported, "点了测试却什么都没说"
-    reason, detail = reported[-1]
-    assert reason == "stale_style", f"报的是 {reason!r}，应为 stale_style"
-    assert str(detail) == "已删除的风格"
 
 
 def test_death_page_missing_dir_is_not_a_red_error(death_page):

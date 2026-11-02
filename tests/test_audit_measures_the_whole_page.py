@@ -204,7 +204,8 @@ def test_the_page_scope_still_skips_the_tab_pages(main_window, qapp):
                     assert audit.is_inside_any(content, skip), (
                         f"{page_id} 的页签「{tw.tabText(i)}」内容没有被页面范围跳过"
                     )
-    assert checked >= 8, f"带页签的页面只找到 {checked} 个，分母本身可能缩了"
+    # 批 146、147：四个音效页、枪声页和准心页去掉了页签
+    assert checked >= 5, f"带页签的页面只找到 {checked} 个，分母本身可能缩了"
 
 
 # ==================================== 三、整页必须在页签被切之前量
@@ -257,7 +258,7 @@ def test_the_page_scope_is_measured_before_any_tab_is_touched(main_window, qapp)
         assert seen_page_scope, f"{page_id} 没有交出整页范围"
         checked.append(page_id)
 
-    assert len(checked) >= 8, f"只检查到 {len(checked)} 个带页签的页面，分母本身可能缩了"
+    assert len(checked) >= 5, f"只检查到 {len(checked)} 个带页签的页面，分母本身可能缩了"
 
 
 def test_scopes_with_skip_is_lazy(main_window, qapp):
@@ -380,4 +381,4 @@ def test_the_tab_bar_itself_is_measured(main_window, qapp):
         for bar in bars:
             checked += 1
             assert id(bar) in covered, f"{page_id} 的页签条不在任何测量范围里"
-    assert checked >= 8, f"只检查到 {checked} 条页签条，分母本身可能缩了"
+    assert checked >= 5, f"只检查到 {checked} 条页签条，分母本身可能缩了"

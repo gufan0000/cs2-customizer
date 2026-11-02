@@ -65,7 +65,7 @@ def report_preview_failure(page, reason: str, detail: str = "", *, toast: bool =
     try:
         bar = getattr(page, "action_bar", None)
         if bar is not None and hasattr(bar, "set_message"):
-            bar.set_message(message)
+            bar.set_message(message, important=True)
     except Exception:
         pass
 

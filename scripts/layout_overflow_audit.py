@@ -361,6 +361,38 @@ def _squashed_buttons(scope, skip=()):
     return out
 
 
+def _clipped_labels(scope, skip=()):
+    """返回该范围内**折行之后高度不够**的标签 [(文案, 实际高, 需要高), ...]。
+
+    批 145：提示标签带 `max-width` 时，布局按整列宽算折行高度（`QWidgetItem::heightForWidth`
+    不看上限），标签却只有上限那么宽，第二行被裁成半截。对话框写死高度、居中摆放的卡片同形。
+    横向和按钮那几条的分母都不含标签，挤压审计只管「空间够却折行」，这一类一直没有尺子。
+
+    ⚠ 只看折行的标签：单行标签的 sizeHint 被 QSS 的 padding 带偏，差一两像素也裁不到字。
+    """
+    from PySide6.QtWidgets import QLabel
+
+    out = []
+    for label in scope.findChildren(QLabel):
+        if is_inside_any(label, skip) or not label.wordWrap():
+            continue
+        text = label.text().strip()
+        if not label.isVisible() or not text or label.width() <= 0:
+            continue
+        need = label.heightForWidth(label.width())
+        if need > label.height() + 1:   # 1px 容差，同按钮那两条
+            out.append((text[:30], label.height(), need))
+    return out
+
+
+def _shell_scopes(win):
+    """窗口外壳。按钮和标签这几把尺子一直只量页面和对话框（批 145，RN-672 同族）。"""
+    parts = (("外壳/侧栏", "sidebar"), ("外壳/顶栏", "_compact_header"),
+             ("外壳/音乐条", "music_control_bar"))
+    return [(name, getattr(win, attr)) for name, attr in parts
+            if getattr(win, attr, None) is not None]
+
+
 def _vertical_clip_of(scope, avail_h):
     """返回该范围「装不下且滚不动」的纵向缺口像素；没问题返回 None。
 
@@ -549,26 +581,12 @@ KNOWN_COMPACT_DEBT: dict[tuple[str, str], tuple[int, str]] = {
 #:
 #: ⚠ 展开档按**页**对账，不按页签 —— 那 34 处页签级缺口全部来自同一个动作
 #: （展开控制条吃掉 86px），逐页签记 34 行只是把同一件事抄 34 遍。
-KNOWN_EXPANDED_DEBT_COMPACT: dict[tuple[str, str], tuple[int, str]] = {
-    ("gun_sound", "clip"): (29, "展开档吃掉 86px 可视区；页签级 29px 是这一页的最坏"),
-    ("kill_sound", "clip"): (78, "整页最小高 540 vs 可视 462；状态卡 166px 是最大的一块"),
-    ("kill_voice", "clip"): (79, "同 kill_sound，音效家族共用一份状态卡骨架"),
-    ("reload_sound", "clip"): (79, "同 kill_sound"),
-    ("switch_weapon", "clip"): (79, "同 kill_sound"),
-    ("magnifier", "clip"): (52, "整页无页签，靠一层滚动区；展开档下它的最小高顶穿可视区"),
-    # ⚖ 2026-09-23 新记一页（报过用户）：闪光白屏跟游戏走副屏那次，本页第一次说出 RN-429 的
-    #   独占全屏前提（状态卡 +1 行，紧凑宽度下折两行）。默认档 rc=0；只有控制条展开时「样式设置」页签差 40px。
-    # ⚖ 2026-09-24 RN-681：那句前提拆成「放大的动作行 + 后果行」，展开档再多 29px（40 → 69）；默认档仍 rc=0。
-    ("flash", "clip"): (69, "状态卡补了独占全屏前提（动作行放大）；只在控制条展开 + 紧凑档出现"),
-}
+#: ⚖ 批 145：减字之后两张表的页全部不再命中（紧凑、完整两档默认六个组合都跑过），债还清了，
+#:    表清空。之后展开档一处都不许有，`test_the_expanded_mode_owes_nothing` 守着。
+KNOWN_EXPANDED_DEBT_COMPACT: dict[tuple[str, str], tuple[int, str]] = {}
 
-#: 完整档 1280×800 的同一件事。只剩音效家族四页，且只差 10~11px。
-KNOWN_EXPANDED_DEBT_FULL: dict[tuple[str, str], tuple[int, str]] = {
-    ("kill_sound", "clip"): (10, "展开档可视 622px；差 10px"),
-    ("kill_voice", "clip"): (11, "同上"),
-    ("reload_sound", "clip"): (11, "同上"),
-    ("switch_weapon", "clip"): (11, "同上"),
-}
+#: 完整档 1280×800 的同一件事。
+KNOWN_EXPANDED_DEBT_FULL: dict[tuple[str, str], tuple[int, str]] = {}
 
 
 # AUDIT-20261023: button content height/padding now follows font scale.
@@ -768,6 +786,7 @@ def main():
     # 但只做「不建」不做「撤走」—— 放过一次音乐的用户就永远停在这一档，
     # 所以按"没有控制条"来验收等于把大半用户的世界排除在门外。
     import _audit_music_bar as _mbar
+    import _audit_seed as _seed
 
     # RN-571：展开档是**可选**的，不是阻断档。理由（含实测的 40+4 处）在
     # `_audit_music_bar.pin` 那段裁定里。⚠ 报告行会逐字说钉的是哪一档。
@@ -797,6 +816,7 @@ def main():
     problems = []
     elided = []
     squashed = []          # RN-591：`elided` 的纵向双胞胎
+    clipped_labels = []    # 批 145：折行之后高度不够的标签
     clipped = []
     uneven = []
     nested_hidden = []          # RN-177：内层滚动区藏住内容
@@ -808,6 +828,49 @@ def main():
     dialog_hits: list[tuple] = []
     dialog_failed: list[tuple[str, str]] = []
     checked = 0
+    shell_checked = 0
+
+    def measure_page(theme, scale, pid, name):
+        nonlocal checked
+        try:
+            _um.goto(win, pid)
+            app.processEvents()
+            page = win.pages.get(pid)
+            if page is None:
+                return
+            # 可视高 = 目标窗口高 - 窗口装饰/导航栏等固定开销。
+            # 不能直接用容器的 height()：内容顶不下时 Qt 会把窗口撑大，
+            # 那样量出来的"可视高"是被内容膨胀过的，缺口会凭空消失。
+            container = page.parentWidget()
+            chrome = win.height() - (container.height() if container is not None else win.height())
+            avail_h = height - max(0, chrome)
+
+            for scope_name, scope, skip in scopes_with_skip(page, app):
+                checked += 1
+                label = name if scope_name is None else f"{name}/{scope_name}"
+                over = _overflow_of(scope, skip)
+                if over is not None:
+                    problems.append((theme, scale, label, over))
+                short = _vertical_clip_of(scope, avail_h)
+                if short is not None:
+                    clipped.append((theme, scale, label, short, avail_h))
+                for text, have, need in _elided_buttons(scope, skip):
+                    elided.append((theme, scale, label, text, have, need))
+                for text, have, need in _squashed_buttons(scope, skip):
+                    squashed.append((theme, scale, label, text, have, need))
+                for text, have, need in _clipped_labels(scope, skip):
+                    clipped_labels.append((theme, scale, label, text, have, need))
+                for name, vp_h, hidden in _nested_scroll_hidden(
+                        scope, page, pid, skip):
+                    nested_hidden.append((theme, scale, label, name, vp_h, hidden))
+            # 徽章判据对整页量。RN-030 之前这是**唯一**一条看得见页头/状态卡/
+            # 底栏的判据（那时 `_scopes()` 对有页签的页面只返回页签内容）；
+            # 现在页面余下部分本身就是一个范围，这里保持整页量是因为
+            # 一排徽章本来就该整排一起看，拆进范围里反而会把一排劈开。
+            for text, h, common in _uneven_status_chips(page):
+                uneven.append((theme, scale, name, text, h, common))
+        except Exception as exc:
+            problems.append((theme, scale, name, f"异常:{exc}"))
 
     for theme in themes:
         for scale in scales:
@@ -815,43 +878,17 @@ def main():
             tm.set_theme(theme)
             app.processEvents()
             for pid in page_ids:
-                try:
-                    _um.goto(win, pid)
-                    app.processEvents()
-                    page = win.pages.get(pid)
-                    if page is None:
-                        continue
-                    # 可视高 = 目标窗口高 - 窗口装饰/导航栏等固定开销。
-                    # 不能直接用容器的 height()：内容顶不下时 Qt 会把窗口撑大，
-                    # 那样量出来的"可视高"是被内容膨胀过的，缺口会凭空消失。
-                    container = page.parentWidget()
-                    chrome = win.height() - (container.height() if container is not None else win.height())
-                    avail_h = height - max(0, chrome)
+                measure_page(theme, scale, pid, pid)
 
-                    for scope_name, scope, skip in scopes_with_skip(page, app):
-                        checked += 1
-                        label = pid if scope_name is None else f"{pid}/{scope_name}"
-                        over = _overflow_of(scope, skip)
-                        if over is not None:
-                            problems.append((theme, scale, label, over))
-                        short = _vertical_clip_of(scope, avail_h)
-                        if short is not None:
-                            clipped.append((theme, scale, label, short, avail_h))
-                        for text, have, need in _elided_buttons(scope, skip):
-                            elided.append((theme, scale, label, text, have, need))
-                        for text, have, need in _squashed_buttons(scope, skip):
-                            squashed.append((theme, scale, label, text, have, need))
-                        for name, vp_h, hidden in _nested_scroll_hidden(
-                                scope, page, pid, skip):
-                            nested_hidden.append((theme, scale, label, name, vp_h, hidden))
-                    # 徽章判据对整页量。RN-030 之前这是**唯一**一条看得见页头/状态卡/
-                    # 底栏的判据（那时 `_scopes()` 对有页签的页面只返回页签内容）；
-                    # 现在页面余下部分本身就是一个范围，这里保持整页量是因为
-                    # 一排徽章本来就该整排一起看，拆进范围里反而会把一排劈开。
-                    for text, h, common in _uneven_status_chips(page):
-                        uneven.append((theme, scale, pid, text, h, common))
-                except Exception as exc:
-                    problems.append((theme, scale, pid, f"异常:{exc}"))
+            for label, scope in _shell_scopes(win):
+                checked += 1
+                shell_checked += 1
+                for text, have, need in _elided_buttons(scope):
+                    elided.append((theme, scale, label, text, have, need))
+                for text, have, need in _squashed_buttons(scope):
+                    squashed.append((theme, scale, label, text, have, need))
+                for text, have, need in _clipped_labels(scope):
+                    clipped_labels.append((theme, scale, label, text, have, need))
 
             # —— RN-672：对话框，同一档主题×字号下跑一遍 ——
             #
@@ -903,6 +940,8 @@ def main():
                                 elided.append((theme, scale, label, text, have, need))
                             for text, have, need in _squashed_buttons(scope, skip):
                                 squashed.append((theme, scale, pid, text, have, need))
+                            for text, have, need in _clipped_labels(scope, skip):
+                                clipped_labels.append((theme, scale, label, text, have, need))
                             for nm, vp_h, hidden in _nested_scroll_hidden(
                                     scope, dlg, spec.key, skip):
                                 nested_hidden.append(
@@ -919,6 +958,21 @@ def main():
                         dlg.deleteLater()
                         app.processEvents()
 
+    # 批 146：音效页有没有风格是两张脸，空库时武器板不显示，上面那一遍量不到。
+    _seed.seed_styles(win, app, config)
+    for theme in themes:
+        for scale in scales:
+            apply_font_scale(scale)
+            tm.set_theme(theme)
+            app.processEvents()
+            for pid in _seed.PAGES:
+                measure_page(theme, scale, pid, f"{pid}（有内容）")
+    # 造的风格真进了页面才算量到（判据：`test_the_audit_also_measures_the_pages_with_content`）
+    for pid in _seed.PAGES:
+        if win.pages[pid]._library_is_empty():
+            problems.append(("-", "-", f"{pid}（有内容）", "造的风格没进页面，这一遍等于没量"))
+    print(f"   有内容的一遍: {len(_seed.PAGES)} 页（造 {len(_seed.STYLES)} 个假风格）")
+
     apply_font_scale(1.0)
     tm.set_theme(getattr(config, "ui_theme", "dark") or "dark")
 
@@ -931,7 +985,7 @@ def main():
     # 还是紧凑模式，结论完全不是一回事——不写出来就会被读成"两档都绿"。
     mode = "紧凑模式（compact_mode=True）" if args.compact else "完整模式"
     print(f"\n== {mode} ｜ 窗口 {width}×{height} ｜ 主题 {len(themes)} × "
-          f"字号 {len(scales)} × 页面 {len(page_ids)} = 检查 {checked} 个组合 ==")
+          f"字号 {len(scales)} × 页面 {len(page_ids)} = 检查 {checked} 个组合（含外壳 {shell_checked} 个）==")
     # UP-096: 覆盖面**每次都要报**，不是只在有跳过时才报。
     # 静默少测会被读成"全都覆盖了"——这正是 UP-094/095 藏了很多轮的原因。
     covered = f"   覆盖面: {len(page_ids)}/{total_pages} 个页面"
@@ -1042,6 +1096,18 @@ def main():
         print(f"  ! 在册的纵向按钮债有 {len(sq_loose)} 条在这台机器上不再命中，"
               "请人工确认是「修好了」还是「环境不同」: " + ", ".join(sq_loose[:6])
               + (" …" if len(sq_loose) > 6 else ""))
+
+    if clipped_labels:
+        seen = {}
+        for theme, scale, label, text, have, need in clipped_labels:
+            seen.setdefault((label, text), []).append((theme, scale, have, need))
+        print(f"  ✗ {len(seen)} 处折行标签高度不够(字被裁成半行):")
+        for (label, text), hits in sorted(seen.items()):
+            theme, scale, have, need = hits[0]
+            print(f"     [{label}] 「{text}」 实际 {have}px 需 {need}px "
+                  f"(命中 {len(hits)}/{len(themes) * len(scales)} 个主题×字号，首次 {theme}×{scale})")
+    else:
+        print("  ✓ 无折行标签被裁")
 
     # UP-072: 纵向裁切且滚不动——横向判据完全看不见这一类
     # RN-196: 同上，整页范围的存量债走棘轮，页签范围照常报。
@@ -1174,7 +1240,7 @@ def main():
     # ⛔ 「建不起来」尤其要红 —— 那正是"静默少测被读成全都覆盖了"的入口。
     return 1 if (blocking_overflow or of_fresh or of_worse
                  or blocking_clip or cl_fresh or cl_worse
-                 or elided or sq_fresh or sq_worse or uneven or nested_hidden
+                 or elided or sq_fresh or sq_worse or clipped_labels or uneven or nested_hidden
                  or dialog_hits or dialog_failed) else 0
 
 

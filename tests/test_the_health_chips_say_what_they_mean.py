@@ -67,9 +67,7 @@ def chips_of():
     def _run(report: dict) -> list[str]:
         page._sync_status_strip(report)
         app.processEvents()
-        from PySide6.QtWidgets import QLabel
-        return [lab.text() for lab in page.status_badge_label.findChildren(QLabel)
-                if lab.objectName() == "audioStatusChip"]
+        return page.status_badge_label.badge_texts()
 
     yield _run
     page.deleteLater()
@@ -116,22 +114,3 @@ def test_the_total_is_not_said_twice(chips_of):
     assert not any(c.startswith("项目 · ") for c in chips), (
         f"「项目 · N 项」又回来了，而 3 + 7 已经分别写在两颗上：{chips}")
     assert len(chips) == 3, f"这一排应当是三颗（体检 / 音频 / 视觉）：{chips}"
-
-
-def test_the_one_line_summary_uses_the_same_words(chips_of):
-    """⚠ 同一屏上说同一件事的两处，改了一处另一处留在原地 —— RN-508 的形状。
-
-    这一页已经犯过一次（按钮改名而点名它的底栏文案没跟着改）。
-    """
-    from PySide6.QtWidgets import QApplication
-
-    QApplication.instance()
-    from pages.audio_health_page import AudioHealthPage
-
-    page = AudioHealthPage()
-    page._sync_status_strip(_report(audio_bad=2, visual_bad=0))
-    text = page.summary_label.text()
-    assert "待检查" not in text, (
-        f"一句话摘要还写着「待检查」，而芯片已经改口成「需检查 N 项」：{text!r}")
-    assert "需检查 2 项" in text, f"摘要没跟着说出那个数：{text!r}"
-    page.deleteLater()

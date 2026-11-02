@@ -116,7 +116,6 @@ def gsi_link_state(gsi: Dict[str, Any], cfg: Dict[str, Any], game_running) -> st
 GSI_LINK_TEXT = {
     "connected": ("已连接", "positive", "正在收到 CS2 的数据，联动正常。"),
     "no_game": ("等游戏", "info", "联动服务已就绪 —— 开 CS2 进一局（训练场也行），这里会变成「已连接」。"),
-    # ⚠ 首页运行面板那张卡在这句折行时不会长高，下一排按钮会被切 ⇒ 一律不比音频那句长
     "silent": ("没收到", "warning",
                "CS2 开着却一分钟没收到数据 —— 刚装好配置就重启一次 CS2；开着加速器或代理的，把 127.0.0.1 设为直连。"),
     "cfg_missing": ("未装好", "warning", "游戏里的联动配置没装上 —— 去「高级设置」选一次 CS2 目录。"),
@@ -124,6 +123,77 @@ GSI_LINK_TEXT = {
     "failed": ("启动失败", "danger", ""),          # 修法是 startup_error 本身
     "stopped": ("未运行", "info", "联动服务还没起来（软件启动时会自动起）。"),
 }
+
+
+#: 总览那行大字：这一环断了，用户最想知道什么。
+READINESS_HEADLINE = {
+    "connected": "已连上 CS2",
+    "no_game": "可以进游戏了",
+    "silent": "CS2 开着，但没收到数据",
+    "cfg_missing": "联动配置没装上",
+    "cfg_port": "联动配置要更新",
+    "failed": "联动服务没起来",
+    "stopped": "联动服务还没起来",
+}
+NO_CS2_DIR_HEADLINE = "还差一步：选 CS2 目录"
+NO_CS2_DIR_DETAIL = "选好之后软件会自己写好联动配置。点右边的上手引导，三步走完。"
+#: 显示模式三档（`core.cs2_video_mode`）在总览上的说法。
+DISPLAY_MODE_TEXT = {"exclusive": "独占全屏", "borderless": "无边框", "windowed": "窗口"}
+#: ⚠ 动作在前、后果在后（RN-429 的语序，同 `widgets/overlay_requirement`）。
+EXCLUSIVE_DETAIL = "先去 CS2 把显示模式改成「无边框窗口化」：准心、击杀图标要画到游戏画面上，独占全屏会整个盖住。"
+
+
+@dataclass
+class ReadinessView:
+    """总览状态条要摆的东西。纯数据：判据不用建窗口就能逐条问。"""
+
+    level: str                         # ok / warn / error
+    headline: str
+    detail: str                        # 有事才有：那句修法
+    needs_setup: bool                  # 还有没做完的上手步骤（这时上手引导才是主按钮）
+    checks: list = field(default_factory=list)   # (名称, 值, 语气, tooltip)
+
+
+def readiness_view(status: RuntimeStatus, display_mode=None, *, overlay_on: bool = False) -> ReadinessView:
+    """现在能不能进游戏。`display_mode` 是 `detect_display_mode()` 的结果，读不到就是 None；
+    `overlay_on` = 开着画在游戏画面上的功能（没开的话独占全屏不碍事）。
+
+    ⚠ 只看「断在哪一环」，不看音频目录在不在：新装的软件一个素材都没有，那不是故障
+    （批 145 外审：「音频 · 需检查12」开屏就吓人）。配的风格没了由各张卡自己说。
+    """
+    link = status.gsi_link or "stopped"
+    word, link_level, fix = GSI_LINK_TEXT.get(link, GSI_LINK_TEXT["stopped"])
+    no_dir = (status.gsi_cfg or {}).get("status") == "not_configured"
+    # 已经在收数据就算连上了：目录没记上不耽误联动，只在检查项里说
+    blocked_by_dir = no_dir and link != "connected"
+    error = str((status.gsi or {}).get("startup_error") or "")
+    exclusive = display_mode == "exclusive"
+
+    if link == "failed":
+        level, headline, detail = "error", READINESS_HEADLINE[link], f"{error} 处理后在高级设置重选 CS2 目录或重启软件即可恢复。"
+    elif blocked_by_dir:
+        level, headline, detail = "warn", NO_CS2_DIR_HEADLINE, NO_CS2_DIR_DETAIL
+    elif link in ("connected", "no_game"):
+        level, headline, detail = "ok", READINESS_HEADLINE[link], ""
+    else:
+        level, headline, detail = "warn", READINESS_HEADLINE[link], fix
+    if level == "ok" and exclusive and overlay_on:
+        # 大字也要变：「可以进游戏了」下面跟一句「先去改显示模式」，两句话是打架的
+        level, headline, detail = "warn", f"{headline}，但画面功能会被盖住", EXCLUSIVE_DETAIL
+    elif level == "ok" and status.config_dirty:
+        detail = "检测到未保存的配置修改，确认无误后记得保存。"
+
+    tone = {"positive": "ok", "info": ""}.get(link_level, "warn")
+    checks = [
+        ("CS2 目录", "未设置" if no_dir else "已找到", "warn" if no_dir else "ok",
+         "点上手引导，或去「高级设置」选" if no_dir else "「高级设置」里可以重选"),
+        ("游戏联动", word, tone, error or fix),
+    ]
+    if display_mode in DISPLAY_MODE_TEXT:
+        checks.append(("显示模式", DISPLAY_MODE_TEXT[display_mode], "warn" if exclusive and overlay_on else "ok",
+                       EXCLUSIVE_DETAIL if exclusive else "准心、击杀图标这些都画得上去"))
+    return ReadinessView(level, headline, detail,
+                         needs_setup=blocked_by_dir or link in ("cfg_missing", "cfg_port"), checks=checks)
 
 
 def _collect_config_dirty(main_window) -> bool:

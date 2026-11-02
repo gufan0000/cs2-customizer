@@ -27,7 +27,8 @@ from widgets.master_switch_link import make_master_switch_row
 from widgets.overlay_requirement import make_overlay_requirement_label
 from widgets.page_header import PageHeader
 from widgets.settings_card import SettingsCard
-from widgets.settings_row import SettingsRow
+from widgets.settings_row import inline_hint, plain_row
+from widgets.status_strip import StatusStrip
 
 #: RN-429：死亡刷短视频用的是**贴屏浏览器窗口**（不是 Qt 覆盖层），但受同一条前提约束，本页同样早就自己写了 ⇒ 第二个阳性对照。
 DRAWS_OVER_THE_GAME = True
@@ -86,35 +87,28 @@ class FunPage(QWidget):
         install_help_panel(header.title_row, header.body, PAGE_HELP_TEXTS["fun_afterlife"])
 
         # 状态
-        status_card, status_layout = SettingsCard.make("当前状态", None)
+        status_card = StatusStrip()
+        status_layout = QVBoxLayout(status_card)
+        status_layout.setContentsMargins(0, 0, 0, 0)
+        status_layout.setSpacing(8)
 
         # ⚠⚠ RN-190（批 34）：这一页原来手搓了一颗 `QCheckBox("启用死亡刷短视频")`，
         # 自己 `setattr`、自己调 preheat/shutdown。实测后果不是"少了个组件"，
         # 是**方向不对称的同步**：首页拨 → 页面会跟（`_on_switch_changed` 调
         # `page._load_settings()`），而**页面拨 → 首页那颗一动不动**（RN-107 族）。
         # ⭐ 全站 16 个首页功能开关里，另外 **15 个**都走这一行共用件；
-        #   而它不只是"开关"——它自带双向同步、自带那句「现在可以调、改了会保存；
-        #   游戏里还不生效」、自带参数区降权三件套。
+        #   而它不只是"开关"——它自带双向同步、自带那句「可以先调好，打开后才在
+        #   游戏里生效」、自带参数区降权三件套。
         #   **一件一件补，就是一件一件会漏。**
         self.master_switch_row = make_master_switch_row(
-            self, "fun_afterlife_enabled", "死亡刷短视频")
-        status_layout.addWidget(self.master_switch_row)
+            self, "fun_afterlife_enabled", "死亡刷短视频", header=header)
 
-        # ⭐⭐ RN-540（批 59）：这一页缺那条胶囊的**抬头**，于是 RN-428 那条改动
-        #   （关着的时候标题从「当前状态」改成「当前配置」）在这一页上**没有落点**。
-        #   ⚠ 它是被 RN-538 把本页加进 `EXPECTED_KEYS` 之后，那支判据当场报出来的 ——
-        #   在此之前这一页结构上不在分母里。
-        #   ⭐ 标题是这条胶囊里唯一一个「说这一整条是什么」的位置：
-        #     没在跑的时候，那一排列的是配置，不是状态。
-        self.status_strip_title = QLabel("当前状态")
-        self.status_strip_title.setObjectName("statusLabel")
-        status_layout.addWidget(self.status_strip_title)
 
         # ⚠ RN-102 族（批 34）：状态原来是一行裸文字，而全站 26/28 页用徽章条。
         self.status_badge_label = create_badge_label()
         status_layout.addWidget(self.status_badge_label)
 
-        self.status_label = QLabel("未启用")
+        self.status_label = QLabel("")
         self.status_label.setObjectName("hintLabel")
         self.status_label.setWordWrap(True)
         status_layout.addWidget(self.status_label)
@@ -191,30 +185,32 @@ class FunPage(QWidget):
             "触发条件", "只在勾选的对局模式里生效。观战队友阵亡不会触发。"
         )
         grid = QGridLayout()
-        grid.setSpacing(6)
+        grid.setHorizontalSpacing(16)
+        grid.setVerticalSpacing(8)
+        grid.setColumnStretch(4, 1)
         for index, (mode_key, mode_name) in enumerate(MODE_OPTIONS):
             box = QCheckBox(mode_name)
             box.stateChanged.connect(self._on_modes_changed)
             self._mode_boxes[mode_key] = box
-            grid.addWidget(box, index // 3, index % 3)
+            grid.addWidget(box, index // 4, index % 4)
         trigger_layout.addLayout(grid)
 
         self.max_per_match_spin = QSpinBox()
         self.max_per_match_spin.setRange(0, 999)
         self.max_per_match_spin.setSpecialValueText("不限")
         self.max_per_match_spin.valueChanged.connect(self._on_max_per_match_changed)
-        trigger_layout.addWidget(SettingsRow(
-            "每局最多触发", self.max_per_match_spin, hint="到达次数后本局不再弹出，换图重新计数。"
-        ))
+        trigger_layout.addWidget(plain_row(
+            "每局最多触发", self.max_per_match_spin,
+            inline_hint("到达次数后本局不再弹出，换图重新计数。"), width=120))
 
         self.delay_spin = QSpinBox()
         self.delay_spin.setRange(0, 10000)
         self.delay_spin.setSingleStep(100)
         self.delay_spin.setSuffix(" 毫秒")
         self.delay_spin.valueChanged.connect(self._on_delay_changed)
-        trigger_layout.addWidget(SettingsRow(
-            "阵亡后延迟弹出", self.delay_spin, hint="留一点缓冲，先看完自己的死亡镜头。"
-        ))
+        trigger_layout.addWidget(plain_row(
+            "阵亡后延迟弹出", self.delay_spin,
+            inline_hint("留一点缓冲，先看完自己的死亡镜头。"), width=120))
         layout.addWidget(trigger_card)
 
         # 窗口
@@ -223,18 +219,22 @@ class FunPage(QWidget):
         for value, name in SIDE_OPTIONS:
             self.side_combo.addItem(name, value)
         self.side_combo.currentIndexChanged.connect(self._on_side_changed)
-        window_layout.addWidget(SettingsRow("贴在哪边", self.side_combo))
+        window_layout.addWidget(plain_row("贴在哪边", self.side_combo))
 
         self.height_slider = QSlider(Qt.Horizontal)
         self.height_slider.setRange(30, 100)
         self.height_slider.valueChanged.connect(self._on_height_changed)
         self.height_value_label = QLabel("")
-        height_row = QHBoxLayout()
-        height_row.addWidget(self.height_slider, 1)
-        height_row.addWidget(self.height_value_label)
-        height_holder = QWidget()
-        height_holder.setLayout(height_row)
-        window_layout.addWidget(SettingsRow("窗口高度", height_holder))
+        window_layout.addWidget(plain_row("窗口高度", self.height_slider, self.height_value_label))
+
+        self.max_stay_spin = QSpinBox()
+        self.max_stay_spin.setRange(0, 3600)
+        self.max_stay_spin.setSuffix(" 秒")
+        self.max_stay_spin.setSpecialValueText("不自动收回")
+        self.max_stay_spin.valueChanged.connect(self._on_max_stay_changed)
+        window_layout.addWidget(plain_row(
+            "最长停留", self.max_stay_spin,
+            inline_hint("退出游戏等情况下收不到复活信号时，靠这个兜底把窗口收回来。"), width=120))
         layout.addWidget(window_card)
 
         # 内容
@@ -243,7 +243,7 @@ class FunPage(QWidget):
         for preset in PLATFORM_PRESETS:
             self.platform_combo.addItem(preset["name"], preset["key"])
         self.platform_combo.currentIndexChanged.connect(self._on_platform_changed)
-        content_layout.addWidget(SettingsRow("平台", self.platform_combo))
+        content_layout.addWidget(plain_row("平台", self.platform_combo))
 
         self.platform_form_label = QLabel("")
         self.platform_form_label.setObjectName("hintLabel")
@@ -253,7 +253,7 @@ class FunPage(QWidget):
         self.url_edit = QLineEdit()
         self.url_edit.setPlaceholderText("https://")
         self.url_edit.editingFinished.connect(self._on_url_changed)
-        self.url_row = SettingsRow("网址", self.url_edit, control_align="left")
+        self.url_row = plain_row("网址", self.url_edit, width=360)
         content_layout.addWidget(self.url_row)
 
         self.mobile_ua_box = QCheckBox("以手机模式打开（推荐）")
@@ -264,19 +264,6 @@ class FunPage(QWidget):
         self.mobile_hint.setWordWrap(True)
         content_layout.addWidget(self.mobile_hint)
         layout.addWidget(content_card)
-
-        # 高级
-        advanced_card, advanced_layout = SettingsCard.make("高级", None)
-        self.max_stay_spin = QSpinBox()
-        self.max_stay_spin.setRange(0, 3600)
-        self.max_stay_spin.setSuffix(" 秒")
-        self.max_stay_spin.setSpecialValueText("不自动收回")
-        self.max_stay_spin.valueChanged.connect(self._on_max_stay_changed)
-        advanced_layout.addWidget(SettingsRow(
-            "最长停留", self.max_stay_spin,
-            hint="退出游戏等情况下收不到复活信号时，靠这个兜底把窗口收回来。",
-        ))
-        layout.addWidget(advanced_card)
 
         layout.addStretch()
         scroll.setWidget(content)
@@ -387,13 +374,13 @@ class FunPage(QWidget):
         if self.controller is None:
             return
         if not self.controller.open_login():
-            self.status_label.setText("打开失败，请检查是否安装了 Edge 或 Chrome")
+            self._set_status("打开失败，请检查是否安装了 Edge 或 Chrome")
 
     def _on_preview_clicked(self):
         if self.controller is None:
             return
         if not self.controller.preview():
-            self.status_label.setText("预览失败，请检查是否安装了 Edge 或 Chrome")
+            self._set_status("预览失败，请检查是否安装了 Edge 或 Chrome")
 
     def _on_retract_clicked(self):
         if self.controller is not None:
@@ -401,8 +388,12 @@ class FunPage(QWidget):
 
     # ---- 状态 ----
 
-    def _on_status_changed(self, text):
+    def _set_status(self, text):
         self.status_label.setText(text)
+        self.status_label.setVisible(bool(text))
+
+    def _on_status_changed(self, text):
+        self._set_status(text)
 
     def _refresh_status(self):
         """⭐⭐⭐ 「已启用」这三个字，对一个只打竞技的人是假的。
@@ -431,13 +422,14 @@ class FunPage(QWidget):
         ]
         render_badges(self.status_badge_label, badges)
 
+        # 批 150：开关旁边那句已经说了「打开后才在游戏里生效」，这里不再重复
         if not enabled:
-            self.status_label.setText("未启用。打开上面的总开关之后才会在阵亡时弹出。")
+            self._set_status("")
             return
         if not picked:
-            self.status_label.setText("已启用，但没有勾选任何对局模式，不会触发")
+            self._set_status("已启用，但没有勾选任何对局模式，不会触发")
             return
-        self.status_label.setText(
+        self._set_status(
             "已启用 · 只在「" + " / ".join(picked) + "」里触发；"
             "其它模式阵亡不会弹出。"
         )

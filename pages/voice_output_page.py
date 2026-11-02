@@ -9,11 +9,10 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QSlider, QComboBox, QCheckBox, QFrame, QScrollArea,
-    QGroupBox, QFileDialog, QMessageBox,
-    QTabWidget, QGridLayout, QSizePolicy, QLayout
+    QFileDialog, QMessageBox,
+    QTabWidget, QGridLayout, QSizePolicy
 )
 from PySide6.QtCore import Qt, Signal, QTimer
-from PySide6.QtGui import QFont
 import keyboard
 import os
 import threading
@@ -25,8 +24,12 @@ from pages.audio_status_badge import create_badge_label, render_badges
 from voice_output_manager import get_voice_output_manager
 from page_theme_helper import style_as_danger_button
 from ui_help_panel import install_help_panel, PAGE_HELP_TEXTS
+from ui_style_applier import keep_single_line
 from widgets.page_header import PageHeader
 from widgets.page_action_bar import PageActionBar
+from widgets.settings_card import SettingsCard
+from widgets.settings_row import plain_row
+from widgets.status_strip import StatusStrip
 
 
 # QA-014: 驱动包下载**必须**有超时。
@@ -66,6 +69,12 @@ SFX_FORWARD_MODE_NOTE = (
     "ℹ️ 转发的音效总是按「覆盖」播出，和上面选的「模式」无关：音效响的那几秒，队友听不到你说话。")
 
 
+#: ⭐⭐ RN-107 族（批 29）：这句初值原来是字面量「就绪」—— 全新用户那一屏上，徽章写着「驱动 · 待安装」、
+#: 卡片写着「VB-Cable 未安装」，而这里写着「最近状态：就绪」。外审多发判**高**。
+#: ⭐ 「就绪」是一个初始占位符，而它长得像一个判断结果。
+NO_OPERATION_TEXT = "还没有操作"
+
+
 class VoiceOutputPage(QWidget):
     """语音输出页面"""
     
@@ -80,9 +89,8 @@ class VoiceOutputPage(QWidget):
     ptt_key_set_signal = Signal(str)  # (key) - PTT键设置完成
     _status_signal = Signal(str)  # 跨线程安全的状态更新
     _status_clear_signal = Signal(int)  # 跨线程安全的延迟清除状态
-    # ⛔ status_label 实测落在整页坐标 y≈1009，而视口只有 746 —— 它在滚动区
-    #    折叠线**以下 200 多像素**，`isVisible()` 为真而用户根本看不见（RN-673
-    #    同形，第二次）。⇒ 播不出去这种事必须另走一条浮在界面上的路。
+    # ⛔ 按下音板快捷键时眼睛多半还在游戏里，底栏那句话看不见。
+    #    ⇒ 播不出去这种事必须另走一条浮在界面上的路。
     _toast_error_signal = Signal(str)
     
     def __init__(self, parent=None):
@@ -117,6 +125,8 @@ class VoiceOutputPage(QWidget):
         self.ptt_enabled = config.voice_output_ptt_enabled if hasattr(config, 'voice_output_ptt_enabled') else True
         self.is_listening_for_ptt_key = False
         
+        self._runtime_text = NO_OPERATION_TEXT
+
         # UI初始化
         self._create_ui()
         
@@ -169,7 +179,7 @@ class VoiceOutputPage(QWidget):
         """
         blockers = []
         if not bool(getattr(config, "voice_output_enabled", False)):
-            blockers.append("「语音播放」总开关还没开")
+            blockers.append("总开关还没开")
         if not self._driver_ready():
             blockers.append("没有检测到 VB-Cable 虚拟声卡")
         return blockers
@@ -213,12 +223,7 @@ class VoiceOutputPage(QWidget):
         return str(getattr(config, "voice_output_microphone", "默认") or "默认")
 
     def _current_runtime_text(self):
-        label = getattr(self, "status_label", None)
-        if label is not None and hasattr(label, "text"):
-            text = label.text().strip()
-            if text:
-                return text
-        return "还没有操作"
+        return self._runtime_text
 
     def _current_tab_text(self):
         tab_widget = getattr(self, "tab_widget", None)
@@ -276,7 +281,12 @@ class VoiceOutputPage(QWidget):
                 f"已绑定 {hotkey_configured} 个快捷键；最近操作：{runtime_text}"
             )
 
-        self.action_bar.set_message(action_message)
+        # 批 150：这句状态原来摆在滚动区最下面，折叠线以下 200 多像素（RN-673 同形）。
+        # 没事的时候不说话，有事就说在这条一直露着的底栏上。
+        if runtime_text == NO_OPERATION_TEXT:
+            self.action_bar.set_message(action_message)
+        else:
+            self.action_bar.set_message(runtime_text, important=True)
 
     def on_master_switch_synced(self):
         """总开关被别处拨动后，把本页状态重算一遍（RN-189）。
@@ -317,7 +327,8 @@ class VoiceOutputPage(QWidget):
             forwarding_level = "warn"
 
         badges = [
-            ("success" if driver_ready else "warn", f"驱动 · {'已就绪' if driver_ready else '待安装'}"),
+            # 批 150：缺驱动不进问题条。下面那张卡第一句话就是它，隔 16 px 说两遍，还多占一行高
+            ("success" if driver_ready else "info", f"驱动 · {'已就绪' if driver_ready else '待安装'}"),
             ("success" if mode_text == "自动" else "info", f"模式 · {mode_text}"),
             ("success" if slot_configured else "info", f"槽位 · {slot_configured}/{slot_total}"),
             (forwarding_level, forwarding_text),
@@ -340,87 +351,17 @@ class VoiceOutputPage(QWidget):
 
         summary_text = "\n".join(detail_lines)
         render_badges(self.status_badge_label, badges, detail_tooltip=summary_text)
-        self.summary_label.setText(summary_text)
-        self.summary_label.setToolTip(summary_text)
         self.status_card.setToolTip(summary_text)
-        self._refresh_control_panel_summary()
+        self._refresh_driver_hint()
         self._sync_action_bar_state()
 
-    @staticmethod
-    def _apply_compact_button(button, *, width=None, height=34, primary=False):
-        button.setObjectName("primaryButton" if primary else "secondaryButton")
-        button.setMinimumHeight(height)
-        if width is not None:
-            button.setMinimumWidth(width)
-        return button
-
-    @staticmethod
-    def _apply_compact_combo(combo, *, min_width=120, max_width=None, height=34, expanding=True):
-        combo.setMinimumHeight(height)
-        combo.setMinimumWidth(min_width)
-        if max_width is not None:
-            combo.setMaximumWidth(max_width)
-        combo.setSizePolicy(
-            QSizePolicy.Expanding if expanding else QSizePolicy.Fixed,
-            QSizePolicy.Fixed,
-        )
-        return combo
-
-    @staticmethod
-    def _apply_compact_label(label, *, width=None, bold=False):
-        label.setFont(QFont("Microsoft YaHei", 11, QFont.Bold if bold else QFont.Normal))
-        if width is not None:
-            label.setFixedWidth(width)
-        return label
-
-    def _create_panel_card(self, title, description=None):
-        card = QFrame()
-        card.setObjectName("card")
-        card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(8)
-
-        title_label = QLabel(title)
-        title_label.setObjectName("statusLabel")
-        layout.addWidget(title_label)
-
-        if description:
-            description_label = QLabel(description)
-            description_label.setObjectName("hintLabel")
-            description_label.setWordWrap(True)
-            layout.addWidget(description_label)
-
-        return card, layout
-
-    def _refresh_control_panel_summary(self):
+    def _refresh_driver_hint(self):
         if hasattr(self, "driver_hint_label"):
             if self._driver_ready():
                 self.driver_hint_label.setText("虚拟驱动已就绪，可直接使用音板或语音转发。")
             else:
-                # ⚠ RN-143（批 29）：原文 25 字 = 321px，而这一格分到 320px ——
-                #   **又是差 1 个像素**（批 28 的 magnifier 也是 336/335）。
-                #   ⭐ 这一族最常见的形态不是「文案太长」，是**刚好长 1 个字**。
                 self.driver_hint_label.setText("当前缺少 VB-Cable，安装后才能把音频送进游戏语音。")
 
-        if hasattr(self, "routing_summary_label"):
-            volume_percent = int(round(float(getattr(config, "voice_output_volume", 1.0)) * 100))
-            local_text = "本地监听开启" if bool(getattr(config, "voice_output_also_local", True)) else "仅发送到虚拟设备"
-            self.routing_summary_label.setText(
-                f"当前路由：{self._current_mode_text()} · 主音量 {volume_percent}% · {local_text}"
-            )
-
-        if hasattr(self, "config_summary_label"):
-            slot_configured = self._configured_slot_count()
-            slot_total = len(getattr(self, "soundboard_slots", {}) or {})
-            self.config_summary_label.setText(
-                f"当前麦克风：{self._current_microphone_text()} · 已配置 {slot_configured}/{slot_total} 个槽位"
-                f" · 最近操作 {self._current_runtime_text()}"
-            )
-
-        if hasattr(self, "control_frame") and self.control_frame.layout() is not None:
-            self.control_frame.setFixedHeight(self.control_frame.layout().sizeHint().height())
-    
     def _create_ui(self):
         """创建UI"""
         # 主布局：外层承载滚动区（修复矮窗口下控制面板与选项卡被压扁重叠）
@@ -465,10 +406,9 @@ class VoiceOutputPage(QWidget):
         layout.addWidget(header)
         install_help_panel(header.title_row, header.body, PAGE_HELP_TEXTS["voice_output"])
 
-        self.status_card = QFrame()
-        self.status_card.setObjectName("card")
+        self.status_card = StatusStrip()
         status_card_layout = QVBoxLayout(self.status_card)
-        status_card_layout.setContentsMargins(14, 12, 14, 12)
+        status_card_layout.setContentsMargins(0, 0, 0, 0)
         status_card_layout.setSpacing(8)
 
         # RN-189：就地总开关。首页「功能开关」里有「语音播放」，而站在这一页上
@@ -478,25 +418,16 @@ class VoiceOutputPage(QWidget):
         from widgets.master_switch_link import make_master_switch_row
 
         self.master_switch_row = make_master_switch_row(
-            self, "voice_output_enabled", "语音播放")
-        status_card_layout.addWidget(self.master_switch_row)
+            self, "voice_output_enabled", "语音输出", header=header)
 
         status_header = QHBoxLayout()
         status_header.setSpacing(10)
-        status_title = QLabel("当前状态")
-        status_title.setObjectName("statusLabel")
-        status_header.addWidget(status_title)
 
         self.status_badge_label = create_badge_label()
         status_header.addWidget(self.status_badge_label, 1)
         status_header.addStretch()
         status_card_layout.addLayout(status_header)
 
-        self.summary_label = QLabel("")
-        self.summary_label.setObjectName("hintLabel")
-        self.summary_label.setWordWrap(True)
-        self.summary_label.hide()
-        status_card_layout.addWidget(self.summary_label)
         layout.addWidget(self.status_card)
         
         # 顶部控制面板
@@ -505,7 +436,9 @@ class VoiceOutputPage(QWidget):
         # 选项卡视图
         tab_widget = QTabWidget()
         self.tab_widget = tab_widget
-        tab_widget.setMinimumHeight(360)  # 给选项卡一个高度下限，避免在外层滚动区里被压塌
+        # 给选项卡一个高度下限，避免在外层滚动区里被压塌。
+        # ⚠ 1280×800 上整页刚好放下，再高一点就多一条外层滚动条，和槽位列表叠成两层滚动
+        tab_widget.setMinimumHeight(320)
         
         # 语音设置选项卡
         soundboard_tab = QWidget()
@@ -518,30 +451,17 @@ class VoiceOutputPage(QWidget):
         tab_widget.addTab(sfx_forward_tab, "音效转发")
         tab_widget.currentChanged.connect(lambda *_args: self._sync_action_bar_state())
         
-        layout.addWidget(tab_widget)
-        
-        # 底部状态栏
-        self._create_status_bar(layout)
+        layout.addWidget(tab_widget, 1)
 
         page_scroll.setWidget(page_widget)
         outer.addWidget(page_scroll, 1)
 
         self.action_bar = PageActionBar(self)
-        self.action_bar.secondary_btn.setMinimumWidth(116)
-        self.action_bar.primary_btn.setMinimumWidth(132)
         outer.addWidget(self.action_bar, 0)
         self._sync_overview_status()
 
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        try:
-            self._refresh_control_panel_summary()
-        except Exception:
-            pass
-
     def showEvent(self, event):
         super().showEvent(event)
-        QTimer.singleShot(0, self._refresh_control_panel_summary)
         # RN-663：总开关和驱动都可能在别处被改，每次进页重算一次缺什么
         QTimer.singleShot(0, self._refresh_sfx_forwarding_requirements)
         # 每次进页按当前配置(含语音总开关)重注册全局热键：
@@ -550,66 +470,40 @@ class VoiceOutputPage(QWidget):
             self._register_hotkeys_func()
     
     def _create_control_panel(self, parent_layout):
-        """创建顶部控制面板"""
-        control_frame = QFrame()
-        self.control_frame = control_frame
-        control_frame.setObjectName("card")
-        control_frame.setToolTip("这里负责驱动、主音量、模式、麦克风和整页配置导入导出。")
-        control_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
-        control_layout = QVBoxLayout(control_frame)
-        control_layout.setContentsMargins(12, 12, 12, 12)
-        control_layout.setSpacing(8)
-        control_layout.setSizeConstraint(QLayout.SetMinimumSize)
-
-        top_row = QHBoxLayout()
-        top_row.setSpacing(10)
-
-        driver_card, driver_layout = self._create_panel_card(
-            "驱动与说明",
-            "先确认 VB-Cable 是否就绪，再决定是否需要打开说明或手动安装驱动。",
-        )
-        self.vb_status_label = QLabel("⚪ 检测中...")
+        """驱动和播放设置：两个页签共用的东西。"""
+        driver_card, driver_layout = SettingsCard.make()
+        driver_row = QHBoxLayout()
+        driver_row.setSpacing(8)
+        self.vb_status_label = keep_single_line(QLabel("⚪ 检测中..."))
         self.vb_status_label.setObjectName("statusLabel")
-        driver_layout.addWidget(self.vb_status_label)
+        driver_row.addWidget(self.vb_status_label)
 
         self.driver_hint_label = QLabel("")
         self.driver_hint_label.setObjectName("hintLabel")
         self.driver_hint_label.setWordWrap(True)
-        driver_layout.addWidget(self.driver_hint_label)
+        driver_row.addWidget(self.driver_hint_label, 1)
 
-        driver_actions = QHBoxLayout()
-        driver_actions.setSpacing(8)
         self.install_button = QPushButton("安装驱动")
+        self.install_button.setObjectName("secondaryButton")
         self.install_button.setEnabled(False)
-        self._apply_compact_button(self.install_button, width=100)
         self.install_button.clicked.connect(self._install_vb_cable)
-        driver_actions.addWidget(self.install_button)
+        driver_row.addWidget(self.install_button)
 
         # ⭐ RN-452（批 31）：这颗现在是「使用说明」在本页的**唯一**入口
         #   （底栏那颗副本已撤），所以给它一个名字，让判据指得到它。
         self.driver_help_button = QPushButton("使用说明")
-        self._apply_compact_button(self.driver_help_button, width=100)
+        self.driver_help_button.setObjectName("secondaryButton")
         self.driver_help_button.clicked.connect(self._show_instructions)
-        driver_actions.addWidget(self.driver_help_button)
-        driver_actions.addStretch()
-        driver_layout.addLayout(driver_actions)
-        top_row.addWidget(driver_card, 4, Qt.AlignTop)
+        driver_row.addWidget(self.driver_help_button)
+        driver_layout.addLayout(driver_row)
+        parent_layout.addWidget(driver_card)
 
-        routing_card, routing_layout = self._create_panel_card(
-            "播放路由",
-            "语音播出去时多大声、和麦克风怎么混，以及要不要自己也听到一份。",
-        )
-        volume_label = QLabel("主音量:")
-        self._apply_compact_label(volume_label, width=58, bold=True)
-        volume_row = QHBoxLayout()
-        volume_row.setSpacing(8)
-        volume_row.addWidget(volume_label)
+        routing_card, routing_layout = SettingsCard.make("播放设置")
 
         self.volume_slider = QSlider(Qt.Horizontal)
         self.volume_slider.setAccessibleName("语音输出主音量")
         self.volume_slider.setRange(0, 200)
         self.volume_slider.setValue(int(config.voice_output_volume * 100))
-        self.volume_slider.setMinimumWidth(160)
         # ⭐⭐ RN-064（批 29）：量程是 0~200（支持放大到 200%），值 100 ⇒
         #   **手柄正好停在正中间**，而右边那个数字写着 100% ——
         #   外审 24 发（8 张图 × 3）**24/24 全部**答出「滑块位置约 50~75%，
@@ -628,14 +522,10 @@ class VoiceOutputPage(QWidget):
         #   那一批“我以为那一层就是那一层”的又一例）。
         #   ⭐ **判据不许去钉一个屏幕上不存在的属性。**
         self.volume_slider.valueChanged.connect(self._update_volume)
-        volume_row.addWidget(self.volume_slider, 1)
 
         self.volume_label = QLabel(format_percent(config.voice_output_volume, hi=2.0))
-        self.volume_label.setFont(QFont("Microsoft YaHei", 12, QFont.Bold))
         self.volume_label.setFixedWidth(60)
-        self.volume_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        volume_row.addWidget(self.volume_label)
-        routing_layout.addLayout(volume_row)
+        routing_layout.addWidget(plain_row("主音量", self.volume_slider, self.volume_label))
 
         # RN-064：把量程写出来。⚠ 这句话必须挨着滑块 ——
         # 矛盾发生在手柄那里，解释放到别处等于没放（批 27 那条「解释性文字放在
@@ -645,107 +535,50 @@ class VoiceOutputPage(QWidget):
         volume_scale_hint.setWordWrap(True)
         routing_layout.addWidget(volume_scale_hint)
 
-        route_options_row = QHBoxLayout()
-        route_options_row.setSpacing(8)
-        mode_label = QLabel("模式:")
-        self._apply_compact_label(mode_label, width=42)
-        route_options_row.addWidget(mode_label)
-
         self.play_mode_combo = QComboBox()
         self.play_mode_combo.setAccessibleName("语音播放模式")
         self.play_mode_combo.addItems(["覆盖", "混音", "自动"])
         self.play_mode_combo.setCurrentText(config.voice_output_mode if hasattr(config, 'voice_output_mode') else "覆盖")
-        self.play_mode_combo.setFont(QFont("Microsoft YaHei", 11))
-        self._apply_compact_combo(self.play_mode_combo, min_width=120, max_width=136, expanding=False)
         self.play_mode_combo.currentTextChanged.connect(self._update_play_mode)
-        route_options_row.addWidget(self.play_mode_combo)
 
-        self.also_local_check = QCheckBox("本地监听")
-        self.also_local_check.setFont(QFont("Microsoft YaHei", 11))
+        self.also_local_check = QCheckBox("本地监听（自己也听到）")
         self.also_local_check.setChecked(config.voice_output_also_local if hasattr(config, 'voice_output_also_local') else True)
         self.also_local_check.stateChanged.connect(self._update_also_local)
-        route_options_row.addWidget(self.also_local_check)
-        route_options_row.addStretch()
-        routing_layout.addLayout(route_options_row)
+        routing_layout.addWidget(plain_row("模式", self.play_mode_combo, self.also_local_check))
 
-        self.routing_summary_label = QLabel("")
-        self.routing_summary_label.setObjectName("hintLabel")
-        self.routing_summary_label.setWordWrap(True)
-        routing_layout.addWidget(self.routing_summary_label)
-        top_row.addWidget(routing_card, 5, Qt.AlignTop)
-        control_layout.addLayout(top_row)
+        # 「覆盖」这个词自己说不清（批 145 外审 S4）：三种差在哪，选之前就要知道
+        mode_hint = QLabel("覆盖：只发音频，麦克风不传。混音：音频和麦克风一起发。自动：平时传麦克风，放音频时只发音频。")
+        mode_hint.setObjectName("hintLabel")
+        mode_hint.setWordWrap(True)
+        routing_layout.addWidget(mode_hint)
 
-        device_card, device_layout = self._create_panel_card(
-            "输入设备与配置",
-            "选用哪个麦克风；换电脑或换设备时，整页设置可以导出再导入。",
-        )
-        mic_row = QHBoxLayout()
-        mic_row.setSpacing(8)
-        mic_label = QLabel("麦克风:")
-        self._apply_compact_label(mic_label, width=58)
-        mic_row.addWidget(mic_label)
         self.mic_combo = QComboBox()
         self.mic_combo.setAccessibleName("麦克风")
         self.mic_combo.addItem("默认")
-        self.mic_combo.setFont(QFont("Microsoft YaHei", 11))
-        self._apply_compact_combo(self.mic_combo, min_width=240, max_width=620)
         # UP-028: 连 currentIndexChanged 而不是 currentTextChanged——
         # 要存的是 itemData 里那个稳定 key，不是展示文案（重名设备的展示文案带序号）。
         self.mic_combo.currentIndexChanged.connect(
             lambda _i: self._update_microphone(self._current_microphone_key()))
-        mic_row.addWidget(self.mic_combo, 1)
-        device_layout.addLayout(mic_row)
+        # 设备名比别的下拉选项长：「CABLE Output (VB-Audio Virtual Cable)」
+        routing_layout.addWidget(plain_row("麦克风", self.mic_combo, width=360))
 
-        config_actions = QHBoxLayout()
-        config_actions.setSpacing(8)
         self.import_button = QPushButton("导入")
-        self._apply_compact_button(self.import_button, width=84)
+        self.import_button.setObjectName("secondaryButton")
         self.import_button.clicked.connect(self._import_config)
-        config_actions.addWidget(self.import_button)
 
         self.export_button = QPushButton("导出")
-        self._apply_compact_button(self.export_button, width=84)
+        self.export_button.setObjectName("secondaryButton")
         self.export_button.clicked.connect(self._export_config)
-        config_actions.addWidget(self.export_button)
-        config_actions.addStretch()
-        device_layout.addLayout(config_actions)
+        routing_layout.addWidget(plain_row("整页设置", self.import_button, self.export_button, width=None))
+        parent_layout.addWidget(routing_card)
 
-        self.config_summary_label = QLabel("")
-        self.config_summary_label.setObjectName("hintLabel")
-        self.config_summary_label.setWordWrap(True)
-        device_layout.addWidget(self.config_summary_label)
-        control_layout.addWidget(device_card)
-        self._refresh_control_panel_summary()
-        
-        parent_layout.addWidget(control_frame)
-    
     def _create_soundboard_tab(self, parent):
         """创建音板设置选项卡"""
         layout = QVBoxLayout(parent)
-        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setContentsMargins(0, 8, 0, 8)
         layout.setSpacing(8)
-        
-        tools_frame = QFrame()
-        self.soundboard_tools_frame = tools_frame
-        tools_frame.setObjectName("card")
-        tools_frame.setToolTip("这里集中管理音板槽位、PTT 开麦键和中断键。")
-        tools_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
-        tools_layout = QVBoxLayout(tools_frame)
-        tools_layout.setContentsMargins(12, 12, 12, 12)
-        tools_layout.setSpacing(8)
-        tools_layout.setSizeConstraint(QLayout.SetMinimumSize)
 
-        title_row = QHBoxLayout()
-        tools_title = QLabel("快捷控制")
-        tools_title.setObjectName("statusLabel")
-        title_row.addWidget(tools_title)
-        title_row.addStretch()
-        tools_layout.addLayout(title_row)
-
-        controls_grid = QGridLayout()
-        controls_grid.setHorizontalSpacing(12)
-        controls_grid.setVerticalSpacing(8)
-        controls_grid.setColumnStretch(5, 1)
+        card, card_layout = SettingsCard.make("音板")
 
         # ⛔ RN-416（批 31 撤除）：这里原来有第二颗「添加槽位」。
         #
@@ -757,33 +590,25 @@ class VoiceOutputPage(QWidget):
         # ⭐ 再加一层：默认状态下它在折线之下，**露出 0%**。
         #   一颗看不见、且看见了也不像能点的按钮，不能当这个动作的入口。
         # ⇒ 添加槽位归底栏那颗（批 30 已给它接上「点完把新那一行滚进视口」）。
-        stop_label = QLabel("中断键:")
-        self._apply_compact_label(stop_label, width=56)
-        controls_grid.addWidget(stop_label, 0, 0)
-
         self.stop_key_button = QPushButton(config.voice_output_stop_key or "未设置")
-        self._apply_compact_button(self.stop_key_button, width=100)
+        self.stop_key_button.setObjectName("secondaryButton")
         self.stop_key_button.clicked.connect(self._set_stop_key)
-        controls_grid.addWidget(self.stop_key_button, 0, 1)
-
-        ptt_label = QLabel("开麦键:")
-        self._apply_compact_label(ptt_label, width=56)
-        controls_grid.addWidget(ptt_label, 0, 2)
 
         self.ptt_key_button = QPushButton(self.ptt_key)
-        self._apply_compact_button(self.ptt_key_button, width=100)
+        self.ptt_key_button.setObjectName("secondaryButton")
         self.ptt_key_button.clicked.connect(self._set_ptt_key)
-        controls_grid.addWidget(self.ptt_key_button, 0, 3)
 
-        self.ptt_enabled_check = QCheckBox("启用PTT")
-        self.ptt_enabled_check.setFont(QFont("Microsoft YaHei", 11))
+        self.ptt_enabled_check = QCheckBox("播放时自动按开麦键（PTT）")
         self.ptt_enabled_check.setChecked(self.ptt_enabled)
         self.ptt_enabled_check.stateChanged.connect(self._update_ptt_enabled)
-        controls_grid.addWidget(self.ptt_enabled_check, 0, 4)
+        card_layout.addWidget(plain_row(
+            "中断键", self.stop_key_button,
+            QLabel("开麦键"), self.ptt_key_button, self.ptt_enabled_check, width=None))
+        ptt_hint = QLabel("开麦键要和游戏里的语音键一样。不勾自动按，放音频时要自己按住，队友才听得到。")
+        ptt_hint.setObjectName("hintLabel")
+        ptt_hint.setWordWrap(True)
+        card_layout.addWidget(ptt_hint)
 
-        tools_layout.addLayout(controls_grid)
-        layout.addWidget(tools_frame)
-        
         # 槽位列表区域（可滚动）
         # RN-177：这里的内层滚动是**对的** —— 槽位数由用户决定（初始 5、上限 50），
         # 那是一份列表控件，不是被高度上限钉死的固定内容。排版审计第 5 条判据
@@ -792,15 +617,12 @@ class VoiceOutputPage(QWidget):
         # ⭐ 一行说清每一列是干什么的（外审 2 发判高：「连续多个无标签按钮
         #   （未设置/未选择/选择），玩家不知道哪里是设快捷键、哪里是选音效」），
         #   同时把槽位滑块的量程也在这里交代掉（RN-064 的另外 5 颗）。
-        # ⛔ 不做真正的列标题行：那要和每一列的宽度对齐，而这一页的按钮宽度
-        #   （`_apply_compact_button(width=...)`）**是一句死声明** —— 样式层
-        #   只抬 min 不动 max，实际渲染出来比声明的宽（RN-442）。
-        #   照声明的宽度去排一行表头，排出来必然对不齐。
+        # ⛔ 不做真正的列标题行：那要和每一列的宽度对齐，而这些按钮的宽度跟着文字走（RN-442）。
         slot_legend = QLabel(
             "每一行：编号 · 快捷键 · 音频文件 · 试听 · 音量（中点 100%，最高 200%） · 删除")
         slot_legend.setObjectName("hintLabel")
         slot_legend.setWordWrap(True)
-        layout.addWidget(slot_legend)
+        card_layout.addWidget(slot_legend)
 
         scroll = QScrollArea()
         scroll.setObjectName("voiceSlotList")
@@ -809,42 +631,41 @@ class VoiceOutputPage(QWidget):
 
         self.slots_widget = QWidget()
         self.slots_layout = QVBoxLayout(self.slots_widget)
-        self.slots_layout.setSpacing(10)
-        self.slots_layout.setContentsMargins(4, 4, 4, 4)
-        
+        self.slots_layout.setSpacing(8)
+        # 右边留给滚动条，不然它压在「删除」上
+        self.slots_layout.setContentsMargins(0, 0, 8, 0)
+        # 行数少的时候别把行高摊开
+        self.slots_layout.addStretch(1)
+
         scroll.setWidget(self.slots_widget)
-        layout.addWidget(scroll)
-        
+        card_layout.addWidget(scroll)
+        layout.addWidget(card)
+
         # 初始化槽位
         self._initialize_slots()
-    
+
     def _create_sfx_forward_tab(self, parent):
         """创建音效转发选项卡"""
         layout = QVBoxLayout(parent)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(10)
-        
-        # 功能说明
-        info_label = QLabel("将游戏内的音效（击杀音效、枪声等）转发到游戏语音，让队友也能听到！")
-        info_label.setWordWrap(True)
-        info_label.setFont(QFont("Microsoft YaHei", 11))
-        layout.addWidget(info_label)
-        
+        layout.setContentsMargins(0, 8, 0, 8)
+        layout.setSpacing(8)
+
+        card, card_layout = SettingsCard.make()
+
         # 主开关
         self.sfx_forwarding_check = QCheckBox("启用音效转发")
-        self.sfx_forwarding_check.setFont(QFont("Microsoft YaHei", 13, QFont.Bold))
-        
+
         # 获取配置值
         initial_enabled = config.sfx_forwarding_enabled if hasattr(config, 'sfx_forwarding_enabled') else False
         self.logger.info(f"[音效转发初始化] config中的值: {initial_enabled}")
-        
+
         # 设置复选框状态（在连接信号之前）
         self.sfx_forwarding_check.setChecked(initial_enabled)
         self.logger.info(f"[音效转发初始化] 复选框已设置为: {self.sfx_forwarding_check.isChecked()}")
-        
+
         # 连接信号
         self.sfx_forwarding_check.stateChanged.connect(self._update_sfx_forwarding)
-        layout.addWidget(self.sfx_forwarding_check)
+        card_layout.addWidget(self.sfx_forwarding_check)
 
         # ⭐⭐ RN-663：转发要**三件事**同时成立（这个开关 + 「语音播放」总开关 + VB-Cable），
         #   缺后两者时是在 `voice_output_manager` 里 return False 掉的，只留一行 debug。
@@ -852,16 +673,16 @@ class VoiceOutputPage(QWidget):
         self.sfx_forwarding_requirement_label = QLabel()
         self.sfx_forwarding_requirement_label.setObjectName("hintLabel")
         self.sfx_forwarding_requirement_label.setWordWrap(True)
-        self.sfx_forwarding_requirement_label.setFont(QFont("Microsoft YaHei", 10))
-        layout.addWidget(self.sfx_forwarding_requirement_label)
+        card_layout.addWidget(self.sfx_forwarding_requirement_label)
         self._refresh_sfx_forwarding_requirements()
-        
+
         # 音效选项
-        options_group = QGroupBox("音效选项")
-        options_group.setFont(QFont("Microsoft YaHei", 12, QFont.Bold))
-        options_layout = QGridLayout(options_group)
-        options_layout.setSpacing(10)
-        
+        options_layout = QGridLayout()
+        options_layout.setContentsMargins(0, 0, 0, 0)
+        options_layout.setHorizontalSpacing(16)
+        options_layout.setVerticalSpacing(8)
+        options_layout.setColumnStretch(4, 1)
+
         # 音效选项列表
         sfx_options = [
             ("kill_sound", "击杀音效"),
@@ -874,57 +695,34 @@ class VoiceOutputPage(QWidget):
             ("round_sound", "回合音效")
         ]
         self.sfx_option_keys = [key for key, _label in sfx_options]
-        
+
         self.sfx_option_checks = {}
-        
+
         # 获取当前配置
         sfx_config = config.sfx_forwarding_options if hasattr(config, 'sfx_forwarding_options') else {}
-        
+
         for i, (key, label) in enumerate(sfx_options):
             check = QCheckBox(label)
-            check.setFont(QFont("Microsoft YaHei", 11))
             check.setChecked(sfx_config.get(key, True))
             # 修复：正确处理 Qt.CheckState 枚举
             check.stateChanged.connect(lambda state, k=key: self._update_sfx_option(k, (state == Qt.CheckState.Checked) or (int(state) == 2)))
             self.sfx_option_checks[key] = check
-            
-            row = i // 2
-            col = i % 2
+
+            row = i // 4
+            col = i % 4
             options_layout.addWidget(check, row, col)
-        
-        layout.addWidget(options_group)
-        
+
+        card_layout.addLayout(options_layout)
+
         # 提示信息
         warning_label = QLabel(SFX_FORWARD_MODE_NOTE)
+        warning_label.setObjectName("hintLabel")
         warning_label.setWordWrap(True)
-        warning_label.setFont(QFont("Microsoft YaHei", 10))
-        layout.addWidget(warning_label)
-        
+        card_layout.addWidget(warning_label)
+
+        layout.addWidget(card)
         layout.addStretch()
-    
-    def _create_status_bar(self, parent_layout):
-        """创建底部状态栏"""
-        status_frame = QFrame()
-        status_frame.setObjectName("card")
-        status_layout = QHBoxLayout(status_frame)
-        status_layout.setContentsMargins(10, 5, 10, 5)
-        
-        # ⭐⭐ RN-107 族（批 29）：这一格原来建出来就是字面量「就绪」，
-        # 只有发生过某个操作才会被改写 —— 于是全新用户的那一屏上，
-        # 徽章写着「驱动 · 待安装」、卡片写着「⚡ VB-Cable 未安装」，
-        # 而这里和底栏写着「最近状态：就绪」。外审多发判**高**。
-        # ⭐ **「就绪」是一个初始占位符，而它长得像一个判断结果。**
-        # ⭐⭐ 「最近状态」这个词同时能读成「最近一次操作的结果」和
-        #   「现在是否就绪」—— 而它只实现了前者，初值又恰好是一个
-        #   听起来像后者的词（同 RN-428 那族）。
-        self.status_label = QLabel("还没有操作")
-        self.status_label.setFont(QFont("Microsoft YaHei", 10))
-        status_layout.addWidget(self.status_label)
-        
-        status_layout.addStretch()
-        
-        parent_layout.addWidget(status_frame)
-    
+
     def _initialize_slots(self):
         """初始化音板槽位"""
         # 加载配置中的槽位
@@ -953,44 +751,41 @@ class VoiceOutputPage(QWidget):
         
         # 创建槽位框架
         slot_frame = QFrame()
-        slot_frame.setObjectName("card")
         slot_layout = QHBoxLayout(slot_frame)
-        slot_layout.setContentsMargins(12, 10, 12, 10)
+        slot_layout.setContentsMargins(0, 0, 0, 0)
         slot_layout.setSpacing(8)
-        
+
         # 槽位编号
         id_label = QLabel(f"#{slot_id + 1}")
-        id_label.setFont(QFont("Microsoft YaHei", 12, QFont.Bold))
-        id_label.setFixedWidth(40)
+        id_label.setFixedWidth(32)
         slot_layout.addWidget(id_label)
-        
+
         # 快捷键按钮
         key_button = QPushButton("未设置")
-        self._apply_compact_button(key_button, width=100, height=32)
+        key_button.setObjectName("secondaryButton")
         key_button.clicked.connect(lambda: self._set_slot_hotkey(slot_id))
         slot_layout.addWidget(key_button)
-        
+
         # 音频文件路径
         audio_label = QLabel("未选择")
-        audio_label.setFont(QFont("Microsoft YaHei", 10))
         audio_label.setWordWrap(False)
         audio_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         audio_label.setToolTip("未选择")
         slot_layout.addWidget(audio_label, 1)
-        
+
         # 选择文件按钮
         browse_button = QPushButton("选择")
-        self._apply_compact_button(browse_button, width=84, height=32)
+        browse_button.setObjectName("secondaryButton")
         browse_button.clicked.connect(lambda: self._browse_audio(slot_id))
         slot_layout.addWidget(browse_button)
-        
+
         # 预览按钮
         preview_button = QPushButton("试听")
-        self._apply_compact_button(preview_button, width=72, height=32)
+        preview_button.setObjectName("secondaryButton")
         preview_button.setEnabled(False)
         preview_button.clicked.connect(lambda: self._preview_audio(slot_id))
         slot_layout.addWidget(preview_button)
-        
+
         # 音量滑块
         volume_slider = QSlider(Qt.Horizontal)
         volume_slider.setAccessibleName(f"音板槽位 {slot_id + 1} 音量")
@@ -1001,24 +796,22 @@ class VoiceOutputPage(QWidget):
         # （刻度在这套 QSS 下不画，见主音量那处的实测。）
         volume_slider.valueChanged.connect(lambda v: self._update_slot_volume(slot_id, v))
         slot_layout.addWidget(volume_slider)
-        
+
         volume_label = QLabel("100%")
-        volume_label.setFont(QFont("Microsoft YaHei", 10))
         volume_label.setFixedWidth(45)
         slot_layout.addWidget(volume_label)
-        
+
         # 删除按钮
         delete_button = QPushButton("删除")
         # R7/D-06: 一次性抹掉「音频文件路径 + 全局热键绑定 + 音量 + 名称」并立即
         # _save_config()，无 undo、无快照；重建要重新选文件再重新录热键。
-        self._apply_compact_button(delete_button, width=72, height=32)
         style_as_danger_button(delete_button)
         delete_button.clicked.connect(lambda: self._delete_slot(slot_id))
         slot_layout.addWidget(delete_button)
         self._slot_delete_buttons[slot_id] = delete_button
-        
+
         # 添加到布局
-        self.slots_layout.addWidget(slot_frame)
+        self.slots_layout.insertWidget(self.slots_layout.count() - 1, slot_frame)
         
         # 存储槽位UI元素
         self.soundboard_slots[slot_id] = {
@@ -1214,8 +1007,8 @@ class VoiceOutputPage(QWidget):
     def _toast_playback_failure(self, reason: str):
         """播不出去时弹一条浮层提示（主线程）。
 
-        ⛔ 不能只写 status_label —— 它在滚动区折叠线以下，用户按下快捷键时
-           眼睛根本不在那儿（多半还在游戏里）。断点 `--only VOX` 第 7 条。
+        ⛔ 不能只写底栏那句话 —— 用户按下快捷键时眼睛根本不在这个窗口上
+           （多半还在游戏里）。断点 `--only VOX` 第 7 条。
         """
         try:
             from ui_toast import toast_error
@@ -1271,16 +1064,14 @@ class VoiceOutputPage(QWidget):
                 # 试听正是用户用来判断"驱动装好没有"的那个动作，它撒谎的代价最大。
                 if not ok:
                     reason = self._playback_refusal_reason(slot["audio"])
-                    self.status_label.setText(f"✗ 试听没出声：{reason}")
+                    self._set_status_text(f"✗ 试听没出声：{reason}")
                     self._toast_playback_failure(reason)    # 本方法在主线程，直接弹
-                    self._sync_overview_status()
                     self.logger.warning(f"预览槽位 #{slot_id + 1} 未能播放：{reason}")
                     QTimer.singleShot(8000, self._clear_status)
                     return
 
                 # 更新状态
-                self.status_label.setText(f"🔊 预览: {slot['name']}")
-                self._sync_overview_status()
+                self._set_status_text(f"🔊 预览: {slot['name']}")
                 self.logger.info(f"预览成功: {slot['name']}, 音量: {format_percent(final_volume, hi=2.0)}")
                 
                 # 播放结束后自动清除状态
@@ -1288,9 +1079,8 @@ class VoiceOutputPage(QWidget):
                     clear_time = int((duration + 0.5) * 1000)  # 添加0.5秒缓冲
                     QTimer.singleShot(clear_time, self._clear_status)
             except Exception as e:
-                self.status_label.setText(f"✗ 预览失败: {str(e)}")
+                self._set_status_text(f"✗ 预览失败: {str(e)}")
                 self._toast_playback_failure(str(e))
-                self._sync_overview_status()
                 self.logger.error(f"预览音频失败: {e}")
                 # 3秒后清除错误状态
                 QTimer.singleShot(3000, self._clear_status)
@@ -1919,14 +1709,12 @@ class VoiceOutputPage(QWidget):
         success = self.voice_manager.start_microphone_passthrough(selected_mic)
         
         if success:
-            self.status_label.setText(f"✓ 麦克风穿透已启动: {selected_mic}")
-            self._sync_overview_status()
+            self._set_status_text(f"✓ 麦克风穿透已启动: {selected_mic}")
             self.logger.info(f"麦克风穿透启动成功: {selected_mic}")
             # 3秒后清除状态
             QTimer.singleShot(3000, self._clear_status)
         else:
-            self.status_label.setText("✗ 麦克风穿透启动失败")
-            self._sync_overview_status()
+            self._set_status_text("✗ 麦克风穿透启动失败")
             self.logger.error("麦克风穿透启动失败")
     
     def _check_vb_cable_status(self):
@@ -2197,9 +1985,9 @@ class VoiceOutputPage(QWidget):
             bar = getattr(self, "action_bar", None)
             if bar is not None and hasattr(bar, "set_message"):
                 if failures:
-                    bar.set_message(f"有 {len(failures)} 个快捷键注册失败，可能被其他程序占用。")
+                    bar.set_message(f"有 {len(failures)} 个快捷键注册失败，可能被其他程序占用。", important=True)
                 elif conflicts:
-                    bar.set_message(f"有 {len(conflicts)} 个快捷键与其他功能重复，按下会同时触发。")
+                    bar.set_message(f"有 {len(conflicts)} 个快捷键与其他功能重复，按下会同时触发。", important=True)
                 elif ok_count:
                     bar.set_message(f"音板快捷键已就绪（{ok_count} 个）。")
         except Exception:
@@ -2260,13 +2048,12 @@ class VoiceOutputPage(QWidget):
                 self._status_clear_signal.emit(3000)
     
     def _clear_status(self):
-        """清除状态标签"""
-        self.status_label.setText("还没有操作")
-        self._sync_overview_status()
+        """清除状态"""
+        self._set_status_text(NO_OPERATION_TEXT)
 
     def _set_status_text(self, text):
         """线程安全的状态文本设置（由信号调用，在主线程执行）"""
-        self.status_label.setText(text)
+        self._runtime_text = text
         self._sync_overview_status()
     
     def _stop_playback(self):

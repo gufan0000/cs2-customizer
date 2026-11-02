@@ -235,7 +235,7 @@ def test_apply_to_all_really_applies_a_style_that_has_several_samples(qapp, monk
     try:
         page._refresh_style_catalog()
         qapp.processEvents()
-        combo = page.weapon_rows[guns[0]]["style_combo"]
+        combo = page.weapon_rows[guns[0]].style_combo
         label = combo.itemText(combo.findData(style))
         assert "2 个取样" in label, f"夹具没造出多取样的下拉项（{label!r}）—— 这条判据没了前提"
 
@@ -349,7 +349,7 @@ def test_turning_dynamic_hud_off_puts_the_default_color_back(monkeypatch, tmp_pa
     fake = types.SimpleNamespace(
         config=config, gsi_handlers={"hud_color": handler},
         logger=types.SimpleNamespace(info=lambda *a, **k: None, exception=lambda *a, **k: None),
-        _sync_master_switch_rows=lambda *_: 0, sender=lambda: None,
+        _sync_master_switch_rows=lambda *_: 0, _sync_feature_cards=lambda: None, sender=lambda: None,
         _flash_card_border=lambda *_: None,
     )
     gui_widget.MainWindow._on_switch_changed(fake, "hud_rules_enabled", False)

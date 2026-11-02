@@ -14,12 +14,6 @@
 ⭐ **折行往往不是"空间不够"的结果，是"我说我能折行"的结果。**
 所以它躲得过一切"有没有溢出/有没有截断"的判据 —— 那些判据眼里它一切正常。
 
-## 不算数的那一类
-
-`QLabel#hintLabel` 有 `max-width: {hint_max_width}px`（UP-053，实测 2200px 窗口下
-单行提示会拉到 1936px，远超舒适行长）。**撞到那个上限而折行是设计意图**，不是缺陷。
-所以判定要减掉这一类：只报"既没撞上限、同一格里又还有空"的。
-
 ## ⚠ RN-505（2026-09-05 批 51）：它从上线那天起就是红的
 
 上线时报的 2 条（`kill_icon` / `screen_effects`）**都是假的** ——
@@ -50,7 +44,7 @@ FULL_SIZE = (1280, 800)
 COMPACT_SIZE = (860, 640)
 
 
-def _squeezed_labels(container, page_id: str, hint_cap: int) -> tuple[list[dict], int]:
+def _squeezed_labels(container, page_id: str) -> tuple[list[dict], int]:
     """在一个容器（页面或对话框）里找被挤到折行的标签。返回 (命中, 进了判定的标签数)。
 
     ⭐ RN-672 抽出来的：对话框那一段要跑**一模一样**的判定。
@@ -76,8 +70,6 @@ def _squeezed_labels(container, page_id: str, hint_cap: int) -> tuple[list[dict]
             continue
         need = lb.fontMetrics().horizontalAdvance(text)
         if need <= lb.width():
-            continue
-        if lb.width() >= hint_cap - 1:
             continue
         if declared_own_width(lb):
             continue
@@ -117,7 +109,7 @@ def audit(compact: bool, expert: bool, scale: float) -> tuple[list[dict], list[t
 
     sandbox_external_writes()
     from config import config
-    from ui_design_system import apply_font_scale, get_design_system
+    from ui_design_system import apply_font_scale
 
     _ui_mode.apply(config, expert)
     config.compact_mode = bool(compact)
@@ -134,7 +126,6 @@ def audit(compact: bool, expert: bool, scale: float) -> tuple[list[dict], list[t
     apply_font_scale(scale)
     app.processEvents()
 
-    hint_cap = get_design_system().container.hint_max_width
     pages = [p for p in win._page_names if p not in unsafe_pages()]
     neutralize_apply(config, pages)
 
@@ -148,7 +139,7 @@ def audit(compact: bool, expert: bool, scale: float) -> tuple[list[dict], list[t
             continue
         # 判定整段搬去 `_squeezed_labels`（RN-672：对话框要跑一模一样的那一份）。
         # UP-053 的 hint 限宽豁免、RN-505 的「量它所在那一格」都在那里面。
-        hits, _seen = _squeezed_labels(page, pid, hint_cap)
+        hits, _seen = _squeezed_labels(page, pid)
         found += hits
 
     # —— RN-672：对话框。`dialogs/` 下 8 个 QDialog 此前不在任何审计的遍历里 ——
@@ -163,7 +154,7 @@ def audit(compact: bool, expert: bool, scale: float) -> tuple[list[dict], list[t
             dialog_failed.append((spec.key, err))
             continue
         try:
-            hits, seen = _squeezed_labels(dlg, f"对话框:{spec.key}", hint_cap)
+            hits, seen = _squeezed_labels(dlg, f"对话框:{spec.key}")
             found += hits
             dialog_labels += seen
         finally:

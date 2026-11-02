@@ -17,6 +17,9 @@
   这类**这一屏上别处看不到**的事。
 
 ⇒ 规则：**状态卡值它那 68~251px，条件是它至少报一件这一屏别处看不到的事。**
+批 145（RN-734）：这张「卡」变成了一条没有框的状态条，只在有问题时才占地方；
+徽章还是每页都算，这里读的是算出来的那一份。
+
 这条判据只钉得住其中机械可查的那一半（有没有胶囊），另一半靠人在撤之前回答。
 """
 from __future__ import annotations
@@ -33,7 +36,8 @@ if str(REPO / "scripts") not in sys.path:
 
 #: 唯一一页**故意**没有状态卡的。要往里加名字，先回答 RN-496 那个问题：
 #: 「这一页的状态卡报的事，这一屏上别处看得到吗？」
-DELIBERATELY_WITHOUT = {"preset_center"}
+#: 批 148：`basic` 第一行换成了就绪状态条，它说的就是这张卡说的那几件事，判据在 `test_home_overview`。
+DELIBERATELY_WITHOUT = {"preset_center", "basic"}
 
 
 @pytest.fixture(scope="module")
@@ -68,11 +72,10 @@ def window(qapp):
 
 
 def _chips_on(page) -> list[str]:
-    from PySide6.QtWidgets import QLabel
+    from pages.audio_status_badge import AudioStatusBadgeBar
 
-    return [w.text().strip() for w in page.findChildren(QLabel)
-            if w.objectName() == "audioStatusChip" and w.isVisibleTo(page)
-            and w.text().strip()]
+    return [text.strip() for bar in page.findChildren(AudioStatusBadgeBar)
+            for text in bar.badge_texts() if text.strip()]
 
 
 def _pages(win):

@@ -98,15 +98,8 @@ def test_the_fixture_really_produces_stale_entries(page):
 
 
 def _visible_chips(page):
-    """徽章条上**当前真正显示着**的那几颗芯片。
-
-    `AudioStatusBadgeBar` 用的是芯片复用池，隐藏的那些还留着上一次渲染的旧文字，
-    不排掉就会读到过期内容。
-    """
-    from PySide6.QtWidgets import QLabel
-
-    return [chip for chip in page.status_badge_label.findChildren(QLabel)
-            if not chip.isHidden()]
+    """这一页算出来的全部徽章文字（屏幕上只显示其中的问题，RN-734）。"""
+    return page.status_badge_label.badge_texts()
 
 
 def _badge_configured_number(page) -> int:
@@ -119,7 +112,7 @@ def _badge_configured_number(page) -> int:
     """
     import re
 
-    text = " ".join(chip.text() for chip in _visible_chips(page))
+    text = " ".join(_visible_chips(page))
     m = re.search(r"已配置\s*·\s*(\d+)", text)
     assert m, f"徽章里找不到「已配置 · N」，判据失效了。实际文字：\n{text}"
     return int(m.group(1))
@@ -151,8 +144,7 @@ def test_stale_styles_are_named_not_silently_counted_as_configured(page):
     page._refresh_status_badge()
 
     # ① 徽章上要看得见「N 项失效」
-    badge = " ".join(
-        chip.text() for chip in _visible_chips(page))
+    badge = " ".join( _visible_chips(page))
     assert "失效" in badge, f"徽章上没提失效项。实际：{badge}"
     assert "2" in badge, "没说清有几项失效"
 
@@ -164,24 +156,6 @@ def test_stale_styles_are_named_not_silently_counted_as_configured(page):
         f"可见的提示行里没说失效这件事，用户看到两个红黄警告却不知道怎么办。"
         f"实际：{visible_hint}")
     assert "重新选" in visible_hint, f"没告诉用户怎么修。实际：{visible_hint}"
-
-
-# ------------------------------------------------------------ RN-028
-
-def test_category_lookup_survives_a_renamed_tab(page):
-    """分类名按下标取，不拿页签**文字**当字典键。
-
-    页签文案哪天加个计数后缀（「手枪 10/10」这类），拿文字查表会静默返回 `[]`，
-    分类徽章变成 `0/0` 而不报错。与 kill_voice 的 RN-020 同形。
-    """
-    page.tab_widget.setCurrentIndex(0)
-    original = page._get_current_category_name()
-    assert original in page.CATEGORIES
-
-    page.tab_widget.setTabText(0, f"{original} 10/10")
-    assert page._get_current_category_name() == original, (
-        "页签文案一加后缀，分类就查不到了 —— 说明还在拿显示文字当数据键")
-    assert page._get_current_category_weapons(), "分类武器列表退化成空了"
 
 
 # ------------------------------------------------------------ RN-029

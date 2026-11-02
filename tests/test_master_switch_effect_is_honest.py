@@ -36,6 +36,9 @@
 4. **属性有人消费**（QSS 里没有对应选择器的话，`masterOff` 就是个空转属性——
    判据全绿而屏幕上一个像素都没变）；
 5. **扫描器自己没瞎**（本会话已经有两次「判据只扫到 22/28 页还报绿」）。
+
+批 145（RN-734）删了「胶囊组标题」和「胶囊关着时降权」三条：状态条现在只报问题，
+问题不因为开关关着就不是问题，颜色不再跟开关走；那个标题连同它要纠正的误读一起没了。
 """
 from __future__ import annotations
 
@@ -73,8 +76,7 @@ from test_master_switch_row import EXPECTED_KEYS       # noqa: E402
 #: ⛔ 由 `test_the_furniture_exemptions_do_not_rot` 双向盯着：
 #:   哪天这一页长出了底栏/胶囊组，这张表必须当场变红 —— **这正是 RN-538 的教训**。
 NO_SITEWIDE_FURNITURE = {
-    # ⚠ 批 59 已补上胶囊组标题（RN-540）⇒ 只剩底栏这一条，
-    #   而那一条是**批 34 裁定过的「有意不加」**（RN-464），不是缺口。
+    # 那一条是**批 34 裁定过的「有意不加」**（RN-464），不是缺口。
     "fun_afterlife": ("action_bar",),
 }
 
@@ -100,8 +102,6 @@ def test_the_furniture_exemptions_do_not_rot(main_window, qapp):
         page = _open(main_window, qapp, page_id)
         if "action_bar" in missing and getattr(page, "action_bar", None) is not None:
             stale.append(f"{page_id} 已经有底栏了")
-        if "status_strip_title" in missing and eff.status_strip_title(page) is not None:
-            stale.append(f"{page_id} 已经有状态胶囊组标题了")
     assert not stale, (
         "这几条豁免的理由已经不成立了，而豁免还留着：\n  " + "\n  ".join(stale)
         + "\n⇒ 从 `NO_SITEWIDE_FURNITURE` 里删掉，让它去吃那两条判据。")
@@ -159,7 +159,7 @@ def test_the_off_copy_says_the_consequence_not_the_direction():
     """
     for text in (eff.NOTICE_OFF_TEXT, eff.ACTION_BAR_OFF_TEXT, eff.PREVIEW_OFF_TEXT):
         assert "游戏里" in text, f"没说后果落在哪儿：{text}"
-        for direction in ("右上角", "左上角", "下面那张", "页面底部", "基础设置"):
+        for direction in ("右上角", "左上角", "下面那张", "页面底部", "基础设置", "总览"):
             assert direction not in text, (
                 f"这句在指路而不是说后果：{text}（出现了「{direction}」）\n"
                 "⭐ 需要用文字指路的控件，就是放错了地方。")
@@ -169,17 +169,18 @@ def test_the_off_copy_promises_the_controls_still_work():
     """⚠ RN-179：**降权不是禁用。**
 
     那一轮实测过「188 个控件可点却没反应」。这一次要的是
-    「**可调，但明说不生效**」—— 所以这句话必须**自己说出**「还能调、还会存」。
+    「**可调，但明说不生效**」—— 所以这句话必须**自己说出**「还能调、现在还不生效」。
+    批 146：「先调好、打开后才生效」本身就说了调的东西留得住。
     """
     text = eff.NOTICE_OFF_TEXT
-    assert "保存" in text, f"没说「改了还会存下来」：{text}"
-    assert "不生效" in text, (
+    assert "调好" in text or "保存" in text, f"没说「改了还会留着」：{text}"
+    assert "不生效" in text or "才在游戏里生效" in text, (
         f"没说「现在不生效」：{text}\n"
-        "⭐ 这三个字是唯一对听觉/视觉/行为都成立的说法，见下面那条判据。")
+        "⭐「生效」是唯一对听觉/视觉/行为都成立的说法，见下面那条判据。")
     assert len(text) <= 24, (
         f"这句话有 {len(text)} 个字，塞不进开关行剩下的那段横向空间：{text}\n"
         "⭐ 它必须**在同一行上**说完 —— 换行就要长高，而紧凑档没有那 20px。")
-    assert any(w in text for w in ("照常", "可以调", "照调")), (
+    assert any(w in text for w in ("照常", "可以调", "可以先调", "照调")), (
         f"没说「现在仍然可以调」：{text}\n"
         "不说的话它读起来就是「这一片废了」，那正是 RN-179 那条缺陷。")
 
@@ -304,6 +305,22 @@ def test_the_receipt_survives_the_page_writing_a_new_message(qapp):
         bar.set_message(text)
         assert eff.ACTION_BAR_OFF_TEXT in bar.message_label.text(), (
             f"页面写了一次「{text}」就把回执冲掉了")
+    page.deleteLater()
+
+
+def test_an_important_message_drops_the_receipt_only_while_on(qapp):
+    """批 145：开着时真要读的话前面不带回执，一眼读到正事。
+
+    ⚠ 关着时得带：「点保存才写入」前面没有这一句，就读成了点完就生效（RN-407）。
+    """
+    page, bar = _bar_on_a_fake_page(True)
+    bar.set_message("试听失败", important=True)
+    assert bar.message_label.text() == "试听失败"
+
+    page.master_switch_row.checked = False
+    bar.refresh_effect_state()
+    assert eff.ACTION_BAR_OFF_TEXT in bar.message_label.text()
+    assert "试听失败" in bar.message_label.text()
     page.deleteLater()
 
 
@@ -663,7 +680,9 @@ def test_the_notice_only_exists_while_the_switch_is_off(main_window, qapp, page_
     notice = page.master_switch_row.effect_notice
     _set_switch(page, qapp, False)
     assert notice.isVisibleTo(page), f"{page_id}：关着却没有那句话"
-    assert eff.NOTICE_OFF_TEXT in notice.text()
+    # 关着时控件真禁用的页不能说「可以先调好」，那几页自己说（批 150）
+    if page_id not in DISABLED_BY_THE_PAGE_ITSELF:
+        assert eff.NOTICE_OFF_TEXT in notice.text()
     _set_switch(page, qapp, True)
     assert not notice.isVisibleTo(page), f"{page_id}：开着还挂着「现在看不到」"
 
@@ -813,9 +832,12 @@ def test_the_neutral_colour_is_still_a_legal_ui_colour(theme_name):
     assert contrast_ratio(idle, c.bg_card) >= 3.0, (
         f"{theme_name}：降权后的控件只有 {contrast_ratio(idle, c.bg_card):.2f}:1，"
         "看不见了 —— 那不是降权，是消失。")
-    idle_text = ensure_contrast(theme._on_color(idle), (idle,), AA_NORMAL)
-    assert contrast_ratio(idle_text, idle) >= AA_NORMAL
-    assert idle_text in _stylesheet_for(theme_name), (
+    # 批 146：主按钮降权后是实底 + 次级字，不再用中性色铺满一块
+    dim_text = ensure_contrast(c.text_secondary, (c.bg_elevated,), AA_NORMAL)
+    assert contrast_ratio(dim_text, c.bg_elevated) >= AA_NORMAL
+    rule = _stylesheet_for(theme_name).split(
+        f'QFrame#card[{eff.CARD_DIM_PROPERTY}="true"] QPushButton#primaryButton {{', 1)[1].split("}", 1)[0]
+    assert f"color: {dim_text}" in rule, (
         f"{theme_name}：主按钮降权后的字色没走 ensure_contrast，"
         "等于绕开了对比度守卫")
 
@@ -850,29 +872,6 @@ def test_nothing_that_means_standing_by_is_painted_in_a_lit_up_colour(theme_name
     bg = theme._blend_hex(c.text_tertiary, 30, c.bg_card)
     ratio = contrast_ratio(c.text_secondary, bg)
     assert ratio >= AA_NORMAL, f"{theme_name}：那句话只有 {ratio:.2f}:1"
-
-
-@pytest.mark.parametrize("theme_name", _themed_names())
-def test_the_status_chips_stop_looking_like_running_indicators(theme_name):
-    """⭐ 那排状态胶囊在关着时读起来像「当前正在运行的配置清单」。
-
-    外审 43 发里 **16 发**把那颗**橙色**的「未启用」读成了「运行中/已激活」
-    的高亮指示灯 —— 深色底上的橙色对 CS2 玩家就是「点亮了」。
-    ⭐ **按警示色着色而不按状态着色，颜色照样不携带信息。**
-    """
-    qss = _stylesheet_for(theme_name)
-    assert (f'QFrame#card[{eff.HOST_DIM_PROPERTY}="true"] QLabel#audioStatusChip'
-            in qss), f"{theme_name}：状态胶囊组没有降权规则"
-
-
-@pytest.mark.parametrize("page_id", sorted(EXPECTED_KEYS))
-def test_the_status_chips_follow_the_switch(main_window, qapp, page_id):
-    page = _open(main_window, qapp, page_id)
-    host = eff.status_card_of(page)
-    _set_switch(page, qapp, False)
-    assert host.property(eff.HOST_DIM_PROPERTY), f"{page_id}：关着，胶囊组没降权"
-    _set_switch(page, qapp, True)
-    assert not host.property(eff.HOST_DIM_PROPERTY), f"{page_id}：开着还降着权"
 
 
 @pytest.mark.parametrize("theme_name", _themed_names())
@@ -994,14 +993,14 @@ def test_the_notice_leads_with_what_he_can_do_now():
     """
     text = eff.NOTICE_OFF_TEXT
     head = text[:6]
-    assert any(w in head for w in ("可以调", "现在可以", "照常")), (
+    assert any(w in head for w in ("可以调", "可以先调", "现在可以", "照常")), (
         f"这句话的前 6 个字里没有「你现在能干什么」：{text}\n"
         "⭐ 读的人在读到分号之前就走了 —— 而这一句的职责正是那半截。")
-    assert "不生效" in text, (
-        f"把「不生效」丢了：{text}\n"
+    assert "不生效" in text or "才在游戏里生效" in text, (
+        f"把「现在还不生效」丢了：{text}\n"
         "⚠ 语序换了，内容一个字都不许少 —— 那是 RN-407 那条轴。")
-    negation = text.index("不生效")
-    affordance = min(text.index(w) for w in ("可以调", "照常") if w in text)
+    negation = text.index("生效")
+    affordance = min(text.index(w) for w in ("可以调", "可以先调", "照常") if w in text)
     assert affordance < negation, (
         f"「能干什么」排在「不生效」后面了：{text}")
 
@@ -1050,6 +1049,14 @@ def test_nothing_on_screen_claims_to_be_enabled_while_the_switch_is_off(
         f"{page_id}：总开关关着，屏幕上还有 {len(offenders)} 处在说「已启用」——\n  "
         + "\n  ".join(offenders) +
         "\n⭐ 一句只在某个状态下为真的话，在别的状态里就是一句谎。")
+
+
+def test_the_music_card_tooltip_says_the_link_is_off_with_the_switch(main_window, qapp):
+    """胶囊条批 145 起只显示问题，「联动」这句只从卡片的 tooltip 出去（批 150）。"""
+    page = _open(main_window, qapp, "music")
+    _set_switch(page, qapp, False)
+    tip = page.music_overview_card.toolTip()
+    assert "游戏联动：已关闭" in tip, tip
 
 
 def _accent_rgb():
@@ -1241,46 +1248,3 @@ def test_the_receipt_survives_the_page_refreshing_itself(main_window, qapp, page
         "⭐ 页面要改底栏那句话，只能走 `action_bar.set_message(...)`，"
         "不许直接对 `message_label` 写字。")
 
-
-@pytest.mark.parametrize("page_id", _pages_with("status_strip_title"))
-def test_the_status_strip_is_titled_by_what_it_actually_lists(
-        main_window, qapp, page_id):
-    """⚖ **RN-428：那条胶囊的标题叫「当前状态」，而它列的是配置。**
-
-    ⚠⚠ 本条立案时我写的说法是「**「当前」这两个字在说时间**」——
-    **枚举一遍就把它推翻了**：`crosshair` 有 **7 条**「当前X」摘要
-    （当前样式：点 / 当前颜色：红色 / 当前档位…），而它在外审枚举轮
-    **3/3 报 NONE**。⇒ 触发误读的不是那两个字。
-
-    真正在触发的是**描述「某件事发生时会自动做什么」**的条目：
-
-        music        「当前策略：**阵亡后自动开始/继续播放** · 存活时自动降低到 20%」
-        voice_output 「当前路由：… **本地监听开启**」
-        hud_color    「**事件 · 2 项**」
-        utility      「地图 · **未检测到**」（探测器语气）
-
-    而「当前样式：点」是**静态属性**，没有「在跑」的东西可想象。
-    ⭐⭐ **一个读起来像实时读数 / 像规则引擎的东西，光是存在就在暗示
-    有个进程在跑；而一个静态属性不会。**
-
-    ⇒ 这条改动**不去逐句改那些摘要**，只改一处**共用**的东西：
-    胶囊组的标题。它一次性给整条胶囊重新定性 ——
-    关着的时候，那一条列的是**配置**，不是**状态**。
-    ⭐ 标题是这条胶囊里唯一一个「说这一整条是什么」的位置。
-    """
-    page = _open(main_window, qapp, page_id)
-    label = eff.status_strip_title(page)
-    # ⚠ 反空转：找不到那个标题的话，下面两条断言**永远为真**。
-    assert label is not None, (
-        f"{page_id}：在状态卡里没找到那条胶囊的标题 —— "
-        "这条判据在这一页上是空转的（多半是标题改了名或搬了家）。")
-
-    _set_switch(page, qapp, True)
-    assert label.text() == eff.STRIP_TITLE_ON, (
-        f"{page_id}：开着的时候标题是「{label.text()}」，该是「{eff.STRIP_TITLE_ON}」")
-
-    _set_switch(page, qapp, False)
-    assert label.text() == eff.STRIP_TITLE_OFF, (
-        f"{page_id}：关着的时候标题还写着「{label.text()}」——"
-        f"该是「{eff.STRIP_TITLE_OFF}」。\n"
-        "⭐ 没在跑的时候，那一条列的是配置，不是状态。")

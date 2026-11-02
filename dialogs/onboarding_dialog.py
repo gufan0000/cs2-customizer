@@ -37,6 +37,14 @@ class OnboardingDialog(QDialog):
         self._build_ui()
         self._refresh_states()
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._fit_height()
+
+    def _fit_height(self):
+        """折行标签要多高得按宽度算，写死 420 时第一屏的说明被裁成半行（批 145）。"""
+        self.resize(self.width(), self.layout().totalHeightForWidth(self.width()))
+
     def _build_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 20, 24, 20)
@@ -46,7 +54,7 @@ class OnboardingDialog(QDialog):
         title.setObjectName("titleLabel")
         layout.addWidget(title)
 
-        intro = QLabel("跟着下面三步走，就能让 CS2 Customizer 和 CS2 联动起来。随时可以「跳过」，之后在「高级设置 / 基础设置」里也能完成。")
+        intro = QLabel("跟着下面三步走，就能让 CS2 Customizer 和 CS2 联动起来。随时可以「跳过」，之后在「高级设置」和「总览」里也能完成。")
         intro.setObjectName("hintLabel")
         intro.setWordWrap(True)
         layout.addWidget(intro)
@@ -84,7 +92,7 @@ class OnboardingDialog(QDialog):
         # 第 3 步：试听（对标修缮：在引导内完成第一次"听到声音"的成功体验）
         layout.addWidget(self._step_header("第 3 步 · 先在这里试听一下"))
         self.preview_label = QLabel(
-            "点击试听，确认能听到击杀音效；进游戏击杀时就是这个声音。想换音效/调音量，去左侧「击杀音效」「基础设置」。"
+            "点击试听，确认能听到击杀音效；进游戏击杀时就是这个声音。想换音效、调音量，去左侧「击杀音效」和「总览」。"
         )
         self.preview_label.setObjectName("hintLabel")
         self.preview_label.setWordWrap(True)
@@ -160,7 +168,7 @@ class OnboardingDialog(QDialog):
                 except Exception:
                     continue
             if played:
-                self.preview_label.setText("【已完成】听到了吗？进游戏击杀时就是这个声音。音量在「基础设置」可调。")
+                self.preview_label.setText("【已完成】听到了吗？进游戏击杀时就是这个声音。音量在「总览」可调。")
             else:
                 self.preview_label.setText(
                     "暂时没有可用的击杀音效资源——首次启动资源可能还在后台准备，稍后到「击杀音效」页试听即可。"

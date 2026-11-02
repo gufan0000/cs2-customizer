@@ -10,6 +10,7 @@ from PySide6.QtCore import (
 from PySide6.QtGui import QPainter, QColor, QFont, QPainterPath, QFontMetrics
 from PySide6.QtWidgets import QWidget
 from theme_manager import get_theme_manager
+from core.utils.app_fonts import UI_FONT_FAMILY
 
 
 class SliderBubble(QWidget):
@@ -28,7 +29,7 @@ class SliderBubble(QWidget):
 
         self._opacity = 0.0
         self._text = ""
-        self._font = QFont("Microsoft YaHei", 10, QFont.Bold)
+        self._font = QFont(UI_FONT_FAMILY, 10, QFont.Bold)
         self._tm = get_theme_manager()
 
         # 淡入淡出动画

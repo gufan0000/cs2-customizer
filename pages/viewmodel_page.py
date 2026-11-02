@@ -13,15 +13,28 @@ from PySide6.QtCore import Qt, QThread, Signal
 from config import config, DEFAULT_VIEWMODEL_PRESETS
 from core.utils.logger import get_logger
 from pages.audio_status_badge import create_badge_label, render_badges
-from theme_manager import get_theme_manager
 from cfg_utils import setup_autoexec
 from ui_help_panel import install_help_panel, PAGE_HELP_TEXTS
+from ui_style_applier import keep_single_line
 from widgets.page_header import PageHeader
 from widgets.page_action_bar import PageActionBar
 from widgets.settings_card import SettingsCard
+from widgets.settings_row import plain_row
+from widgets.status_strip import StatusStrip
 import keyboard
 import time
 import os
+
+#: 预设表前两列是名称和快捷键，从这一列起是滑条。
+PRESET_FIRST_SLIDER_COLUMN = 2
+
+
+def _slider_value_label(text):
+    """滑条后面的数值：定宽右对齐，拖动时一列不抖。"""
+    label = keep_single_line(QLabel(text))
+    label.setFixedWidth(32)
+    label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+    return label
 
 
 class AutoSwitchWorker(QThread):
@@ -111,8 +124,6 @@ class ViewmodelPage(QWidget):
         if getattr(config, "viewmodel_auto_switch_enabled", False):
             self._start_auto_switch()
 
-        # 注册主题变更回调
-        get_theme_manager().register_theme_changed_callback(self._apply_theme_styles)
     
     def _init_ui(self):
         """初始化UI"""
@@ -133,17 +144,13 @@ class ViewmodelPage(QWidget):
         main_layout.addWidget(header)
         install_help_panel(header.title_row, header.body, PAGE_HELP_TEXTS["viewmodel"])
 
-        self.status_card = QFrame()
-        self.status_card.setObjectName("card")
+        self.status_card = StatusStrip()
         status_card_layout = QVBoxLayout(self.status_card)
-        status_card_layout.setContentsMargins(14, 12, 14, 12)
+        status_card_layout.setContentsMargins(0, 0, 0, 0)
         status_card_layout.setSpacing(8)
 
         status_row = QHBoxLayout()
         status_row.setSpacing(10)
-        status_title = QLabel("当前状态")
-        status_title.setObjectName("statusLabel")
-        status_row.addWidget(status_title)
         self.status_badge_label = create_badge_label()
         status_row.addWidget(self.status_badge_label, 1)
         status_row.addStretch()
@@ -166,59 +173,73 @@ class ViewmodelPage(QWidget):
         scroll_layout.setContentsMargins(0, 0, 6, 0)
         scroll_layout.setSpacing(10)
 
-        tools_row = QHBoxLayout()
-        tools_row.setSpacing(10)
+        # RN-083、RN-177：预设是这一页最要紧的东西，排最前面，五组要在首屏看全。
+        # 批 150：原来每组一张内层卡（5 × 112 px），现在一组一行、共用一个网格，列自然对齐。
+        # 卡片的先后就是屏幕的先后：Tab 焦点链走构造顺序，不用 setTabOrder（RN-069）。
+        presets_frame, presets_layout = SettingsCard.make("视角预设")
+        presets_grid = QGridLayout()
+        presets_grid.setContentsMargins(0, 0, 0, 0)
+        presets_grid.setHorizontalSpacing(16)
+        presets_grid.setVerticalSpacing(8)
+        for column, title in enumerate(("名称", "快捷键", "FOV", "X", "Y", "Z")):
+            heading = keep_single_line(QLabel(title))
+            heading.setObjectName("hintLabel")
+            presets_grid.addWidget(heading, 0, column)
+            if column >= PRESET_FIRST_SLIDER_COLUMN:
+                presets_grid.setColumnStretch(column, 1)
+        for i, preset in enumerate(self.presets):
+            self._add_preset_row(presets_grid, preset, i + 1)
+        presets_layout.addLayout(presets_grid)
+        axes_hint = QLabel("X 左右，Y 前后，Z 上下；FOV 越大枪看着越小。")
+        axes_hint.setObjectName("hintLabel")
+        presets_layout.addWidget(axes_hint)
+        scroll_layout.addWidget(presets_frame)
 
-        left_column = QWidget()
-        left_column.setSizePolicy(left_column.sizePolicy().horizontalPolicy(), left_column.sizePolicy().verticalPolicy())
-        left_column_layout = QVBoxLayout(left_column)
-        left_column_layout.setContentsMargins(0, 0, 0, 0)
-        left_column_layout.setSpacing(10)
-
-        # ⚠ RN-177：右列容器提到这里创建（原来在 crosshair/持枪切换/CFG 三张卡之后）。
-        # 目的是让**卡片的构造顺序 = 它在屏幕上的先后**：右列现在是
-        # 「视角预设」在上、「持枪切换」在下，而 Tab 焦点链默认就走构造顺序。
-        # 顺序对齐了就不必再写 `setTabOrder` —— RN-069 已经证明那种显式补丁
-        # 是「对某个具体版面的断言」，改一次版面就要重验一次，成本比对齐构造顺序高。
-        right_column = QWidget()
-        right_column_layout = QVBoxLayout(right_column)
-        right_column_layout.setContentsMargins(0, 0, 0, 0)
-        right_column_layout.setSpacing(10)
-        self._viewmodel_right_column_layout = right_column_layout
-
-        crosshair_card, crosshair_layout = SettingsCard.make(
-            "准心快速回正",
-            "准心快速回正单独开关，开不开都不影响持枪视角设置。",
+        switch_card, switch_layout = SettingsCard.make(
+            "持枪切换",
+            "按循环按键切到下一组预设。开了自动循环：按激活按键开始或暂停，每隔几秒自动切一组。",
         )
+        self.cycle_key_input = QLineEdit()
+        self.cycle_key_input.setText("CAPSLOCK")
+        self.cycle_key_input.textChanged.connect(lambda: self._mark_unsaved())
+        switch_layout.addWidget(plain_row("循环按键", self.cycle_key_input))
+
+        self.auto_switch_checkbox = QCheckBox("启用自动循环切换")
+        self.auto_switch_checkbox.toggled.connect(self._on_auto_switch_toggled)
+        switch_layout.addWidget(plain_row("", self.auto_switch_checkbox, width=None))
+
+        self.auto_switch_key_input = QLineEdit()
+        self.auto_switch_key_input.setText("V")
+        self.auto_switch_key_input.textChanged.connect(lambda: self._mark_unsaved())
+
+        self.auto_switch_interval_input = QLineEdit()
+        self.auto_switch_interval_input.setFixedWidth(72)
+        self.auto_switch_interval_input.setText("3.0")
+        self.auto_switch_interval_input.textChanged.connect(lambda: self._mark_unsaved())
+        switch_layout.addWidget(plain_row(
+            "激活按键", self.auto_switch_key_input,
+            QLabel("切换间隔"), self.auto_switch_interval_input, QLabel("秒")))
+        scroll_layout.addWidget(switch_card)
+
+        crosshair_card, crosshair_layout = SettingsCard.make("准心快速回正")
         self.crosshair_reset_checkbox = QCheckBox("启用准心快速回正")
         self.crosshair_reset_checkbox.setToolTip("开火时准心跟随后坐力，松开后瞬间回正（无曲线动画）")
         self.crosshair_reset_checkbox.stateChanged.connect(self._on_crosshair_reset_changed)
         crosshair_layout.addWidget(self.crosshair_reset_checkbox)
 
         self.crosshair_info = QLabel(
-            "原理：按下开火键时 cl_crosshair_recoil 1，松开时设为 0，实现准心瞬间回正。\n"
-            "队友和 demo 里看到的准心设置在对局开始那一刻就定死了，而那一刻你不可能在开火，"
-            "所以这个开关全程只对你自己生效。"
+            "开火时准心跟随后坐力，松开瞬间回正。只对你自己生效，队友和 demo 里看不到。"
         )
         self.crosshair_info.setObjectName("hintLabel")
         self.crosshair_info.setWordWrap(True)
         crosshair_layout.addWidget(self.crosshair_info)
 
-        key_row = QHBoxLayout()
-        key_row.setSpacing(8)
-        key_label = QLabel("开火键")
-        key_label.setMinimumWidth(56)
-        key_row.addWidget(key_label)
         self.crosshair_attack_key_edit = QLineEdit()
         self.crosshair_attack_key_edit.setPlaceholderText("mouse1")
-        self.crosshair_attack_key_edit.setMaximumWidth(140)
         self.crosshair_attack_key_edit.setToolTip(
             "改过开火键的话填这里，默认 mouse1。填了识别不了的名字会自动退回 mouse1。"
         )
         self.crosshair_attack_key_edit.editingFinished.connect(self._on_crosshair_attack_key_changed)
-        key_row.addWidget(self.crosshair_attack_key_edit)
-        key_row.addStretch()
-        crosshair_layout.addLayout(key_row)
 
         self.crosshair_secondary_checkbox = QCheckBox("副开火键也回正（R8 左轮右键）")
         self.crosshair_secondary_checkbox.setToolTip(
@@ -226,149 +247,15 @@ class ViewmodelPage(QWidget):
             "实战里很少同时按，介意的话保持关闭。"
         )
         self.crosshair_secondary_checkbox.stateChanged.connect(self._on_crosshair_secondary_changed)
-        crosshair_layout.addWidget(self.crosshair_secondary_checkbox)
-        # ⛔ RN-183（批 81）：这里原来有一行「当前准星回正：已启用 / 未启用」。
-        #   删它的理由不是「重复」三个字 —— 是**正上方那个复选框本身就是这个状态**，
-        #   而顶部芯片「准星回正 · 关」是第三遍。外审 6/6 逐字点了这一处。
-        left_column_layout.addWidget(crosshair_card)
-
-        # ⚠ RN-177：这张卡以前**排在「持枪切换」下面**，而且外面套了一层
-        # `QScrollArea` + `setMaximumHeight(320)`。实测后果：视口 320px 装 872px 内容，
-        # 完整可见 **1 组**、部分 1 组、**完全看不见 3 组** —— 而卡副标题写着
-        # 「5 组持枪视角参数」、状态条写着「共 5 组预设」。**文案承诺 5 组，屏幕给 1 组。**
-        #
-        # ⭐ 为什么它躲过了所有判据：`layout_overflow_audit._overflow_of` 明写
-        #    「只看最外层滚动区，内层的滚动是有意设计」，于是**内层滚动区藏内容
-        #    这一类根本没有判据在看**。这不是判据写错了，是判据的分母漏了一整类。
-        #    补法见同名新判据 `_nested_scroll_hidden`（内层滚动区不许藏内容）。
-        #
-        # 改法是两条一起，缺一条都不够：
-        #   ① 去掉内层滚动区 ⇒ 内容并进页面级滚动，藏起来的 552px 变成正常翻页；
-        #   ② 挪到右列**最上面** ⇒ 否则它起点在 y≈460，首屏仍只露出一张卡，
-        #      等于把内层滚动条换成外层滚动条，缺陷原地不动。
-        # 同时把每张卡的四条滑杆从 2×2 改成一排四列，卡高 168→约 120px。
-        presets_frame, presets_layout = SettingsCard.make(
-            "视角预设",
-            "5 组持枪视角参数，每组都能单独改并保存下来。",
-        )
-        self.presets_summary_label = QLabel("")
-        self.presets_summary_label.setObjectName("hintLabel")
-        self.presets_summary_label.setWordWrap(True)
-        presets_layout.addWidget(self.presets_summary_label)
-        for i, preset in enumerate(self.presets):
-            presets_layout.addWidget(self._create_preset_card(preset, i))
-        right_column_layout.addWidget(presets_frame)
-
-        viewmodel_card, viewmodel_layout = SettingsCard.make(
-            "持枪切换",
-            "按一个键在几组视角预设之间循环，也可以让它按固定间隔自动切。",
-        )
-        # ⛔ RN-183（批 81）：这里原来有一行「当前循环键：X · 自动切换未启用」。
-        #   正下方那两个输入框（循环键 / 自动切换间隔）**就是这两个值本身**。
-        control_grid = QGridLayout()
-        control_grid.setContentsMargins(0, 0, 0, 0)
-        control_grid.setHorizontalSpacing(10)
-        control_grid.setVerticalSpacing(8)
-
-        control_grid.addWidget(QLabel("循环按键:"), 0, 0)
-        self.cycle_key_input = QLineEdit()
-        self.cycle_key_input.setMaximumWidth(100)
-        self.cycle_key_input.setMinimumHeight(34)
-        self.cycle_key_input.setText("CAPSLOCK")
-        self.cycle_key_input.textChanged.connect(lambda: self._mark_unsaved())
-        control_grid.addWidget(self.cycle_key_input, 0, 1)
-
-        self.auto_switch_checkbox = QCheckBox("启用自动循环切换")
-        self.auto_switch_checkbox.toggled.connect(self._on_auto_switch_toggled)
-        control_grid.addWidget(self.auto_switch_checkbox, 0, 2, 1, 3)
-
-        control_grid.addWidget(QLabel("激活按键:"), 1, 0)
-        self.auto_switch_key_input = QLineEdit()
-        self.auto_switch_key_input.setMaximumWidth(80)
-        self.auto_switch_key_input.setMinimumHeight(34)
-        self.auto_switch_key_input.setText("V")
-        self.auto_switch_key_input.textChanged.connect(lambda: self._mark_unsaved())
-        control_grid.addWidget(self.auto_switch_key_input, 1, 1)
-        control_grid.addWidget(QLabel("切换间隔(秒):"), 1, 2)
-        self.auto_switch_interval_input = QLineEdit()
-        self.auto_switch_interval_input.setMaximumWidth(60)
-        self.auto_switch_interval_input.setMinimumHeight(34)
-        self.auto_switch_interval_input.setText("3.0")
-        self.auto_switch_interval_input.textChanged.connect(lambda: self._mark_unsaved())
-        control_grid.addWidget(self.auto_switch_interval_input, 1, 3)
-        control_grid.setColumnStretch(4, 1)
-        viewmodel_layout.addLayout(control_grid)
-        viewmodel_card.setSizePolicy(viewmodel_card.sizePolicy().horizontalPolicy(), viewmodel_card.sizePolicy().verticalPolicy())
-
-        cfg_card, cfg_layout = SettingsCard.make(
-            "CFG 同步",
-            "热键或预设改动先在这里确认状态，再手动写入 CFG，避免误覆盖当前配置。",
-        )
-        self.cfg_summary_label = QLabel("")
-        self.cfg_summary_label.setObjectName("hintLabel")
-        self.cfg_summary_label.setWordWrap(True)
-        cfg_layout.addWidget(self.cfg_summary_label)
-
-        # ⛔ RN-404（批 31 撤除）：这里原来有第二颗「保存到CFG」。
-        #
-        # RN-078 当初把两个名字统一成一个，解决了「以为是两件事」，
-        # **却造出了两颗一模一样的紫按钮**；当时留着它的理由写在这行注释里 ——
-        # 「底栏那颗在滚到页面下方时是唯一还看得见的」。⭐ 那句话是真的，
-        # 而它恰恰说明**该留的是底栏那颗**：实测滚到底时卡内这颗露出 0%、底栏那颗 100%。
-        #
-        # ⭐⭐ 外审行为题 4 发 4/4 答「我会点右下角那颗」，理由一律是
-        #   「右下角常驻按钮通常代表整页生效」；而 4/4 同时答「担心点错」，
-        #   逐字写「两个名字极度相似的 CFG 写入按钮」。
-        # ⚠ 还有一层只在**窗口图**上才看得见：这颗按钮正好压在滚动区的下边缘，
-        #   文字被切掉一半 ⇒ 3/4 发把它读成了另一个按钮名「写入到 CFG」。
-        #   ⭐ **两颗同名按钮里有一颗被切掉了字，于是它看起来不再同名 ——
-        #     而这让情况更糟，不是更好**：读者以为那是另一个动作。
-        #
-        # ⇒ 保存这个动作归底栏（`_sync_action_bar` 里那一颗），本卡只说状态。
-        self._cfg_status_label = QLabel("")
-        self._cfg_status_label.setObjectName("cfgStatusLabel")
-        self._cfg_status_label.setWordWrap(True)
-        cfg_layout.addWidget(self._cfg_status_label)
-        left_column_layout.addWidget(cfg_card)
-        left_column_layout.addStretch(1)
-
-        # ⚠ RN-083：右列以前**只有一张「持枪切换」卡**，自 y≈450 起整列空白，
-        # 而第三张卡「视角预设」被推到 `scroll_layout` 里、落在折叠线以下。
-        # 后果是这一页最核心的东西（5 组预设、每组的 XYZ/FOV 编辑入口）首屏看不见 ——
-        # 外审 3/3 判「高」，原话是「作为『局内视角设置』页却完全找不到
-        # FOV/XYZ 参数与 5 组预设的编辑入口」。
-        # ⚠ RN-177 修正：RN-083 当时把顺序定成「持枪切换在上、视角预设在下」，
-        # 结果预设卡起点落在 y≈460，首屏只露出它的标题和第一张卡 —— 这一半的账
-        # 直到 RN-170 撑高窗口出图才看见。现在两张卡对调，预设在上。
-        right_column_layout.addWidget(viewmodel_card)
-        right_column_layout.addStretch(1)
-
-        tools_row.addWidget(left_column, 4, Qt.AlignTop)
-        tools_row.addWidget(right_column, 6, Qt.AlignTop)
-        scroll_layout.addLayout(tools_row)
-
-        # RN-069：Tab 顺序曾跟屏幕顺序对不上 —— 走到第 5 个焦点时跳到左下角那颗
-        # 「保存到CFG」（y=487），再折回右上角的「循环按键」输入框（y=229）。
-        # ⭐ 那条是 RN-059 解除盲区后**焦点巡检第一次覆盖到这一页**当场报出来的：
-        #    `flash` / `viewmodel` 此前被 `SPAWNS_SUBPROCESS` 那份第 8 处私有名单
-        #    挡在焦点巡检之外（而探针实测两页构造时子进程调用是 0 次）。
-        #
-        # ⚠ 原来这里有一行 `setTabOrder(auto_switch_interval_input, save_btn)`，
-        # **RN-083 把「视角预设」挪进右列之后它反而成了错的**：焦点巡检当场报
-        # 「需挪动 1 个」，去掉它就是 0 个。因为那一行是给旧版面（右列只有一张卡）
-        # 打的补丁，新版面里屏幕顺序本身已经对了，补丁在跟布局对着干。
-        # ⇒ 教训：**显式 setTabOrder 是对某个具体版面的断言，改版面就要重新验它。**
-        # 现在这一页的 Tab 顺序由布局天然给出，不再依赖任何补丁（焦点巡检 43 个控件 0 挪动）。
-        # RN-177 对调右列两张卡时同样**没有**加 setTabOrder：构造顺序跟着一起对调了
-        # （预设卡在「持枪切换」之前构造），焦点链天然还是 0 挪动。
+        crosshair_layout.addWidget(plain_row(
+            "开火键", self.crosshair_attack_key_edit, self.crosshair_secondary_checkbox))
+        scroll_layout.addWidget(crosshair_card)
 
         scroll_layout.addStretch()
         scroll_area.setWidget(scroll_widget)
         main_layout.addWidget(scroll_area, 1)
 
         self.action_bar = PageActionBar(self)
-        self.action_bar.secondary_btn.setMinimumWidth(132)
-        self.action_bar.primary_btn.setMinimumWidth(140)
         main_layout.addWidget(self.action_bar, 0)
 
 
@@ -391,78 +278,20 @@ class ViewmodelPage(QWidget):
             return text[: max_length - 1] + "…"
         return text
 
-    def _toggle_auto_switch_from_bar(self):
-        if hasattr(self, "auto_switch_checkbox"):
-            self.auto_switch_checkbox.setChecked(not self.auto_switch_checkbox.isChecked())
-
     def _sync_action_bar(self):
         if not hasattr(self, "action_bar"):
             return
 
         is_dirty = self._cfg_is_dirty()
-        # ⭐ RN-183：`cycle_key` / `auto_key` / `preset_count` 三个值连同它们那一段
-        #   `_compact_badge_text` 计算已随底栏复述一起删掉 —— **它们唯一的去处就是那句复述**。
-        #   ⇒ 底栏为了把上方那一排芯片重画一遍，把三个值又算了一遍。
-        #   （ruff 的 F841 当场把这三个点了出来，是本条最硬的一份证据。）
-        auto_enabled = self.auto_switch_checkbox.isChecked() if hasattr(self, "auto_switch_checkbox") else False
-
-        self.action_bar.configure_secondary(
-            "关闭自动切换" if auto_enabled else "启用自动切换",
-            self._toggle_auto_switch_from_bar,
-            visible=True,
-        )
         self.action_bar.configure_primary("保存到CFG", self._save_viewmodel_cfg, visible=True)
-        # RN-504：CFG 已同步的时候这颗按钮别再喊（芯片那一颗同时写着「CFG · 已同步」）
+        # RN-504：CFG 已同步的时候这颗按钮别再喊
         self.action_bar.set_primary_pending(is_dirty)
-        # ⛔ RN-183：这里**不许再复述芯片的值**。原文逐字是
-        #   「当前状态：CFG已同步 · 循环键 CAPSLOCK · 自动切换关闭（V） · 共 5 组预设。」
-        #   —— ⭐⭐⭐ **开头就是「当前状态：」，而上方那一排芯片正是「当前状态」这个控件**；
-        #   5 颗里 4 颗被逐值复述。底栏不是在补充，是在用纯文本重画一遍那一排。
-        # ⇒ 底栏只留**芯片承载不了的那一件事**：怎么让当局立刻生效。
-        #   这句话是**因果**不是状态，任何 is_dirty 下都为真（同 RN-502 的教训：
-        #   说动作的后果，不说当前的状态）。
-        action_message = (
-            "写进 CFG 之后下一局自动生效；当局要立刻见效，"
-            "在游戏控制台敲 exec cs2customizer.cfg。"
-        )
-        self.action_bar.set_message(action_message)
-
-    def _sync_panel_summaries(self):
-        # ⭐⭐⭐ RN-183（批 81）：这里原来还取着 `is_dirty` / `cycle_key` / `auto_key` /
-        #   `auto_interval` / `auto_enabled` / `crosshair_enabled` 六个值，
-        #   加上底栏那边的三个，一共**九个只为了「把控件自己的状态再念一遍」而做的取值**。
-        #   ⇒ **「同一件事说了四遍」在源码里的形状，就是同一个值被取了四次** ——
-        #   而 ruff 的 F841 是唯一把它们指出来的东西。
-        preset_count = len(getattr(self, "preset_vars", []))
-
-        # ⚠ RN-177：这里原来是 `[:3]` —— 摘要自称"共 5 组"却只列 3 组，
-        # 而当时屏幕上又只看得见 1 组。**三个地方三个数**，没有一处能互相印证。
-        # 现在全列：摘要本身就成了"5 组确实都在"的凭证，不必先滚到底才能确认。
-        preset_preview = []
-        for preset in getattr(self, "preset_vars", []):
-            name = preset["name"].text().strip() or "未命名"
-            key = preset["key"].text().strip() or "-"
-            preset_preview.append(f"{name}({key})")
-        preset_preview_text = " / ".join(preset_preview) if preset_preview else "等待配置"
-
-        # ⛔ RN-183（批 81）：`crosshair_summary_label` 与 `viewmodel_summary_label`
-        #   已随控件一起撤掉 —— 它们复述的是**同一张卡里那个控件自己**。
-        if hasattr(self, "cfg_summary_label"):
-            # ⭐ 只留**因果**那半句。前半句「当前状态：CFG已同步」是芯片的活，
-            #   而「写入后会刷新到什么」这一句别处没有，它是这张卡存在的理由。
-            cfg_summary = f"写入后会同时刷新准星回正与 {preset_count} 组视角预设。"
-            self.cfg_summary_label.setText(cfg_summary)
-            self.cfg_summary_label.setToolTip(cfg_summary)
-
-        if hasattr(self, "presets_summary_label"):
-            # ⚠ 这一条**不整条删**：后半句那串快捷键预览有**明写的理由**
-            #   （「摘要本身就成了 5 组确实都在的凭证，不必先滚到底才能确认」）——
-            #   ⭐ 批 75 的教训是「写了理由不等于理由是对的」，而它反过来也成立：
-            #   **逐条核过之后，有理由的那一条不能跟着一起删。**
-            #   删的只是前半句「当前共 N 组预设」，那是芯片「预设 · N 组」的活。
-            presets_text = f"常用快捷键 {preset_preview_text}"
-            self.presets_summary_label.setText(presets_text)
-            self.presets_summary_label.setToolTip(presets_text)
+        # 批 150：「CFG 同步」卡撤了，写没写进去就说在这颗按钮旁边（RN-404：保存这个动作归底栏）。
+        # RN-452：这句话从 `_cfg_dirty` 渲染，别再反过来拿它算状态。
+        state = "改动还没写进 CFG；写进之后" if is_dirty else "这一页的设置已经写进 CFG，"
+        self.action_bar.set_message(
+            f"{state}下一局自动生效；当局要立刻见效，在游戏控制台敲 exec cs2customizer.cfg。",
+            important=True)
 
     def _sync_status_strip(self):
         is_dirty = self._cfg_is_dirty()
@@ -507,58 +336,24 @@ class ViewmodelPage(QWidget):
         )
         render_badges(self.status_badge_label, badges, detail_tooltip=detail_text)
         self.status_card.setToolTip(detail_text)
-        self._sync_panel_summaries()
         self._sync_action_bar()
-    
-    
-    def _apply_theme_styles(self):
-        """应用主题样式（objectName 标签由 QSS 自动处理）"""
-        pass
 
-    def _create_preset_card(self, preset, index):
-        """创建预设卡片"""
-        card = QFrame()
-        card.setObjectName("card")
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(8)
-        
-        # 头部：名称和快捷键
-        header_layout = QHBoxLayout()
-        header_layout.setSpacing(8)
-        preset_label = QLabel(f"预设 {index + 1}")
-        preset_label.setObjectName("hintLabel")
-        header_layout.addWidget(preset_label)
-        
-        name_label = QLabel("名称:")
-        header_layout.addWidget(name_label)
-        
+
+    def _add_preset_row(self, grid, preset, row):
+        """预设表的一行：名称、快捷键、四根滑条。"""
         name_input = QLineEdit()
         name_input.setText(preset["name"])
-        name_input.setMaximumWidth(110)
+        name_input.setFixedWidth(110)
         name_input.textChanged.connect(lambda: self._mark_unsaved())
-        header_layout.addWidget(name_input)
-
-        header_layout.addWidget(QLabel("快捷键:"))
+        grid.addWidget(name_input, row, 0)
 
         key_input = QLineEdit()
         key_input.setText(preset["key"])
-        key_input.setMaximumWidth(90)
+        key_input.setFixedWidth(72)
         key_input.textChanged.connect(lambda: self._mark_unsaved())
-        header_layout.addWidget(key_input)
-        
-        header_layout.addStretch()
-        layout.addLayout(header_layout)
+        grid.addWidget(key_input, row, 1)
 
-        slider_grid = QGridLayout()
-        slider_grid.setContentsMargins(0, 0, 0, 0)
-        slider_grid.setHorizontalSpacing(12)
-        slider_grid.setVerticalSpacing(8)
-        for _col in range(4):
-            slider_grid.setColumnStretch(_col, 1)
-
-        fov_value_label = QLabel(str(preset["fov"]))
-        fov_value_label.setMinimumWidth(36)
+        fov_value_label = _slider_value_label(str(preset["fov"]))
         fov_slider = QSlider(Qt.Horizontal)
         fov_slider.setRange(54, 68)
         fov_slider.setSingleStep(1)
@@ -566,8 +361,7 @@ class ViewmodelPage(QWidget):
         fov_slider.valueChanged.connect(lambda v, label=fov_value_label: label.setText(str(v)))
         fov_slider.valueChanged.connect(lambda: self._mark_unsaved())
 
-        x_value_label = QLabel(f"{preset['x']:.1f}")
-        x_value_label.setMinimumWidth(36)
+        x_value_label = _slider_value_label(f"{preset['x']:.1f}")
         x_slider = QSlider(Qt.Horizontal)
         x_slider.setRange(-20, 25)
         x_slider.setSingleStep(5)
@@ -575,8 +369,7 @@ class ViewmodelPage(QWidget):
         x_slider.valueChanged.connect(lambda v, label=x_value_label: label.setText(f"{v/10:.1f}"))
         x_slider.valueChanged.connect(lambda: self._mark_unsaved())
 
-        y_value_label = QLabel(f"{preset['y']:.1f}")
-        y_value_label.setMinimumWidth(36)
+        y_value_label = _slider_value_label(f"{preset['y']:.1f}")
         y_slider = QSlider(Qt.Horizontal)
         y_slider.setRange(-20, 20)
         y_slider.setSingleStep(5)
@@ -584,8 +377,7 @@ class ViewmodelPage(QWidget):
         y_slider.valueChanged.connect(lambda v, label=y_value_label: label.setText(f"{v/10:.1f}"))
         y_slider.valueChanged.connect(lambda: self._mark_unsaved())
 
-        z_value_label = QLabel(f"{preset['z']:.1f}")
-        z_value_label.setMinimumWidth(36)
+        z_value_label = _slider_value_label(f"{preset['z']:.1f}")
         z_slider = QSlider(Qt.Horizontal)
         z_slider.setRange(-20, 20)
         z_slider.setSingleStep(5)
@@ -593,31 +385,15 @@ class ViewmodelPage(QWidget):
         z_slider.valueChanged.connect(lambda v, label=z_value_label: label.setText(f"{v/10:.1f}"))
         z_slider.valueChanged.connect(lambda: self._mark_unsaved())
 
-        # RN-177：原来是 2×2（卡高 168px，5 张就是 872px）。改成一排四列后
-        # 卡高降到 ~120px —— 这是"让 5 组真的看得见"里除了去掉内层滚动区之外的另一半。
-        slider_specs = [
-            ("FOV", fov_value_label, fov_slider, 0, 0),
-            ("X", x_value_label, x_slider, 0, 1),
-            ("Y", y_value_label, y_slider, 0, 2),
-            ("Z", z_value_label, z_slider, 0, 3),
-        ]
-        for title, value_label, slider, row, column in slider_specs:
-            group = QFrame()
-            group_layout = QVBoxLayout(group)
-            group_layout.setContentsMargins(0, 0, 0, 0)
-            group_layout.setSpacing(4)
-            title_row = QHBoxLayout()
-            title_row.setContentsMargins(0, 0, 0, 0)
-            title_row.setSpacing(8)
-            title_row.addWidget(QLabel(f"{title}:"))
-            title_row.addStretch()
-            title_row.addWidget(value_label)
-            group_layout.addLayout(title_row)
-            group_layout.addWidget(slider)
-            slider_grid.addWidget(group, row, column)
+        cells = ((fov_slider, fov_value_label), (x_slider, x_value_label),
+                 (y_slider, y_value_label), (z_slider, z_value_label))
+        for column, (slider, value_label) in enumerate(cells, PRESET_FIRST_SLIDER_COLUMN):
+            cell = QHBoxLayout()
+            cell.setSpacing(8)
+            cell.addWidget(slider, 1)
+            cell.addWidget(value_label)
+            grid.addLayout(cell, row, column)
 
-        layout.addLayout(slider_grid)
-        
         # 保存引用
         self.preset_vars.append({
             "name": name_input,
@@ -631,30 +407,14 @@ class ViewmodelPage(QWidget):
             "y_label": y_value_label,
             "z_label": z_value_label,
         })
-        
-        return card
 
     # ========== CFG 同步状态 ==========
 
     def _cfg_is_dirty(self):
         """这一页的改动写进 CFG 了没有 —— **唯一真源**。
 
-        ⚠⚠ **RN-452（批 31）**：这三处调用点原来各自写着
-
-            cfg_text = self._cfg_status_label.text().strip()
-            is_dirty = ("未保存" in cfg_text) or ("已修改" in cfg_text)
-
-        —— **整页的状态是靠对一句屏幕上的文案做子串匹配算出来的**：
-        底栏那句回执、三张卡的摘要、五颗状态芯片，全部读它。
-
-        ⭐⭐⭐ 于是本批只是把那句话从「⚠ 设置已修改，未保存到CFG」改成
-        「⚠ 设置改过了，还没写进 CFG —— 点右下角那颗「保存到CFG」。」，
-        **整页的脏/净判断就当场反了** —— 新句子里既没有「未保存」也没有「已修改」。
-        ⭐ **一句文案同时是这一页的状态真源时，任何一次文字润色都是一次行为变更。**
-        （逮住它的是既有判据 `test_viewmodel_page_status_strip_tracks_dirty_state`，
-        不是我 —— 它断言的是芯片文案，而芯片正好在这条链的下游。）
-
-        ⇒ 真源改成一个布尔，文案从它渲染出来，方向是单向的。
+        RN-452：整页状态原来靠对一句屏幕文案做子串匹配算，润色一次文字，脏和净就反了。
+        ⇒ 真源是这个布尔，文案从它渲染，方向是单向的。
         """
         return bool(getattr(self, "_cfg_dirty", False))
 
@@ -663,34 +423,11 @@ class ViewmodelPage(QWidget):
         if getattr(self, '_loading', True):
             return
         self._cfg_dirty = True
-        if hasattr(self, '_cfg_status_label'):
-            self._cfg_status_label.setText(
-                "⚠ 设置改过了，还没写进 CFG —— 点右下角那颗「保存到CFG」。")
-            self._cfg_status_label.setStyleSheet("color: #e6a23c; font-size: 12px;")
         self._sync_status_strip()
 
     def _mark_saved(self):
-        """标记设置已同步到 CFG。
-
-        ⚠⚠ **RN-452（批 31 改完复跑逮到的，3/3）**：这两句原来是
-        「⚠ 设置已修改，未保存到CFG」/「✓ 已同步到CFG」——
-        两句都是**短动词短语 + 一个符号**，而它们所在的位置，
-        正是本批刚撤掉的那颗「保存到CFG」按钮留下的空位（卡片最下面一行）。
-        改前 4 发**没有一发**提过这行字；改后同题同图 **3/3** 说
-        「分不清左边那个是可点击的同步按钮还是状态展示」，
-        一发逐字写「左侧的更像状态展示或**已置灰的按钮**」。
-
-        ⭐⭐⭐ **我撤掉了一颗按钮，它留下的那行字接管了那颗按钮的位置和读法** ——
-        一个控件怎么被读，由它的邻居决定；撤走邻居，它就换了一种读法。
-        （批 26「不可点的东西不许长按钮的形状」的又一个实例，而这次是我自己造的。）
-
-        ⇒ 改成**整句**，并且在未保存那一支里**指出动作去哪儿了** ——
-        撤掉入口的那张卡，有义务说清楚入口搬到了哪里（同批 24 RN-131）。
-        """
+        """标记设置已同步到 CFG。"""
         self._cfg_dirty = False
-        if hasattr(self, '_cfg_status_label'):
-            self._cfg_status_label.setText("这一页的设置已经写进 CFG 了。")
-            self._cfg_status_label.setStyleSheet("color: #67c23a; font-size: 12px;")
         self._sync_status_strip()
 
     def _on_crosshair_reset_changed(self, state):
@@ -908,6 +645,4 @@ class ViewmodelPage(QWidget):
 
     def cleanup(self):
         """清理资源"""
-        from theme_manager import get_theme_manager
-        get_theme_manager().unregister_theme_changed_callback(self._apply_theme_styles)
         self._stop_auto_switch()

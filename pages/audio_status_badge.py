@@ -6,7 +6,7 @@ from __future__ import annotations
 import os
 from typing import Iterable, Sequence, Tuple
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QEvent, Qt
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QWidget
 
 from core.audio.audio_resource_health import collect_audio_resource_health
@@ -24,6 +24,22 @@ def _restyle_widget(widget: QWidget):
     widget.update()
 
 
+#: 批 145：状态条只说「现在有问题」。开关开没开、配了几把、用的什么风格，页面上都看得见，
+#: 再排一遍徽章就是重复（首屏 28 页 11550 字里，这一排是最先该走的）。
+#: ⚠ 等级不够当判据：warn 历来也用来表示「还没开」「还是空的」，所以还要看词头。
+#: 新加一种徽章要想清楚它算不算问题 —— `tests/test_the_page_chrome_says_less.py` 会点名没分过类的词头。
+PROBLEM_LEVELS = frozenset({"danger", "error", "warn", "warning"})
+PROBLEM_HEADS = frozenset({
+    "GSI", "音频", "视觉", "资源", "素材", "风格", "已配置", "体检",
+    "驱动", "目录", "CFG", "保存", "配置", "运行", "结果", "样式",
+})
+
+
+def is_problem_badge(level, text) -> bool:
+    head = str(text or "").split("·")[0].strip()
+    return str(level or "") in PROBLEM_LEVELS and head in PROBLEM_HEADS
+
+
 #: 状态芯片各自的解释。键是「·」前面那几个字。
 #: ⭐ RN-232（批 60）：在此之前**只有整条有一份共享明细**，而且它写死给第 3 颗。
 CHIP_EXPLAINS = {
@@ -33,10 +49,6 @@ CHIP_EXPLAINS = {
     "音频": "软件要用到的音频素材。「需检查 N」是指有 N 项对不上，"
             "多半是素材还没放进来，或者配置指向的风格已经没了。",
     "配置": "你改的设置有没有落盘。写着「已保存」就是已经写进配置文件了。",
-    "账号": "登录只用来同步云端配置和社区资源；不登录也能用全部现有功能。",
-    "界面": "普通模式只显示日常要用的东西；专家模式会多出几页工具。"
-            "在本页「游戏模式」卡片的「界面」下拉里可以随时换回来。",
-    "主题": "深色 / 浅色外观。在本页右上角的「主题」下拉里换。",
 }
 
 
@@ -50,12 +62,35 @@ class AudioStatusBadgeBar(QFrame):
         self.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
         self._chip_pool: list[QLabel] = []
         self._detail_tooltip = ""
+        #: 这一页算出来的全部徽章（等级, 文字）；屏幕上只显示其中的问题
+        self._badges: list[tuple[str, str]] = []
 
         self._layout = QHBoxLayout(self)
         self._layout.setContentsMargins(0, 0, 0, 0)
         self._layout.setSpacing(10)
         self._layout.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self._layout.addStretch(1)
+        self.hide()
+
+    def badge_texts(self) -> list[str]:
+        """这一页算出来的全部徽章文字，显示没显示都算。"""
+        return [text for _level, text in self._badges]
+
+    def badges(self) -> list[tuple[str, str]]:
+        """同上，带等级。"""
+        return list(self._badges)
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() == QEvent.ParentChange:
+            self._sync_own_visibility()
+
+    def _sync_own_visibility(self):
+        has_problem = any(not chip.isHidden() for chip in self._chip_pool)
+        # ⚠ 还没进布局时不许 show：没有父控件的 QWidget 一 show 就是一扇顶层窗口
+        if has_problem and self.parentWidget() is None:
+            return
+        self.setVisible(has_problem)
 
     def _ensure_chip_pool(self, target_count: int):
         while len(self._chip_pool) < target_count:
@@ -123,7 +158,8 @@ class AudioStatusBadgeBar(QFrame):
         self.setToolTip(detail if detail else "")
 
     def set_badges(self, badges: Sequence[tuple[str, str]]):
-        badge_list = list(badges or [])
+        self._badges = [(str(level or "info"), str(text)) for level, text in (badges or [])]
+        badge_list = [badge for badge in self._badges if is_problem_badge(*badge)]
         self._ensure_chip_pool(len(badge_list))
 
         for idx, chip in enumerate(self._chip_pool):
@@ -136,13 +172,14 @@ class AudioStatusBadgeBar(QFrame):
                 continue
 
             level, text = badge_list[idx]
-            chip.setText(str(text))
-            chip.setProperty("level", str(level or "info"))
+            chip.setText(text)
+            chip.setProperty("level", level)
             chip.show()
             _restyle_widget(chip)
 
         self._apply_detail_tooltip()
         self._lock_in_chip_height()
+        self._sync_own_visibility()
 
     def _lock_in_chip_height(self):
         """把整条的最小高钉在芯片自己要的高度上（RN-185）。

@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from PySide6.QtWidgets import QApplication, QLabel
+from PySide6.QtWidgets import QApplication
 
 from config import config
 import pages.advanced_page as advanced_page_module
@@ -18,21 +18,8 @@ def qapp():
     return app
 
 
-def _visible_audio_status_chip_texts(status_bar) -> list[str]:
-    layout = status_bar.layout()
-    if layout is None:
-        return []
-    texts: list[str] = []
-    for idx in range(layout.count()):
-        item = layout.itemAt(idx)
-        widget = item.widget() if item else None
-        if (
-            isinstance(widget, QLabel)
-            and widget.objectName() == "audioStatusChip"
-            and not widget.isHidden()
-        ):
-            texts.append(widget.text())
-    return texts
+def _status_badge_texts(status_bar) -> list[str]:
+    return status_bar.badge_texts()
 
 
 def _create_valid_cs2_root(tmp_path: Path) -> Path:
@@ -59,8 +46,7 @@ def test_advanced_page_overview_badges_sync(qapp, tmp_path, monkeypatch):
     page = advanced_page_module.AdvancedPage()
 
     assert page.page_lead_label.objectName() == "pageLeadLabel"
-    assert page.summary_label.isHidden() is True
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert len(chips) == 4
     assert any(text == "目录 · 已配置" for text in chips)
     assert any(text == "来源 · 手动设置" for text in chips)
@@ -73,18 +59,18 @@ def test_advanced_page_overview_badges_sync(qapp, tmp_path, monkeypatch):
 
     page.debug_mode = True
     page._update_debug_status()
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert any(text == "调试 · 已启用" for text in chips)
     assert "已启用调试模式" in page.debug_status_label.text()
 
     light_index = page.theme_combo.findData("light")
     page._on_theme_changed(light_index)
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert any(text == "主题 · 浅色主题" for text in chips)
 
     page._auto_detected = True
     page._sync_overview_status()
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert any(text == "来源 · 自动检测" for text in chips)
 
     page.deleteLater()

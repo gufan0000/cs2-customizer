@@ -361,12 +361,14 @@ def test_alt_1_reaches_the_group_that_sits_first_on_screen(app, monkeypatch):
     ⇒ 修法是让顺序**从布局现算**（`_nav_groups_in_view()`），并让按钮自己带
       `fp_page_id`（「常用」组的按钮不在 `_page_to_group` 里，那正是病根）。
 
+    批 145 起「常用」默认关（RN-733），这里量的是用户在「高级设置」开回来之后的样子。
     ⚠⚠ 它必须自己**造出**常用组：干净配置下没有使用频次数据，这一组根本不出现
       —— 同 RN-516：**一条靠环境里碰巧攒下的东西才成立的判据，在干净机器上是哑的**。
       而 CI 和新装的机器就是干净机器。
     """
     import core.page_usage_tracker as tracker
 
+    monkeypatch.setattr("config.config.nav_frequent_enabled", True, raising=False)
     seeded = ["kill_sound", "crosshair"]
     monkeypatch.setattr(tracker, "top_pages",
                         lambda n=4, known_pages=None: list(seeded))
@@ -413,6 +415,7 @@ def test_the_compact_drawer_mirrors_the_sidebar_including_the_frequent_group(
     """
     import core.page_usage_tracker as tracker
 
+    monkeypatch.setattr("config.config.nav_frequent_enabled", True, raising=False)
     seeded = ["kill_sound", "crosshair"]
     monkeypatch.setattr(tracker, "top_pages",
                         lambda n=4, known_pages=None: list(seeded))

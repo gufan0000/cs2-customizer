@@ -49,16 +49,17 @@ from core.utils.logger import get_logger
 #: 总开关**也**住在哪一页。各页共用一个真源 —— 页面 id 改了只改这里。
 MASTER_SWITCH_PAGE_ID = "basic"
 #: 那一页在导航里叫什么。写进 tooltip，别在各页抄字面量。
-MASTER_SWITCH_PAGE_NAME = "基础设置"
-#: 总开关那张卡叫什么（`gui_widget._create_basic_page` 里的「功能开关」）。
-MASTER_SWITCH_CARD_NAME = "功能开关"
-#: 开关行左边那个标签。刻意**不随状态改文案** —— 「这是总开关」是一条常驻事实，
-#: 不是只在关着时才成立的提示。状态由开关自己的样子表达。
+MASTER_SWITCH_PAGE_NAME = "总览"
+#: 这颗开关叫什么，帮助文案和读屏都用这个名字。
+#: 批 145 起屏幕上不再摆这三个字：紧贴页面标题的那颗开关，不用再说一遍它是总开关。
 ROW_LABEL_TEXT = "总开关"
 #: 开关旁边那个状态词。⭐ 一颗孤立的开关看不出是开还是关（没有对照物），
 #: 一个词把它钉死；同时也让读屏软件读得出来。
 STATE_ON_TEXT = "已开启"
 STATE_OFF_TEXT = "未开启"
+#: 开着、而且这一页改了就存时，跟在状态词后面那句话（批 145 从底栏搬来，底栏常态不再说话）。
+#: 关着时由 `NOTICE_OFF_TEXT` 说；要手动保存的页面由页面自己说（见 `saves_automatically`）。
+SAVED_HINT_TEXT = "改动自动保存，当场生效"
 
 _logger = get_logger("MasterSwitchRow")
 
@@ -70,11 +71,11 @@ def same_switch_text(feature_name: str) -> str:
     而它其实是全局的 —— 在这儿关掉，首页那颗也跟着关。
     """
     return (f"「{feature_name}」的总开关。这一颗和「{MASTER_SWITCH_PAGE_NAME}」页"
-            f"「{MASTER_SWITCH_CARD_NAME}」里的那一颗是**同一个**，改哪边都一样。")
+            "卡片上的那一颗是同一个，改哪边都一样。")
 
 
 class MasterSwitchRow(QWidget):
-    """状态卡上的「总开关」一行：标签 + 与首页同款的 ToggleSwitch。
+    """页面标题旁边的总开关：与首页同款的 ToggleSwitch + 状态词 + 一句说明。
 
     对外只有三个动作：`is_checked()` / `set_checked_by_user()` / `refresh()`。
     ⚠ 没有 `set_checked()` 是**故意的** —— 一个"只改显示不改功能"的入口
@@ -90,6 +91,7 @@ class MasterSwitchRow(QWidget):
         self.config_key = config_key
         self.feature_name = feature_name
         self._syncing = False
+        self._has_content = True
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -107,10 +109,6 @@ class MasterSwitchRow(QWidget):
         self._toggle.setAccessibleName(f"{feature_name}总开关")
         self._toggle.toggled.connect(self._on_user_toggled)
         layout.addWidget(self._toggle)
-
-        self._label = QLabel(ROW_LABEL_TEXT)
-        self._label.setObjectName("statusLabel")
-        layout.addWidget(self._label)
 
         # 状态词跟在开关旁边。⭐ 开关自己只表达"开没开"这个**姿态**，
         # 姿态要靠对比才读得出来（一颗孤立的开关看不出是开还是关）；
@@ -133,6 +131,12 @@ class MasterSwitchRow(QWidget):
 
         self.effect_notice = make_master_switch_notice()
         layout.addWidget(self.effect_notice, 1)
+
+        self.saved_hint = QLabel(SAVED_HINT_TEXT)
+        self.saved_hint.setObjectName("hintLabel")
+        self.saved_hint.setProperty("fp_index_skip", True)
+        self.saved_hint.setWordWrap(True)
+        layout.addWidget(self.saved_hint, 1)
         layout.addStretch(0)
 
         self._sync_state_text()
@@ -161,6 +165,10 @@ class MasterSwitchRow(QWidget):
         notice = getattr(self, "effect_notice", None)
         if notice is not None:
             notice.setVisible(not self._toggle.isChecked())
+        from widgets.master_switch_effect import saves_automatically
+
+        self.saved_hint.setVisible(
+            self._toggle.isChecked() and self._has_content and saves_automatically(self._page))
 
     def _apply_effect_state(self) -> None:
         from widgets.master_switch_effect import apply_effect_state_safely
@@ -173,6 +181,11 @@ class MasterSwitchRow(QWidget):
 
     def is_checked(self) -> bool:
         return bool(self._toggle.isChecked())
+
+    def set_has_content(self, has_content: bool) -> None:
+        """这一页有没有可用的东西。没有时不说「当场生效」，开关还是那颗开关。"""
+        self._has_content = bool(has_content)
+        self._sync_state_text()
 
     def set_checked_by_user(self, checked: bool) -> None:
         """当作"用户拨了它"来处理 —— 判据和任何程序化入口都走这里。
@@ -260,6 +273,24 @@ class MasterSwitchRow(QWidget):
         self.refresh()
 
 
-def make_master_switch_row(page, config_key: str, feature_name: str) -> MasterSwitchRow:
-    """建一行总开关，接线一次接好。"""
-    return MasterSwitchRow(page, config_key, feature_name)
+def make_master_switch_row(page, config_key: str, feature_name: str, *, header=None) -> MasterSwitchRow:
+    """建一行总开关，接线一次接好，就地摆到页面标题旁边。
+
+    ⭐ 摆放只有这一处：全站 16 颗开关的位置因此不可能各写各的。
+    `header` 给主布局还没装到页面上的那几页：这时页头还不是页面的子控件，`findChild` 找不到。
+    """
+    from widgets.page_header import PageHeader
+
+    row = MasterSwitchRow(page, config_key, feature_name)
+    header = header or page.findChild(PageHeader)
+    if header is None:
+        _logger.error(f"{config_key} 的总开关找不到页头，这一页看不到它")
+        return row
+    header.dock_beside_title(row)
+    # 键盘顺序跟眼睛走：先开关，后右上角的「?」。「?」建得早，不调就是它在前（`tab_order_audit` 盯这个）。
+    # 两步：把开关接到「?」后面（中间隔了多少控件都一样），再把「?」挪到开关后面。
+    help_button = header.findChild(QWidget, "helpButton")
+    if help_button is not None:
+        QWidget.setTabOrder(help_button, row._toggle)
+        QWidget.setTabOrder(row._toggle, help_button)
+    return row

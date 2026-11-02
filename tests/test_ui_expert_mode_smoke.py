@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import pytest
-from PySide6.QtWidgets import QApplication, QPushButton, QComboBox, QLabel, QWidget, QHBoxLayout
+from PySide6.QtWidgets import QApplication, QPushButton, QComboBox, QWidget, QHBoxLayout
 
 import gui_widget
 
@@ -45,6 +45,7 @@ def test_expert_mode_visibility_smoke(qapp):
     expert_row_layout.addWidget(win.system_status_open_health_btn)
     expert_row_layout.addWidget(win.audio_task_panel_quick_btn)
     win._sync_home_tool_rows = lambda: gui_widget.MainWindow._sync_home_tool_rows(win)
+    win._sync_expert_nav_buttons = lambda: gui_widget.MainWindow._sync_expert_nav_buttons(win)
 
     gui_widget.MainWindow._apply_expert_mode_visibility(win)
     assert win.nav_buttons["audio_health"].isVisible()
@@ -81,27 +82,3 @@ def test_home_switch_target_page_mapping():
     assert gui_widget.MainWindow._get_home_switch_target_page("kill_sound") == "kill_sound"
     assert gui_widget.MainWindow._get_home_switch_target_page("dynamic_hud") == "hud_color"
     assert gui_widget.MainWindow._get_home_switch_target_page("spectator") is None
-
-
-def test_home_switch_label_click_navigates_to_target_page(qapp):
-    calls: list[str] = []
-    win = type("W", (), {})()
-    win._page_names = {"kill_sound": "击杀音效"}
-    win.show_page = lambda pid: calls.append(pid)
-
-    label = gui_widget.MainWindow._create_home_switch_label(win, "kill_sound", "击杀音效")
-
-    assert isinstance(label, gui_widget.ClickableLabel)
-    label.clicked.emit()
-    assert calls == ["kill_sound"]
-
-
-def test_home_switch_label_without_target_stays_plain_label(qapp):
-    win = type("W", (), {})()
-    win._page_names = {}
-    win.show_page = lambda *_args, **_kwargs: None
-
-    label = gui_widget.MainWindow._create_home_switch_label(win, "spectator", "观战静音")
-
-    assert isinstance(label, QLabel)
-    assert not isinstance(label, gui_widget.ClickableLabel)

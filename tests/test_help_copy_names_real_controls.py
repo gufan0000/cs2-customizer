@@ -140,7 +140,8 @@ def _string_literals(path: Path) -> set[str]:
 #:   （批 31 记过一次、批 34 的普查自己又踩了两次）——
 #:   ⭐ **一条判据钉住的是一处调用，不是一个道理。**
 PAGE_ID_TO_IMPL = {
-    "fun_afterlife": "fun_page.py",
+    "fun_afterlife": "pages/fun_page.py",
+    "basic": "widgets/home_overview.py",  # 批 148：总览页的控件长在这里，页面本身在 gui_widget.py
 }
 
 
@@ -148,7 +149,7 @@ def _family_files(page_id: str) -> list[Path]:
     """一页的**控件来源**：它自己 + 全仓文件名里带它的 + 共用件。"""
     out = [REPO / "pages" / f"{page_id}_page.py"]
     if page_id in PAGE_ID_TO_IMPL:
-        out.append(REPO / "pages" / PAGE_ID_TO_IMPL[page_id])
+        out.append(REPO / PAGE_ID_TO_IMPL[page_id])
     for folder in FAMILY_DIRS:
         base = REPO / folder
         if base.exists():
@@ -462,9 +463,9 @@ def test_comments_in_the_help_panel_are_not_read_as_user_copy():
 # RN-087：文案不许再把人支去一个**不必去**的地方
 # --------------------------------------------------------------------------
 
-#: 「去基础设置开那个开关」这个句式。⚠ 只拦**同时**出现"基础设置"和"开/启用"
-#: 的行 —— 单说「基础设置」是正常的（那一页确实存在，别的话题也会提到它）。
-SENT_AWAY = re.compile(r"基础设置[^。；\n]{0,12}(?:启用|打开|开启)")
+#: 「去总览开那个开关」这个句式（批 148 之前那一页叫「基础设置」）。⚠ 只拦**同时**出现页名和"开/启用"
+#: 的行 —— 单说页名是正常的（那一页确实存在，别的话题也会提到它）。
+SENT_AWAY = re.compile(r"(?:基础设置|总览)[^。；\n]{0,12}(?:启用|打开|开启)")
 
 
 def _pages_with_an_in_place_switch() -> set[str]:

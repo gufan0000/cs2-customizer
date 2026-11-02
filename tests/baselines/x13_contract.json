@@ -1,6 +1,10 @@
 {
   "contract": {
     "core.utils.__init__": [],
+    "core.utils.app_fonts": [
+      "UI_FONT_FAMILY",
+      "load_ui_fonts"
+    ],
     "core.utils.autostart": [
       "is_enabled",
       "is_supported",
@@ -55,11 +59,32 @@
       "start_mem_monitor"
     ]
   },
-  "contract_total": 33,
+  "contract_total": 35,
   "external_use": {
     "core.utils.__init__": {
       "files": [],
       "names": {}
+    },
+    "core.utils.app_fonts": {
+      "files": [
+        "gui_widget.py",
+        "main_widget.py",
+        "music_control_bar.py",
+        "pages/about_page.py",
+        "service_unavailable_dialog.py",
+        "tests/test_ui_font_is_bundled.py",
+        "theme_manager.py",
+        "ui_help_panel.py",
+        "ui_osd.py",
+        "ui_slider_bubble.py",
+        "ui_toast.py",
+        "widgets/flash_preview_widget.py",
+        "widgets/page_header.py"
+      ],
+      "names": {
+        "UI_FONT_FAMILY": 14,
+        "load_ui_fonts": 3
+      }
     },
     "core.utils.autostart": {
       "files": [
@@ -91,10 +116,10 @@
         "AA_LARGE": 1,
         "AA_NORMAL": 6,
         "best_on_color": 4,
-        "contrast_ratio": 13,
+        "contrast_ratio": 12,
         "ensure_contrast": 10,
         "parse_hex": 2,
-        "relative_luminance": 2,
+        "relative_luminance": 1,
         "to_hex": 1,
         "worst_contrast": 2
       }
@@ -158,13 +183,17 @@
     },
     "core.utils.log_filter": {
       "files": [
+        "core/crash_reporter.py",
+        "main_widget.py",
         "pages/about_page.py",
+        "tests/test_audit_download_boundaries.py",
         "tests/test_diagnostics.py",
-        "tests/test_log_filter.py"
+        "tests/test_log_filter.py",
+        "tests/test_optimization_lifetimes.py"
       ],
       "names": {
-        "SensitiveFilter": 1,
-        "redact_text": 3
+        "SensitiveFilter": 2,
+        "redact_text": 6
       }
     },
     "core.utils.logger": {
@@ -178,6 +207,7 @@
         "core/audio/game_audio_ducker.py",
         "core/cfg_compiler.py",
         "core/config_reload_bus.py",
+        "core/devtools/ingame_driver.py",
         "core/fun/afterlife.py",
         "core/fun/sticky_browser.py",
         "core/hotkeys/registry.py",
@@ -187,6 +217,7 @@
         "core/presets/map_rules.py",
         "core/presets/my_presets.py",
         "core/presets/preset_center.py",
+        "core/runtime/process_power.py",
         "core/settings_search.py",
         "core/shutdown.py",
         "crosshair_animation.py",
@@ -243,11 +274,11 @@
         "request_admin.py",
         "resource_manager.py",
         "screen_effect_overlay.py",
+        "scripts/ingame/app_helpers.py",
         "tests/test_logger_policy.py",
-        "tests/test_ui_system_status_smoke.py",
+        "tests/test_you_can_tell_where_the_game_link_breaks.py",
         "theme_manager.py",
         "ui_animations.py",
-        "ui_effects.py",
         "ui_ripple_effect.py",
         "ui_shimmer.py",
         "ui_toast.py",
@@ -268,7 +299,7 @@
         "Path": 2,
         "_purge_old_logs": 6,
         "_want_debug_file_log": 6,
-        "get_logger": 96
+        "get_logger": 100
       }
     },
     "core.utils.mem_monitor": {
@@ -289,6 +320,7 @@
   "internal_only_modules": [],
   "loc": {
     "core.utils.__init__": 4,
+    "core.utils.app_fonts": 30,
     "core.utils.autostart": 95,
     "core.utils.contrast": 134,
     "core.utils.elevation": 70,
@@ -296,8 +328,8 @@
     "core.utils.idle_watcher": 104,
     "core.utils.jank_monitor": 62,
     "core.utils.lazy_module": 79,
-    "core.utils.log_filter": 117,
-    "core.utils.logger": 338,
+    "core.utils.log_filter": 151,
+    "core.utils.logger": 348,
     "core.utils.mem_monitor": 146
   },
   "reexport_only_modules": [],
@@ -308,6 +340,17 @@
         "__all__"
       ],
       "functions": []
+    },
+    "core.utils.app_fonts": {
+      "classes": [],
+      "constants": [
+        "UI_FONT_FAMILY",
+        "_FILES",
+        "_loaded"
+      ],
+      "functions": [
+        "load_ui_fonts"
+      ]
     },
     "core.utils.autostart": {
       "classes": [],
@@ -403,6 +446,7 @@
         "__all__"
       ],
       "functions": [
+        "_redact_url",
         "redact_text"
       ]
     },

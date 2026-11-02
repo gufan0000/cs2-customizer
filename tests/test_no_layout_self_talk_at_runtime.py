@@ -82,7 +82,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
 from test_no_layout_self_talk_sitewide import LAYOUT_PATTERNS, LAYOUT_WORDS
 
 #: 至少要扫到这么多条可见副标题，否则扫描器自己瞎了（实测 213 条）。
-MIN_HINTS_SEEN = 150
+MIN_HINTS_SEEN = 90  # 批 150 减字之后实测 104
 
 #: 至少要走到这么多页 —— 分母走 `win._page_names`，不是 `win.pages`（懒加载）。
 MIN_PAGES_SEEN = 25
@@ -157,7 +157,7 @@ def test_the_runtime_scan_actually_sees_the_hints(visible_hints):
         "切页走 `_ui_mode.goto(force=True)`。"
     )
     assert len(hints) >= MIN_HINTS_SEEN, (
-        f"只扫到 {len(hints)} 条可见 `hintLabel`，实测应有 213 条 —— "
+        f"只扫到 {len(hints)} 条可见 `hintLabel`，批 150 实测 104 条 —— "
         "`objectName == \"hintLabel\"` 的约定改了？"
     )
 

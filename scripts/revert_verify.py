@@ -213,6 +213,83 @@ class Revert:
 
 
 REVERTS = [
+    Revert("B152", "B152没有社区站时空库又不说话", "pages/sound_page_base.py",
+           '            text = "还没有风格：放进音频后点「刷新风格列表」"\n',
+           '            text = "选一个风格，再点下面的枪名"\n',
+           "tests/test_empty_library_points_at_the_community.py::"
+           "test_a_build_without_the_community_falls_back_to_a_real_path",
+           "开源版换成武器板后空库只剩一句「选一个风格」"),
+    Revert("B152", "B152没有社区站时空库又说当场生效", "pages/sound_page_base.py",
+           "        self.master_switch_row.set_has_content(not self._library_is_empty())\n",
+           "        self.master_switch_row.set_has_content(not applied)\n",
+           "tests/test_empty_library_points_at_the_community.py::"
+           "test_a_build_without_the_community_falls_back_to_a_real_path",
+           "按引导卡出没出来判，没有社区站的发行版空库时照样说「当场生效」"),
+    Revert("P3", "P3建页又对空样式表逐个重设", "ui_style_applier.py",
+           "            if not child.styleSheet() or child.property(self.KEEP_STYLE_PROPERTY):\n",
+           "            if child.property(self.KEEP_STYLE_PROPERTY):\n",
+           "tests/test_page_build_skips_empty_stylesheets.py::test_only_widgets_with_an_inline_style_are_touched",
+           "setStyleSheet(\"\") 不短路，空设一遍也重算样式；首开中位 117 → 60 ms"),
+    Revert("P3", "P3有内联样式的子控件不清了", "ui_style_applier.py",
+           "            if not child.styleSheet() or child.property(self.KEEP_STYLE_PROPERTY):\n",
+           "            if True:\n",
+           "tests/test_page_build_skips_empty_stylesheets.py::test_only_widgets_with_an_inline_style_are_touched",
+           "只跳过空的，真有内联样式的照清"),
+    Revert("P1", "P1上下文切换忽略线程退出", "scripts/health_table.py",
+           "and all(before[k][3] == after[k][3]\n",
+           "and all(True\n",
+           "tests/test_health_table_budget.py::test_counter_window_rejects_turnover_without_clamping_to_zero",
+           "线程集合变化的Windows上下文切换差值不能当有效读数"),
+    Revert("P1", "P1预算超限放行", "scripts/health_table.py",
+           "        if value > limit:\n",
+           "        if False:\n",
+           "tests/test_health_table_budget.py::test_check_red_over_any_limit",
+           "超预算必须列出指标并退出1"),
+    Revert("P1", "P1预算缺项静默通过", "scripts/health_table.py",
+           '        raise ValueError(f"budget keys invalid: missing={sorted(missing)}, extra={sorted(extra)}")\n',
+           "        return []\n",
+           "tests/test_health_table_budget.py::test_missing_budget_item_is_an_error",
+           "预算漏掉任何指标必须报错，不能静默放行"),
+    Revert("P1", "P1预算命令返回假绿", "scripts/health_table.py",
+           "    status = int(bool(exceeded) or error is not None)\n",
+           "    status = 0\n",
+           "tests/test_health_table_budget.py::test_check_red_over_any_limit",
+           "输出超限信息却返回0会使自动门禁假绿"),
+    Revert("P1", "P1预算缺失读数填零", "scripts/health_table.py",
+           "        value, limit = readings.get(key), budget[key]\n",
+           "        value, limit = readings.get(key, 0), budget[key]\n",
+           "tests/test_health_table_budget.py::test_missing_reading_is_an_error",
+           "未采集的读数不能以零冒充通过"),
+    Revert("P2", "P2预览隐藏后继续唤醒", "widgets/kill_icon_preview.py",
+           "    def hideEvent(self, event):\n        self._timer.stop()\n",
+           "    def hideEvent(self, event):\n        pass\n",
+           "tests/test_ingame_overhead_p2.py::test_hidden_preview_sleeps_and_resumes_without_restarting",
+           "隐藏页仍以60Hz运行预览定时器"),
+    Revert("P2", "P2隐藏页换素材重新开表", "widgets/kill_icon_preview.py",
+           "        if self._frames and self.isVisible():\n",
+           "        if self._frames:\n",
+           "tests/test_ingame_overhead_p2.py::test_hidden_preview_sleeps_and_resumes_without_restarting",
+           "给隐藏预览设置素材或帧率后重新唤醒"),
+    Revert("P2", "P2预览重新显示不恢复", "widgets/kill_icon_preview.py",
+           "        if self._frames and self._timer_requested:\n            self._timer.start()\n",
+           "        if False:\n            self._timer.start()\n",
+           "tests/test_ingame_overhead_p2.py::test_hidden_preview_sleeps_and_resumes_without_restarting",
+           "隐藏时停表后显示时不再恢复动画"),
+    Revert("P2", "P2HUD回调重新等磁盘", "gsi_handler_hud_color.py",
+           "        self._queue_color(output.color, now)\n\n    def _queue_color",
+           "        self._maybe_write_color(output.color, now)\n\n    def _queue_color",
+           "tests/test_ingame_overhead_p2.py::test_hud_callback_never_waits_for_cfg_and_keeps_all_colors",
+           "GSI回调同步等待持锁写CFG"),
+    Revert("P2", "P2HUD队列漏中间颜色", "gsi_handler_hud_color.py",
+           "                self._maybe_write_color(*item)\n",
+           "                if self._color_queue.empty():\n                    self._maybe_write_color(*item)\n",
+           "tests/test_ingame_overhead_p2.py::test_hud_callback_never_waits_for_cfg_and_keeps_all_colors",
+           "把FIFO误改成合并最新值会丢瞬态颜色"),
+    Revert("P2", "P2HUD失败写入不再重试", "gsi_handler_hud_color.py",
+           "                if self._write_runtime_cfg(color):\n                    self.current_color = color\n",
+           "                self._write_runtime_cfg(color)\n                self.current_color = color\n",
+           "tests/test_ingame_overhead_p2.py::test_hud_worker_writes_exact_cfg_and_retries_failure",
+           "写入失败却记成成功会吞掉同色重试"),
     Revert(
         "NATIVE-20261023", "音频解码前未校验内容",
         "core/audio/safe_soundfile.py",
@@ -430,55 +507,27 @@ REVERTS = [
     Revert(
         "R10", "flash 基础设置页签的滚动区被删掉",
         "pages/flash_page.py",
-        "        scroll = QScrollArea()\n"
-        "        scroll.setWidgetResizable(True)\n"
-        "        scroll.setFrameShape(QFrame.NoFrame)\n"
-        "        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)\n"
+        "        scroll.setWidget(content)\n"
+        "        outer.addWidget(scroll)\n"
         "\n"
-        "        content = QWidget()\n"
-        "        layout = QVBoxLayout(content)\n"
-        "        layout.setContentsMargins(8, 8, 8, 8)\n"
-        "        layout.setSpacing(10)\n"
-        "\n"
-        "        controls_card, controls_layout = SettingsCard.make(",
-        "        content = QWidget()\n"
-        "        layout = QVBoxLayout(content)\n"
-        "        layout.setContentsMargins(8, 8, 8, 8)\n"
-        "        layout.setSpacing(10)\n"
-        "\n"
-        "        controls_card, controls_layout = SettingsCard.make(",
+        "        self.tab_widget.addTab(tab, \"基础设置\")",
+        "        self.tab_widget.addTab(content, \"基础设置\")",
         "tests/test_tab_scroll_and_button_width_r10.py::test_every_tab_is_scrollable",
         "UP-095：页签装不下时 Qt 压扁控件，字形重叠不可读",
     ),
     Revert(
         "R10", "special_sound 的 C4 页签滚动区被删掉",
         "pages/special_sound_page.py",
-        "        tab_scroll = QScrollArea()\n"
-        "        tab_scroll.setWidgetResizable(True)\n"
-        "        tab_scroll.setFrameShape(QFrame.NoFrame)\n"
-        "        tab_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)\n"
-        "\n"
-        "        content = QWidget()\n"
-        "        layout = QVBoxLayout(content)\n"
-        "        layout.setContentsMargins(8, 8, 8, 8)\n"
-        "        layout.setSpacing(10)\n"
-        "\n"
-        "        card, card_layout = SettingsCard.make(\n"
-        '            "C4 音效",',
-        "        content = QWidget()\n"
-        "        layout = QVBoxLayout(content)\n"
-        "        layout.setContentsMargins(8, 8, 8, 8)\n"
-        "        layout.setSpacing(10)\n"
-        "\n"
-        "        card, card_layout = SettingsCard.make(\n"
-        '            "C4 音效",',
+        '        scroll = BoardScrollArea()\n',
+        '        scroll = QWidget()\n',
         "tests/test_tab_scroll_and_button_width_r10.py::test_every_tab_is_scrollable",
         "UP-081：余量薄的页签，文案一变长就翻车",
     ),
     Revert(
         "R10", "「重置位置和大小」又被写死宽度",
         "pages/kill_icon_page.py",
-        "        reset_btn.setMinimumWidth(146)",
+        '        reset_btn = QPushButton("重置位置和大小")',
+        '        reset_btn = QPushButton("重置位置和大小")\n'
         "        reset_btn.setFixedWidth(146)",
         "tests/test_tab_scroll_and_button_width_r10.py::"
         "test_known_tight_buttons_are_not_width_pinned[kill_icon_page.py]",
@@ -569,25 +618,18 @@ REVERTS = [
     Revert(
         "R11", "special_sound 的头部卡又钉回滚动区外",
         "pages/special_sound_page.py",
-        "        scroll_layout.addWidget(header_card)\n\n        grid = QGridLayout()\n"
-        "        grid.setContentsMargins(0, 0, 0, 0)\n"
-        "        grid.setHorizontalSpacing(10)\n"
-        "        grid.setVerticalSpacing(8)\n"
-        "        self.round_grid = grid",
-        "        layout.addWidget(header_card)\n\n        grid = QGridLayout()\n"
-        "        grid.setContentsMargins(0, 0, 0, 0)\n"
-        "        grid.setHorizontalSpacing(10)\n"
-        "        grid.setVerticalSpacing(8)\n"
-        "        self.round_grid = grid",
+        '        self.tab_widget.addTab(scroll, tab_name)\n',
+        '        holder = QWidget()\n        QVBoxLayout(holder).addWidget(scroll)\n        self.tab_widget.addTab(holder, tab_name)\n',
         "tests/test_compact_mode_layout_r11.py::test_special_sound_tabs_have_a_single_scroll_root",
         "UP-100：「回合」页签的滚动区被挤成 62px 舷窗，里面装 542px 内容",
     ),
     Revert(
-        "R11", "flash 页的 Tab 顺序钉死被删掉",
+        "R11", "flash 页的 Tab 顺序又跳行",
         "pages/flash_page.py",
-        "        self.setTabOrder(self.bg_color_combo, self.fade_in_checkbox)",
-        "        pass  # setTabOrder removed",
-        "tests/test_compact_mode_layout_r11.py::test_flash_basic_tab_order_is_pinned",
+        "        layout.addWidget(controls_card)\n",
+        "        layout.addWidget(controls_card)\n"
+        "        self.setTabOrder(self.fade_out_checkbox, self.opacity_slider)\n",
+        "tests/test_flash_viewmodel_truth.py::test_flash_basic_tab_order_follows_the_screen",
         "UP-102：键盘用户 Tab 从颜色跳到下一行滑块再跳回上一行，排版毫无异常",
     ),
     Revert(
@@ -617,10 +659,11 @@ REVERTS = [
         "UP-058：判为不拆，但不许继续长——新样式该开新方法",
     ),
     Revert(
-        "R11", "又多一处手搓 QFrame#card",
-        "pages/about_page.py",
-        'setObjectName("card")',
-        'setObjectName("card")\n        _extra = QFrame(); _extra.setObjectName("card")',
+        "R11",
+        "又多一处手搓 QFrame#card",
+        'pages/crosshair_page.py',
+        '        card.setObjectName("card")',
+        '        card.setObjectName("card")\n        _extra = QFrame(); _extra.setObjectName("card")',
         "tests/test_closed_items_ratchet_r11.py::test_handrolled_cards_do_not_grow",
         "UP-097：45 处手搓卡片判为不迁移，但不许再加新的",
     ),
@@ -954,7 +997,7 @@ REVERTS = [
         '    if cover:\n'
         '        return cover',
         '    pass  # revert: 不做片段覆盖',
-        'tests/test_search_r14.py::test_fragment_cover_recalls_composed_queries',
+        'tests/test_search_r14.py::test_fragment_cover_works_at_the_item_level',
         'R14：中文不打空格，「准心回正」整串当一个 token —— 页面上叫「启用准心快速回正」，'
         '不是子串就 0 分，第一位变成基础设置页那个孤零零的「准心」',
     ),
@@ -1493,8 +1536,8 @@ REVERTS = [
     Revert(
         "V", "箭头图标画成方块",
         "theme_manager.py",
-        "    painter.fillPath(path, color)",
-        "    painter.fillRect(0, 0, int(w), int(h), color)",
+        "    path.lineTo(QPointF(w / 2.0, h))\n    path.closeSubpath()\n    painter.fillPath(path, color)",
+        "    path.lineTo(QPointF(w / 2.0, h))\n    path.closeSubpath()\n    painter.fillRect(0, 0, int(w), int(h), color)",
         "tests/test_ui_visual_r1_fixes.py::test_down_arrow_icon_is_a_triangle_not_a_block",
         "下拉箭头不是三角形而是方块——正是修复前用户看到的样子",
     ),
@@ -1543,8 +1586,8 @@ REVERTS = [
     Revert(
         "V", "页面说明又写回版面决策",
         "pages/kill_sound_page.py",
-        '    PAGE_LEAD = "击杀敌人时播放你自己的音效，逐把枪选风格；一个风格里自带 1~5 连杀的不同音效。'
-        '点「测试」可以按连杀档位试听；总开关管它开不开。"',   # ⚠ 2026-08-21 随 RN-163 改过文案
+        '    PAGE_LEAD = "击杀敌人时播放你自己的音效；一个风格里自带 1~5 连杀的不同音效。'
+        '选一个风格再点枪名就配上，「试听」可以按连杀档位听；总开关管它开不开。"',   # ⚠ 批 146 改过文案
         '    PAGE_LEAD = "击杀音效页保持列表式效率，把分类切换和快速试听留在一屏里。"',
         "tests/test_page_copy_is_user_facing.py::test_page_copy_has_no_layout_jargon",
         "副标题讲的是界面怎么排而不是功能是什么，玩家读完不知道该干嘛"
@@ -1586,9 +1629,10 @@ REVERTS = [
         #   ⇒ 照 docstring 里写的那一刀原样来：`min-width` 和 `max-width` 一起给。
         "            QPushButton#modeToggleButton, QPushButton#modeToggleIconButton {{\n"
         "                background-color: transparent;",
+        # ⚠ 批 145：按钮字改成「⇔ 紧凑」之后 38px 装得下，这一刀砍不动了 ⇒ 压到 20px。
         "            QPushButton#modeToggleButton, QPushButton#modeToggleIconButton {{\n"
-        "                min-width: 38px;\n"
-        "                max-width: 38px;\n"
+        "                min-width: 20px;\n"
+        "                max-width: 20px;\n"
         "                background-color: transparent;",
         "tests/test_ui_visual_r1_fixes.py::"
         "test_sidebar_mode_button_is_not_squeezed_into_a_square",
@@ -1682,8 +1726,8 @@ REVERTS = [
         #   而上面那段话逐字写着「体检要跑到它不再报为止」——这一轮两条又是**一起**报出来的。
         #   ⭐ **一条锚在「当前真实值」上的断点，每修好一页就必然失效一次；
         #     它不是坏了，是它的锚点本来就是一个会动的数。**
-        "MAX_REMAINING = 17",
-        "MAX_REMAINING = 16",
+        "MAX_REMAINING = 1",
+        "MAX_REMAINING = 0",
         "tests/test_no_invisible_summary_label.py::"
         "test_invisible_summary_label_count_only_shrinks",
         "21 个页面各有一个建出来就 hide()、全仓没人再显示的 summary_label，"
@@ -1740,9 +1784,9 @@ REVERTS = [
     Revert(
         "RN", "状态区又把已配置名单算两遍",
         "pages/kill_voice_page.py",
-        "        self.category_overview_title_label.setText(f\"当前分类 · {current_category}\")",
+        "        self._sync_weapon_board(resolved)",
         "        configured_names = self._configured_weapon_names()\n"
-        "        self.category_overview_title_label.setText(f\"当前分类 · {current_category}\")",
+        "        self._sync_weapon_board(resolved)",
         "tests/test_kill_voice_no_duplicate_work.py::"
         "test_status_badge_computes_the_configured_names_once",
         "两次调用之间没有任何东西改变它的输入，结果必然逐字相同 —— "
@@ -1816,12 +1860,12 @@ REVERTS = [
         "第一组第一项，那条判据照样绿 —— 回退验证当场逮到的",
     ),
     Revert(
-        "RN", "有新页面插到「基础设置」前面去了",
+        "RN", "有新页面插到「总览」前面去了",
         "gui_widget.py",
         # ⚠ RN-673：锚点砍掉结尾那句 `]),` —— 开始组后面现在还跟着「导入资源」。
-        "            (\"开始\", [\n                (\"basic\", \"基础设置\"),\n",
-        "            (\"开始\", [\n                (\"about\", \"关于软件\"),\n"
-        "                (\"basic\", \"基础设置\"),\n",
+        "                (\"basic\", \"总览\"),\n                # ⭐⭐⭐ RN-673：",
+        "                (\"about\", \"关于软件\"),\n"
+        "                (\"basic\", \"总览\"),\n                # ⭐⭐⭐ RN-673：",
         "tests/test_sidebar_nav_structure.py::"
         "test_basic_settings_is_the_very_first_nav_item",
         "置顶这件事只有「第一项」算数：往它上面塞一项，"
@@ -1895,17 +1939,6 @@ REVERTS = [
         "必须**说出来**有几项失效、以及怎么办",
     ),
     Revert(
-        "RN", "分类名又拿页签文字当字典键",
-        "pages/kill_sound_page.py",
-        "        names = list(self.CATEGORIES.keys())\n"
-        "        if not hasattr(self, \"tab_widget\")",
-        "        names = []\n        if not hasattr(self, \"tab_widget\")",
-        "tests/test_kill_sound_status_tells_the_truth.py::"
-        "test_category_lookup_survives_a_renamed_tab",
-        "RN-028：页签文案加个计数后缀，查表就静默返回 []，分类徽章变 0/0 而不报错。"
-        "与 kill_voice 的 RN-020 同形，那页已修、这页一直还在",
-    ),
-    Revert(
         "RN", "风格没了又被报成「音频设备不可用」",
         "pages/kill_sound_page.py",
         "            report_preview_failure(self, PreviewFailure.STALE_STYLE, style_text)\n"
@@ -1918,9 +1951,9 @@ REVERTS = [
     Revert(
         "RN", "击杀音效页的已配置名单又算两遍",
         "pages/kill_sound_page.py",
-        "        self.category_overview_title_label.setText(f\"当前分类 · {current_category}\")",
+        "        self._sync_weapon_board(resolved)",
         "        configured_names = self._configured_weapon_names()\n"
-        "        self.category_overview_title_label.setText(f\"当前分类 · {current_category}\")",
+        "        self._sync_weapon_board(resolved)",
         "tests/test_kill_sound_status_tells_the_truth.py::"
         "test_status_badge_computes_the_configured_names_once",
         "RN-019：与 kill_voice 的 RN-014 一模一样的重复计算，终态逐字相同、所有基线照样绿",
@@ -2050,15 +2083,6 @@ REVERTS = [
         "这一页原状是个**闭环矛盾**：选择卡说「当前已选择 X，切换后可以直接点击"
         "测试」，点了测试它说「还没选风格」—— 页面把用户送进一个必然失败的动作",
     ),
-    Revert(
-        "RN", "death_sound 的试听又说「还没选风格」",
-        "pages/death_sound_page.py",
-        "                report_preview_failure(self, PreviewFailure.STALE_STYLE, stale_style)",
-        "                report_preview_failure(self, PreviewFailure.NO_STYLE)",
-        "tests/test_sound_family_status_tells_the_truth.py::"
-        "test_death_page_preview_reports_stale_not_no_style",
-        "用户明明选过 —— 只是他选的那个风格已经被改名/删掉，下拉框退回了「不启用」",
-    ),
     # ------------------------------------------------ RN-034/035/037/040
     Revert(
         "RN", "全新安装的素材目录又被画成红色报错",
@@ -2073,8 +2097,8 @@ REVERTS = [
     Revert(
         "RN", "副标题又无条件命令用户去开一个可能已经开着的开关",
         "pages/switch_weapon_page.py",
-        '    PAGE_LEAD = "切换武器时播放你自己的音效。逐把枪选风格，点「测试」试听；总开关管它开不开。"',
-        '    PAGE_LEAD = "切换武器时播放你自己的音效。先去「基础设置」打开总开关，再逐把枪选风格，点「测试」试听。"',
+        '    PAGE_LEAD = "切换武器时播放你自己的音效。选一个风格再点枪名就配上；总开关管它开不开。"',
+        '    PAGE_LEAD = "切换武器时播放你自己的音效。先去「基础设置」打开总开关，再选一个风格、点枪名配上。"',
         "tests/test_sound_family_status_tells_the_truth.py::"
         "test_no_page_orders_the_user_to_flip_a_switch_that_may_already_be_on",
         "同一屏上徽章写着「开关 · 已启用」，副标题却叫人去打开它。"
@@ -2083,8 +2107,9 @@ REVERTS = [
     Revert(
         "RN", "reload_sound 的档位死分支又回来了",
         "pages/reload_sound_page.py",
-        "        del level\n        self._test_reload_sound(weapon)",
-        "        self._test_reload_sound(weapon) if level is None else self._test_reload_sound(weapon, level)",
+        "        del level\n        self._test_reload_sound(weapon, style=style)",
+        "        self._test_reload_sound(weapon, style=style) if level is None "
+        "else self._test_reload_sound(weapon, level, style=style)",
         "tests/test_sound_family_status_tells_the_truth.py::"
         "test_the_level_argument_branch_is_gone",
         "`_test_reload_sound()` 只接一个参数 ⇒ 那个分支一走必 TypeError。"
@@ -2127,14 +2152,8 @@ REVERTS = [
     Revert(
         "RN", "空状态提示又被塞回 18 张武器卡",
         "pages/gun_sound_page.py",
-        "        profile = self.weapon_configs[weapon_type]\n"
-        "        duck_ratio = self._get_profile_duck_ratio(profile)",
-        "        if not styles:\n"
-        "            empty_hint = QLabel(\"当前还没有检测到这个武器的可用风格资源。\")\n"
-        "            empty_hint.setObjectName(\"hintLabel\")\n"
-        "            card_layout.addWidget(empty_hint)\n"
-        "        profile = self.weapon_configs[weapon_type]\n"
-        "        duck_ratio = self._get_profile_duck_ratio(profile)",
+        '        cell = WeaponRowWidget(self.weapon_configs[weapon_type].display_name, weapon_type, [])\n',
+        '        cell = WeaponRowWidget(self.weapon_configs[weapon_type].display_name, weapon_type, [])\n        if not self.weapon_styles.get(weapon_type):\n            QLabel("当前还没有检测到这个武器的可用风格资源。", cell)\n',
         "tests/test_gun_special_sound_truth.py::"
         "test_gun_sound_empty_state_is_said_once_not_eighteen_times",
         "RN-049：全新安装下同一句话出现 18 次，而顶部状态卡同屏已写着"
@@ -2171,8 +2190,8 @@ REVERTS = [
     Revert(
         "RN", "选了风格但模块没开这件事又没人说",
         "pages/special_sound_page.py",
-        "            return \" · 功能已关闭（配了也不会响）\"",
-        "            return \" · 功能已关闭\"",
+        '        return "配了也不会响：上面的开关还关着。" if selected and not enabled else ""',
+        '        return ""',
         "tests/test_gun_special_sound_truth.py::"
         "test_special_sound_warns_when_style_chosen_but_module_off",
         "RN-051：本页有两层开关（模块复选框 + 每项的「不启用」）。"
@@ -2201,10 +2220,8 @@ REVERTS = [
     Revert(
         "RN", "死方法又被留在页面里",
         "pages/gun_sound_page.py",
-        "    def _create_compact_weapon_card(self, weapon_type: str, display_name: str, styles: list[str]):",
-        "    def _create_weapon_card_unused(self, weapon_type: str) -> None:\n"
-        "        pass\n\n"
-        "    def _create_compact_weapon_card(self, weapon_type: str, display_name: str, styles: list[str]):",
+        '    def _on_cell_test(self, weapon_type: str) -> None:',
+        '    def _create_weapon_card_unused(self, weapon_type: str) -> None:\n        pass\n\n    def _on_cell_test(self, weapon_type: str) -> None:',
         "tests/test_gun_special_sound_truth.py::"
         "test_no_private_method_is_dead",
         "原状是一个 113 行、全仓零调用的卡片构造器，里面还带着两处错"
@@ -2212,9 +2229,9 @@ REVERTS = [
     ),
     Revert(
         "RN", "卡片说明又改回讲版面",
-        "pages/special_sound_page.py",
-        "\"回合开始、结束、MVP 等时刻各播一段音效。逐项选风格，音量统一由上面这一条控制。\",",
-        "\"把启用开关和总音量固定在上方，下面集中管理各阶段风格。\",",
+        'pages/hud_color_page.py',
+        '"软件在后台运行时才会变色；持续时间、间隔这些由预设决定。", spacing=10',
+        '"把启用开关和总音量固定在上方，下面集中管理各阶段风格。", spacing=10',
         # ⚠ RN-077：判据从音效家族两页搬到了全站（分母 2 → 28），选择器跟着搬。
         "tests/test_no_layout_self_talk_sitewide.py::"
         "test_no_layout_self_talk_in_any_card_subtitle",
@@ -2225,7 +2242,7 @@ REVERTS = [
         "RN", "共用提示又去点名某些页上没有的按钮",
         "pages/audio_status_badge.py",
         '        return "还没有素材：放入音频后点「刷新风格列表」就能用。"',
-        '        return "还没有素材：放入音频后点「打开音频资源」就能用。"',
+        '        return "还没有素材：放入音频后点「打开当前资源」就能用。"',
         "tests/test_gun_special_sound_truth.py::"
         "test_the_shared_hint_names_no_button_that_is_missing_on_some_page",
         "RN-056：七页共用这一句，而 `special_sound` 那颗按钮叫「打开当前资源」"
@@ -2244,8 +2261,8 @@ REVERTS = [
     Revert(
         "RN", "血量警告三行又被摊成通栏，紧凑档顶出可视区",
         "pages/special_sound_page.py",
-        "        card_layout.addLayout(slider_row)\n        card_layout.addWidget(style_row)",
-        "        card_layout.addWidget(threshold_row)\n        card_layout.addWidget(cooldown_row)\n        card_layout.addWidget(style_row)",
+        '        slider_row = QHBoxLayout()\n',
+        '        slider_row = QVBoxLayout()\n',
         "tests/test_gun_special_sound_truth.py::"
         "test_health_tab_keeps_the_two_sliders_on_one_row",
         "RN-055：三行通栏把卡片抬高一行，紧凑档 860x640 下最后一行被截 —— "
@@ -2400,17 +2417,6 @@ REVERTS = [
         "**教训是按场景归档的，而缺陷不认场景**",
     ),
     Revert(
-        "RN", "预设摘要又只列前三组",
-        "pages/viewmodel_page.py",
-        '        for preset in getattr(self, "preset_vars", []):',
-        '        for preset in getattr(self, "preset_vars", [])[:3]:',
-        "tests/test_flash_viewmodel_truth.py::"
-        "test_the_preset_summary_names_every_preset_not_just_the_first_few",
-        "RN-177：摘要自称「共 5 组」却只列 3 组，而当时屏幕上又只看得见 1 组 —— "
-        "**三个地方三个数，没有一处能互相印证**。摘要列全之后它本身就成了"
-        "「5 组确实都在」的凭证，不必先滚到底才能确认",
-    ),
-    Revert(
         "RN", "侧栏下边缘的余数又开始画半截项",
         "gui_widget.py",
         "                scroll.setViewportMargins(0, 0, 0, max(0, limit - y))",
@@ -2454,9 +2460,10 @@ REVERTS = [
         # ⚠ RN-177 又把锚点搬走了一次：那一行内层滚动区已经删掉。
         # ⭐ 这条断点的锚点**三度失效**（RN-069 → RN-083 → RN-177），
         #   每次都是版面被改。⇒ 把锚点挪到本页最稳的一行：右列装配那一句。
-        "        right_column_layout.addWidget(presets_frame)",
-        "        right_column_layout.addWidget(presets_frame)\n"
-        "        self.setTabOrder(self.auto_switch_interval_input, save_btn)",
+        # ⭐ 批 150 第四度失效：两列撤了，挪到单列装配的最后一句。
+        "        scroll_layout.addWidget(crosshair_card)",
+        "        scroll_layout.addWidget(crosshair_card)\n"
+        "        self.setTabOrder(self.crosshair_reset_checkbox, self.cycle_key_input)",
         "tests/test_flash_viewmodel_truth.py::test_viewmodel_tab_order_follows_the_screen",
         "RN-069：走到第 5 个焦点时跳到左下角的「保存到CFG」（y=487），"
         "再折回右上角的「循环按键」输入框（y=229）。"
@@ -2548,7 +2555,7 @@ REVERTS = [
     Revert(
         "RN", "卡片副标题又写成版面自白",
         "pages/viewmodel_page.py",
-        '            "5 组持枪视角参数，每组都能单独改并保存下来。"',
+        '            "按循环按键切到下一组预设。开了自动循环：按激活按键开始或暂停，每隔几秒自动切一组。"',
         '            "5 组常用持枪参数继续保留完整编辑能力，滚动区域更紧凑一些。"',
         "tests/test_no_layout_self_talk_sitewide.py::"
         "test_no_layout_self_talk_in_any_card_subtitle",
@@ -2639,13 +2646,11 @@ REVERTS = [
     Revert(
         "RN", "「保存到CFG」又长出第二个入口",
         "pages/viewmodel_page.py",
-        '        self._cfg_status_label = QLabel("")\n'
-        '        self._cfg_status_label.setObjectName("cfgStatusLabel")',
+        '        scroll_layout.addWidget(crosshair_card)',
         '        from PySide6.QtWidgets import QPushButton as _QPB2\n'
         '        _dup2 = _QPB2("保存到CFG")\n'
-        '        cfg_layout.addWidget(_dup2)\n'
-        '        self._cfg_status_label = QLabel("")\n'
-        '        self._cfg_status_label.setObjectName("cfgStatusLabel")',
+        '        crosshair_layout.addWidget(_dup2)\n'
+        '        scroll_layout.addWidget(crosshair_card)',
         "tests/test_flash_viewmodel_truth.py::test_there_is_exactly_one_save_to_cfg_button",
         "RN-078 → RN-404。⚠⚠ 这个断点在批 31 **换了模拟的缺陷**，因为原来那条"
         "（把卡内那颗改名成「保存设置到CFG」）的锚点随卡内那颗按钮一起没了。"
@@ -2672,7 +2677,7 @@ REVERTS = [
     Revert(
         "RN", "卡片副标题又用「压成一张概况卡」这种说法",
         "pages/flash_page.py",
-        "当前这一套配置的摘要：颜色、媒体和预览状态。",
+        "不用进游戏也能试：定好强度和时长，直接放一次看效果。",
         "把首屏基础观感、媒体搭配和预览状态压成一张概况卡，调完背景后不用再往下找重点信息。",
         "tests/test_no_layout_self_talk_sitewide.py::"
         "test_no_layout_self_talk_in_any_card_subtitle",
@@ -2693,8 +2698,8 @@ REVERTS = [
     Revert(
         "RN", "viewmodel 又建一个建出来就 hide 的 summary_label",
         "tests/test_no_invisible_summary_label.py",
-        "MAX_REMAINING = 17",
-        "MAX_REMAINING = 19",
+        "MAX_REMAINING = 1",
+        "MAX_REMAINING = 3",
         "tests/test_no_invisible_summary_label.py::"
         "test_ratchet_is_tightened_when_pages_are_cleaned",
         "RN-009：棘轮清一页就得跟着收紧一格（现在 18）。"
@@ -2810,10 +2815,14 @@ REVERTS = [
     Revert(
         "RN", "准心页又把参数排到样式前面",
         "pages/crosshair_page.py",
-        "        controls_column_layout.addWidget(style_color_grid)\n"
-        "        controls_column_layout.addWidget(size_thickness_card)",
-        "        controls_column_layout.addWidget(size_thickness_card)\n"
-        "        controls_column_layout.addWidget(style_color_grid)",
+        "        self._add_style_section(layout)\n"
+        "        self._add_color_section(layout)\n"
+        "        layout.addWidget(self._make_divider())\n"
+        "        self._add_slider_section(layout)",
+        "        self._add_slider_section(layout)\n"
+        "        layout.addWidget(self._make_divider())\n"
+        "        self._add_style_section(layout)\n"
+        "        self._add_color_section(layout)",
         "tests/test_crosshair_page_layout_and_preview.py::"
         "test_style_and_color_come_before_the_numeric_parameters",
         "RN-115：这一页最核心的选择「准心样式」原本在首屏之外（完整档视口 546px、"
@@ -3210,10 +3219,11 @@ REVERTS = [
         "（`audio_status_badge` 指着被换掉的按钮）**删方位词根本防不住**",
     ),
     Revert(
-        "RN", "hud_color 的就地总开关又被拆掉",
+        "RN",
+        "hud_color 的就地总开关又被拆掉",
         "pages/hud_color_page.py",
-        "        status_card_layout.addWidget(self.master_switch_row)",
-        "        pass  # 不装就地总开关",
+        '            self, "hud_rules_enabled", "HUD颜色", header=header)',
+        '            self, "hud_rules_enabled", "动态HUD")',
         "tests/test_master_switch_row.py::"
         "test_every_page_that_shows_master_state_offers_the_switch[hud_color]",
         "RN-162：批 1 当时**故意不扩**到这一页（它已关档已锁基线，顺手改会毁掉可比基线）。"
@@ -3417,8 +3427,8 @@ REVERTS = [
     Revert(
         "RN", "首页拨了开关，功能页那颗不跟上",
         "gui_widget.py",
-        "        self._sync_master_switch_rows(config_key)\n\n        # 卡片边框闪烁反馈",
-        "        # 卡片边框闪烁反馈",
+        "        self._sync_master_switch_rows(config_key)\n        self._sync_feature_cards()",
+        "        self._sync_feature_cards()",
         "tests/test_master_switch_row.py::"
         "test_flipping_the_home_switch_moves_the_page_switch",
         "RN-144 升级版：双向同步少了广播这一半。用户在首页关掉、切回功能页，"
@@ -3487,11 +3497,11 @@ REVERTS = [
         "gui_widget.py",
         '            "载入音频",\n'
         "            self._reload_audio,\n"
-        "            # RN-139：从主按钮降为普通按钮。",
+        '            tooltip="重新载入音频资源与配置",',
         '            "载入音频",\n'
         "            self._reload_audio,\n"
         "            primary=True,\n"
-        "            # RN-139：从主按钮降为普通按钮。",
+        '            tooltip="重新载入音频资源与配置",',
         "tests/test_basic_page_primary_action.py::"
         "test_there_is_exactly_one_primary_button",
         "RN-139：两颗紫的等于零颗 —— 「主」是相对的。"
@@ -3501,9 +3511,8 @@ REVERTS = [
     Revert(
         "RN", "引导按钮降级回普通按钮",
         "gui_widget.py",
-        "            # 用户裁定（2026-08-21）：只换首屏主按钮，不动导航顺序。\n"
-        "            primary=True,",
-        "            # 用户裁定（2026-08-21）：只换首屏主按钮，不动导航顺序。",
+        '            wanted = "primaryButton" if view.needs_setup else "secondaryButton"\n',
+        '            wanted = "secondaryButton"\n',
         "tests/test_basic_page_primary_action.py::"
         "test_the_only_purple_button_is_the_onboarding_guide",
         "RN-139：入口还在、还能点、还接在共用的引导上，"
@@ -3668,10 +3677,9 @@ REVERTS = [
     Revert(
         "GUN", "全自动页签顶上那句「扫射会留一点原声」又没了",
         "pages/gun_sound_page.py",
-        "        if automatic:\n            who = ",
-        "        if False:\n            who = ",
-        "tests/test_full_auto_guns_are_heard_every_shot.py::"
-        "test_the_automatic_tabs_say_a_spray_keeps_some_original_sound",
+        'QLabel("点上面的枪名换一把。全自动枪扫射时会留一点原声当节奏，不是整段换掉。")',
+        'QLabel("点上面的枪名换一把。")',
+        'tests/test_full_auto_guns_are_heard_every_shot.py::test_the_strip_says_a_spray_keeps_some_original_sound',
         "批 100 外审判断题「玩家会不会知道扫射时会留一点原声、不是整个换掉」12/12 答不会："
         "那句话埋在页头长句末尾，「原声保留」滑块一个字没提扫射。⇒ 全自动页签顶上各说一次",
     ),
@@ -4213,8 +4221,8 @@ REVERTS = [
         "pages/special_sound_page.py",
         # ⚠ 锚点在本批里更新过一次：这段文案被外审逼着改了两版（先是被头部卡裁掉
         #   最后一行，挪进滚动区后又报中英混排重叠），锚点跟着漂了。
-        "            \"自己加素材：grenade_sounds / 类型 / 风格名 / ，文件名随便起。<br>\"\n",
-        "",
+        'QLabel("自己加素材：grenade_sounds / 类型 / 风格名 / ，文件名随便起；类型只认六个英文名，见右上角「?」。")',
+        'QLabel("")',
         "tests/test_community_ticket_fixes.py::"
         "test_the_grenade_tab_shows_the_folder_names_on_the_page_itself",
         "用户是先在**页面上**找不到，才跑到群里问的。帮助面板要点右上角「?」才看得到",
@@ -4223,7 +4231,7 @@ REVERTS = [
         "TKT", "音效转发又不说自己缺什么",
         "pages/voice_output_page.py",
         '        if not bool(getattr(config, "voice_output_enabled", False)):\n'
-        '            blockers.append("「语音播放」总开关还没开")\n',
+        '            blockers.append("总开关还没开")\n',
         "",
         "tests/test_community_ticket_fixes.py::"
         "test_the_forwarding_page_names_what_is_still_missing",
@@ -4291,8 +4299,8 @@ REVERTS = [
     Revert(
         "WRP", "投掷物网格的列数阈值又退回一个永远达不到的数",
         "pages/special_sound_page.py",
-        "        if width >= 1040 and count >= 3:\n",
-        "        if width >= 1380 and count >= 3:\n",
+        'SPECIAL_BOARD_COLUMNS = 3\n',
+        'SPECIAL_BOARD_COLUMNS = 2\n',
         "tests/test_the_things_the_audit_left_open.py::"
         "test_six_grenade_types_fit_in_two_rows_on_a_normal_window",
         "⭐⭐⭐ 1280 的窗口减掉侧栏只剩 ~1060，于是那个 1380 的三列档**一次都没生效过** —— "
@@ -4304,8 +4312,8 @@ REVERTS = [
         "pages/special_sound_page.py",
         # ⚠ 锚点在本批里改过一次：注释里的编号从 RN-665③ 换成了 RN-666③
         #   （产品代码不许点名还开着的条目，见同名判据）。
-        "        scroll_layout.addWidget(naming_hint)   # RN-666③：在网格**之后**，理由见上面\n",
-        "",
+        '        grenade_styles = getattr(self.audio_manager, "grenade_sound_styles", {})\n        cells = []\n',
+        '        layout.addWidget(naming_hint)\n        grenade_styles = getattr(self.audio_manager, "grenade_sound_styles", {})\n        cells = []\n',
         "tests/test_the_things_the_audit_left_open.py::test_the_naming_hint_sits_below_the_cards",
         "那三行提示（我上一批自己加的）顶在网格上面，把六张卡又往下推了半行。"
         "⭐ 它是「我要自己做素材」时才看的，不是进页面第一眼要看的",
@@ -4384,7 +4392,7 @@ REVERTS = [
     Revert(
         "RN", "产品代码点名一条还没结的 RN，登记册那一格没人管",
         "pages/gun_sound_page.py",
-        "# 属 RN-167 族（文案点名了这一页不存在的东西）",
+        '        # RN-049：真正会显示的那一行。',
         # ⚠⚠ 2026-08-28 批 21 全组跑判它**假绿**：这里原来写的是 `RN-199`，
         #    而 **RN-199 已于批 15 关档**（删整条教程线）⇒ 判据不再报，
         #    因为它报的是「代码点名了一条**还没结**的 RN」。
@@ -4399,7 +4407,7 @@ REVERTS = [
         #    改指 RN-535（产品代码 +15% vs DoD 第 9 条）——
         #    它挂在 M7、且**要用户裁定**，是全册里生命期最长的那一条。
         #    ⭐ 全组跑逮到它的那一刻，正是它第三次证明「收工只跑新组不够」。
-        "# 属 RN-535 族（文案点名了这一页不存在的东西）",
+        '        # RN-535：真正会显示的那一行。',
         "tests/test_renovation_registry_does_not_rot.py::"
         "test_product_code_that_names_an_rn_is_not_still_open",
         "RN-198：登记册是全工程唯一一个**没有棘轮**的真相源。一次对账查出 **14 条**"
@@ -4557,7 +4565,7 @@ REVERTS = [
     Revert(
         "RN", "帮助文案又把人支去「基础设置」开开关",
         "ui_help_panel.py",
-        '        "1. 在本页状态卡最上面打开「总开关」<br>"\n'
+        '        "1. 打开页面标题旁边的「总开关」<br>"\n'
         '        "2. 选择准心形状',
         '        "1. 在基础设置中启用「自定义准心」开关<br>"\n'
         '        "2. 选择准心形状',
@@ -4608,9 +4616,9 @@ REVERTS = [
         # ⚠ 锚点 2026-09-04 批 46 搬家（**第二次**）：`audio_task_panel` 那一行
         #   随专家音频四页清零一起从债表里删掉了 —— 失效体检当场报「出现 0 次」。
         #   ⭐ **断点会随它守的那一行一起消失，而消失只让它变哑，不让它变红。**
-        #   ⇒ 改锚在债表里现存最长的那一条（`flash`，6 处）。
-        '    "flash": ("_open_flash_audio_folder", "_open_flash_images_folder",',
-        '    "flash": ("_open_flash_audio_folder", "_this_one_was_fixed_long_ago",',
+        #   ⇒ 改锚在债表里现存的那一条（批 150 `flash` 清零，换 `kill_icon`）。
+        '    "kill_icon": ("_on_primary_clicked", "_open_workshop"),',
+        '    "kill_icon": ("_on_primary_clicked", "_this_one_was_fixed_long_ago"),',
         "tests/test_one_action_one_entrance.py::"
         "test_the_rest_of_the_debt_only_shrinks",
         "RN-188 / RN-452：只判「变没变坏」的棘轮，在缺陷修好之后会**永远停在旧数上** ——"
@@ -4790,10 +4798,11 @@ REVERTS = [
         "⭐ **在源码上做字符串匹配，会把「讲这件事」和「做这件事」算成一件事**",
     ),
     Revert(
-        "RN", "撤开关撤过头：总开关也没了",
+        "RN",
+        "撤开关撤过头：总开关也没了",
         "pages/music_page.py",
-        '            self, "music_enabled", "音乐联动")',
-        '            self, "music_enabled_XX", "音乐联动")',
+        '            self, "music_enabled", "音乐播放", header=header)',
+        '            self, "music_enabled_XX", "音乐联动", header=header)',
         "tests/test_music_page_tells_the_truth_about_playing.py::"
         "test_the_game_link_has_exactly_one_switch",
         "RN-454 反面守卫：撤的是**副本**，不是这件事本身。"
@@ -4808,9 +4817,9 @@ REVERTS = [
         #   于是判据当然绿，回退验证判它假绿。
         #   ⭐ **一个模拟不出缺陷的破坏，得到的绿是无意义的。**
         #   现在换成真的按总开关禁用那张卡 —— 也就是 RN-454 最顺手的那个错误修法。
-        "        layout.addWidget(self.link_content_frame)",
-        "        self.link_content_frame.setEnabled(bool(config.music_enabled))\n"
-        "        layout.addWidget(self.link_content_frame)",
+        "        scroll_layout.addWidget(game_link_group)",
+        "        game_link_group.setEnabled(bool(config.music_enabled))\n"
+        "        scroll_layout.addWidget(game_link_group)",
         "tests/test_music_page_tells_the_truth_about_playing.py::"
         "test_turning_the_master_off_does_not_grey_out_the_page",
         "RN-454 的第二道守卫：合并两颗开关时最顺手的写法是 "
@@ -4849,7 +4858,7 @@ REVERTS = [
     Revert(
         "RN", "抬了 schema 版本号却不给迁移函数",
         "config.py",
-        "CONFIG_MIGRATIONS = {1: _migrate_1_to_2}",
+        "CONFIG_MIGRATIONS = {1: _migrate_1_to_2, 2: _migrate_2_to_3}",
         "CONFIG_MIGRATIONS = {}",
         "tests/test_config_schema_migration.py::"
         "test_the_migration_is_actually_registered",
@@ -4960,12 +4969,12 @@ REVERTS = [
     Revert(
         "RN", "卡里又放了一颗底栏已经有的按钮",
         "pages/viewmodel_page.py",
-        '        self._cfg_status_label = QLabel("")',
+        '        scroll_layout.addWidget(switch_card)',
         '        from PySide6.QtWidgets import QPushButton as _QPB\n'
         '        _dup = _QPB("保存到CFG")\n'
         '        _dup.clicked.connect(self._save_viewmodel_cfg)\n'
-        '        cfg_layout.addWidget(_dup)\n'
-        '        self._cfg_status_label = QLabel("")',
+        '        switch_layout.addWidget(_dup)\n'
+        '        scroll_layout.addWidget(switch_card)',
         "tests/test_one_action_one_entrance.py::"
         "test_the_four_renovated_pages_have_exactly_one_entrance",
         "RN-404：同一个动作两个入口。外审行为题 16 发 16/16 逐字报出这一对，"
@@ -5003,23 +5012,11 @@ REVERTS = [
         "只有 AST 那条看得见 —— ⭐ **两条判据各自都有对方看不见的那一半**）",
     ),
     Revert(
-        "RN", "撤走按钮后，剩下那行字不说动作去哪儿了",
-        "pages/viewmodel_page.py",
-        '                "⚠ 设置改过了，还没写进 CFG —— 点右下角那颗「保存到CFG」。")',
-        '                "⚠ 未同步")',
-        "tests/test_one_action_one_entrance.py::"
-        "test_the_card_that_lost_its_button_says_where_the_action_went",
-        "RN-452：改前 4 发没有一发提过这行字；撤掉卡内那颗按钮之后，"
-        "同题同图 **3/3** 说「分不清左边那个是可点击的同步按钮还是状态展示」。"
-        "⭐⭐⭐ **一个控件怎么被读，由它的邻居决定** —— "
-        "那行字一个字都没改，只是它的邻居没了，于是它接管了按钮的位置和读法",
-    ),
-    Revert(
         "RN", "脏标记又从屏幕上的文案里读回来",
         "pages/viewmodel_page.py",
         "        return bool(getattr(self, \"_cfg_dirty\", False))",
-        "        cfg_text = self._cfg_status_label.text().strip()\n"
-        "        return (\"未保存\" in cfg_text) or (\"已修改\" in cfg_text)",
+        "        cfg_text = self.action_bar.message_label.text().strip()\n"
+        "        return \"还没写进\" in cfg_text",
         "tests/test_one_action_one_entrance.py::"
         "test_the_dirty_flag_is_not_read_back_out_of_a_label",
         "RN-452：这一页的脏/净判断原来是对一句**屏幕上的文案**做子串匹配算出来的，"
@@ -5049,18 +5046,6 @@ REVERTS = [
         "（「我选了它，为什么屏幕上什么都没有」）。而且它是 info 色 ——"
         "和「十字」「圆圈」那些完全正常的状态长得一模一样。"
         "⭐ 让**颜色**携带「现在能不能用」，是这条修法里唯一结构性的部分",
-    ),
-    Revert(
-        "RN", "紧凑摘要在 0 点时又闭嘴了",
-        "pages/crosshair_page.py",
-        '                f"自定义 {custom_points} 点" if custom_points else "自定义未绘制")',
-        '                f"自定义 {custom_points} 点" if custom_points else "")',
-        "tests/test_crosshair_custom_style_is_honest.py::"
-        "test_the_compact_summary_does_not_go_quiet_exactly_when_it_matters",
-        "RN-406：原状是 `if style_value == \"custom\" and custom_points:` ——"
-        "有点时才说，**0 点时整句消失**。⭐⭐ **一个在最需要说话的时候恰好闭嘴的提示，"
-        "比没有这个提示更糟**：它让「一切正常」和「什么都画不出来」"
-        "在紧凑档里长得一模一样",
     ),
     Revert(
         "RN", "「没画过就什么都不画」这条事实没人看着了",
@@ -5143,11 +5128,11 @@ REVERTS = [
         "它本来就正确；只能换掉那个一词两义的词",
     ),
     Revert(
-        "RN", "「怎么在游戏里生效」退回只活在模态框里",
+        "RN",
+        "「怎么在游戏里生效」退回只活在模态框里",
         "pages/hud_color_page.py",
-        '                "已写进游戏的 cfg（并挂进 autoexec）；"\n'
-        '                "当局要立刻见效，在游戏控制台敲 exec cs2customizer.cfg。")',
-        '                "HUD 规则要点一下保存才会写入")',
+        '                "已写进游戏的 cfg（并挂进 autoexec）；"\n                "当局要立刻见效，在游戏控制台敲 exec cs2customizer.cfg。", important=True)',
+        '                "HUD 规则要点一下保存才会写入", important=True)',
         "tests/test_hud_color_has_one_commit_point.py::"
         "test_the_bottom_bar_says_how_it_takes_effect_in_game",
         "RN-131：那条指令原来**只在保存成功的模态框里出现过一次**，关掉就没了，"
@@ -5263,10 +5248,11 @@ REVERTS = [
         "⭐⭐ **判据问的必须是「屏幕上有没有」，不是「这个文件里有没有」**",
     ),
     Revert(
-        "RN", "那句话只说了一半（不说独占全屏会怎样）",
+        "RN",
+        "那句话只说了一半（不说独占全屏会怎样）",
         "widgets/overlay_requirement.py",
-        'f"——独占全屏会把它整个盖住，什么都不会显示。"',
-        'f"。"',
+        '，独占全屏会把{thing}整个盖住。"',
+        '。"',
         "tests/test_overlay_pages_state_their_requirement.py::"
         "test_every_page_that_draws_over_the_game_says_so_out_loud",
         "RN-429：这句话必须同时说清**该怎么做**和**否则会怎样**。"
@@ -5644,9 +5630,9 @@ REVERTS = [
     Revert(
         "RN", "「打开一份配置文件」又掉回第一屏之外",
         "pages/preset_center_page.py",
-        "        actions_column = QVBoxLayout()\n        actions_column.setSpacing(8)",
-        "        actions_column = QVBoxLayout()\n        actions_column.setSpacing(8)\n"
-        "        actions_column.addSpacing(400)",
+        "        workbench_layout.addLayout(actions)",
+        "        workbench_layout.addSpacing(900)\n"
+        "        workbench_layout.addLayout(actions)",
         "tests/test_preset_center_tells_the_truth.py::"
         "test_the_way_to_open_a_friends_file_is_on_the_first_screen",
         "RN-486：天然对照实验 —— 同一份状态、同一个问题，只差看不看得见折线以下："
@@ -6220,7 +6206,7 @@ REVERTS = [
     Revert(
         "RN", "那句「照常可调」重新变成一条会长高的横幅",
         "widgets/master_switch_effect.py",
-        'NOTICE_OFF_TEXT = "现在可以调、改了会保存；游戏里还不生效"',
+        'NOTICE_OFF_TEXT = "可以先调好，打开后才在游戏里生效"',
         'NOTICE_OFF_TEXT = ("总开关关着：下面的设置照常可以调，改了也会自动保存，'
         '但现在不会出现在游戏里。把总开关打开就立刻生效。")',
         "tests/test_master_switch_effect_is_honest.py::"
@@ -6234,8 +6220,8 @@ REVERTS = [
     Revert(
         "RN", "预览被藏起来（候选 C 那一步）",
         "pages/crosshair_page.py",
-        "        self.preview_frame = preview_frame",
-        "        self.preview_frame = preview_frame\n        preview_frame.hide()",
+        "        self.preview_frame = CrosshairStage()",
+        "        self.preview_frame = CrosshairStage()\n        self.preview_frame.hide()",
         "tests/test_master_switch_effect_is_honest.py::"
         "test_the_preview_is_still_being_drawn_when_the_switch_is_off[crosshair]",
         "RN-407：批 14 的候选 C 把预览改成不渲染，**6/6 判高**"
@@ -6243,17 +6229,6 @@ REVERTS = [
         "⭐ **说后果，别撤反馈。**"
         "⚠ 这条断点第一次打在「把那句话藏起来」上，指向的判据只查文案不查可见性，"
         "**回退验证当场判它假绿** —— ⭐ 断点模拟的缺陷和判据盯的行为**必须是同一件事**",
-    ),
-    Revert(
-        "RN", "状态胶囊组照旧用彩色喊「运行中」",
-        "widgets/master_switch_effect.py",
-        "    if host is not None and host.property(HOST_DIM_PROPERTY) != value:",
-        "    if False and host.property(HOST_DIM_PROPERTY) != value:",
-        "tests/test_master_switch_effect_is_honest.py::"
-        "test_the_status_chips_follow_the_switch[crosshair]",
-        "RN-407：外审 43 发里 **16 发**把那颗**橙色**的「未启用」读成了"
-        "「运行中/已激活」的高亮指示灯 —— 深色底上的橙色对 CS2 玩家就是「点亮了」。"
-        "⭐ **按警示色着色而不按状态着色，颜色照样不携带信息。**",
     ),
     Revert(
         "RN", "空库置灰记原状时把「祖先关着」当成「它自己本来就是关的」",
@@ -6273,7 +6248,7 @@ REVERTS = [
     Revert(
         "RN", "开关旁那句话又把「可以调」挤到后半截",
         "widgets/master_switch_effect.py",
-        'NOTICE_OFF_TEXT = "现在可以调、改了会保存；游戏里还不生效"',
+        'NOTICE_OFF_TEXT = "可以先调好，打开后才在游戏里生效"',
         'NOTICE_OFF_TEXT = "游戏里不生效；照常可调、改了会保存"',
         "tests/test_master_switch_effect_is_honest.py::"
         "test_the_notice_leads_with_what_he_can_do_now",
@@ -6287,16 +6262,18 @@ REVERTS = [
         "「我改的东西生不生效」（那一句的否定仍在句首，见另一条判据）",
     ),
     Revert(
-        "RN", "总开关关着，状态胶囊照旧写「已启用」",
+        "RN", "总开关关着，卡片悬停照旧写联动已启用",
         "pages/music_page.py",
         # ⚠ 锚点在批 33 搬过一次家：那一批撤掉了子开关（RN-454），
         # 「已配置」这个第三态（子开关开 + 总开关关）随着那个组合一起消失，
         # 函数从三态收成两态。⭐ **一个状态词是为了描述某个组合而存在的，
         # 组合没了，它就该跟着没** —— 而钉着它的断点得跟着走。
-        '    return "已启用" if link_enabled else "已关闭"',
-        '    return "已启用"',
+        # 批 150 又搬一次：胶囊条批 145 起只显示问题，「联动」这颗走不到屏幕上，
+        # 这句话的真出口是卡片的 tooltip。
+        '            f"游戏联动：{\'已启用\' if link_enabled else \'已关闭\'}",',
+        '            "游戏联动：已启用",',
         "tests/test_master_switch_effect_is_honest.py::"
-        "test_nothing_on_screen_claims_to_be_enabled_while_the_switch_is_off[music]",
+        "test_the_music_card_tooltip_says_the_link_is_off_with_the_switch",
         "RN-425 ⭐⭐ **批 16 把状态胶囊退成了中性色，却没有动它说的话** —— "
         "颜色不再喊「运行中」了，字还在喊。`link_enabled` 只读子开关，"
         "不看总开关，于是总开关写着「未开启」而胶囊写着「联动 · 已启用」。"
@@ -6309,7 +6286,7 @@ REVERTS = [
     Revert(
         "RN", "降权又只认「住在一张卡里」的控件",
         "widgets/master_switch_effect.py",
-        "            if not isinstance(w, _VALUE_ACCENT):",
+        '            if not isinstance(w, _VALUE_ACCENT) or w in out:',
         "            if True:",
         # ⚠⚠ 2026-08-28 批 21 全组跑判它**假绿**。这个破坏让
         #    `parameter_area_controls()` 对每一页都返回**空**，
@@ -6355,25 +6332,6 @@ REVERTS = [
         "外审原话「误以为只要点保存就会在游戏内生效，无需开启总开关」。"
         "⭐⭐ **守卫建在入口上，而那一页拿到了入口里面那个控件的引用** —— "
         "这不是有人绕过规则，是规则的边界没覆盖到它自己暴露出去的那个引用",
-    ),
-    Revert(
-        "RN", "那条胶囊关着时还叫「当前状态」",
-        "widgets/master_switch_effect.py",
-        "        title.setText(STRIP_TITLE_ON if enabled else STRIP_TITLE_OFF)",
-        "        title.setText(STRIP_TITLE_ON)",
-        "tests/test_master_switch_effect_is_honest.py::"
-        "test_the_status_strip_is_titled_by_what_it_actually_lists[music]",
-        "RN-428 ⚠⚠ **本条立案时我写的说法（「『当前』这两个字在说时间」）"
-        "被枚举一遍推翻了**：`crosshair` 有 7 条「当前X」摘要，而它在外审枚举轮"
-        "**3/3 报 NONE**。触发误读的是**描述「某件事发生时会自动做什么」**的条目"
-        "（「阵亡后自动继续播放」「本地监听开启」「事件 · 2 项」「地图 · 未检测到」），"
-        "静态属性（「当前样式：点」）不会。"
-        "⭐⭐ **一个读起来像实时读数 / 像规则引擎的东西，光是存在就在暗示"
-        "有个进程在跑。** ⇒ 不逐句改摘要，只改一处共用的标题，"
-        "它一次性给整条胶囊重新定性。"
-        "实测（枚举轮，同分母 15 页 ×3 发）：**状态胶囊组那一类的抱怨 15 → 7**，"
-        "而**我没碰的「勾选着的子开关」那一类 14 → 14 一动没动** —— "
-        "⭐⭐⭐ **那个没动的类别正好证明动了的那一类的下降不是「它今天话少」**",
     ),
     Revert(
         "RN", "空库那颗唯一的出路按钮不再声明「不归总开关管」",
@@ -6459,27 +6417,14 @@ REVERTS = [
         "theme_manager.py",
         # RN-643 之后胶囊是纯文字：warn 特化只剩字色 + 字重；断点给它单独加回一圈闭合框
         "                color: {self._chip_text(c.accent_warm)};\n"
-        "                font-weight: 600;\n",
+        "                font-weight: 500;\n",
         "                color: {self._chip_text(c.accent_warm)};\n"
-        "                font-weight: 600;\n"
+        "                font-weight: 500;\n"
         "                background-color: {self._hex_to_rgba(c.accent_warm, 28)};\n"
         "                border: 1px solid {self._hex_to_rgba(self._chip_text(c.accent_warm), 120)};\n",
         "tests/test_status_chips_do_not_look_clickable.py::test_a_status_chip_is_not_drawn_as_a_closed_box",
         "RN-103 ⭐ **一条规则有几个特化分支，就要判几次**：候选 D 就是只给警告留了框，"
         "而外审残留的 4 发**逐字抄的正是那两颗还有框的** —— 框就是那个信号",
-    ),
-    Revert(
-        "RN", "降权那条把闭合轮廓加回来（总开关关着的页面上又变回框）",
-        "theme_manager.py",
-        "                border: none;   /* RN-643：连左侧色条一起去 */\n"
-        "            }}\n\n            /* ⚠⚠ **这两处原来是橙色的",
-        "                border: 1px solid {c.border_secondary};\n"
-        "            }}\n\n            /* ⚠⚠ **这两处原来是橙色的",
-        "tests/test_status_chips_do_not_look_clickable.py::test_a_status_chip_is_not_drawn_as_a_closed_box",
-        "RN-103 ⚠ `QFrame#card[masterOffHost=\"true\"]` 那条**特异度比 level 那几条都高**，"
-        "它会把闭合轮廓整个加回来 —— 而且只在总开关关着的页面上。"
-        "⭐ 破坏验证第一轮它是**空转**的：标本没有那个祖先属性，规则就够不着 ⇒ "
-        "**一条只在某个祖先属性下才生效的规则，需要一个带那个祖先的标本**",
     ),
     Revert(
         "RN", "胶囊左侧色条又被画回来（RN-643 改判为纯文字之后）",
@@ -6530,8 +6475,8 @@ REVERTS = [
     Revert(
         "RN", "页面又声称我们导出 .json",
         "pages/crosshair_page.py",
-        '"导入 / 导出在页面底部操作栏，收本软件导出的 .xchr"',
-        '"导入 / 导出在页面底部操作栏，收本软件导出的 .json"',
+        '"收本软件导出的 .xchr（.json 也能直接拖进页面）；"',
+        '"收本软件导出的 .json（.json 也能直接拖进页面）；"',
         "tests/test_crosshair_says_what_it_actually_does.py::test_no_sentence_claims_we_export_a_format_we_do_not",
         "RN-410：导出默认写 `my_crosshair.xchr`、两个对话框只列 `*.xchr`，"
         "而唯一一句解释这件事的话写着「只认本软件导出的 .json」——"
@@ -6835,24 +6780,16 @@ REVERTS = [
         #   不再靠 `addSpacing` 而靠 FlowLayout 自己的水平间距）——第一版断点当场
         #   被失效体检报成「锚点出现 0 次」。
         #   ⭐ **改了修法要顺手把断点也改到新的代码上**（RN-085 那条教训又中一次）。
-        "        adjust_wrap, adjust_layout = make_flow_container(h_spacing=15, v_spacing=6)",
-        "        adjust_wrap = QWidget(); adjust_layout = QHBoxLayout(adjust_wrap)",
-        "tests/test_the_loudest_button_is_not_the_undo_button.py::test_the_nudge_row_can_wrap",
+        #   ⭐ 批 150：两组各占一行，一行放得下，也就不用换行了。
+        '        offset_layout.addWidget(plain_row("微调", _make_nudge_group(1), width=None))\n'
+        '        offset_layout.addWidget(plain_row("大幅", _make_nudge_group(10), width=None))',
+        '        offset_layout.addWidget(plain_row("微调", _make_nudge_group(1), _make_nudge_group(10), width=None))',
+        "tests/test_the_loudest_button_is_not_the_undo_button.py::test_the_nudge_groups_stay_whole",
         "RN-196 横向那 29px 的根因：8 颗方向键代码里写 `setFixedSize(QSize(30, 26))`，"
         "实际渲染 **80×50** —— `_style_button` 只抬 min 不动 max ⇒ min > max ⇒ Qt 取 min，"
         "**调用点写的固定尺寸一个像素都不生效**，一行 ~800px 顶穿整页最小宽。"
         "⭐ **一句无效的声明不是无害的，它被放大了两倍半。** "
         "改成 FlowLayout 之后紧凑档横向溢出 29px → 0",
-    ),
-    Revert(
-        "RN", "两句被挤到折行的提示又长回去",
-        "pages/magnifier_page.py",
-        '            "主武器和手枪各自指定放大热键，并选长按还是单击切换。",',
-        '            "主武器和手枪各自指定放大热键，并选长按触发还是单击切换。",',
-        "tests/test_the_loudest_button_is_not_the_undo_button.py::test_these_hints_do_not_grow_back",
-        "RN-143 在本页最极端的一个样本：原文 27 字要 336px，而这一格分到 335px ——"
-        "**差 1 个像素**就折成两行。⭐ 它证明「被挤到折行」和「放不下」完全不是一回事："
-        "1px 的缺口，任何「有没有溢出 / 有没有截断」的判据眼里都一切正常",
     ),
     # ------------------------------------------------------- 批 29（voice_output）
     Revert(
@@ -6883,8 +6820,8 @@ REVERTS = [
     Revert(
         "RN", "「就绪」这个初始占位符又回来了（驱动明明还没装）",
         "pages/voice_output_page.py",
-        '        self.status_label = QLabel("还没有操作")',
-        '        self.status_label = QLabel("就绪")',
+        'NO_OPERATION_TEXT = "还没有操作"',
+        'NO_OPERATION_TEXT = "就绪"',
         "tests/test_the_slider_says_one_thing_and_shows_another.py"
         "::test_nothing_claims_ready_while_the_driver_is_not",
         "同屏矛盾：徽章「驱动 · 待安装」+ 卡片「⚡ VB-Cable 未安装」，而底栏与状态条"
@@ -7040,25 +6977,9 @@ REVERTS = [
         "⚠ 判据把两支都打桩跑一遍，否则它只在装了 CS2 的机器上是对的（flaky 比没有更坏）",
     ),
     Revert(
-        "RN", "同排两张卡各按自己的内容取高（底部差 34px）",
-        "pages/utility_page.py",
-        "        top_cards_row.addWidget(settings_frame, 3)\n"
-        "        top_cards_row.addWidget(button_frame, 5)",
-        "        top_cards_row.addWidget(settings_frame, 3, Qt.AlignTop)\n"
-        "        top_cards_row.addWidget(button_frame, 5, Qt.AlignTop)",
-        "tests/test_side_by_side_cards_end_together.py"
-        "::test_the_page_under_review_is_actually_flush",
-        "RN-470：`Qt.AlignTop` 配上 `QSizePolicy.Maximum` —— **两句各自都正确**"
-        "（不想让卡无限拉伸、想让它贴顶），合在一起才产出「谁内容少谁短一截」"
-        "（实测 158px vs 192px）。⭐ 又一次「两条各自正确的规则在交集处出错」（批 25）。"
-        "⚠ 外审同一轮报的另一条几何问题（「当前配置」被横线贯穿）**是假的**："
-        "放大 8 倍看原图一条线都没有，那是「当/前/配/置」四个字各自的横画落在同一条 y 上 ⇒ "
-        "⭐⭐ **中文里「文字被横线贯穿」是一类系统性假阳性**",
-    ),
-    Revert(
         "RN", "把同排卡片的棘轮调大（放水）",
         "tests/test_side_by_side_cards_end_together.py",
-        "MAX_RAGGED_ROWS = 4",
+        "MAX_RAGGED_ROWS = 0",
         "MAX_RAGGED_ROWS = 9",
         "tests/test_side_by_side_cards_end_together.py"
         "::test_side_by_side_cards_do_not_get_more_ragged",
@@ -7068,9 +6989,9 @@ REVERTS = [
     ),
     Revert(
         "RN", "卡片副标题又开始讲版面（手搓卡片那条通路）",
-        "pages/utility_page.py",
-        'button_hint = QLabel("打开存放点位图的文件夹，或让软件重新读一遍里面的图片。")',
-        'button_hint = QLabel("常用文件夹和刷新动作收在一起，方便边游戏边维护素材。")',
+        "pages/fun_page.py",
+        '"账号密码只在浏览器内输入，本软件不经手。"',
+        '"常用文件夹和刷新动作收在一起，方便边游戏边维护素材。"',
         "tests/test_no_layout_self_talk_at_runtime.py"
         "::test_no_card_subtitle_on_screen_talks_about_layout",
         "RN-077 的**第四条漏网通路**。⚠ 这条断点**故意不钉在 RN-077 那条判据上** —— "
@@ -7355,7 +7276,7 @@ REVERTS = [
     Revert(
         "RN", "gun_sound 又没有整套套用（改基类落不到不继承它的那一页）",
         "pages/gun_sound_page.py",
-        "        status_card_layout.addLayout(self._build_apply_all_row())",
+        '        section.addLayout(self._build_apply_all_row())',
         "        pass",
         "tests/test_apply_one_style_to_every_weapon.py::test_every_page_in_the_family_has_the_action",
         "RN-181：四页共享 `SoundPageBase`，而 `gun_sound` 自己一套 —— 第一版实测"
@@ -7477,7 +7398,7 @@ REVERTS = [
     Revert(
         "RN", "撤卡的例外名单被当成了全站新做法",
         "tests/test_the_status_card_is_a_site_wide_pattern.py",
-        'DELIBERATELY_WITHOUT = {"preset_center"}',
+        'DELIBERATELY_WITHOUT = {"preset_center", "basic"}',
         "DELIBERATELY_WITHOUT = set()",
         "tests/test_the_status_card_is_a_site_wide_pattern.py::"
         "test_every_other_page_still_has_its_status_card",
@@ -7534,18 +7455,6 @@ REVERTS = [
         "所以判据必须自己种下常用组 —— 同 RN-516",
     ),
     # ======================================== 批 59：首页开关的归属
-    Revert(
-        "RN", "标签统一宽度被撤掉（三列开关又参差错位）",
-        "gui_widget.py",
-        "            uniform = max(lb.sizeHint().width() for lb in switch_labels)",
-        "            uniform = 0  # 撤掉统一宽度",
-        "tests/test_a_switch_is_nearest_to_its_own_label.py::"
-        "test_the_switches_still_line_up_in_columns",
-        "⭐⭐ **改完复跑逼出来的那一刀**：把弹簧挪到开关后面修好 RN-530（S2）之后，"
-        "开关跟着标签字数长短跑，外审同一批图 **6/6 发**报「开关未按列对齐，参差错位」。"
-        "⚠ 那是我为了修 RN-530 亲手引入的，而**几何判据一条都看不见它**"
-        "（序关系照样成立、间距照样小）—— 统一标签宽度才两件事同时成立",
-    ),
     # ======================================== 批 60：X1 收官
     Revert(
         "RN", "顶栏那颗按钮的宽度又被样式表锁死（文字当场被裁掉）",
@@ -7558,18 +7467,6 @@ REVERTS = [
         "它自己是有 tooltip 的（「切换到紧凑模式」），而外审 5 发照样报"
         "「只有图标、无法识别用途」—— 因为**截图上没有 tooltip**，"
         "而截图正是用户看到的第一眼",
-    ),
-    Revert(
-        "RN", "能点的功能名撤掉记号（又只有 tooltip 知道它能点）",
-        "gui_widget.py",
-        '        label = (ClickableLabel(f"{text} \u203a") if target_page else QLabel(text))',
-        '        label = (ClickableLabel(text) if target_page else QLabel(text))',
-        "tests/test_every_status_chip_explains_itself.py::"
-        "test_a_clickable_switch_name_looks_clickable",
-        "⭐⭐ **我判过这条「实测后不成立」，同一批外审 3 发把我顶了回来**（RN-235）。"
-        "那 17 个功能名本来就能点，而屏幕上没有任何东西说它能点。"
-        "⚠ 只在卡片顶上补一句说明**不够**（复跑 5 发仍报）—— "
-        "困惑发生在每一个名字上，记号就得落在每一个名字上",
     ),
     Revert(
         "RN", "状态芯片又共用同一句解释（重排一次就换主人）",
@@ -7586,7 +7483,7 @@ REVERTS = [
     Revert(
         "RN", "滚动条把手退回原来那个和底色同亮度的颜色",
         "theme_manager.py",
-        '        scrollbar_handle="#6e7079",',
+        '        scrollbar_handle="#6e7480",',
         '        scrollbar_handle="#2a2d3a",',
         "tests/test_nontext_contrast_has_a_denominator.py::"
         "test_no_new_nontext_violation",
@@ -7628,8 +7525,9 @@ REVERTS = [
         "ui_style_applier.py",
         "    changed = 0\n    for b in root.findChildren(QAbstractButton):",
         "    changed = 0\n    for b in []:",
+        # ⚠ 批 145：令牌 64，全站没有比它窄的调用点了，这个函数现在承重的是高度那一条。
         "tests/test_a_declared_width_is_not_a_dead_letter.py::"
-        "test_no_button_is_wider_than_its_caller_declared",
+        "test_no_button_is_taller_than_its_caller_declared",
         "⭐⭐⭐ RN-442：规范的下限写在样式表里、调用点的意图写在 `setFixedWidth` 里，"
         "**Qt 在 min > max 时取 min** ⇒ 调用点那一行不产生任何效果也不报错。"
         "实测 656 颗按钮里 133 颗，差 6~46px。⚠ 立案点名的是 `_style_button`，"
@@ -7807,9 +7705,9 @@ REVERTS = [
     ),
     Revert(
         "RN", "底栏那颗按钮又只给下限不给上限",
-        "pages/gun_sound_page.py",
-        "        bar.adopt_button(btn)",
-        "        btn.setObjectName(\"secondaryButton\")\n        btn.setMinimumHeight(30)",
+        'widgets/page_action_bar.py',
+        '        self.primary_btn.setFixedHeight(self.PRIMARY_HEIGHT)',
+        '        self.primary_btn.setMinimumHeight(30)',
         "tests/test_a_row_keeps_the_height_it_declared.py::"
         "test_every_action_bar_button_declares_a_row_height",
         "⭐⭐⭐ RN-549：`mark_compact_buttons()` 只认「max 比 QSS 下限还小」的按钮，"
@@ -7850,7 +7748,7 @@ REVERTS = [
         "    sections = drop_container_sections(list(sections))",
         "    sections = list(sections)",
         "tests/test_the_bottom_bar_stops_shouting.py::"
-        "test_no_anchor_chip_is_an_ancestor_of_another",
+        "test_a_chip_row_drops_the_section_that_holds_another",
         "⭐⭐ RN-552：外审 `magnifier` **3/3** 报「父级『基础』与子级『倍率』『热键』"
         "混排，层级错乱」，实测**逐字属实** —— 5 颗里 3 颗是「基础」的后代，"
         "而「基础」离「倍率」只有 74px。⚠ 判据第一版找卡片只认 `title_label`，"
@@ -7908,8 +7806,8 @@ REVERTS = [
     Revert(
         "RN", "底栏又开始复述芯片的值（「当前状态：…」那句回来了）",
         "pages/viewmodel_page.py",
-        '            "写进 CFG 之后下一局自动生效；当局要立刻见效，"',
-        '            f"当前状态：CFG{\'已同步\'} · 循环键 CAPSLOCK · 共 5 组预设。"  # noqa',
+        '            f"{state}下一局自动生效；当局要立刻见效，在游戏控制台敲 exec cs2customizer.cfg。",',
+        '            f"当前状态：CFG{\'已同步\'} · 循环键 CAPSLOCK · 共 5 组预设。",  # noqa',
         "tests/test_the_bottom_bar_stops_shouting.py::"
         "test_the_bottom_bar_does_not_restate_what_the_chips_already_say",
         "RN-183：改之前 `viewmodel` 底栏逐字是「当前状态：CFG已同步 · 循环键 CAPSLOCK · "
@@ -7987,7 +7885,8 @@ REVERTS = [
         "RN", "下拉框又写回那句从没生效过的 setFixedHeight",
         "pages/hud_color_page.py",
         "        combo = QComboBox()\n        combo.setFixedWidth(130)\n",
-        "        combo = QComboBox()\n        combo.setFixedWidth(130)\n        combo.setFixedHeight(32)\n",
+        # ⚠ 批 145：下拉框令牌从 50 降到 32，写 32 不再是死声明 ⇒ 写一个比令牌小的。
+        "        combo = QComboBox()\n        combo.setFixedWidth(130)\n        combo.setFixedHeight(24)\n",
         "tests/test_a_height_token_is_not_a_content_box.py::"
         "test_no_declared_height_is_a_dead_letter",
         "⭐ 这 4 行（`hud_color` ×2、`gui_widget` ×2）**从写下那天起就没生效过** ——"
@@ -8061,8 +7960,8 @@ Revert(
     Revert(
         "RN", "热键卡有一行的控件落回别的列",
         "pages/magnifier_page.py",
-        "        trigger_grid.addWidget(self.trigger_mode_combo, 2, 1, _LEFT)",
-        "        trigger_grid.addWidget(self.trigger_mode_combo, 2, 2, _LEFT)",
+        '        trigger_layout.addWidget(plain_row("触发方式", self.trigger_mode_combo))',
+        '        trigger_layout.addWidget(plain_row("触发方式", QLabel("模式"), self.trigger_mode_combo, width=None))',
         "tests/test_rows_in_one_card_start_at_one_left_edge.py::"
         "test_every_row_in_a_card_starts_at_the_same_left_edge",
         "⭐ RN-566：同一张卡里的行只要不共用一个布局列，就没有任何东西让它们对齐 —— "
@@ -8074,8 +7973,8 @@ Revert(
     Revert(
         "RN", "对齐顺手把下拉拉宽",
         "pages/magnifier_page.py",
-        "        self.primary_hotkey_combo.setMinimumWidth(_COMBO_MIN_W)",
-        "        self.primary_hotkey_combo.setMinimumWidth(200)",
+        '        trigger_layout.addWidget(plain_row("主武器热键", self.primary_hotkey_combo, primary_test_btn))',
+        '        trigger_layout.addWidget(plain_row("主武器热键", self.primary_hotkey_combo, primary_test_btn, width=420))',
         "tests/test_rows_in_one_card_start_at_one_left_edge.py::"
         "test_the_controls_keep_their_own_widths",
         "⭐「左边缘全都一样」有一种很廉价的达成方式：把所有控件拉成同一个宽度 —— "
@@ -8176,10 +8075,10 @@ Revert(
     Revert(
         "RN", "三个热键下拉的下限又各写各的",
         "pages/magnifier_page.py",
-        "        self.trigger_mode_combo.setMinimumWidth(_COMBO_MIN_W)",
-        "        self.trigger_mode_combo.setMinimumWidth(124)",
+        '        trigger_layout.addWidget(plain_row("触发方式", self.trigger_mode_combo))',
+        '        trigger_layout.addWidget(plain_row("触发方式", self.trigger_mode_combo, width=244))',
         "tests/test_rows_in_one_card_start_at_one_left_edge.py::"
-        "test_that_one_width_really_has_one_source",
+        "test_the_three_hotkey_combos_share_one_width",
         "RN-569：原状是 116 / 116 / 120，右缘差 4px。"
         "⭐⭐⭐ 它只在批 70 **修好 RN-566 之后**才第一次被报出来 —— "
         "左边缘拉齐之前那 4px 淹在 693/679/679 里看不见"
@@ -8199,10 +8098,11 @@ Revert(
         "就会静默地变成「在册」——**门变松了，而报告行一个字都不会变**",
     ),
     Revert(
-        "RN", "展开档申报表被删掉一行",
-        "scripts/layout_overflow_audit.py",
-        '    ("magnifier", "clip"): (52,',
-        '    ("magnifier_已删", "clip"): (52,',
+        # ⚠ 批 145：申报表清空了，「删一行」这一刀没有了 ⇒ 换成真让一页掉下去。
+        "RN", "展开档又有页面掉下去",
+        "pages/sound_page_base.py",
+        "        layout.setSpacing(12)\n",
+        "        layout.setSpacing(12)\n        layout.addSpacing(900)\n",
         "tests/test_the_audit_says_which_worst_case_it_pinned.py::"
         "test_no_page_falls_off_the_cliff_unannounced",
         "⭐⭐⭐ **一张声明表只有在有人跑那一档时才是棘轮，否则它只是一段文档。**"
@@ -8361,10 +8261,11 @@ Revert(
         "⇒ 空时藏表、显一句点名那颗按钮的话（照 `audio_replay_page` 的先例）",
     ),
     Revert(
-        "RN", "底栏消息标签退回 AutoText（让 Qt 猜用户数据像不像 HTML）",
+        "RN",
+        "底栏消息标签退回 AutoText（让 Qt 猜用户数据像不像 HTML）",
         "widgets/page_action_bar.py",
-        "        self.message_label.setTextFormat(Qt.PlainText)\n        layout.addWidget(self.message_label, 1)",
-        "        layout.addWidget(self.message_label, 1)",
+        '        self.message_label.setTextFormat(Qt.PlainText)\n        self.message_label.hide()',
+        '        self.message_label.hide()',
         "tests/test_the_bottom_bar_stops_shouting.py::"
         "test_the_message_label_does_not_guess_whether_user_text_is_html",
         "⭐⭐ RN-589-A：这里原来什么格式都不设 ⇒ Qt 默认 `AutoText`，**猜**这串字像不像 HTML。"
@@ -8616,8 +8517,11 @@ Revert(
     Revert(
         "RN", "总开关关着的卡片左缘又长出灰色条",
         "theme_manager.py",
-        "                border-left: 3px solid {c.bg_card};  /* RN-643：用户实机指着这根灰条说「白色条条去掉」 */",
-        "                border-left: 3px solid {c.text_tertiary};",
+        "                border: {container.card_border_width}px solid {c.border_secondary};\n"
+        "            }}\n\n            /* R7/D-03(UP-044)",
+        "                border: {container.card_border_width}px solid {c.border_secondary};\n"
+        "                border-left: 3px solid {c.text_tertiary};\n"
+        "            }}\n\n            /* R7/D-03(UP-044)",
         "tests/test_no_left_colour_bars_remain.py"
         "::test_every_thick_left_border_is_the_card_colour[dark]",
         "RN-643（批 96）：「左侧 3px 色条」这套语言 9 处整体退场（用户实机原话「白色条条去掉，"
@@ -8649,8 +8553,8 @@ Revert(
     Revert(
         "RN", "特殊音效摘要又把「模块」说给用户听",
         "pages/special_sound_page.py",
-        '            return " · 功能已开启"',
-        '            return " · 模块已启用"',
+        '配了也不会响：上面的开关还关着。',
+        '配了也不会响：上面的模块还关着。',
         "tests/test_the_word_module_is_not_a_user_word.py"
         "::test_the_banned_word_is_not_in_any_user_string",
         "RN-638（批 97）：术语表（惯例 §5）⛔ 「模块」不再当用户可见词。断点把摘要那句换回去"
@@ -9151,7 +9055,8 @@ Revert(
         "DLG", "「复制」按钮又被钉死宽度",
         "dialogs/add_url_dialog.py",
         '            copy_btn = QPushButton("复制")\n',
-        '            copy_btn = QPushButton("复制")\n            copy_btn.setFixedWidth(60)\n',
+        # ⚠ 批 145：按钮内边距变小，60px 已经画得下这两个字 ⇒ 压到 40px。
+        '            copy_btn = QPushButton("复制")\n            copy_btn.setFixedWidth(40)\n',
         "tests/test_the_dialogs_are_all_audited.py::"
         "test_the_add_url_copy_buttons_show_their_whole_label",
         "60px 减掉 QSS 的左右 padding 只剩 22px，而「复制」两个字要 28px"
@@ -10146,20 +10051,12 @@ Revert(
         "端口顺延到 3001、游戏还往 3000 推（QA-003 那条事故）⇒ 状态说「装好了」",
     ),
     Revert(
-        "LINK", "首页徽章又只看服务线程",
-        "gui_widget.py",
-        '                self._set_badge_label_state(gsi_badge, f"GSI · {link_word}", link_level)\n',
-        '                self._set_badge_label_state(gsi_badge, "GSI · 运行中" if gsi_running else "GSI · 未运行", link_level)\n',
-        "tests/test_you_can_tell_where_the_game_link_breaks.py::test_the_home_badge_follows_the_link_state",
-        "取值点算对了、首页没用上",
-    ),
-    Revert(
-        "LINK", "联动断了排在缺音频后面",
-        "gui_widget.py",
-        '            elif gsi_link in ("silent", "cfg_missing", "cfg_port"):\n                runtime_summary = link_fix\n',
-        "",
-        "tests/test_you_can_tell_where_the_game_link_breaks.py::test_the_home_badge_follows_the_link_state",
-        "音频也有点小毛病时，那一句只说音频 —— 用户去补音频，真正的断点（没收到数据）没人提",
+        "LINK", "总览状态条又只看服务线程",
+        "core/runtime/system_status_service.py",
+        '    link = status.gsi_link or "stopped"\n',
+        '    link = "no_game" if (status.gsi or {}).get("running") else "stopped"\n',
+        "tests/test_you_can_tell_where_the_game_link_breaks.py::test_the_home_strip_follows_the_link_state",
+        "取值点算对了、总览没用上",
     ),
     Revert(
         "LINK", "诊断信息里没有收包数",
@@ -10437,18 +10334,20 @@ Revert(
         "关着时计数照涨却没人记 ⇒ 一打开开关就补播一声",
     ),
     Revert(
-        "KSOUND", "击杀图标页提示条按钮又压成 26px",
+        # ⚠ 批 145：令牌之后按钮下限 24、字高 18，压到 26px 字不再被切，这一刀砍不动了（hint 去掉限宽之后
+        #   也不再被横向撑开）。两颗按钮还能坏的是「横着撑满」那一半 ⇒ 砍这一半。
+        "KSOUND", "击杀图标页提示条按钮又横着撑满",
         "pages/kill_icon_page.py",
         "        notice_layout.addWidget(dismiss_btn, 0, Qt.AlignRight | Qt.AlignVCenter)\n",
-        "        dismiss_btn.setFixedHeight(26)\n        notice_layout.addWidget(dismiss_btn)\n",
+        "        notice_layout.addWidget(dismiss_btn, 1)\n",
         "tests/test_kill_sounds_vary_and_voices_take_turns.py::test_notice_buttons_are_tall_enough_for_their_text_and_do_not_stretch",
         "RN-697：「知道了」字被切成碎片、按钮横着撑满一整条（外审 S3 6/6）",
     ),
     Revert(
-        "KSOUND", "共用提示条按钮又压成 26px",
+        "KSOUND", "共用提示条按钮又横着撑满",
         "widgets/page_notice_bar.py",
         "        layout.addWidget(self.dismiss_btn, 0, Qt.AlignRight | Qt.AlignVCenter)\n",
-        "        self.dismiss_btn.setFixedHeight(26)\n        layout.addWidget(self.dismiss_btn)\n",
+        "        layout.addWidget(self.dismiss_btn, 1)\n",
         "tests/test_kill_sounds_vary_and_voices_take_turns.py::test_notice_buttons_are_tall_enough_for_their_text_and_do_not_stretch",
         "同一个写法在全站共用的提示条上也有一份 —— 修一处留一处",
     ),
@@ -11266,6 +11165,842 @@ REVERTS.extend([
            "            self._reset_pending = True", "            self._reset_pending = False",
            "tests/test_deep_audit_controls.py::test_reset_survives_debounce_and_exit_flush",
            "F21：重启后又恢复重置前的配置"),
+    Revert("B146", "再点一次枪名不取消", "pages/sound_page_base.py",
+           "        cell.set_current_style(self.DISABLED_STYLE_TEXT if current == brush else brush)\n",
+           "        cell.set_current_style(brush)\n",
+           "tests/test_the_style_brush.py::test_clicking_a_configured_weapon_again_cancels_it",
+           "配错一把枪只能回下拉里改"),
+    Revert("B146", "手上没刷子点枪名也改配置", "pages/sound_page_base.py",
+           "        brush = self.style_library.brush()\n        if not brush:\n",
+           "        brush = self.style_library.brush() or self.style_library.styles()[0]\n        if not brush:\n",
+           "tests/test_the_style_brush.py::test_no_brush_means_clicking_a_name_changes_nothing",
+           "刚进页面点一下枪名，配好的枪被覆盖"),
+    Revert("B146", "这把枪没有这个风格也不说", "pages/sound_page_base.py",
+           "        if brush not in self._style_options_for(weapon):\n",
+           "        if False:\n",
+           "tests/test_the_style_brush.py::test_a_weapon_without_that_style_refuses_the_brush",
+           "点了枪名什么都没发生，也不说为什么"),
+    Revert("B146", "风格没了刷子还在手上", "widgets/style_library.py",
+           "        if self._brush and self._brush not in self._cards:\n            self.set_brush(\"\")\n",
+           "",
+           "tests/test_the_style_brush.py::test_a_style_that_disappears_takes_the_brush_with_it",
+           "删掉风格后还能往枪上配一个不存在的风格"),
+    Revert("B146", "再点同一张卡放不下刷子", "widgets/style_library.py",
+           "        self.set_brush(\"\" if style == self._brush else style)\n",
+           "        self.set_brush(style)\n",
+           "tests/test_the_style_brush.py::test_clicking_the_same_card_puts_the_brush_down",
+           "拿起刷子就放不下"),
+    Revert("B146", "风格卡又排到焦点链最后", "widgets/style_library.py",
+           "        previous = self._focus_after\n        if previous is not None:\n",
+           "        previous = self._focus_after\n        if False:\n",
+           "tests/test_the_style_brush.py::test_tab_goes_through_the_library_before_the_weapons",
+           "Tab 要走完整块武器板才到风格库"),
+    Revert("B146", "卡上的试听把风格配给了枪", "pages/sound_page_base.py",
+           "            self._test_weapon(weapons[0], style=style)\n",
+           "            self.weapon_rows[weapons[0]].set_current_style(style)\n            self._test_weapon(weapons[0], style=style)\n",
+           "tests/test_the_style_brush.py::test_the_card_play_button_plays_that_style_and_assigns_nothing",
+           "只想听一下，第一把枪的配置被改了"),
+    Revert("B146", "卡上的试听放的是枪上配的那个", "pages/sound_page_base.py",
+           "            self._test_weapon(weapons[0], style=style)\n",
+           "            self._test_weapon(weapons[0])\n",
+           "tests/test_the_style_brush.py::test_the_card_play_button_plays_that_style_and_assigns_nothing",
+           "点这张卡听到的是另一个风格"),
+    Revert("B146", "空库还说当场生效", "pages/sound_page_base.py",
+           "        self.master_switch_row.set_has_content(not self._library_is_empty())\n",
+           "",
+           "tests/test_the_style_brush.py::test_an_empty_library_does_not_claim_it_takes_effect",
+           "一个素材都没有，开关旁边说改动当场生效"),
+    Revert("B146", "配了的格子看不出来", "widgets/weapon_row_widget.py",
+           "        self.setProperty(\"fp_state\", state)\n",
+           "",
+           "tests/test_the_style_brush.py::test_the_master_switch_dims_configured_cells_for_real",
+           "39 格看不出哪把配过"),
+    Revert("B146", "总开关关着武器板不降权", "widgets/weapon_board.py",
+           "        self.setProperty(PARAMETER_AREA_PROPERTY, True)\n",
+           "",
+           "tests/test_the_style_brush.py::test_the_master_switch_dims_configured_cells_for_real",
+           "开关关着，格子还亮着，看着像已经生效"),
+    Revert("B146", "武器板按写死的宽度算列数", "widgets/weapon_board.py",
+           "        cell_width = max(name_width + CELL_TAIL_MIN_WIDTH, self.cells()[0].minimumSizeHint().width())\n",
+           "        cell_width = name_width + CELL_TAIL_MIN_WIDTH\n",
+           "tests/test_the_style_brush.py::test_without_a_stylesheet_nothing_is_squashed_or_pushed_out",
+           "极简主题下武器板撑出页面，右边的试听按钮够不着"),
+    Revert("B146", "审计「有内容」那一遍量的还是空库", "scripts/_audit_seed.py",
+           "            page._refresh_style_catalog()\n",
+           "            pass\n",
+           "tests/test_the_audit_says_which_worst_case_it_pinned.py::test_the_audit_also_measures_the_pages_with_content",
+           "造的风格没进页面，这一遍等于没量，绿着也没用"),
+    Revert("B146", "分类名列宽又写死", "widgets/weapon_board.py",
+           "        width = max(label.fontMetrics().horizontalAdvance(label.text()) for label in labels) + 2\n",
+           "        width = 62\n",
+           "tests/test_the_style_brush.py::test_the_group_labels_fit_whatever_they_say",
+           "1.25 档「手雷/道具」放不下"),
+    Revert("B146", "极简主题下风格卡压扁", "widgets/style_library.py",
+           "        hint.setHeight(max(hint.height(), self.fontMetrics().height() * 2 + 12))\n",
+           "",
+           "tests/test_the_style_brush.py::test_a_card_stays_tall_after_switching_to_the_theme_without_a_stylesheet",
+           "两行字叠在 22px 高的卡里"),
+    Revert("B146", "色块只有中间能点", "widgets/crosshair_stage.py",
+           "        # 没有文字：极简主题（没有样式表）下默认的点击区只有一个小圈\n        return self.rect().contains(pos)\n",
+           "        return super().hitButton(pos)\n",
+           "tests/test_crosshair_page_layout_and_preview.py::test_segments_and_swatches_are_clickable_everywhere",
+           "色块没有文字，默认的点击区几乎为空"),
+    Revert("B146", "换底色不换缓存", "widgets/crosshair_stage.py",
+           "        self._scene = scene\n        self._cache = QPixmap()\n",
+           "        self._scene = scene\n",
+           "tests/test_crosshair_page_layout_and_preview.py::test_the_scene_switch_really_changes_what_is_behind_the_crosshair",
+           "点了亮或烟雾，预览一个像素都不变"),
+    Revert("B146", "导入向导又说动图 · 静态图", "dialogs/kill_icon_import_wizard.py",
+           "return f\"认出来了：静态图 · {width}x{height} · {timing}\"",
+           "return f\"认出来了：动图 · 静态图 · {width}x{height} · {timing}\"",
+           "tests/test_kill_icon_wizard_ki7.py::test_a_single_picture_is_not_called_an_animation",
+           "两个词互斥，用户不知道到底认成了什么（外审 S4）"),
+    Revert("B146", "数值框上下按钮没有箭头", "theme_manager.py",
+           "        \"\"\" + self._spin_box_qss(c) + self._weapon_board_qss(c)",
+           "        \"\"\" + self._weapon_board_qss(c)",
+           "tests/test_the_review_of_b145_stays_fixed.py::test_the_spin_box_buttons_show_an_arrow",
+           "两块深色圆角块，看不出是按钮（外审 S3）"),
+    Revert("B146", "麦克风标签又被撑开", "widgets/settings_row.py",
+           'label_min_width=PLAIN_LABEL_WIDTH, control_align="left")',
+           'label_min_width=PLAIN_LABEL_WIDTH, control_align="right")',
+           "tests/test_the_review_of_b145_stays_fixed.py::test_the_microphone_label_stays_next_to_its_combo",
+           "字和下拉隔开一大段（外审 S3）"),
+    Revert("B146", "主按钮降权后字色绕过对比度守卫", "theme_manager.py",
+           "                color: {dim_primary_text};\n",
+           "                color: {c.text_disabled};\n",
+           "tests/test_master_switch_effect_is_honest.py",
+           "总开关关着时主按钮的字看不清"),
+    Revert("B146", "搜索不认控件自带的别名", "gui_widget.py",
+           "text = str(widget.property(\"fp_search_text\") or widget.text()).strip()",
+           "text = str(widget.text()).strip()",
+           "tests/test_search_jump_r13.py",
+           "搜「准心大小」跳过去不高亮：标签上写的是「大小」"),
+    Revert("IDLE", "侧栏校正又自己触发自己", "gui_widget.py",
+           "                    and self._nav_natural_geometry_changed(_scroll)):",
+           "                    ):",
+           "tests/test_idle_window_lets_the_event_loop_sleep.py::test_default_window_heights_sleep",
+           "RN-732：默认窗口空闲占满一个核，事件循环永不休眠"),
+    Revert("B145", '样式表不先加载字体', 'theme_manager.py',
+           '        load_ui_fonts()',
+           '        pass',
+           'tests/test_ui_font_is_bundled.py::test_asking_for_the_stylesheet_loads_the_font_first',
+           'RN-733：已经 polish 过的控件不换字体'),
+    Revert("B145", '样式表族名退回雅黑', 'theme_manager.py',
+           'font-family: "Sail Sans SC", "Microsoft YaHei UI", "Segoe UI", Arial;',
+           'font-family: "Microsoft YaHei UI", "Segoe UI", Arial;',
+           'tests/test_ui_font_is_bundled.py::test_asking_for_the_stylesheet_loads_the_font_first',
+           'RN-733：字体随包了却没人用它'),
+    Revert("B145", '打包漏了字体', 'build_tools/build_release.py',
+           '        (stage_dir / "fonts", "fonts"),',
+           '',
+           'tests/test_ui_font_is_bundled.py::test_the_packaged_build_carries_the_fonts',
+           'RN-733：打包版悄悄退回雅黑，和开发机量的不是一套度量'),
+    Revert("B145", '侧栏项高不写进样式表', 'theme_manager.py',
+           '                min-height: {nav_item_height}px;',
+           '                min-height: 0px;',
+           'tests/test_the_page_chrome_says_less.py::test_the_nav_fits_one_screen_at_the_default_size',
+           'RN-733：setFixedHeight 被 polish 盖掉，实高 18 挤成一团'),
+    Revert("B145", '常用组默认又打开', 'config.py',
+           '        self.nav_frequent_enabled = False  # 侧栏',
+           '        self.nav_frequent_enabled = True  # 侧栏',
+           'tests/test_the_page_chrome_says_less.py::test_the_frequent_group_is_off_by_default',
+           'RN-733：同样几项再摆一遍，默认窗口的侧栏又要滚'),
+    Revert("B145", '老配置不关常用', 'config.py',
+           '    cfg.nav_frequent_enabled = False',
+           '    pass',
+           'tests/test_config_schema_migration.py::test_an_old_config_gets_the_frequent_group_turned_off',
+           'RN-733：老用户升级后侧栏还是滚的'),
+    Revert("B145", '完整档顶栏又出现', 'gui_widget.py',
+           '            self._compact_header.setVisible(False)',
+           '            self._compact_header.setVisible(True)',
+           'tests/test_the_page_chrome_says_less.py::test_the_full_layout_has_no_top_bar',
+           'RN-733：侧栏已有的东西顶上再摆一遍'),
+    Revert("B145", '滚动区页的底栏贴窗口边', 'gui_widget.py',
+           '                holder_layout.setContentsMargins(20, 0, 20, 0)',
+           '                holder_layout.setContentsMargins(0, 0, 0, 0)',
+           'tests/test_the_page_chrome_says_less.py::test_every_bottom_bar_lines_up_with_the_content',
+           'RN-733：9 页底栏按钮贴着窗口边'),
+    Revert("B145", '有的页标题横向跳', 'pages/about_page.py',
+           'layout.setContentsMargins(20, 16, 20, 20)',
+           'layout.setContentsMargins(24, 16, 24, 20)',
+           'tests/test_the_page_chrome_says_less.py::test_every_page_title_starts_at_the_same_x',
+           'RN-733：切页时标题左右跳'),
+    Revert("B145", '危险按钮常态字色读不清', 'theme_manager.py',
+           'return ensure_contrast(c.error, (c.bg_primary, c.bg_secondary, c.bg_card), 4.5)',
+           'return c.bg_card',
+           'tests/test_theme_contrast.py::test_danger_button_text_meets_aa',
+           'RN-733：透明底红字在卡片底上看不清'),
+    Revert("B145", '没有问题也给徽章', 'pages/audio_status_badge.py',
+           'return str(level or "") in PROBLEM_LEVELS and head in PROBLEM_HEADS',
+           'return True',
+           'tests/test_the_page_chrome_says_less.py::test_only_a_problem_gets_a_chip',
+           'RN-734：状态条退回什么都喊'),
+    Revert("B145", '空状态条照样占地方', 'widgets/status_strip.py',
+           '        if has_content == self.isHidden():',
+           '        if False:',
+           'tests/test_the_page_chrome_says_less.py::test_an_empty_strip_takes_no_room_and_comes_back',
+           'RN-734：什么都不说也占一条缝'),
+    Revert("B145", '状态条还在搭就判空', 'widgets/status_strip.py',
+           '        self._collapse_armed = False',
+           '        self._collapse_armed = True',
+           'tests/test_the_page_chrome_says_less.py::test_a_strip_does_not_judge_before_it_is_first_shown',
+           'RN-734：把自己藏起来之后没有事件能叫回来'),
+    Revert("B145", '底栏消息又常驻', 'widgets/page_action_bar.py',
+           '        self.message_label.setVisible(self._message_important)',
+           '        self.message_label.setVisible(True)',
+           'tests/test_the_page_chrome_says_less.py::test_the_bottom_bar_stays_silent_unless_told_to_speak',
+           'RN-734：底栏复述页面上已有的状态'),
+    Revert("B145", '关着时真要读的话丢了回执', 'widgets/page_action_bar.py',
+           'fixed = "" if self._message_important and enabled else "".join(parts)',
+           'fixed = "" if self._message_important else "".join(parts)',
+           'tests/test_master_switch_effect_is_honest.py::test_an_important_message_drops_the_receipt_only_while_on',
+           'RN-734：「点保存才写入」读成点完就生效（RN-407 同形）'),
+    Revert("B145", '页头说明又常驻', 'widgets/page_header.py',
+           '            self.description_label.hide()',
+           '            pass',
+           'tests/test_the_page_chrome_says_less.py::test_nothing_but_the_title_row_sits_above_the_content',
+           'RN-734：每页标题下一段说明，先读字才能用'),
+    Revert("B145", '帮助不带页头那句说明', 'ui_help_panel.py',
+           '    if lead is not None and lead.text():',
+           '    if False:',
+           'tests/test_the_page_chrome_says_less.py::test_what_the_lead_said_is_still_in_the_help',
+           'RN-734：说明从页面撤了却没进帮助，那句话就没了'),
+    Revert("B145", '帮助面板折叠时还占一条缝', 'ui_help_panel.py',
+           '        self._card.setVisible(False)\n        self.hide()\n\n    # PLACEHOLDER_METHODS',
+           '        self._card.setVisible(False)\n\n    # PLACEHOLDER_METHODS',
+           'tests/test_the_page_chrome_says_less.py::test_nothing_but_the_title_row_sits_above_the_content',
+           'RN-734：高度 0 也占 spacing，每页标题下多 12px'),
+    Revert("B145", '总开关跑回内容区', 'widgets/master_switch_link.py',
+           '    header.dock_beside_title(row)',
+           '    pass',
+           'tests/test_the_page_chrome_says_less.py::test_every_master_switch_sits_beside_the_page_title',
+           'RN-734：开关不在标题旁边，又要往下找'),
+    Revert("B145", '键盘顺序先问号后开关', 'widgets/master_switch_link.py',
+           '        QWidget.setTabOrder(row._toggle, help_button)',
+           '        pass',
+           'tests/test_the_page_chrome_says_less.py::test_the_switch_comes_before_help_in_keyboard_order',
+           'RN-734：开关搬进页头后 Tab 顺序和眼睛反着'),
+    Revert("B145", '空库时整套套用还摆着', 'pages/gun_sound_page.py',
+           'inline = self.apply_all_combo.count() > 1',
+           'inline = True',
+           'tests/test_apply_one_style_to_every_weapon.py::test_the_row_stays_in_compact_mode_too',
+           'RN-734：只有占位项的下拉，空库引导已经在说了'),
+    Revert("B145", '提示标签又限宽', 'theme_manager.py',
+           '                font-size: {font.xs}px;\n                background: transparent;\n            }}\n\n            QLabel#pageLeadLabel {{',
+           '                font-size: {font.xs}px;\n                background: transparent;\n                max-width: 720px;\n            }}\n\n            QLabel#pageLeadLabel {{',
+           'tests/test_design_w5.py::test_hint_label_is_not_capped_on_wide_window',
+           'RN-733：长提示第二行被裁成半截'),
+    Revert("B145", '首次引导高度又写死', 'dialogs/onboarding_dialog.py',
+           '        self._fit_height()',
+           '        pass',
+           'tests/test_the_page_chrome_says_less.py::test_the_first_dialog_a_new_user_sees_is_not_clipped',
+           'RN-733：新用户第一屏的说明被裁成半行'),
+    Revert("B145", '审计看不见被裁的标签', 'scripts/layout_overflow_audit.py',
+           '        if need > label.height() + 1:   # 1px 容差，同按钮那两条',
+           '        if False:',
+           'tests/test_the_page_chrome_says_less.py::test_the_layout_audit_sees_a_clipped_label',
+           'RN-733：这一类又没有尺子'),
+    Revert("B145", '侧栏模式按钮又吃通用内边距', 'theme_manager.py',
+           '                padding: 0px;  /* 批 145：钉死 48 宽，通用内边距一扣只剩 18px，两个字被裁 */\n',
+           '',
+           'tests/test_ui_visual_r1_fixes.py::test_sidebar_mode_button_is_not_squeezed_into_a_square',
+           'RN-733：「紧凑」两个字被裁'),
+    Revert("B145", '审计又不量外壳', 'scripts/layout_overflow_audit.py',
+           '            for label, scope in _shell_scopes(win):\n',
+           '            for label, scope in ():\n',
+           'tests/test_the_audit_says_which_worst_case_it_pinned.py::test_no_page_falls_off_the_cliff_unannounced',
+           'RN-733：外壳又没有尺子'),
+    # ---- 批 147：被击杀、枪声、特殊音效三页（RN-739~741）
+    Revert("B147", "被击杀页刷新又把配置改掉", "pages/death_sound_page.py",
+           "        blocked = library.blockSignals(True)\n",
+           "        blocked = library.signalsBlocked()\n",
+           "tests/test_the_other_sound_pages_use_the_board.py::test_a_vanished_style_stays_in_the_config_and_comes_back",
+           "RN-739：风格没了就把配置写成「不启用」，说不出原来选的是谁，风格回来也接不上（RN-033）"),
+    Revert("B147", "被击杀页试听又改了配置", "pages/death_sound_page.py",
+           "self.style_library.auditionRequested.connect(self._test_sound)",
+           "self.style_library.auditionRequested.connect(lambda s: (self._on_style_changed(s), self._test_sound(s)))",
+           "tests/test_the_other_sound_pages_use_the_board.py::test_the_audition_on_a_card_changes_nothing",
+           "RN-739：听一下不等于用它"),
+    Revert("B147", "被击杀页「正在用」不跟着走", "pages/death_sound_page.py",
+           "\"正在用\" if style == current else \"\"",
+           "\"正在用\" if style == self.death_styles[0] else \"\"",
+           "tests/test_the_other_sound_pages_use_the_board.py::test_a_card_is_used_at_once_and_a_second_click_turns_it_off",
+           "RN-739：卡片小字说的不是配置里的那个"),
+    Revert("B147", "新建的风格又没当场用上", "pages/death_sound_page.py",
+           "        self.style_library.set_brush(style_name)      # 新建完就用它（走同一条落配置的路）\n",
+           "",
+           "tests/test_the_other_sound_pages_use_the_board.py::test_a_new_style_is_used_right_away",
+           "RN-739：新建完还要再点一下，第一次用的人会以为已经生效"),
+    Revert("B147", "被击杀页风格没了又不说", "pages/death_sound_page.py",
+           "        self.selection_state_label.setVisible(bool(text))",
+           "        self.selection_state_label.setVisible(False)",
+           "tests/test_the_other_sound_pages_use_the_board.py::test_a_vanished_style_stays_in_the_config_and_comes_back",
+           "RN-739：卡片上看不出「原来选的没了」，只能靠这一句"),
+    Revert("B147", "被击杀页空库还摆风格卡", "pages/death_sound_page.py",
+           "        self.style_library.setVisible(not applied and bool(self.death_styles))",
+           "        self.style_library.setVisible(True)",
+           "tests/test_the_other_sound_pages_use_the_board.py::test_an_empty_library_shows_only_the_way_forward",
+           "RN-739：空库只留引导"),
+    Revert("B147", "点枪名微调栏不换", "pages/gun_sound_page.py",
+           "cell.nameClicked.connect(lambda weapon=weapon_type: self._select_tuning_weapon(weapon))",
+           "cell.nameClicked.connect(lambda weapon=weapon_type: None)",
+           "tests/test_the_other_sound_pages_use_the_board.py::test_clicking_a_name_moves_the_strip_and_writes_nothing",
+           "RN-740：微调栏是这页唯一调原声保留的地方，换不了枪就只能调 AK"),
+    Revert("B147", "微调栏写到别的枪头上", "pages/gun_sound_page.py",
+           "        self.tuning_weapon = weapon_type\n",
+           "        self.tuning_weapon = self.tuning_weapon or weapon_type\n",
+           "tests/test_the_other_sound_pages_use_the_board.py::test_the_strip_writes_to_the_gun_it_shows",
+           "RN-740：显示的是 AWP，改的是 AK，而且不报错"),
+    Revert("B147", "换枪把滑条的值写进配置", "pages/gun_sound_page.py",
+           "        self._loading = True\n        try:\n            self.duck_slider.setValue(int(round(duck_ratio * 100)))",
+           "        self._loading = was_loading\n        try:\n            self.duck_slider.setValue(int(round(duck_ratio * 100)))",
+           "tests/test_the_other_sound_pages_use_the_board.py::test_clicking_a_name_moves_the_strip_and_writes_nothing",
+           "RN-740：只是把滑条摆过去，不是用户在调；少了这一下每换一次枪就写一次配置"),
+    Revert("B147", "换枪滑条不摆过去", "pages/gun_sound_page.py",
+           "            self.duration_slider.setValue(int(round(mute_duration * 100)))\n",
+           "",
+           "tests/test_the_other_sound_pages_use_the_board.py::test_clicking_a_name_moves_the_strip_and_writes_nothing",
+           "RN-740：名字换了数值没换，下一次拖动就写错"),
+    Revert("B147", "微调栏的时长标签只靠滑条信号刷", "pages/gun_sound_page.py",
+           "        self.duration_label.setText(f\"{mute_duration:.2f}秒\")\n\n    def _sync_weapon_board",
+           "\n    def _sync_weapon_board",
+           "tests/test_the_other_sound_pages_use_the_board.py::test_the_strip_labels_are_filled_when_the_slider_has_nowhere_to_move",
+           "RN-740：滑条值没变时不发信号，那把枪刚好在滑条起点上标签就空着"),
+    Revert("B147", '枪名又不算搜索目标', 'gui_widget.py',
+           '        wanted = (QCheckBox, QRadioButton, QLabel, QPushButton)\n',
+           '        wanted = (QCheckBox, QRadioButton, QLabel)\n',
+           'tests/test_the_other_sound_pages_use_the_board.py::test_search_lands_on_the_cell_and_the_second_search_moves_it',
+           'RN-744：枪名从标签改成按钮后，跳过去只落到页头'),
+    Revert("B147", '搜到枪名只亮名字不亮整格', 'widgets/weapon_row_widget.py',
+           '        self.setProperty("fp_setting_row", True)  # 搜到枪名时高亮整格\n',
+           '',
+           'tests/test_the_other_sound_pages_use_the_board.py::test_search_lands_on_the_cell_and_the_second_search_moves_it',
+           'RN-744：名字按钮是透明的，亮它看不见；往上再走一级又是整块板'),
+    Revert("B147", '模糊搜索不再认按钮', 'gui_widget.py',
+           '            if target is None and q:\n                target = self._find_setting_row(page, q, buttons=True)\n',
+           '',
+           'tests/test_the_other_sound_pages_use_the_board.py::test_a_typed_query_finds_the_cell_too',
+           'RN-744：页面级结果跳过去时手上只有用户敲的词'),
+    Revert("B147", '一字不差也排在沾边的后面', 'gui_widget.py',
+           '            if text.lower() == exact:\n                best = widget\n                break\n',
+           '',
+           'tests/test_the_other_sound_pages_use_the_board.py::test_a_name_beats_a_switch_that_merely_resembles_it',
+           'RN-744：索引给的是原名，树里靠前的开关不该抢走'),
+    Revert("B147", '按钮抢在卡片标题前面', 'gui_widget.py',
+           'if best is None and isinstance(widget, QPushButton) == buttons and text_matches(query, text):',
+           'if best is None and text_matches(query, text):',
+           'tests/test_the_other_sound_pages_use_the_board.py::test_a_card_title_outranks_a_button_that_resembles_it',
+           'RN-744：搜卡片名不该落到名字相近的按钮上'),
+    Revert("B147", '又把整块内容区当成一行', 'gui_widget.py',
+           'if node is page or isinstance(node, SettingsCard) or is_whole_area(node):',
+           'if node is page or isinstance(node, SettingsCard):',
+           'tests/test_search_jump_r13.py::test_every_indexed_control_can_be_found_and_lit',
+           'RN-744：普查 39 条高亮落在视口或页签层上'),
+    Revert("B147", '滚的是页面上第一个滚动区', 'gui_widget.py',
+           '            node = target.parentWidget() if target is not page else None\n            while node is not None:\n                if isinstance(node, QScrollArea):\n                    node.ensureWidgetVisible(target, 0, 48)\n                node = node.parentWidget()\n',
+           '            scroll = page.findChild(QScrollArea)\n            if scroll is not None and target is not page:\n                scroll.ensureWidgetVisible(target, 0, 48)\n',
+           'tests/test_the_other_sound_pages_use_the_board.py::test_the_scroll_area_that_holds_the_cell_is_the_one_that_moves',
+           'RN-744：不含目标的滚动区滚不动它，而且不报错'),
+    Revert("B147", '格子的搜索高亮压不过自己的底色', 'theme_manager.py',
+           '"QPushButton#actionButton", "QPushButton#dangerButton", "QFrame#weaponCell",\n',
+           '"QPushButton#actionButton", "QPushButton#dangerButton",\n',
+           'tests/test_the_other_sound_pages_use_the_board.py::test_the_highlight_shows_on_a_cell_in_every_state',
+           'RN-744：QSS 比特异度，属性选择器压不过 id'),
+    Revert("B147", '总开关关着时配过的格子不亮', 'theme_manager.py',
+           '                   \'QFrame#weaponBoard[masterOff="true"] QFrame#weaponCell\')\n',
+           '                   )\n',
+           'tests/test_the_other_sound_pages_use_the_board.py::test_the_highlight_shows_on_a_cell_in_every_state',
+           'RN-744：masterOff 那条规则更具体'),
+    Revert("B147", '说明文字的搜索高亮看不出来', 'theme_manager.py',
+           'targets = ("QLabel#hintLabel", "QLabel#panelSectionTitle",',
+           'targets = ("QLabel#panelSectionTitle",',
+           'tests/test_search_jump_r13.py::test_every_indexed_control_can_be_found_and_lit',
+           'RN-744：收紧整块内容区之后，这些项的高亮落在说明文字自己身上'),
+    Revert("B147", 'C4 页签又从索引里丢了', 'core/search_index.json',
+           '"text": "C4 拆除",\n   "card": "",\n   "tab": "C4",',
+           '"text": "C4 拆除",\n   "card": "",\n   "tab": "",',
+           'tests/test_the_other_sound_pages_use_the_board.py::test_searching_a_c4_item_opens_its_tab_and_finds_the_cell',
+           'RN-744：normalize 按「至少两个字母」把它滤掉了'),
+    Revert("B147", '枪声页的已配置数进了索引', 'pages/gun_sound_page.py',
+           '        self.weapon_count_label.setProperty("fp_index_skip", True)  # 当前值，不进索引（RN-568）\n',
+           '',
+           'tests/test_the_other_sound_pages_use_the_board.py::test_the_weapon_count_is_not_a_search_term',
+           'RN-568 同款：这一刻的值'),
+    Revert("B147", '音效页的已配置数进了索引', 'pages/sound_page_base.py',
+           '        self.weapon_count_label.setProperty("fp_index_skip", True)  # 当前值，不进索引（RN-568）\n',
+           '',
+           'tests/test_the_other_sound_pages_use_the_board.py::test_the_weapon_count_is_not_a_search_term',
+           'RN-568 同款'),
+    Revert("B147", '整条查询就是项名也排不过页面', 'core/settings_search.py',
+           'score = 100.0 * len(tokens) if it["text"].lower() == whole_query else total * coverage',
+           'score = total * coverage',
+           'tests/test_the_other_sound_pages_use_the_board.py::test_searching_a_c4_item_opens_its_tab_and_finds_the_cell',
+           'RN-744：回车跳的是第一条，第一条是页面就切不到页签'),
+    Revert("B147", '普通按钮的搜索高亮看不出来', 'theme_manager.py',
+           '"QPushButton#primaryButton", "QPushButton#secondaryButton",',
+           '"QPushButton#primaryButton",',
+           'tests/test_search_jump_r13.py::test_every_indexed_control_can_be_found_and_lit',
+           'RN-744：secondaryButton 的 id 规则压过通用高亮，普查 38/39 看不出来'),
+    Revert("B148", '点卡片进不去那一页', 'gui_widget.py',
+           '                    card.clicked.connect(lambda _checked=False, pid=target_page: self.show_page(pid))\n',
+           '',
+           'tests/test_home_overview.py::test_the_card_opens_the_page_and_the_switch_stays_home',
+           'RN-742：整张卡是入口，这条线断了只是一张点不动的卡'),
+    Revert("B148", '能点进去的卡静态看不出来', 'widgets/home_overview.py',
+           'keep_single_line(QLabel(f"{name} ›" if has_page else name, self))',
+           'keep_single_line(QLabel(name, self))',
+           'tests/test_home_overview.py::test_a_card_with_no_page_says_so_and_only_has_its_switch',
+           'RN-235 的旧账：只靠悬停才说话的能力，在屏幕上等于不存在'),
+    Revert("B148", '拨开关卡片不跟', 'gui_widget.py',
+           '        self._sync_master_switch_rows(config_key)\n        self._sync_feature_cards()',
+           '        self._sync_master_switch_rows(config_key)',
+           'tests/test_home_overview.py::test_the_card_follows_its_switch_both_ways',
+           'RN-742：摘要、计数、侧栏小点都从这一下来'),
+    Revert("B148", '名字颜色不跟开关', 'gui_widget.py',
+           '            self._update_switch_label_color(card.name_label, on)\n',
+           '',
+           'tests/test_home_overview.py::test_the_card_follows_its_switch_both_ways',
+           '同上'),
+    Revert("B148", '别处改了配置卡片不跟', 'gui_widget.py',
+           '            toggle.blockSignals(False)\n        self._sync_feature_cards()\n        return True\n',
+           '            toggle.blockSignals(False)\n        return True\n',
+           'tests/test_home_overview.py::test_a_change_from_another_page_reaches_the_card',
+           'RN-089：配置从别处改的那条路不走 `_on_switch_changed`'),
+    Revert("B148", '配置从别处改了卡片不跟', 'gui_widget.py',
+           '            toggle.blockSignals(False)\n        self._sync_feature_cards()\n        return True\n',
+           '            toggle.blockSignals(False)\n        return True\n',
+           'tests/test_home_overview.py::test_a_change_from_another_page_reaches_the_card',
+           'RN-089：配置被别处改，不走 _on_switch_changed'),
+    Revert("B148", '回到总览不刷新', 'gui_widget.py',
+           '            if page_id == "basic":\n                # 别的页刚配过枪、删过风格，回来这一屏得是新的\n                self._refresh_home_cards()\n',
+           '',
+           'tests/test_home_overview.py::test_coming_back_shows_what_was_changed_elsewhere',
+           'RN-742：别的页刚配过枪，回来还写着上一次的数'),
+    Revert("B148", '功能卡的小字又能折行', 'widgets/home_overview.py',
+           '        self.meta_label = keep_single_line(ElidedLabel("", self))\n',
+           '        self.meta_label = ElidedLabel("", self)\n',
+           'tests/test_home_overview.py::test_cards_stay_tall_in_the_theme_without_a_stylesheet',
+           '折行的标签让高度变成按宽度算，布局不再问 sizeHint（批 147 风格卡的坑）'),
+    Revert("B148", '功能卡列数不跟宽度', 'widgets/home_overview.py',
+           '        cols = max(1, (self.width() + FEATURE_CARD_GAP) // (FEATURE_CARD_MIN_WIDTH + FEATURE_CARD_GAP))\n',
+           '        cols = 3\n',
+           'tests/test_home_overview.py::test_the_grid_follows_the_width_both_ways',
+           'RN-742'),
+    Revert("B148", '卡上把不启用也算成配了', 'core/feature_summary.py',
+           '        return _guns_line(sum(1 for style in table.values() if style_is_picked(style)))\n',
+           '        return _guns_line(len(table))\n',
+           'tests/test_home_overview.py::test_the_line_on_each_card',
+           '「已配 N 把枪」的分母：表里写着「0」不等于配了'),
+    Revert("B148", '风格失效盖不过平时那句', 'core/feature_summary.py',
+           '    if stale:\n        return f"{stale} 项风格失效", "warning"\n',
+           '',
+           'tests/test_home_overview.py::test_a_gone_style_outranks_the_usual_line',
+           'RN-742：配的风格没了是这张卡现在最要紧的话'),
+    Revert("B148", '没选目录但已连上也喊还差一步', 'core/runtime/system_status_service.py',
+           '    blocked_by_dir = no_dir and link != "connected"\n',
+           '    blocked_by_dir = no_dir\n',
+           'tests/test_home_overview.py::test_no_cs2_directory_is_the_next_step',
+           '在收数据就是连上了，目录没记上不耽误联动'),
+    Revert("B148", '独占全屏不管开没开画面功能都告警', 'core/runtime/system_status_service.py',
+           '    if level == "ok" and exclusive and overlay_on:\n',
+           '    if level == "ok" and exclusive:\n',
+           'tests/test_home_overview.py::test_exclusive_fullscreen_matters_only_when_something_draws_on_the_game',
+           '只用音效的玩家开独占全屏没有任何问题，告警就是假的'),
+    Revert("B148", '读不到显示模式也摆一项', 'core/runtime/system_status_service.py',
+           '    if display_mode in DISPLAY_MODE_TEXT:\n',
+           '    if True:\n',
+           'tests/test_home_overview.py::test_exclusive_fullscreen_matters_only_when_something_draws_on_the_game',
+           '读不到是「不知道」，不能摆成什么都没有的一项（RN-434）'),
+    Revert("B148", '上手引导一直是主按钮', 'gui_widget.py',
+           '            wanted = "primaryButton" if view.needs_setup else "secondaryButton"\n',
+           '            wanted = "primaryButton"\n',
+           'tests/test_home_overview.py::test_the_guide_is_the_main_button_only_while_there_is_a_step_left',
+           'RN-139：主按钮指向还没做的下一步，不是随时可以再做一次的动作'),
+    Revert("B148", '状态条有事也只报开了几个', 'gui_widget.py',
+           '        if view.detail:\n            status_label.setText(html.escape(view.detail))\n            return\n',
+           '',
+           'tests/test_home_overview.py::test_the_strip_says_the_fix_instead_of_the_count_when_there_is_one',
+           'RN-531：报了故障的那句话要指出去哪修'),
+    Revert("B148", '状态刷新没带显示模式', 'gui_widget.py',
+           'readiness_view(status, detect_display_mode(), overlay_on=overlay_on)',
+           'readiness_view(status, None, overlay_on=overlay_on)',
+           'tests/test_home_overview.py::test_a_real_refresh_goes_through_the_whole_chain',
+           '纯函数判据量不到接线'),
+    Revert("B148", '窄窗口检查项不换行', 'widgets/home_overview.py',
+           '        wide = self.width() >= READINESS_WIDE_WIDTH\n',
+           '        wide = True\n',
+           'tests/test_home_overview.py::test_the_checks_move_below_when_the_strip_is_narrow',
+           '紧凑档那句修法挤成一列'),
+    Revert("B148", '空目录不算风格失效', 'core/audio/audio_resource_health.py',
+           'if style_is_picked(style) and not _style_dir_has_audio(path_of(str(owner), str(style))))',
+           'if style_is_picked(style) and not os.path.isdir(path_of(str(owner), str(style))))',
+           'tests/test_home_overview.py::test_stale_styles_are_counted_per_feature_and_the_config_is_left_alone',
+           '目录在、里面没有声音，游戏里一样不响'),
+    Revert("B148", '失效项没有去处理的链接', 'gui_widget.py',
+           '        self.system_status_label.linkActivated.connect(self.show_page)\n',
+           '',
+           'tests/test_home_overview.py::test_a_gone_style_shows_on_the_card_the_strip_and_the_sidebar',
+           'RN-742：说了有事却不给路'),
+    Revert("B148", '风格失效侧栏还是绿的', 'gui_widget.py',
+           '            return DOT_WARN if stale_count else DOT_ON\n',
+           '            return DOT_ON\n',
+           'tests/test_home_overview.py::test_a_gone_style_shows_on_the_card_the_strip_and_the_sidebar',
+           'RN-743'),
+    Revert("B148", '特殊音效拨开关侧栏不跟', 'pages/special_sound_page.py',
+           '        self._sync_sidebar_dot()\n        enabled_modules = self._count_enabled_modules()\n',
+           '        enabled_modules = self._count_enabled_modules()\n',
+           'tests/test_home_overview.py::test_special_sound_has_a_dot_and_a_link_without_a_master_switch',
+           'RN-743：这四类没有总开关，走不到 `_on_switch_changed`'),
+    Revert("B148", '专家页打开时侧栏还是藏着', 'gui_widget.py',
+           '                btn.setVisible(is_expert or page_id == current)\n',
+           '                btn.setVisible(is_expert)\n',
+           'tests/test_home_overview.py::test_an_expert_page_opened_from_a_link_lights_up_while_it_is_open',
+           'RN-743：批 145 外审，普通模式进工具页，侧栏没有一项是亮的'),
+    Revert("B148", '旧名字搜不到总览', 'core/settings_search.py',
+           '        "基础设置", "首页", "总开关",',
+           '        "首页", "总开关",',
+           'tests/test_home_overview.py::test_the_overview_is_named_and_the_old_name_still_finds_it',
+           '改名不能让老用户找不到'),
+    Revert("B148", '侧栏小点没变也重绘', 'widgets/nav_button.py',
+           '        if level == self._status_dot:\n            return\n',
+           '',
+           'tests/test_home_overview.py::test_the_dot_is_painted_only_when_there_is_one',
+           'RN-732 的同类：状态条每 15 秒走一遍，28 项各重绘一次'),
+    Revert("B148", '音量那句话一直说', 'gui_widget.py',
+           '        label.setVisible(bool(tip))\n',
+           '',
+           'tests/test_home_overview.py::test_the_volume_only_speaks_when_it_is_hard_to_hear',
+           'RN-734 减字：适中的时候没什么要说的'),
+    Revert("B148", '默认音量也提醒', 'gui_widget.py',
+           '        else:\n            tip = ""\n        label.setText(tip)\n',
+           '        elif v >= 90:\n            tip = "接近最大，建议同步降低系统音量"\n        else:\n            tip = ""\n        label.setText(tip)\n',
+           'tests/test_home_overview.py::test_the_volume_only_speaks_when_it_is_hard_to_hear',
+           '默认就是 100%：每个新用户一进来都先被提醒一句'),
+    Revert("B148", '功能卡网格撑出横向滚动条', 'widgets/home_overview.py',
+           '        hint.setWidth(FEATURE_CARD_MIN_WIDTH)\n',
+           '',
+           'tests/test_home_overview.py::test_the_grid_never_pushes_the_page_sideways',
+           'RN-742：最小宽跟着列数走，1280 窗口锁在 5 列，状态条右边和帮助按钮被切'),
+    Revert("B148", '独占全屏大字还说可以进游戏', 'core/runtime/system_status_service.py',
+           'level, headline, detail = "warn", f"{headline}，但画面功能会被盖住", EXCLUSIVE_DETAIL',
+           'level, detail = "warn", EXCLUSIVE_DETAIL',
+           'tests/test_home_overview.py::test_exclusive_fullscreen_matters_only_when_something_draws_on_the_game',
+           'RN-742：「可以进游戏了」下面跟「先去改显示模式」，两句打架'),
+    Revert("B149", '设置行的标签列不定宽', 'widgets/settings_row.py',
+           'control=control, label_min_width=PLAIN_LABEL_WIDTH, control_align="left")',
+           'control=control, control_align="left")',
+           'tests/test_the_tool_pages_are_plain_settings.py::test_plain_rows_line_up_in_one_column',
+           'RN-745：每行的控件各从各的地方开始，外审 S3 报得最多的就是这一条'),
+    Revert("B149", '设置行的控件不定宽', 'widgets/settings_row.py',
+           '        control.setFixedWidth(width)\n',
+           '        pass\n',
+           'tests/test_the_tool_pages_are_plain_settings.py::test_a_plain_row_pins_its_control_width',
+           'RN-745：下拉框各按内容取宽，右缘参差'),
+    Revert("B149", '设置行不钉行高', 'widgets/settings_row.py',
+           '    row.setMinimumHeight(PLAIN_ROW_MIN_HEIGHT)\n',
+           '',
+           'tests/test_the_tool_pages_are_plain_settings.py::test_a_plain_row_pins_its_control_width',
+           'RN-745：滑条和勾选框那几行比下拉框那几行挤'),
+    Revert("B149", '卡片里又套一张卡片', 'pages/config_snapshot_page.py',
+           '        list_card, list_layout = SettingsCard.make("快照列表")\n',
+           '        list_card, list_layout = SettingsCard.make("快照列表")\n'
+           '        list_layout.addWidget(SettingsCard.make("x")[0])\n',
+           'tests/test_the_tool_pages_are_plain_settings.py::test_no_card_sits_inside_another_card',
+           'RN-745：两层边框、两层内边距，左缘永远对不齐'),
+    Revert("B149", '空状态那句话跑到表下面', 'pages/config_snapshot_page.py',
+           '        self.table = QTableWidget(0, 5)\n',
+           '        list_layout.addStretch(1)\n'
+           '        list_layout.addWidget(self.empty_hint_label)\n'
+           '        self.table = QTableWidget(0, 5)\n',
+           'tests/test_the_tool_pages_are_plain_settings.py::test_a_list_page_is_one_card_read_top_down',
+           'RN-745：先说为什么是空的，再给按钮'),
+    Revert("B149", '道具空状态又撑满整页', 'pages/utility_page.py',
+           'self._manage_layout.setStretchFactor(self.utility_list_card, 1 if has_items else 0)',
+           'self._manage_layout.setStretchFactor(self.utility_list_card, 1)',
+           'tests/test_the_tool_pages_are_plain_settings.py::test_an_empty_utility_list_is_only_as_tall_as_its_words',
+           'RN-746：一整页的空卡片看着像出了问题'),
+    Revert("B149", '目录好好的时底栏又摆一颗选择目录', 'pages/advanced_page.py',
+           '            self.action_bar.configure_secondary("", None, visible=False)\n',
+           '            self.action_bar.configure_secondary("选择目录", self._browse_for_csgo_dir, visible=True)\n',
+           'tests/test_the_tool_pages_are_plain_settings.py::test_a_valid_directory_leaves_no_lonely_button_on_the_bar',
+           'RN-746：孤零零一颗重复的按钮（外审 S3）'),
+    Revert("B149", '首次引导又提基础设置', 'dialogs/onboarding_dialog.py',
+           '之后在「高级设置」和「总览」里也能完成。',
+           '之后在「高级设置」和「基础设置」里也能完成。',
+           'tests/test_the_tool_pages_are_plain_settings.py::test_the_first_run_dialog_uses_the_new_page_name',
+           'RN-742 同族：页名改了，第二个地方还在说旧名字'),
+    Revert("B150", '屏幕特效开关句又说可以先调好', 'pages/screen_effects_page.py',
+           '        self.master_switch_row.effect_notice.setText("打开之后才能调这一页的设置")\n',
+           '',
+           'tests/test_the_tool_pages_are_plain_settings.py::test_the_screen_effects_switch_does_not_promise_what_it_disables',
+           'RN-749：这一页关着时控件是真禁用的，那句是假话'),
+    Revert("B150", '语音状态又不上底栏', 'pages/voice_output_page.py',
+           '            self.action_bar.set_message(runtime_text, important=True)\n',
+           '            self.action_bar.set_message(action_message)\n',
+           'tests/test_the_tool_pages_are_plain_settings.py::test_the_voice_status_lives_on_the_bar_you_can_see',
+           'RN-750：RN-673 同形，状态说在折叠线以下'),
+    Revert("B150", '语音页又多一层外层滚动', 'pages/voice_output_page.py',
+           '        tab_widget.setMinimumHeight(320)\n',
+           '        tab_widget.setMinimumHeight(560)\n',
+           'tests/test_the_tool_pages_are_plain_settings.py::test_the_page_fits_one_screen_at_the_default_size',
+           'RN-750：和槽位列表叠成两层滚动'),
+    Revert("B150", '局内视角底栏那句又藏进工具提示', 'pages/viewmodel_page.py',
+           '在游戏控制台敲 exec cs2customizer.cfg。",\n            important=True)',
+           '在游戏控制台敲 exec cs2customizer.cfg。")',
+           'tests/test_the_tool_pages_are_plain_settings.py::test_the_viewmodel_bar_says_whether_it_is_written',
+           'RN-747：「CFG 同步」卡撤了，这是唯一说写没写的地方'),
+    Revert("B150", '局内视角底栏不分写没写', 'pages/viewmodel_page.py',
+           'state = "改动还没写进 CFG；写进之后" if is_dirty else "这一页的设置已经写进 CFG，"',
+           'state = "这一页的设置已经写进 CFG，"',
+           'tests/test_the_tool_pages_are_plain_settings.py::test_the_viewmodel_bar_says_whether_it_is_written',
+           'RN-747：改了没存也说已经写进去了'),
+    Revert("B150", '空列表也亮三颗红按钮', 'pages/music_page.py',
+           'self._sync_danger_buttons(bool(playlist), bool(selected_count))',
+           'self._sync_danger_buttons(True, True)',
+           'tests/test_the_tool_pages_are_plain_settings.py::test_the_red_buttons_warn_only_when_there_is_something_to_lose',
+           'RN-748：要删的东西一样都不存在，第一屏亮着三颗红按钮'),
+    Revert("B150", '死亡刷短视频关着时又说一遍', 'pages/fun_page.py',
+           '        if not enabled:\n            self._set_status("")\n',
+           '        if not enabled:\n            self._set_status("未启用。打开上面的总开关之后才会在阵亡时弹出。")\n',
+           'tests/test_the_tool_pages_are_plain_settings.py::test_the_fun_status_line_keeps_quiet_while_the_switch_says_it',
+           'RN-748：开关旁边已经说了'),
+    Revert("B151", '对话框标题又手写粗体', 'dialogs/sprite_sheet_maker.py',
+           '        title.setObjectName("titleLabel")\n',
+           '',
+           'tests/test_the_review_of_b148_b150_stays_fixed.py::test_the_import_dialog_title_uses_the_title_style',
+           'RN-756：八个字挤成一团，外审 3/3'),
+    Revert("B151", '总览卡片又和侧栏不同名', 'gui_widget.py',
+           '("music", "音乐播放", "music_enabled"),',
+           '("music", "音乐联动", "music_enabled"),',
+           'tests/test_the_review_of_b148_b150_stays_fixed.py::test_cards_and_sidebar_use_one_name',
+           'RN-757：切换入口时以为是两个功能'),
+    Revert("B151", '道具页又点名这个页签没有的按钮', 'pages/utility_page.py',
+           '打开道具文件夹的按钮在第一个页签，',
+           '打开道具文件夹，',
+           'tests/test_the_review_of_b148_b150_stays_fixed.py::test_the_utility_empty_state_says_where_the_button_is',
+           'RN-758：codex S4 报高'),
+    Revert("B151", '不用图片时图片设置还亮着', 'pages/flash_page.py',
+           '        self.image_display_card.setEnabled(uses_image)\n',
+           '',
+           'tests/test_the_review_of_b148_b150_stays_fixed.py::test_flash_image_controls_follow_the_style',
+           'RN-758：调了没效果'),
+    Revert("B151", 'GSI 配置缺失又没有去处', 'core/audio/audio_resource_health.py',
+           '            lines.append("    去「高级设置」选一次 CS2 目录就会写好；一键修复管不到它。")\n',
+           '            pass\n',
+           'tests/test_the_review_of_b148_b150_stays_fixed.py::test_a_missing_gsi_file_says_where_to_fix_it',
+           'RN-758：codex S4 报高'),
+    Revert("B151", '字体族名又带品牌', 'core/utils/app_fonts.py',
+           'UI_FONT_FAMILY = "Sail Sans SC"',
+           'UI_FONT_FAMILY = "Cs2customizer Sans SC"',
+           'tests/test_ui_font_is_bundled.py::test_the_font_name_survives_the_open_source_rename',
+           'RN-756：开源版改名后认不出字体，悄悄退回雅黑'),
+    Revert("B150", '风格条又刷一层深底', 'theme_manager.py',
+           '            QScrollArea#helpScrollArea, QScrollArea#styleStripScroll, QScrollArea#voiceSlotList {{\n',
+           '            QScrollArea#helpScrollArea, QScrollArea#voiceSlotList {{\n',
+           'tests/test_the_tool_pages_are_plain_settings.py::test_a_list_inside_a_card_has_no_second_background',
+           'RN-748：卡片里一条深色带子'),
+    Revert("B150", '音板列表又刷一层深底', 'theme_manager.py',
+           '            QScrollArea#voiceSlotList > QWidget > QWidget {{\n',
+           '            QScrollArea#noSuchList > QWidget > QWidget {{\n',
+           'tests/test_the_tool_pages_are_plain_settings.py::test_a_list_inside_a_card_has_no_second_background',
+           'RN-748：同上'),
+    Revert("B150", '工具提示又写星号', 'widgets/master_switch_link.py',
+           '卡片上的那一颗是同一个，改哪边都一样。',
+           '卡片上的那一颗是**同一个**，改哪边都一样。',
+           'tests/test_the_tool_pages_are_plain_settings.py::test_no_page_shows_markdown_marks',
+           'RN-749：工具提示是纯文本，星号原样显示'),
+    Revert("B150", '状态文案又写星号', 'pages/screen_effects_page.py',
+           'self.action_bar = PageActionBar(self)\n        self.action_bar.set_message("本页修改自动保存。")',
+           'self.action_bar = PageActionBar(self)\n        self.action_bar.set_message("本页修改**自动**保存。")',
+           'tests/test_the_tool_pages_are_plain_settings.py::test_no_markdown_marks_are_written_into_ui_strings',
+           'RN-749：分支里的文案，页面扫描扫不到的那一半'),
+    Revert("B150", '对话框里又写星号', 'dialogs/onboarding_dialog.py',
+           '跟着下面三步走，就能让 CS2 Customizer 和 CS2 联动起来。',
+           '跟着下面**三步**走，就能让 CS2 Customizer 和 CS2 联动起来。',
+           'tests/test_the_tool_pages_are_plain_settings.py::test_no_dialog_shows_markdown_marks',
+           'RN-749：界面不只有页面（RN-672）'),
+    Revert("B150", "流式容器又按一个一行留高度", "widgets/flow_layout.py",
+           "container.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)",
+           "container.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)",
+           "tests/test_page_layout_defects.py::test_a_flow_container_does_not_reserve_room_for_one_per_line",
+           "RN-753：预设中心尾巴上 156 px 空白"),
+    Revert("B150", "专家页的尾巴又留空白", "widgets/flow_layout.py",
+           "container.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)",
+           "container.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)",
+           "tests/test_the_tool_pages_are_plain_settings.py::test_a_flow_row_leaves_no_blank_tail[preset_center]",
+           "RN-753：同上，真页面那一腿"),
+    Revert("B148", "专家页把关于软件挤出侧栏", "gui_widget.py",
+           "        nav_layout.setContentsMargins(8, 0, 8, 4)\n        nav_layout.setSpacing(0)\n",
+           "        nav_layout.setContentsMargins(8, 0, 8, 8)\n        nav_layout.setSpacing(2)\n",
+           "tests/test_home_overview.py::test_an_expert_page_opened_from_a_link_fits_the_sidebar",
+           "RN-743：普通模式从链接进专家页，侧栏出滚动条"),
+    Revert("B150", "没配风格的格子试听又亮着", "widgets/weapon_row_widget.py",
+           'self.test_button.setProperty("fp_idle", "true")',
+           'self.test_button.setProperty("fp_idle", "")',
+           "tests/test_the_review_of_b146_b147_stays_fixed.py::test_a_cell_without_a_style_steps_back_but_still_answers",
+           "批 146、147 外审 S4：不启用却亮着试听，跨页报了约 20 条"),
+    Revert("B150", "配上风格后试听还是退后的", "widgets/weapon_row_widget.py",
+           'self.test_button.setProperty("fp_idle", "" if state else "true")',
+           'self.test_button.setProperty("fp_idle", "true")',
+           "tests/test_the_review_of_b146_b147_stays_fixed.py::test_a_cell_without_a_style_steps_back_but_still_answers",
+           "同上：退后只给没配的格子"),
+    Revert("B150", "选中的格子边框又和配了的一样", "theme_manager.py",
+           """            QFrame#weaponCell[fp_selected="true"] {{
+                border-color: {c.text_primary};""",
+           """            QFrame#weaponCell[fp_selected="true"] {{
+                border-color: {accent_line};""",
+           "tests/test_the_review_of_b146_b147_stays_fixed.py::test_the_selected_cell_stands_out_from_the_configured_ones",
+           "看不出微调栏调的是哪一把"),
+    Revert("B150", "特殊音效格子又写不启用", "pages/special_sound_page.py",
+           'combo.addItem("未选风格", "0")',
+           'combo.addItem("不启用", "0")',
+           "tests/test_the_review_of_b146_b147_stays_fixed.py::test_an_empty_special_cell_does_not_say_disabled",
+           "这一页上面有「启用」开关，勾上之后格子还写不启用，读着像没勾上"),
+    Revert("B150", "风格能占用未选风格这个名字", "core/audio/style_creator.py",
+           '"未选风格"',
+           '"未选风格（占位）"',
+           "tests/test_the_review_of_b146_b147_stays_fixed.py::test_a_style_folder_cannot_take_the_name_of_the_placeholder",
+           "风格叫这个名字，那一格就分不清是没选还是选了它"),
+    Revert("B150", "模式按钮又只写紧凑", "gui_widget.py",
+           'self._sidebar_mode_btn = QPushButton("紧凑界面")',
+           'self._sidebar_mode_btn = QPushButton("紧凑")',
+           "tests/test_the_review_of_b146_b147_stays_fixed.py::test_the_mode_button_does_not_read_like_a_paid_version",
+           "「完整」被读成付费解锁完整版（跨页 8 条）"),
+    Revert("B150", "特殊音效页底栏又叫打开当前资源", "pages/special_sound_page.py",
+           'self.action_bar.configure_primary("打开音频资源", self._open_current_resource_root, visible=True)',
+           'self.action_bar.configure_primary("打开当前资源", self._open_current_resource_root, visible=True)',
+           "tests/test_the_review_of_b146_b147_stays_fixed.py::test_the_special_page_names_its_button_like_the_other_pages",
+           "别的音效页都叫打开音频资源"),
+    Revert("B150", "枪声页批量行又说不会写入", "pages/gun_sound_page.py",
+           'or f"选一套，再点「{self.apply_all_btn.text()}」；每把枪用这一套里自己的声音。")',
+           'or f"选一套，再点「{self.apply_all_btn.text()}」；不点按钮不会写入。")',
+           "tests/test_the_review_of_b146_b147_stays_fixed.py::test_the_gun_page_does_not_contradict_its_header",
+           "页头说改动自动保存，这句说不会写入"),
+    Revert("B150", "风格卡小字又只写几把枪", "pages/sound_page_base.py",
+           'f"用在 {used[style]} 把枪上"',
+           'f"{used[style]} 把枪"',
+           "tests/test_the_style_brush.py::test_two_clicks_for_one_weapon_then_one_more_for_the_next",
+           "只写 3 把枪读不出是用了还是没用"),
+    Revert("B150", "设置行标签又能折行", "widgets/settings_row.py",
+           "    keep_single_line(row.label_widget)\n",
+           "",
+           "tests/test_the_tool_pages_are_plain_settings.py::test_plain_rows_line_up_in_one_column[advanced]",
+           "RN-745：标签列定宽，长标签折两行之后这一行比别的行高"),
+    Revert("B150", "准心回滚开关停在开", "gui_widget.py",
+           "                    self.sync_feature_switch(config_key)\n                    # ⚠ 这条分支**提前 return**",
+           "                    # ⚠ 这条分支**提前 return**",
+           "tests/test_home_overview.py::test_a_rolled_back_switch_leaves_the_card_off",
+           "RN-751：缺 pywin32 时开关停在开，配置已是关"),
+    Revert("B150", "索引又收当前值", "widgets/home_overview.py",
+           '        self.meta_label.setProperty("fp_index_skip", True)  # 当前值：索引随包发布（RN-568）\n',
+           "",
+           "tests/test_the_search_index_does_not_ship_machine_state.py::test_the_index_is_the_same_under_a_different_machine_config",
+           "RN-752：索引随包发布，机主机器上的状态不能写进去"),
+    Revert("B150", "搜索高亮又看不出主音量", "theme_manager.py",
+           '"QLabel#switchLabelOn",\n',
+           '\n',
+           "tests/test_search_jump_r13.py",
+           "RN-752：跳到了那一行，却看不出是哪一行"),
+    Revert("B147", "微调栏的原声标签只靠滑条信号刷", "pages/gun_sound_page.py",
+           "        self.duck_label.setText(format_percent(duck_ratio))\n",
+           "",
+           "tests/test_the_other_sound_pages_use_the_board.py::test_the_strip_labels_are_filled_when_the_slider_has_nowhere_to_move",
+           "同上"),
+    Revert("B147", "动下拉微调栏不跟", "pages/gun_sound_page.py",
+           "combo.activated.connect(lambda _index, weapon=weapon_type: self._select_tuning_weapon(weapon))",
+           "combo.activated.connect(lambda _index, weapon=weapon_type: None)",
+           "tests/test_the_other_sound_pages_use_the_board.py::test_touching_a_gun_brings_the_strip_along",
+           "RN-740：刚给 M4 换了声音，想调它的原声，底下还是 AK"),
+    Revert("B147", "试听微调栏不跟", "pages/gun_sound_page.py",
+           "        self._select_tuning_weapon(weapon_type)\n        self._test_gun_sound(weapon_type)",
+           "        self._test_gun_sound(weapon_type)",
+           "tests/test_the_other_sound_pages_use_the_board.py::test_touching_a_gun_brings_the_strip_along",
+           "RN-740：听完想调，底下不是这把"),
+    Revert("B147", "枪声页空库还摆微调栏", "pages/gun_sound_page.py",
+           "        self.tuning_strip.setVisible(not applied)",
+           "        self.tuning_strip.setVisible(True)",
+           "tests/test_the_other_sound_pages_use_the_board.py::test_an_empty_gun_library_shows_only_the_way_forward",
+           "RN-740：一根都没配，调什么"),
+    Revert("B147", "微调栏不跟总开关降权", "pages/gun_sound_page.py",
+           "        strip.setProperty(PARAMETER_AREA_PROPERTY, True)   # 总开关关着时跟着降权\n",
+           "",
+           "tests/test_the_other_sound_pages_use_the_board.py::test_the_strip_dims_with_the_master_switch",
+           "RN-740：它钉在滚动区外面，默认算不进参数区"),
+    Revert("B147", "参数区又看不到钉在滚动区外面的", "widgets/master_switch_effect.py",
+           "    areas += [w for w in page.findChildren(QFrame) if w.property(PARAMETER_AREA_PROPERTY)]\n",
+           "",
+           "tests/test_the_other_sound_pages_use_the_board.py::test_the_strip_dims_with_the_master_switch",
+           "RN-740：分母只看滚动区，微调栏的滑条永远亮着"),
+    Revert("B147", "扫射那句挂到半自动枪上", "pages/gun_sound_page.py",
+           "        if profile.automatic:\n            # 外审判断题（批 100）",
+           "        if True:\n            # 外审判断题（批 100）",
+           "tests/test_the_other_sound_pages_use_the_board.py::test_the_spray_sentence_stays_next_to_the_slider",
+           "RN-740：AWP 没有扫射，这句话在它身上是错的"),
+    Revert("B147", "枪声格子看不出风格没了", "pages/gun_sound_page.py",
+           "                cell.set_cell_state(STATE_STALE)\n",
+           "                cell.set_cell_state(\"\")\n",
+           "tests/test_the_other_sound_pages_use_the_board.py::test_the_cells_show_configured_and_gone",
+           "RN-740：那一格显示「不启用」，和真没配长得一样"),
+    Revert("B147", "枪声计数不跟", "pages/gun_sound_page.py",
+           "        count = sum(1 for style in effective.values() if style != \"0\")\n        self.weapon_count_label.setText(",
+           "        count = 1\n        self.weapon_count_label.setText(",
+           "tests/test_the_other_sound_pages_use_the_board.py::test_the_cells_show_configured_and_gone",
+           "RN-740：标题旁边的计数是这页唯一的总数"),
+    Revert("B147", "特殊音效的名字又假装能点", "widgets/weapon_row_widget.py",
+           "            self.name_button.setFocusPolicy(Qt.NoFocus)\n            self.name_button.setAttribute(Qt.WA_TransparentForMouseEvents)\n",
+           "            pass\n",
+           "tests/test_the_other_sound_pages_use_the_board.py::test_the_names_on_this_page_are_not_buttons",
+           "RN-741：点了没反应，还多占一个 Tab"),
+    Revert("B147", "风格卡的小字又能折行", "widgets/style_library.py",
+           "        self.meta_label = keep_single_line(QLabel(meta))\n",
+           "        self.meta_label = QLabel(meta)\n",
+           "tests/test_the_style_brush.py::test_a_card_stays_tall_after_switching_to_the_theme_without_a_stylesheet",
+           "极简主题下两行字叠在一起：卡片高度变成按宽度算，布局不再问 sizeHint"),
+    Revert("B147", "风格卡的名字又能折行", "widgets/style_library.py",
+           "        self.name_label = keep_single_line(ElidedLabel(style))\n",
+           "        self.name_label = ElidedLabel(style)\n",
+           "tests/test_the_style_brush.py::test_a_card_stays_tall_after_switching_to_the_theme_without_a_stylesheet",
+           "同上"),
+    Revert("B147", "失效提示又四类合计写在回合页签", "pages/special_sound_page.py",
+           "            if not stale[tab]:\n",
+           "            stale[tab] = sum(stale.values()) if tab == \"回合\" else 0\n            if not stale[tab]:\n",
+           "tests/test_the_other_sound_pages_use_the_board.py::test_the_gone_note_sits_on_the_tab_where_it_is_gone",
+           "RN-741：投掷物没了一项，投掷物页签一句不说，回合页签说有 1 项"),
+    Revert("B147", "特殊音效格子不跟配置", "pages/special_sound_page.py",
+           "                cell.set_cell_state(STATE_CONFIGURED)\n",
+           "                cell.set_cell_state(\"\")\n",
+           "tests/test_the_other_sound_pages_use_the_board.py::test_the_cells_say_configured_and_gone",
+           "RN-741：摘要撤了之后，配没配就靠格子上看"),
+    Revert("B147", "特殊音效限列没了", "pages/special_sound_page.py",
+           "        board = WeaponBoard(max_columns=SPECIAL_BOARD_COLUMNS)\n",
+           "        board = WeaponBoard()\n",
+           "tests/test_the_things_the_audit_left_open.py::test_the_grenade_board_uses_the_columns_the_width_allows",
+           "RN-741：六格拉成窄窄一排，下拉只剩一点点"),
+    Revert("B147", "空库页签还摆格子", "pages/special_sound_page.py",
+           "                widget.setVisible(not (applied and name == current))\n",
+           "                widget.setVisible(True)\n",
+           "tests/test_the_other_sound_pages_use_the_board.py::test_an_empty_tab_shows_only_the_way_forward",
+           "RN-741：一片全灰的格子只是噪音"),
+    Revert("B147", "空库把开关也藏了", "pages/special_sound_page.py",
+           "        self._tab_bodies[tab_name] = [body]\n",
+           "        self._tab_bodies[tab_name] = [body, head]\n",
+           "tests/test_the_other_sound_pages_use_the_board.py::test_an_empty_tab_shows_only_the_way_forward",
+           "RN-741：搜「启用回合音效」跳过来什么都落不到（第一版就是这样，判据 test_search_jump 逮到）"),
+    Revert("B147", "格子又没有父控件", "widgets/weapon_board.py",
+           "        self._reflow(self._cols or 1)\n",
+           "",
+           "tests/test_the_other_sound_pages_use_the_board.py::test_a_cell_can_be_found_before_its_tab_was_ever_shown",
+           "RN-741：第一次拿到宽度才摆进网格的话，没显示过的页签里一个下拉都找不到"),
+    Revert("B147", "搜索又高亮整个页签", "gui_widget.py",
+           " and not row.property(\"fp_setting_row\"):",
+           ":",
+           "tests/test_the_other_sound_pages_use_the_board.py::test_a_search_lands_on_the_row_not_the_whole_tab",
+           "RN-741：没有卡片之后往上走两级就是整个页签"),
+    Revert("B147", "审计「有内容」又不量这三页", "scripts/_audit_seed.py",
+           "         \"death_sound\", \"gun_sound\", \"special_sound\")",
+           "         )",
+           "tests/test_the_audit_says_which_worst_case_it_pinned.py::test_the_seed_covers_every_page_with_a_library",
+           "RN-741：审计盲区：干净配置下这三页是空库，版面从来没被量过"),
 ])
 
 

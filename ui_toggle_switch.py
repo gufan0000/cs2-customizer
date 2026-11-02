@@ -17,10 +17,10 @@ class ToggleSwitch(QCheckBox):
     """iOS 风格的开关组件"""
 
     # 尺寸常量
-    WIDTH = 44
-    HEIGHT = 24
+    WIDTH = 36
+    HEIGHT = 20
     KNOB_MARGIN = 2
-    KNOB_SIZE = 20  # HEIGHT - 2 * KNOB_MARGIN
+    KNOB_SIZE = 16  # HEIGHT - 2 * KNOB_MARGIN
 
     def __init__(self, parent=None, checked=False):
         super().__init__(parent)
@@ -95,16 +95,7 @@ class ToggleSwitch(QCheckBox):
 
     def _update_colors(self):
         colors = self._tm.current_theme.colors
-        # v4: 启用态用 accent 但降亮度（避免一片 toggle 像霓虹灯）
-        accent = QColor(colors.accent_primary)
-        # 略向 bg 混合 12%，让色相保留但饱和度降低
-        bg = QColor(colors.bg_primary)
-        mixed = QColor(
-            int(accent.red() * 0.88 + bg.red() * 0.12),
-            int(accent.green() * 0.88 + bg.green() * 0.12),
-            int(accent.blue() * 0.88 + bg.blue() * 0.12),
-        )
-        self._color_on = mixed
+        self._color_on = QColor(colors.accent_primary)
         self._color_off = QColor(colors.border_primary)
         self._bg_color = QColor(self._color_on if self._checked else self._color_off)
 
@@ -148,7 +139,8 @@ class ToggleSwitch(QCheckBox):
         if self.hasFocus():
             p.setPen(QColor(self._tm.current_theme.colors.accent_primary))
             p.setBrush(Qt.NoBrush)
-            p.drawRoundedRect(QRectF(1, 1, self.WIDTH - 2, self.HEIGHT - 2), 11, 11)
+            radius = self.HEIGHT / 2 - 1
+            p.drawRoundedRect(QRectF(1, 1, self.WIDTH - 2, self.HEIGHT - 2), radius, radius)
 
     def sizeHint(self):
         return QSize(self.WIDTH, self.HEIGHT)

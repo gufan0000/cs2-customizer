@@ -117,7 +117,7 @@ def test_the_generated_stylesheet_puts_the_token_back_together():
         "QPushButton#primaryButton": (b.primary_height, b.primary_padding_vertical, 0),
         "QPushButton#secondaryButton": (b.secondary_height, b.secondary_padding_vertical,
                                         b.secondary_border_width),
-        "QPushButton#dangerButton": (b.danger_height, b.danger_padding_vertical, 0),
+        "QPushButton#dangerButton": (b.danger_height, b.danger_padding_vertical, 1),
         "QPushButton#actionButton": (b.action_height, b.action_padding_vertical, 1),
         "QPushButton#ghostButton": (b.action_height, b.action_padding_vertical, 1),
         "QComboBox": (i.combobox_height, i.combobox_padding_vertical, i.combobox_border_width),

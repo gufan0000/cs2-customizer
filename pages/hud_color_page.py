@@ -7,7 +7,6 @@ HUD 统一规则设置页面（简化版）
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QBoxLayout,
     QCheckBox,
     QComboBox,
     QFrame,
@@ -31,6 +30,8 @@ from ui_help_panel import PAGE_HELP_TEXTS, install_help_panel
 from widgets.page_header import PageHeader
 from widgets.page_action_bar import PageActionBar
 from widgets.settings_card import SettingsCard
+from widgets.settings_row import plain_row
+from widgets.status_strip import StatusStrip
 
 PROFILE_OPTIONS = [
     ("平衡默认（推荐）", "balanced_default"),
@@ -162,10 +163,9 @@ class HudColorPage(QWidget):
         layout.addWidget(header)
         install_help_panel(header.title_row, header.body, PAGE_HELP_TEXTS["hud_color"])
 
-        self.status_card = QFrame()
-        self.status_card.setObjectName("card")
+        self.status_card = StatusStrip()
         status_card_layout = QVBoxLayout(self.status_card)
-        status_card_layout.setContentsMargins(14, 12, 14, 12)
+        status_card_layout.setContentsMargins(0, 0, 0, 0)
         status_card_layout.setSpacing(8)
 
         # RN-162：这一页的总开关**也**收进来（批 1 那七页同一个机制）。
@@ -175,107 +175,44 @@ class HudColorPage(QWidget):
         from widgets.master_switch_link import make_master_switch_row
 
         self.master_switch_row = make_master_switch_row(
-            self, "hud_rules_enabled", "动态HUD")
-        status_card_layout.addWidget(self.master_switch_row)
+            self, "hud_rules_enabled", "HUD颜色", header=header)
 
         status_row = QHBoxLayout()
         status_row.setSpacing(10)
-        status_title = QLabel("当前状态")
-        status_title.setObjectName("statusLabel")
-        status_row.addWidget(status_title)
         self.status_badge_label = create_badge_label()
         status_row.addWidget(self.status_badge_label, 1)
         status_row.addStretch()
         status_card_layout.addLayout(status_row)
 
-        self.summary_label = QLabel("")
-        self.summary_label.setObjectName("hintLabel")
-        self.summary_label.setWordWrap(True)
-        self.summary_label.hide()
-        status_card_layout.addWidget(self.summary_label)
         layout.addWidget(self.status_card)
 
-        preset_card, preset_layout = SettingsCard.make(
-            "预设工作台",
-            "先套一个配色预设定大方向，再单独改默认色和各个事件的颜色。", spacing=10
-        )
+        preset_card, preset_layout = SettingsCard.make("配色预设", spacing=10)
         self.context_hint_label = QLabel("")
         self.context_hint_label.setObjectName("hintLabel")
         self.context_hint_label.setWordWrap(True)
         self.context_hint_label.hide()
         preset_layout.addWidget(self.context_hint_label)
 
-        self.preset_content_layout = QBoxLayout(QBoxLayout.LeftToRight)
-        self.preset_content_layout.setSpacing(16)
-
-        profile_column = QVBoxLayout()
-        profile_column.setSpacing(8)
-        profile_title = QLabel("效果预设")
-        profile_title.setObjectName("statusLabel")
-        profile_column.addWidget(profile_title)
-
-        profile_row = QHBoxLayout()
-        profile_row.setSpacing(10)
         self.profile_combo = QComboBox()
         for label, value in PROFILE_OPTIONS:
             self.profile_combo.addItem(label, value)
-        self.profile_combo.setFixedWidth(200)
-        self.profile_combo.setFixedHeight(34)
-        profile_row.addWidget(self.profile_combo)
-
-        # ⚠⚠ RN-175（外审 4/6 票）：这里原来有一颗「载入这套」按钮
-        # （更早叫「应用预设」）。批 43（RN-501）把它**删了**，改成**选中即载入**。
-        #
-        # ⭐⭐⭐ 删它的理由不是"少一颗按钮好看"，是实测出来的：
-        #   `balanced_default` 与 `tactical` 两套一共差 **13 个字段**，而
-        #     · **12 个**在你动下拉的那一刻就已经跟着新预设走了
-        #       （持续时间/间隔/阈值/回合态…—— 界面上根本没有这些控件，
-        #        `_build_rules_from_ui()` 从**下拉当前选中的 profile** 起手）；
-        #     · 只有 **1 个**（`kill.effect`）要等你点那颗按钮。
-        #   ⇒ 那颗按钮实际管 13 分之 1，而它旁边那句
-        #     「载入只是把这套规则填进下面的编辑区，还没写进游戏」**是反的**：
-        #     一大半规则根本不经过编辑区，从下拉直达保存。
-        #
-        # ⚠ 更要命的是中间那个状态：只动下拉不点按钮时，状态胶囊与摘要**立刻**
-        #   报新预设名、`_dirty` 也置位，而编辑区还是旧的 ⇒ 屏幕在报一个
-        #   **两套各一半**的东西，且保存会把它固化成「已存下」。
-        # ⭐ 批 40：**一个机制收窄到只剩一个用例之后，问那一个用例是不是也可以不由它来做。**
+        # RN-175、RN-501（批 43）：选中即载入。原来有颗「载入这套」按钮，实测它只管 13 个字段里的 1 个，
+        #   另外 12 个一动下拉就跟着走了，屏幕报的是两套各一半。
         self.profile_combo.currentIndexChanged.connect(self._on_profile_chosen)
-        profile_row.addStretch()
-        profile_column.addLayout(profile_row)
+        preset_layout.addWidget(plain_row("效果预设", self.profile_combo))
 
-        # ⚠ 这句只说**换预设会动到什么**，不再解释"载入 / 保存"两步的关系 ——
-        #   那种解释正是 RN-144 判过的「打补丁式的无效引导」。
-        # ⭐ 「数字键那 9 项不动」是一个**实测事实**（`_apply_preset` 明写着
-        #   `preset_rules["key_rules"] = current_rules["key_rules"]`），
-        #   由 `test_switching_presets_keeps_the_hand_tuned_number_keys` 看着。
-        # ⚠⚠ RN-502（批 43 外审 **8/12 判高**，而这条是**我自己这一批引入的**）：
-        #   第一版写的是「…；**还没写进游戏**，点右下角保存。」——
-        #   那是一句**无条件的状态陈述**，而页面干净时它是假的
-        #   （顶部状态胶囊同时写着「保存 · 已存下」）。
-        #   外审逐字报「顶部说已存下、这里说还没写进游戏、底栏说已写进 cfg，三处矛盾」。
-        # ⭐⭐⭐ 旧句子「**载入**只是把这套规则填进编辑区，还没写进游戏」是**条件句**
-        #   （主语是那个动作），它任何时候都为真；我把它改成陈述句，就把一句真话
-        #   变成了一句**多数时候为假**的话。
-        # ⇒ 说**动作的后果**，不说**当前的状态**：状态由状态条负责，这里只讲因果。
-        # ⛔⛔ RN-565（批 81）：后半句「换完要点右下角保存才写进游戏」已撤。
-        #   它**本身没写错**（条件句，说的是换预设这个动作的后果，任何时候都为真）——
-        #   ⭐⭐⭐ 撤它的理由是「保存了没有」这件事这一屏上已经有**两个专门的状态面**：
-        #   芯片「保存 · 有改动没存 / 已存下」（`_sync_status_strip`）与主按钮的
-        #   pending 态（RN-504 的 `set_primary_pending`）。它是第三遍，
-        #   而同屏底栏还写着「**已**写进游戏的 cfg」。
-        #   ⚠ RN-565 立案量到：A/B 12/12 一格没动，而 12 发**逐字引用的就是这句话**，
-        #   4 发明写「即便状态栏显示『已同步』」。
-        #   ⭐⭐ **一句正确的条件句，在读者眼里仍然是一条待办。**
+        self.default_color_combo = self._create_color_combo()
+        preset_layout.addWidget(plain_row("默认 HUD 色", self.default_color_combo))
+
+        # 只说换预设会动到什么。保存了没有由底栏负责，别在这儿加「还没写进游戏」（RN-502、RN-565）。
+        # 「数字键那 9 项不动」由 `test_switching_presets_keeps_the_hand_tuned_number_keys` 看着。
         profile_tip = QLabel(
             "换一套会把默认色和事件设置整套换掉（数字键那 9 个不动）。")
         profile_tip.setObjectName("hintLabel")
         profile_tip.setWordWrap(True)
-        profile_column.addWidget(profile_tip)
+        preset_layout.addWidget(profile_tip)
 
-        # ⚠ 退路：选中即载入是一个**当场覆盖编辑区**的动作，登记册立案时
-        #   写明「得先想清楚覆盖编辑区这件事怎么给玩家一条退路」。
-        #   这一颗只在真的换过之后才出现，换回去就消失。
+        # 退路：选中即载入当场覆盖编辑区，这一颗只在真的换过之后才出现，换回去就消失。
         # ⛔ 它**不是**第二个生效点（不写盘、不写 cfg），只把编辑区退回上一套。
         self.undo_profile_btn = QPushButton("")
         self.undo_profile_btn.setObjectName("linkButton")
@@ -283,46 +220,22 @@ class HudColorPage(QWidget):
         self.undo_profile_btn.setCursor(Qt.PointingHandCursor)
         self.undo_profile_btn.clicked.connect(self._undo_profile_swap)
         self.undo_profile_btn.hide()
-        profile_column.addWidget(self.undo_profile_btn)
-        profile_column.addStretch(1)
-        self.preset_content_layout.addLayout(profile_column, 5)
-
-        default_column = QVBoxLayout()
-        default_column.setSpacing(8)
-        default_title = QLabel("默认 HUD 色")
-        default_title.setObjectName("statusLabel")
-        default_column.addWidget(default_title)
-
-        default_row = QHBoxLayout()
-        default_row.setSpacing(10)
-        self.default_color_combo = self._create_color_combo()
-        default_row.addWidget(self.default_color_combo)
-        default_row.addStretch()
-        default_column.addLayout(default_row)
-
-        self.preset_summary_label = QLabel("")
-        self.preset_summary_label.setObjectName("hintLabel")
-        self.preset_summary_label.setWordWrap(True)
-        default_column.addWidget(self.preset_summary_label)
-        default_column.addStretch(1)
-        self.preset_content_layout.addLayout(default_column, 4)
-
-        preset_layout.addLayout(self.preset_content_layout)
+        preset_layout.addWidget(self.undo_profile_btn)
         layout.addWidget(preset_card)
 
         key_card, key_card_layout = SettingsCard.make(
             "数字键颜色映射",
-            "这一组会写进 cs2customizer.cfg，软件关闭后依然可用，适合放最常按的道具或武器切换颜色。", spacing=10
+            "在游戏里按数字键照常切枪，同时把 HUD 换成这个颜色。写进 cs2customizer.cfg，软件关着也有效。", spacing=10
         )
         key_layout = QGridLayout()
-        key_layout.setContentsMargins(8, 6, 8, 6)
+        key_layout.setContentsMargins(0, 0, 0, 0)
+        key_layout.setColumnStretch(6, 1)
         key_layout.setHorizontalSpacing(14)
         key_layout.setVerticalSpacing(8)
         for idx in range(1, 10):
             r = (idx - 1) // 3
             c = ((idx - 1) % 3) * 2
             enable_box = QCheckBox(f"键 {idx}")
-            enable_box.setFixedWidth(60)
             color_combo = self._create_color_combo()      # RN-128：不带「不启用」
             color_combo.setEnabled(enable_box.isChecked())
             enable_box.toggled.connect(color_combo.setEnabled)
@@ -333,11 +246,8 @@ class HudColorPage(QWidget):
 
         event_card, event_card_layout = SettingsCard.make(
             "事件响应",
-            "这部分需要软件在后台运行；适合只保留少量高价值事件，避免 HUD 反馈过于频繁。", spacing=10
+            "软件在后台运行时才会变色；持续时间、间隔这些由预设决定。", spacing=10
         )
-        eg = QVBoxLayout()
-        eg.setContentsMargins(8, 6, 8, 6)
-        eg.setSpacing(8)
         # ⚠⚠ RN-503（批 43 外审 4 发 + 实测复量）：这里原来是**每行一个 QFrame +
         #   QHBoxLayout**，于是各行的列宽各算各的 —— 复选框文案「击杀变色」(4 字)
         #   与「被击杀变色」(5 字) 差一个字，后面所有控件就整体右移。
@@ -364,12 +274,7 @@ class HudColorPage(QWidget):
             self.event_color_combos[key] = color_combo
             self.event_effect_combos[key] = effect_combo
         event_grid.setColumnStretch(5, 1)
-        eg.addLayout(event_grid)
-
-        event_tip = QLabel("其他参数（持续时间、间隔等）由预设方案决定。")
-        event_tip.setObjectName("hintLabel")
-        eg.addWidget(event_tip)
-        event_card_layout.addLayout(eg)
+        event_card_layout.addLayout(event_grid)
 
         # RN-126（用户裁定 2026-08-20）：**核心在前。**
         # 这一页的主功能是「局内事件变色」，而它原来排在 9 个数字键（265px）之后：
@@ -390,13 +295,11 @@ class HudColorPage(QWidget):
         # 「让玩家误以为只要点击右侧保存按钮设置就会在游戏内生效，无需开启总开关」。
         # ⭐ 这一句只该说**它自己负责的那一步**（写入），
         #   「生不生效」由底栏那条共用回执回答 —— 两句话各说各的那一半。
-        self.action_bar.set_message("HUD 规则要点一下保存才会写入")
+        self.action_bar.set_message("HUD 规则要点一下保存才会写入", important=True)
         self.action_bar.configure_primary("保存 HUD 规则", self._save_hud_rules, visible=True)
         self.save_hint_label = self.action_bar.message_label
         self.save_btn = self.action_bar.primary_btn
-        self.save_btn.setFixedWidth(180)
         outer.addWidget(self.action_bar, 0)
-        self._update_preset_layout()
 
     def _compact_text(self, text, fallback="-", max_length=14):
         value = str(text or "").strip() or fallback
@@ -409,21 +312,6 @@ class HudColorPage(QWidget):
 
     def _count_enabled_events(self):
         return sum(1 for cb in self.event_checkboxes.values() if cb.isChecked())
-
-    def _update_preset_layout(self):
-        if not hasattr(self, "preset_content_layout"):
-            return
-        direction = QBoxLayout.TopToBottom if self.width() < 1050 else QBoxLayout.LeftToRight
-        if self.preset_content_layout.direction() != direction:
-            self.preset_content_layout.setDirection(direction)
-
-    def _refresh_preset_summary(self):
-        if not hasattr(self, "preset_summary_label"):
-            return
-        self.preset_summary_label.setText(
-            f"当前预设：{self.profile_combo.currentText()} · 默认色：{self.default_color_combo.currentText()} · "
-            f"数字键 {self._count_enabled_key_rules()} 项 · 事件 {self._count_enabled_events()} 项"
-        )
 
     def on_master_switch_synced(self):
         """总开关被别处拨动后，把本页那条状态文案重算一遍。
@@ -478,10 +366,7 @@ class HudColorPage(QWidget):
             f"CFG 目录：{'已配置' if getattr(config, 'csgo_dir', '') else '未配置'}"
         )
         render_badges(self.status_badge_label, badges, detail_tooltip=detail_text)
-        self.summary_label.setText(detail_text)
-        self.summary_label.setToolTip(detail_text)
         self.status_card.setToolTip(detail_text)
-        self._refresh_preset_summary()
         self._refresh_context_hint(master_enabled)
 
     def _refresh_context_hint(self, master_enabled=None):
@@ -554,13 +439,13 @@ class HudColorPage(QWidget):
             #   我没有证据。⭐ **描述我们做了什么，不承诺别人会怎样**（RN-011 / RN-254）。
             self.action_bar.set_message(
                 "有改动还没保存 —— 点保存写进游戏的 cfg（并挂进 autoexec）；"
-                "当局要立刻见效，在游戏控制台敲 exec cs2customizer.cfg。")
+                "当局要立刻见效，在游戏控制台敲 exec cs2customizer.cfg。", important=True)
             self.save_hint_label.setStyleSheet("color: #f7b955;")
         else:
             self.save_btn.setText("保存 HUD 规则")
             self.action_bar.set_message(
                 "已写进游戏的 cfg（并挂进 autoexec）；"
-                "当局要立刻见效，在游戏控制台敲 exec cs2customizer.cfg。")
+                "当局要立刻见效，在游戏控制台敲 exec cs2customizer.cfg。", important=True)
             self.save_hint_label.setStyleSheet("")
         self._sync_status_strip()
 
@@ -801,7 +686,3 @@ class HudColorPage(QWidget):
             QMessageBox.critical(self, "错误", "保存失败：配置可能被占用，请稍后重试。")
             self._sync_status_strip()
             return False
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        self._update_preset_layout()

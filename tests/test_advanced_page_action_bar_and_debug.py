@@ -178,10 +178,7 @@ def test_normal_users_are_not_told_about_a_feature_they_cannot_see(qapp, monkeyp
     """
     page = _make_page(monkeypatch, expert=False, dir_valid=True)
     try:
-        from PySide6.QtWidgets import QLabel
-
-        texts = [lb.text() for lb in page.findChildren(QLabel)
-                 if lb.objectName() == "audioStatusChip"]
+        texts = page.status_badge_label.badge_texts()
         assert texts, "一颗状态徽章都没有 —— 这条判据会空转"
         assert not any("调试" in t for t in texts), f"徽章里还在报调试状态：{texts}"
         assert "调试" not in page.action_bar.message_label.text(), (
@@ -195,10 +192,7 @@ def test_expert_users_still_see_the_debug_state(qapp, monkeypatch):
     """反面守卫：专家模式下状态还得报 —— 不然开没开都看不出来。"""
     page = _make_page(monkeypatch, expert=True, dir_valid=True)
     try:
-        from PySide6.QtWidgets import QLabel
-
-        texts = [lb.text() for lb in page.findChildren(QLabel)
-                 if lb.objectName() == "audioStatusChip"]
+        texts = page.status_badge_label.badge_texts()
         assert any("调试" in t for t in texts), (
             f"专家模式下也不报调试状态了 —— 开没开全靠猜：{texts}")
     finally:

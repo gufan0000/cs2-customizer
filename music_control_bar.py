@@ -22,6 +22,7 @@ from config import config
 from core.utils.logger import get_logger
 from music_player import PLAY_MODE_LABELS, get_music_player, normalize_music_play_mode
 from ui_animations import get_animation_manager
+from core.utils.app_fonts import UI_FONT_FAMILY
 
 DEFAULT_TRACK_TITLE = "未播放"
 UNKNOWN_TITLE = "未知标题"
@@ -211,7 +212,7 @@ class MusicControlBar(QWidget):
 
         self.mini_track_label = QLabel(f"{MINI_TRACK_PREFIX} {DEFAULT_TRACK_TITLE}")
         self.mini_track_label.setObjectName("musicMiniTrackLabel")
-        self.mini_track_label.setFont(QFont("Microsoft YaHei", 10))
+        self.mini_track_label.setFont(QFont(UI_FONT_FAMILY, 10))
         self.mini_track_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
         self.mini_track_label.setFixedHeight(self.mini_track_label.fontMetrics().height() + 4)
         self.mini_track_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
@@ -261,7 +262,7 @@ class MusicControlBar(QWidget):
 
         self.current_time_label = QLabel("0:00")
         self.current_time_label.setObjectName("musicTimeLabel")
-        self.current_time_label.setFont(QFont("Microsoft YaHei", 9))
+        self.current_time_label.setFont(QFont(UI_FONT_FAMILY, 9))
         self.current_time_label.setFixedWidth(35)
         progress_layout.addWidget(self.current_time_label)
 
@@ -276,7 +277,7 @@ class MusicControlBar(QWidget):
 
         self.total_time_label = QLabel("0:00")
         self.total_time_label.setObjectName("musicTimeLabel")
-        self.total_time_label.setFont(QFont("Microsoft YaHei", 9))
+        self.total_time_label.setFont(QFont(UI_FONT_FAMILY, 9))
         self.total_time_label.setFixedWidth(35)
         progress_layout.addWidget(self.total_time_label)
 
@@ -305,7 +306,7 @@ class MusicControlBar(QWidget):
 
         self.track_title_label = QLabel(DEFAULT_TRACK_TITLE)
         self.track_title_label.setObjectName("musicTrackTitle")
-        self.track_title_label.setFont(QFont("Microsoft YaHei", 11, QFont.Bold))
+        self.track_title_label.setFont(QFont(UI_FONT_FAMILY, 11, QFont.Bold))
         self.track_title_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
         self.track_title_label.setFixedHeight(self.track_title_label.fontMetrics().height() + 6)
         self.track_title_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
@@ -313,7 +314,7 @@ class MusicControlBar(QWidget):
 
         self.track_artist_label = QLabel("点击打开音乐页")
         self.track_artist_label.setObjectName("musicTrackArtist")
-        self.track_artist_label.setFont(QFont("Microsoft YaHei", 9))
+        self.track_artist_label.setFont(QFont(UI_FONT_FAMILY, 9))
         self.track_artist_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
         self.track_artist_label.setFixedHeight(self.track_artist_label.fontMetrics().height() + 5)
         self.track_artist_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)

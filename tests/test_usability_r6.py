@@ -336,10 +336,7 @@ def test_sound_pages_accept_audio_drop(name):
 
 
 def test_hotkey_result_is_reported_to_user():
-    """高级设置页白纸黑字承诺"对应页面会给出冲突提示"，得兑现。"""
-    src = (ROOT / "pages/advanced_page.py").read_text(encoding="utf-8")
-    assert "对应页面会给出冲突提示" in src, "承诺文案不在了？那这条测试要跟着改"
-
+    """撞键或注册失败要告诉用户。批 149 删了高级设置页那句承诺，行为留着。"""
     fn = _func("pages/voice_output_page.py", "_on_hotkey_report", "VoiceOutputPage")
     calls = _called(fn)
     assert "toast_warning" in calls, "冲突要给警告"

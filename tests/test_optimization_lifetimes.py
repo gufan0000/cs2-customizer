@@ -10,11 +10,12 @@ def test_theme_callbacks_follow_parent_destruction_and_stable_dispatch(qapp):
     from PySide6.QtCore import QCoreApplication, QEvent
     from PySide6.QtWidgets import QWidget
     from theme_manager import get_theme_manager
-    from widgets.weapon_row_widget import WeaponRowWidget
+    from ui_toggle_switch import ToggleSwitch
     manager = get_theme_manager()
     baseline = len(manager._theme_changed_callbacks)
     parent = QWidget()
-    rows = [WeaponRowWidget(str(i), str(i), ["0"], parent=parent) for i in range(20)]
+    # 批 146：武器格不再每个挂一个主题回调（颜色全走 QSS），换一个还挂着的控件量
+    rows = [ToggleSwitch(parent=parent) for _ in range(20)]
     assert len(manager._theme_changed_callbacks) == baseline + 20
     parent.deleteLater()
     QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)

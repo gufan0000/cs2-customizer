@@ -51,7 +51,7 @@ def build_payload() -> Dict:
         "flash": bool(getattr(config, "flash_enabled", False)),
         "osd": bool(getattr(config, "osd_enabled", True)),
         "map_preset": bool(getattr(config, "map_preset_enabled", False)),
-        "nav_frequent": bool(getattr(config, "nav_frequent_enabled", True)),
+        "nav_frequent": bool(getattr(config, "nav_frequent_enabled", False)),
         "expert_mode": bool(getattr(config, "ui_expert_mode", False)),
     }
     return {

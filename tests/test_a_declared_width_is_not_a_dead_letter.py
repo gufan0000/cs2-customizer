@@ -138,6 +138,12 @@ def test_the_spec_floor_still_applies_to_unconstrained_buttons(win):
       **压倒性地是同一个数，而那个数就是令牌**。
       有下限：**80 × 17（一堵墙）**；没下限：众数 112 只占 7/17。
     ⭐ **一个「被删掉」的约束，未必让数变小 —— 但一定让它变散。**
+
+    批 145：令牌从 118 → 80 → 64，下限低于三个字的按钮之后，长文字的按钮自然站在墙外，
+    「八成都是同一个数」不再成立（secondaryButton 64×71/114，其余全部高于 64）。
+    现在的不变量：众数还是令牌，**至少四成站在令牌上**，并且没有一颗低于令牌。
+    ⚠ 只写前后两条是假绿（回退验证逮到）：删掉那条下限之后 secondaryButton 的 64 还剩
+    19/114，它仍是众数。有下限时三类都在 58%~62%，没下限 17%，四成在中间。
     """
     from collections import Counter
 
@@ -161,16 +167,14 @@ def test_the_spec_floor_still_applies_to_unconstrained_buttons(win):
         if len(floors) < 5:
             continue
         modal, hits = Counter(floors).most_common(1)[0]
-        if modal != floor_spec or hits < len(floors) * 0.8:
+        if modal != floor_spec or min(floors) < floor_spec or hits / len(floors) < 0.4:
             bad.append(
-                f"{name}: 众数是 {modal}（{hits}/{len(floors)}），而令牌写的是 {floor_spec}"
+                f"{name}: 众数是 {modal}（{hits}/{len(floors)}），最小 {min(floors)}，而令牌写的是 {floor_spec}"
                 f"；实测分布 {dict(sorted(Counter(floors).items()))}")
     assert not bad, (
-        "这几类没被限宽的按钮不再是「一堵墙」——规范下限没在起作用：\n  "
+        "这几类没被限宽的按钮站不到规范下限上——它没在起作用：\n  "
         + "\n  ".join(bad)
-        + "\n⭐ 别把 min>max 修成「谁都没有下限」（批 62 那一版就是这么错的）。"
-        + "\n⚠ 注意方向：下限没了按钮会变**宽**（各自按文字散开），"
-        "所以判「有没有下限」要看**散不散**，不能看「够不够宽」。")
+        + "\n⭐ 别把 min>max 修成「谁都没有下限」（批 62 那一版就是这么错的）。")
 
 
 #: ⚠⚠ 这里原来挂着「`anchorChip` 存量 14」—— 而**判据走的那条路上它是 0**。

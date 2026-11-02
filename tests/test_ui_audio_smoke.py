@@ -4,26 +4,13 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from PySide6.QtWidgets import QApplication, QLabel, QMessageBox
+from PySide6.QtWidgets import QApplication, QMessageBox
 
 from config import config
 
 
-def _visible_status_chip_texts(status_bar) -> list[str]:
-    layout = status_bar.layout()
-    if layout is None:
-        return []
-    texts = []
-    for idx in range(layout.count()):
-        item = layout.itemAt(idx)
-        widget = item.widget() if item else None
-        if (
-            isinstance(widget, QLabel)
-            and widget.objectName() == "audioStatusChip"
-            and not widget.isHidden()
-        ):
-            texts.append(widget.text())
-    return texts
+def _status_badge_texts(status_bar) -> list[str]:
+    return status_bar.badge_texts()
 
 
 @pytest.fixture(scope="module")
@@ -70,7 +57,7 @@ def test_audio_health_page_smoke(qapp, monkeypatch):
     page._run_health_check()
     page._run_conservative_fix()
 
-    assert "状态" in page.summary_label.text()
+    assert page.status_card.toolTip()
     assert "health-ok" in page.report_text.toPlainText()
 
     page.deleteLater()
@@ -155,14 +142,14 @@ def test_special_sound_page_smoke(qapp, monkeypatch):
     assert ("c4-planted-styleC4", "c4_sound") in dummy.play_calls
     assert ("health-warning-styleH", "health_warning") in dummy.play_calls
     assert any(key.startswith("round-start-") and channel == "round_sound" for key, channel in dummy.play_calls)
-    before_chips = _visible_status_chip_texts(page.status_badge_label)
+    before_chips = _status_badge_texts(page.status_badge_label)
     assert len(before_chips) == 4
     assert "功能 · 0/4" in before_chips
     assert "风格 · 4" in before_chips
     assert "资源 · 正常" in before_chips
 
     page._on_round_enabled_toggled(True)
-    after_chips = _visible_status_chip_texts(page.status_badge_label)
+    after_chips = _status_badge_texts(page.status_badge_label)
     assert len(after_chips) == 4
     assert "功能 · 1/4" in after_chips
 
@@ -308,7 +295,7 @@ def test_audio_import_wizard_page_smoke(qapp, monkeypatch, tmp_path):
     page._scan_source()
     page._run_import()
 
-    assert "扫描完成" in page.summary_label.text()
+    assert "扫描结果" in page.preview_text.toPlainText()
     assert "[导入向导扫描结果]" in page.preview_text.toPlainText()
     assert "kill_sounds/default/1.wav" in page.preview_text.toPlainText()
 

@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import json
 import os
+from queue import Queue
 import tempfile
 import threading
 import time
@@ -32,9 +33,11 @@ class GSIHandlerHudColor:
         self._effect_timer = None
         self._effect_stop = threading.Event()
         self._stopped = False
-        # GSI处理线程(_tick)与效果线程(_effect_loop)共享 current_color/_last_write_time
-        # 并写同一cfg文件，必须互斥，否则并发判断"颜色已变"会重复/乱序写
+        # 写入线程和 stop 恢复默认色共用磁盘状态。GSI 线程只入队，不拿这把锁
         self._write_lock = threading.Lock()
+        self._effect_lock = threading.Lock()
+        self._color_queue = Queue()
+        self._color_writer = None
         # engine.evaluate 内含大量可变状态(previous_*/_event_until等)，
         # 两个线程交错调用会产生虚假/漏检的事件边沿，同样需要互斥
         self._engine_lock = threading.Lock()
@@ -94,10 +97,33 @@ class GSIHandlerHudColor:
             output = self.engine.evaluate(data, now=now)
         if output.color is None:
             return
-        self._maybe_write_color(output.color, now)
+        self._queue_color(output.color, now)
+
+    def _queue_color(self, color, now):
+        # 先进先出，每包算出的颜色都留着（包括一闪而过的事件色）；这里不碰磁盘
+        with self._effect_lock:
+            if self._stopped:
+                return
+            self._color_queue.put((color, now))
+            if self._color_writer is None:
+                self._color_writer = threading.Thread(target=self._write_colors, daemon=True,
+                                                       name="HudCfgWriter")
+                self._color_writer.start()
+
+    def _write_colors(self):
+        while True:
+            item = self._color_queue.get()
+            try:
+                if item is None:
+                    return
+                self._maybe_write_color(*item)
+            except Exception:
+                self.logger.exception("[HUD规则] 后台写入失败")
+            finally:
+                self._color_queue.task_done()
 
     def _maybe_write_color(self, color, now):
-        """检查-写入合并为一个临界区，供 GSI 线程与效果线程共用。"""
+        """检查和写入互斥；只由后台写入线程或显式同步调用使用。"""
         with self._write_lock:
             if self._stopped:
                 return
@@ -110,7 +136,7 @@ class GSIHandlerHudColor:
                 self._last_write_time = now
 
     def _ensure_effect_timer(self):
-        with self._write_lock:
+        with self._effect_lock:
             if self._stopped:
                 return
             if self._effect_timer and self._effect_timer.is_alive():
@@ -150,18 +176,23 @@ class GSIHandlerHudColor:
                 with self._engine_lock:
                     output = self.engine.evaluate(data, now=now)
                 if output.color is not None:
-                    self._maybe_write_color(output.color, now)
+                    self._queue_color(output.color, now)
             except Exception as e:
                 self.logger.debug(f"[HUD规则] 效果循环异常: {e}")
                 continue
 
     def stop(self):
-        with self._write_lock:
+        with self._effect_lock:
             self._stopped = True
+            if self._color_writer is not None:
+                self._color_queue.put(None)
         self._effect_stop.set()
         if self._effect_timer:
             self._effect_timer.join(timeout=1.0)
             self._effect_timer = None
+        if self._color_writer:
+            self._color_writer.join()
+            self._color_writer = None
         # 写回默认颜色
         try:
             cfg_path = self._get_cfg_path()
@@ -199,4 +230,3 @@ class GSIHandlerHudColor:
             # B4: 写 CFG 失败是用户可感知问题，附加堆栈便于诊断
             self.logger.exception(f"[HUD规则] 写入运行时CFG失败: {e}")
             return False
-

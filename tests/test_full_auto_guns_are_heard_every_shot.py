@@ -364,31 +364,7 @@ def test_channel_indices_do_not_collide_and_fit_the_mixer():
 
 # ------------------------------------------------ ⑥ 页面真的摆出来了
 
-def test_the_page_shows_the_rifle_tab_with_an_ak47_card(qapp, monkeypatch):
-    from config import config
-    import pages.gun_sound_page as mod
-
-    monkeypatch.setattr(config, "gun_sound_enabled", True, raising=False)
-    for gun_type in SUPPORTED_GUN_SOUND_WEAPON_TYPES:
-        monkeypatch.setattr(config, f"{gun_type}_style", "0", raising=False)
-    monkeypatch.setattr(mod.GunSoundPage, "_scan_gun_sounds",
-                        lambda self: setattr(self, "weapon_styles", {}))
-    page = mod.GunSoundPage()
-    try:
-        tabs = [page.tab_widget.tabText(i) for i in range(page.tab_widget.count())]
-        assert tabs == [name for name, _ in GUN_SOUND_TAB_GROUPS]
-        for cls in ("步枪", "冲锋枪", "机枪"):
-            assert cls in tabs
-        assert set(page.weapon_rows) == set(SUPPORTED_GUN_SOUND_WEAPON_TYPES)
-        assert page.weapon_rows["ak47"]["style_combo"].count() >= 1
-    finally:
-        page.deleteLater()
-        qapp.processEvents()
-
-
-def test_the_automatic_tabs_say_a_spray_keeps_some_original_sound(qapp, monkeypatch):
-    """外审判断题「玩家会不会知道扫射时会留一点原声、不是整个换掉」**12/12 答不会**：
-    那句话埋在页头长句末尾。⇒ 全自动的页签顶上各说一次；半自动页签不说（那里不成立）。"""
+def test_the_page_shows_every_gun_on_one_board(qapp, monkeypatch):
     from PySide6.QtWidgets import QLabel
 
     from config import config
@@ -401,27 +377,42 @@ def test_the_automatic_tabs_say_a_spray_keeps_some_original_sound(qapp, monkeypa
                         lambda self: setattr(self, "weapon_styles", {}))
     page = mod.GunSoundPage()
     try:
-        per_tab = {}
-        for index, (name, weapons) in enumerate(page._tab_groups):
-            tab = page.tab_widget.widget(index)
-            hints = [lb.text() for lb in tab.findChildren(QLabel) if "扫射" in lb.text() and "原声" in lb.text()]
-            per_tab[name] = (hints, [w for w in weapons if GUN_SOUND_PROFILES[w].automatic], list(weapons))
-        assert {n for n, (_h, auto, _all) in per_tab.items() if auto} >= {"冲锋枪", "步枪", "机枪", "手枪"}, per_tab
-        for name, (hints, auto, everyone) in per_tab.items():
-            assert len(hints) == (1 if auto else 0), f"{name} 页签上那句扫射说明出现了 {len(hints)} 次：{per_tab}"
-            if auto and len(auto) == len(everyone):
-                assert hints[0].startswith("这一组是全自动枪"), hints
-            elif auto:
-                # ⚠ 手枪页签里只有 CZ75-Auto 是全自动 —— 只许点它的名，不许把整组说成全自动。
-                assert not hints[0].startswith("这一组"), hints
-                for w in auto:
-                    assert GUN_SOUND_PROFILES[w].display_name in hints[0], hints
-        assert "狙击枪" in per_tab and not per_tab["狙击枪"][0], "狙击枪页签没有全自动，不该有那句"
+        labels = {label.text() for label in page.weapon_board.findChildren(QLabel)}
+        assert {name for name, _ in GUN_SOUND_TAB_GROUPS} <= labels, labels
+        for cls in ("步枪", "冲锋枪", "机枪"):
+            assert cls in labels
+        assert set(page.weapon_rows) == set(SUPPORTED_GUN_SOUND_WEAPON_TYPES)
+        assert page.weapon_rows["ak47"].style_combo.count() >= 1
+    finally:
+        page.deleteLater()
+        qapp.processEvents()
+
+
+def test_the_strip_says_a_spray_keeps_some_original_sound(qapp, monkeypatch):
+    """外审判断题「玩家会不会知道扫射时会留一点原声、不是整个换掉」**12/12 答不会**：
+    那句话埋在页头长句末尾。⇒ 贴着滑条说一次（批 147：滑条收成一条微调栏）。"""
+    from PySide6.QtWidgets import QLabel
+
+    from config import config
+    import pages.gun_sound_page as mod
+
+    monkeypatch.setattr(config, "gun_sound_enabled", True, raising=False)
+    for gun_type in SUPPORTED_GUN_SOUND_WEAPON_TYPES:
+        monkeypatch.setattr(config, f"{gun_type}_style", "0", raising=False)
+    monkeypatch.setattr(mod.GunSoundPage, "_scan_gun_sounds",
+                        lambda self: setattr(self, "weapon_styles", {}))
+    page = mod.GunSoundPage()
+    try:
+        hints = [lb.text() for lb in page.tuning_strip.findChildren(QLabel)
+                 if "扫射" in lb.text() and "原声" in lb.text()]
+        assert len(hints) == 1, hints
         # 改后复跑 20/20 仍「不会」：玩家只看控件名 ⇒ 扫射那句也挂在「原声保留」的 tooltip 上，
         # 且那句提示本身必须短（第一版带了机制解释，被 12 发一致点名「冗长」）。
-        assert "扫射" in page.weapon_rows["ak47"]["duck_caption"].toolTip()
-        assert "扫射" not in page.weapon_rows["awp"]["duck_caption"].toolTip()
-        assert len(per_tab["步枪"][0][0]) <= 40, per_tab["步枪"][0]
+        assert len(hints[0]) <= 40, hints
+        page._select_tuning_weapon("ak47")
+        assert "扫射" in page.duck_caption.toolTip()
+        page._select_tuning_weapon("awp")
+        assert "扫射" not in page.duck_caption.toolTip(), "AWP 不是全自动，那句话不成立"
     finally:
         page.deleteLater()
         qapp.processEvents()

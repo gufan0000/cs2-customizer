@@ -55,6 +55,11 @@
 把短的拉到 719px 会造出一张 480px 全空的卡，**那不是修好，是换一种难看**。
 ⇒ 所以这条只做**棘轮**：不齐的排数**只许变少**，
 逐排怎么修（拉伸 / 换行 / 重新分组）得一排一排看。
+
+## 批 150：全站 0 排
+
+调参页和媒体页都换成了单列，产品里已经没有并排卡片。扫描留着，防的是新页面再摆回来；
+它自己瞎没瞎，靠 `test_the_scan_still_sees_a_ragged_row` 造一排来验。
 """
 from __future__ import annotations
 
@@ -63,7 +68,7 @@ import sys
 
 import pytest
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QWidget
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
@@ -73,16 +78,24 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
 #: 同排卡片「底部不齐」的排数上限。**只许调小。**
 #: 2026-08-31 批 36：全站 10 排并排卡，**5 排不齐**；本批修掉 `utility` 那一排 ⇒ **4**。
 #: ⚠ 调小它的唯一正当方式是**真的把那一排修齐**，不是把某一页排除在扫描外。
-MAX_RAGGED_ROWS = 4
-
-#: 至少要看见这么多排并排卡，否则说明扫描器自己瞎了（RN-169）。
-MIN_ROWS_SEEN = 8
+MAX_RAGGED_ROWS = 0
 
 #: 至少要走到这么多页，否则分母又错了（见 docstring 里那一段）。
 MIN_PAGES_SEEN = 25
 
 #: 差多少像素才算「不齐」。1~2px 是取整噪声，不当缺陷。
 TOLERANCE_PX = 4
+
+
+def _rows_on(page) -> list[tuple[int, list[int]]]:
+    """同一个 y 上并排的 card：[(y, 从矮到高的高度), ...]。"""
+    by_top: dict[int, list[int]] = {}
+    for w in page.findChildren(QWidget):
+        if w.objectName() != "card" or not w.isVisibleTo(page):
+            continue
+        top = w.mapTo(page, w.rect().topLeft()).y()
+        by_top.setdefault(top, []).append(w.height())
+    return [(top, sorted(heights)) for top, heights in sorted(by_top.items()) if len(heights) >= 2]
 
 
 @pytest.fixture(scope="module")
@@ -127,15 +140,7 @@ def sitewide_card_rows(qapp):
             if page is None:
                 continue
             seen_pages += 1
-            by_top: dict[int, list[int]] = {}
-            for w in page.findChildren(QWidget):
-                if w.objectName() != "card" or not w.isVisibleTo(page):
-                    continue
-                top = w.mapTo(page, w.rect().topLeft()).y()
-                by_top.setdefault(top, []).append(w.height())
-            for top, heights in sorted(by_top.items()):
-                if len(heights) >= 2:
-                    rows.append((page_id, top, sorted(heights)))
+            rows.extend((page_id, top, heights) for top, heights in _rows_on(page))
         yield rows, seen_pages
     finally:
         win.close()
@@ -158,10 +163,27 @@ def test_the_scan_walked_the_whole_product(sitewide_card_rows):
         "⚠ 别用 `win.pages`（懒加载，开窗时只有 `basic` 一页），"
         "用 `win._page_names`；切页走 `_ui_mode.goto`。"
     )
-    assert len(rows) >= MIN_ROWS_SEEN, (
-        f"只扫出 {len(rows)} 排并排卡片 —— 这支扫描多半瞎了"
-        f"（`objectName == \"card\"` 的约定改了？）。实测应有 10 排。"
-    )
+
+
+def test_the_scan_still_sees_a_ragged_row(qapp):
+    """⭐ 产品里没有并排卡片了，这支扫描拿不到样本：自己造一排，不然它瞎了也看不出来。"""
+    host = QWidget()
+    host.setAttribute(Qt.WA_DontShowOnScreen, True)
+    row = QHBoxLayout(host)
+    for height in (60, 120):
+        card = QFrame(host)
+        card.setObjectName("card")
+        card.setFixedHeight(height)
+        row.addWidget(card, 1, Qt.AlignTop)
+    host.show()
+    qapp.processEvents()
+    try:
+        rows = _rows_on(host)
+        assert len(rows) == 1 and rows[0][1] == [60, 120], rows
+        assert _ragged([("造的", *rows[0])]), "差 60 px 都不算不齐，这条棘轮就空转了"
+    finally:
+        host.close()
+        host.deleteLater()
 
 
 def test_side_by_side_cards_do_not_get_more_ragged(sitewide_card_rows):
@@ -184,21 +206,4 @@ def test_side_by_side_cards_do_not_get_more_ragged(sitewide_card_rows):
     assert len(bad) >= MAX_RAGGED_ROWS, (
         f"实际只剩 {len(bad)} 排，把 MAX_RAGGED_ROWS 收到这个数 —— "
         "棘轮不收紧等于没有棘轮。"
-    )
-
-
-def test_the_page_under_review_is_actually_flush(sitewide_card_rows):
-    """⭐ 棘轮只说「没变多」，说不出「批 36 那一排修好了没有」。
-
-    ⚠ 这两条**不能合并**：棘轮的数从 5 掉到 4，可能是我修好了 `utility`，
-    也可能是我修好了 `magnifier` 而 `utility` 原样不动 ——
-    **同一个数，两件不同的事。**
-    """
-    rows, _ = sitewide_card_rows
-    mine = [(top, hs) for pid, top, hs in rows if pid == "utility"]
-    assert mine, "`utility` 上一排并排卡都没扫到 —— 这条判据已经瞎了"
-    ragged = [(top, hs) for top, hs in mine if hs[-1] - hs[0] > TOLERANCE_PX]
-    assert not ragged, (
-        "`utility` 的「快捷与模式」/「快速操作」还是不齐：\n"
-        + "\n".join(f"  y={top} 高度 {hs} 差 {hs[-1]-hs[0]}px" for top, hs in ragged)
     )

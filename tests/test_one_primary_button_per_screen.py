@@ -64,6 +64,7 @@ from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
 
 import pytest
 from PySide6.QtCore import Qt
@@ -74,6 +75,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))), "scripts"))
 
 PRIMARY_OBJECT_NAME = "primaryButton"
+REPO = Path(__file__).resolve().parents[1]
 
 #: 存量债：页 → (文案, 颗数)。⚠ **数等于实测值**，不是上限。
 #: 每一条都必须指得出它归哪个登记册条目管 —— 一条没有主人的债会永远躺着。
@@ -149,7 +151,8 @@ KNOWN_DUPLICATE_PRIMARIES: dict[str, tuple[str, int]] = {}
 #:     **不再摆出来** —— 外审三次（RN-192 6/6 / RN-644 / 这次 6/6）判它是「第二个开启入口」。
 #:     第一步就是状态卡里那颗总开关（同 `magnifier`）。⚠ 不是 RN-504 那种「没内容时隐身」：
 #:     开关开着但监听没起来时它会回来当补救入口，关着时它**真的没有事可做**。
-KNOWN_NO_PRIMARY = {"flash", "magnifier", "preset_center", "utility"}
+#: 批 148 `basic`：总览页的动作在就绪状态条上，没事时不摆按钮。批 149 `advanced`：目录好好的时底栏不显示。
+KNOWN_NO_PRIMARY = {"advanced", "basic", "flash", "magnifier", "preset_center", "utility"}
 
 #: 产品注册的 28 个页面 id → 它的实现文件名（2026-08-30 批 31 加）。
 #:
@@ -205,6 +208,33 @@ EXPECTED_PAGE_IDS = {
 #: ⇒ 它要另配一条**不看时序**的判据（断言两个分支都 `configure_primary`），
 #:   在本文件里只声明「它不参与计数」。
 TIMING_DEPENDENT_PAGES = {"audio_health"}
+
+
+def _expected_pages():
+    return {pid for pid, filename in EXPECTED_PAGE_IDS.items()
+            if not filename or (REPO / "pages" / filename).is_file()}
+
+
+def _expected_no_primary():
+    from widgets.community_library import has_category
+
+    # 这七页的操作条已内联，固定用次按钮；空库唯一主按钮是社区引导。
+    # 没有社区站的发行版按既有产品契约隐藏引导（见 empty_banner 判据），
+    # 因而不是丢失主动作。只按真实能力收录，不豁免重复按钮等行为检查。
+    inline_sound_pages = {
+        "kill_sound", "kill_voice", "death_sound", "gun_sound",
+        "switch_weapon", "reload_sound", "special_sound",
+    }
+    return KNOWN_NO_PRIMARY | {pid for pid in inline_sound_pages if not has_category(pid)}
+
+
+def test_the_no_primary_inventory_follows_the_available_community_routes(monkeypatch):
+    from widgets import community_library
+
+    monkeypatch.setattr(community_library, "has_category", lambda key: True)
+    assert _expected_no_primary() == KNOWN_NO_PRIMARY
+    monkeypatch.setattr(community_library, "has_category", lambda key: key != "gun_sound")
+    assert _expected_no_primary() == KNOWN_NO_PRIMARY | {"gun_sound"}
 
 
 def _is_pending_hidden(btn) -> bool:
@@ -288,11 +318,11 @@ def test_the_scan_actually_sees_the_pages(sitewide_primaries):
 
     一次扫出 0 页、或者一颗按钮都没找到的扫描，会让下面每条断言无条件通过。
     """
-    assert len(sitewide_primaries) >= 25, (
-        f"只走到 {len(sitewide_primaries)} 页 —— 产品里注册着 28 页，"
-        "扫描器瞎了（页面没建出来？中和表把太多页排掉了？）")
+    assert set(sitewide_primaries) == _expected_pages(), (
+        f"扫描页面与实际实现集合不符：{set(sitewide_primaries) ^ _expected_pages()}")
     total = sum(len(v) for v in sitewide_primaries.values())
-    assert total >= 20, (
+    required = _expected_pages() - _expected_no_primary() - TIMING_DEPENDENT_PAGES
+    assert total >= len(required), (
         f"全站只找到 {total} 颗 `{PRIMARY_OBJECT_NAME}` —— "
         "objectName 是不是改名了？那样这条判据会永远绿。")
 
@@ -498,8 +528,9 @@ def test_pages_without_any_primary_button_are_declared(sitewide_primaries):
     ⚠ 这条不判对错（「该不该有主动作」是产品裁定），它只保证**变化时有人知道**。
     """
     empty = {p for p, t in sitewide_primaries.items() if not t} - TIMING_DEPENDENT_PAGES
-    assert empty == KNOWN_NO_PRIMARY, (
+    expected = _expected_no_primary() & _expected_pages()
+    assert empty == expected, (
         f"「一颗主按钮都没有」的页变了：\n"
-        f"  新增：{sorted(empty - KNOWN_NO_PRIMARY)}\n"
-        f"  不再是：{sorted(KNOWN_NO_PRIMARY - empty)}\n"
+        f"  新增：{sorted(empty - expected)}\n"
+        f"  不再是：{sorted(expected - empty)}\n"
         "⇒ 有页面丢了主动作，或者补上了。两种都该有人看一眼。")

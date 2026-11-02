@@ -20,12 +20,15 @@ from config import config
 from core.utils.logger import get_logger
 from pages.audio_status_badge import create_badge_label, render_badges
 from theme_manager import get_theme_manager
-from page_theme_helper import style_as_danger_button, style_as_primary_button, style_as_secondary_button
+from ui_style_applier import keep_single_line
+from page_theme_helper import style_as_danger_button, style_as_secondary_button
 from ui_help_panel import install_help_panel, PAGE_HELP_TEXTS
 from cfg_utils import find_cfg_path
 from widgets.page_header import PageHeader
 from widgets.page_action_bar import PageActionBar
 from widgets.settings_card import SettingsCard
+from widgets.settings_row import plain_row
+from widgets.status_strip import StatusStrip
 
 #: RN-429：本页配的「功能状态变化时在屏幕角落弹提示」由 `ui_osd` 画在游戏画面上。⭐ 本页**早在 RN-429 立案之前就自己写了**这条前提（`advanced_page.py` 那句「CS2 需使用无边框窗口模式;全屏独占下不可见。」）⇒ 它是本组判据的**阳性对照**：判据认的是「这一页说没说」，不是「有没有用共用件」。
 DRAWS_OVER_THE_GAME = True
@@ -75,28 +78,18 @@ class AdvancedPage(QWidget):
         layout.addWidget(header)
         install_help_panel(header.title_row, header.body, PAGE_HELP_TEXTS["advanced"])
 
-        status_card = QFrame()
-        status_card.setObjectName("card")
-        status_card.setFrameShape(QFrame.StyledPanel)
+        status_card = StatusStrip()
         status_layout = QVBoxLayout(status_card)
-        status_layout.setContentsMargins(14, 12, 14, 12)
+        status_layout.setContentsMargins(0, 0, 0, 0)
         status_layout.setSpacing(8)
         status_row = QHBoxLayout()
         status_row.setSpacing(10)
-        status_title = QLabel("当前状态")
-        status_title.setObjectName("statusLabel")
-        status_row.addWidget(status_title)
         self.status_badge_label = create_badge_label()
         status_row.addWidget(self.status_badge_label, 1)
         status_row.addStretch()
         status_layout.addLayout(status_row)
         self.status_card = status_card
 
-        self.summary_label = QLabel("")
-        self.summary_label.setObjectName("hintLabel")
-        self.summary_label.setWordWrap(True)
-        self.summary_label.hide()
-        status_layout.addWidget(self.summary_label)
         layout.addWidget(status_card)
 
         # 2.2.0 信息架构:页内锚点导航——10 张卡一长列,翻到底才找到热键/权限。
@@ -118,7 +111,7 @@ class AdvancedPage(QWidget):
 
         directory_card, directory_layout = SettingsCard.make(
             "CS2 配置目录",
-            "建议直接选择 Counter-Strike 根目录，软件会自动校验 `game/csgo/cfg` 并据此写入后续配置。",
+            "选 Counter-Strike 根目录，软件会校验里面的 game/csgo/cfg 并写好配置。",
         )
         self._create_csgo_dir_section(directory_layout)
         layout.addWidget(directory_card)
@@ -181,8 +174,9 @@ class AdvancedPage(QWidget):
         csgo_dir = str(getattr(config, "csgo_dir", "") or "").strip()
         dir_valid = self._is_valid_csgo_dir(csgo_dir)
 
-        self.action_bar.configure_secondary("选择目录", self._browse_for_csgo_dir, visible=True)
         if dir_valid:
+            # 批 149：目录卡上就有「选择目录」，底栏再摆一颗是孤零零的重复（批 145 外审）
+            self.action_bar.configure_secondary("", None, visible=False)
             # RN-132：目录配好之后**不设主按钮**。这一页的设置改完立即生效，
             # 没有「保存」这个动作，而原来高亮的是低频的「备份设置」——
             # 全页最抢眼的位置指向玩家最不需要按的东西。备份仍在卡片里。
@@ -197,6 +191,7 @@ class AdvancedPage(QWidget):
                 "建议大改前先备份设置。"
             )
         else:
+            self.action_bar.configure_secondary("选择目录", self._browse_for_csgo_dir, visible=True)
             self.action_bar.configure_primary("重试自动检测", self._try_auto_detect_cs2, visible=True)
             action_message = (
                 f"当前目录{'未设置' if not csgo_dir else '需重新检查'} · 主题 {self._current_theme_text()} · "
@@ -248,8 +243,6 @@ class AdvancedPage(QWidget):
             summary = "尚未设置 CS2 目录。软件启动时会尝试自动识别，也可以在下方直接手动指定。"
 
         render_badges(self.status_badge_label, badges, detail_tooltip=summary)
-        self.summary_label.setText(summary)
-        self.summary_label.setToolTip(summary)
         self.status_card.setToolTip(summary)
         if hasattr(self, "csgo_dir_text"):
             self.csgo_dir_text.setToolTip(summary)
@@ -271,13 +264,10 @@ class AdvancedPage(QWidget):
         
         self.csgo_dir_text = QLineEdit()
         self.csgo_dir_text.setReadOnly(True)
-        self.csgo_dir_text.setMinimumHeight(36)
         self.csgo_dir_text.setPlaceholderText("尚未设置目录")
         dir_layout.addWidget(self.csgo_dir_text)
         
         browse_button = QPushButton("选择目录")
-        browse_button.setFixedSize(108, 36)
-        browse_button.setFont(QFont("Arial", 12))
         style_as_secondary_button(browse_button)
         browse_button.clicked.connect(self._browse_for_csgo_dir)
         dir_layout.addWidget(browse_button)
@@ -326,21 +316,9 @@ class AdvancedPage(QWidget):
     
     def _create_theme_section(self, parent_layout):
         """创建主题切换区域"""
-        panel, section_layout = SettingsCard.make(
-            "界面主题",
-            "切换后会立即应用到整个应用程序，适合在不同显示环境下快速挑一个更顺眼的主题。",
-        )
-        
-        # 主题选择
-        theme_layout = QHBoxLayout()
-        theme_layout.setSpacing(12)
-        
-        theme_label = QLabel("选择主题:")
-        theme_layout.addWidget(theme_label)
-        
+        panel, section_layout = SettingsCard.make("界面主题")
+
         self.theme_combo = QComboBox()
-        self.theme_combo.setMinimumWidth(208)
-        self.theme_combo.setFixedHeight(36)
         self.theme_combo.addItem("深色主题", "dark")
         self.theme_combo.addItem("浅色主题", "light")
         self.theme_combo.addItem("墨绿主题", "green")
@@ -358,22 +336,13 @@ class AdvancedPage(QWidget):
             self.theme_combo.setCurrentIndex(index)
         
         self.theme_combo.currentIndexChanged.connect(self._on_theme_changed)
-        theme_layout.addWidget(self.theme_combo, 1)
-        
-        section_layout.addLayout(theme_layout)
+        section_layout.addWidget(plain_row("主题", self.theme_combo))
 
         # R1-1: 界面字号(与主题同卡——都是"外观"维度,避免高级页再多一张卡)
-        font_layout = QHBoxLayout()
-        font_layout.setSpacing(12)
-        font_label = QLabel("界面字号:")
-        font_layout.addWidget(font_label)
-
         self.font_scale_combo = QComboBox()
-        self.font_scale_combo.setMinimumWidth(208)
-        self.font_scale_combo.setFixedHeight(36)
-        self.font_scale_combo.addItem("标准(默认)", 1.0)
-        self.font_scale_combo.addItem("偏大(110%)", 1.1)
-        self.font_scale_combo.addItem("大(125%)", 1.25)
+        self.font_scale_combo.addItem("标准（默认）", 1.0)
+        self.font_scale_combo.addItem("偏大（110%）", 1.1)
+        self.font_scale_combo.addItem("大（125%）", 1.25)
 
         from ui_design_system import normalize_font_scale
         current_scale = normalize_font_scale(getattr(config, "ui_font_scale", 1.0))
@@ -383,14 +352,13 @@ class AdvancedPage(QWidget):
                 break
 
         self.font_scale_combo.currentIndexChanged.connect(self._on_font_scale_changed)
-        font_layout.addWidget(self.font_scale_combo, 1)
-        section_layout.addLayout(font_layout)
+        section_layout.addWidget(plain_row("字号", self.font_scale_combo))
 
         # R1-6: 侧栏「常用」分组开关
         from PySide6.QtWidgets import QCheckBox
 
-        self.nav_frequent_check = QCheckBox("侧栏显示「常用」分组(按使用频次自动排序,重启后生效)")
-        self.nav_frequent_check.setChecked(bool(getattr(config, "nav_frequent_enabled", True)))
+        self.nav_frequent_check = QCheckBox("侧栏显示「常用」分组（按使用频次排序，重启后生效）")
+        self.nav_frequent_check.setChecked(bool(getattr(config, "nav_frequent_enabled", False)))
         self.nav_frequent_check.toggled.connect(self._on_nav_frequent_toggled)
         section_layout.addWidget(self.nav_frequent_check)
 
@@ -434,7 +402,7 @@ class AdvancedPage(QWidget):
                 "界面主题": "外观",
                 "更新公告": "公告",
                 "系统集成": "系统",
-                "游戏内提示(OSD)": "OSD",
+                "游戏内提示（OSD）": "OSD",
                 "匿名使用统计": "统计",
                 "运行权限": "权限",
                 "全局热键总览": "热键",
@@ -461,9 +429,9 @@ class AdvancedPage(QWidget):
         from PySide6.QtWidgets import QCheckBox
 
         panel, section_layout = SettingsCard.make(
-            "游戏内提示(OSD)",
-            "功能状态变化时(如按地图自动切预设)在屏幕角落弹 1.6 秒提示。"
-            "CS2 需使用无边框窗口模式;全屏独占下不可见。",
+            "游戏内提示（OSD）",
+            "状态变化时（比如按地图切预设）在屏幕角落弹 1.6 秒提示。"
+            "CS2 要用无边框窗口化，独占全屏下看不见。",
         )
 
         self.osd_enabled_check = QCheckBox("启用游戏内提示")
@@ -471,13 +439,8 @@ class AdvancedPage(QWidget):
         self.osd_enabled_check.toggled.connect(self._on_osd_toggled)
         section_layout.addWidget(self.osd_enabled_check)
 
-        corner_layout = QHBoxLayout()
-        corner_layout.setSpacing(12)
-        corner_layout.addWidget(QLabel("显示位置:"))
         self.osd_corner_combo = QComboBox()
-        self.osd_corner_combo.setMinimumWidth(208)
-        self.osd_corner_combo.setFixedHeight(36)
-        self.osd_corner_combo.addItem("右下角(默认)", "bottom_right")
+        self.osd_corner_combo.addItem("右下角（默认）", "bottom_right")
         self.osd_corner_combo.addItem("左下角", "bottom_left")
         self.osd_corner_combo.addItem("右上角", "top_right")
         self.osd_corner_combo.addItem("左上角", "top_left")
@@ -485,15 +448,10 @@ class AdvancedPage(QWidget):
         if idx >= 0:
             self.osd_corner_combo.setCurrentIndex(idx)
         self.osd_corner_combo.currentIndexChanged.connect(self._on_osd_corner_changed)
-        corner_layout.addWidget(self.osd_corner_combo, 1)
-        section_layout.addLayout(corner_layout)
-
         preview_btn = QPushButton("预览一下")
         style_as_secondary_button(preview_btn)
-        preview_btn.setFixedHeight(32)
-        preview_btn.setMaximumWidth(140)
         preview_btn.clicked.connect(self._on_osd_preview)
-        section_layout.addWidget(preview_btn)
+        section_layout.addWidget(plain_row("显示位置", self.osd_corner_combo, preview_btn))
 
         parent_layout.addWidget(panel)
 
@@ -520,22 +478,23 @@ class AdvancedPage(QWidget):
 
         panel, section_layout = SettingsCard.make(
             "匿名使用统计",
-            "默认关闭。开启后每天最多上报一次:匿名安装ID、版本、各页面打开次数、"
+            "默认关闭。开启后每天最多上报一次：匿名安装 ID、版本、各页面打开次数、"
             "功能开关状态。不含账号、昵称、系统标识或任何文件路径。",
         )
 
         row = QHBoxLayout()
         row.setSpacing(12)
-        self.usage_report_check = QCheckBox("愿意上报匿名使用统计,帮助改进软件")
+        self.usage_report_check = QCheckBox("愿意上报匿名使用统计，帮助改进软件")
         self.usage_report_check.setChecked(bool(getattr(config, "usage_report_enabled", False)))
         self.usage_report_check.toggled.connect(self._on_usage_report_toggled)
-        row.addWidget(self.usage_report_check, 1)
+        row.addWidget(self.usage_report_check)
 
         view_btn = QPushButton("查看将上报的内容")
         style_as_secondary_button(view_btn)
         # ⛔ RN-591：不许再写 `setFixedHeight` —— 比 QSS 下限矮的声明会被 `fp_short` 摘掉地板（见档案）
         view_btn.clicked.connect(self._show_usage_payload)
         row.addWidget(view_btn)
+        row.addStretch(1)
         section_layout.addLayout(row)
         parent_layout.addWidget(panel)
 
@@ -580,18 +539,10 @@ class AdvancedPage(QWidget):
         """系统集成（对标主流）：关闭行为 / 开机自启 / 窗口记忆。"""
         from PySide6.QtWidgets import QCheckBox
 
-        panel, section_layout = SettingsCard.make(
-            "系统集成",
-            "把 CS2 Customizer 当常驻工具用：关闭按钮可改为收进系统托盘，开机自启免去手动启动，窗口大小位置自动记忆。",
-        )
+        panel, section_layout = SettingsCard.make("系统集成")
 
         # 关闭行为
-        close_row = QHBoxLayout()
-        close_row.setSpacing(12)
-        close_row.addWidget(QLabel("点击关闭按钮时:"))
         self.close_action_combo = QComboBox()
-        self.close_action_combo.setMinimumWidth(208)
-        self.close_action_combo.setFixedHeight(36)
         self.close_action_combo.addItem("每次询问（默认）", "ask")
         self.close_action_combo.addItem("最小化到系统托盘", "tray")
         self.close_action_combo.addItem("直接退出程序", "exit")
@@ -599,8 +550,7 @@ class AdvancedPage(QWidget):
         _idx = self.close_action_combo.findData(_ca)
         self.close_action_combo.setCurrentIndex(_idx if _idx >= 0 else 0)
         self.close_action_combo.currentIndexChanged.connect(self._on_close_action_changed)
-        close_row.addWidget(self.close_action_combo, 1)
-        section_layout.addLayout(close_row)
+        section_layout.addWidget(plain_row("点击关闭按钮时", self.close_action_combo))
 
         # RN-666④：没有托盘时这三个选项全塌缩成"直接退出"（`closeEvent` 里 ask 和
         # tray 两条分支都带 `and tray_ready`）⇒ 整个下拉框置灰，不只灰「托盘」那一项。
@@ -704,28 +654,26 @@ class AdvancedPage(QWidget):
         admin_now = is_admin()
         panel, section_layout = SettingsCard.make(
             "运行权限",
-            "默认以普通权限运行即可使用全部功能（含开镜放大）。仅当放大初始化失败、"
-            "或游戏以管理员身份运行导致热键无响应时，才需要提权重启。",
+            "普通权限就能用全部功能（含开镜放大）。只有放大初始化失败，"
+            "或游戏以管理员身份运行导致热键没反应时，才需要提权重启。",
         )
 
         row = QHBoxLayout()
         row.setSpacing(12)
 
-        self.permission_status_label = QLabel(
+        self.permission_status_label = keep_single_line(QLabel(
             f"当前权限：{'管理员' if admin_now else '普通用户（推荐）'}"
-        )
-        row.addWidget(self.permission_status_label, 1)
+        ))
+        row.addWidget(self.permission_status_label)
 
         restart_admin_button = QPushButton("以管理员身份重启")
-        restart_admin_button.setFixedHeight(36)
-        restart_admin_button.setMinimumWidth(148)
-        restart_admin_button.setFont(QFont("Microsoft YaHei", 12))
         style_as_secondary_button(restart_admin_button)
         restart_admin_button.clicked.connect(self._restart_as_admin)
         restart_admin_button.setEnabled(not admin_now)
         if admin_now:
             restart_admin_button.setToolTip("当前已是管理员权限")
         row.addWidget(restart_admin_button)
+        row.addStretch(1)
 
         section_layout.addLayout(row)
         parent_layout.addWidget(panel)
@@ -734,8 +682,7 @@ class AdvancedPage(QWidget):
         """P2.1: 全局热键总览——所有功能域当前绑定的键一目了然。"""
         panel, section_layout = SettingsCard.make(
             "全局热键总览",
-            "汇总开镜放大 / 语音输出音板 / 道具瞄点等功能当前注册的全局按键。"
-            "改键时若与其他功能撞键，对应页面会给出冲突提示。",
+            "开镜放大、语音输出音板、道具瞄点当前注册的全局按键。撞键时对应页面会提示。",
         )
 
         # ⚠ RN-519 清存量时发现：这句预填**永远不会被看到** —— 本函数末尾就调
@@ -745,16 +692,13 @@ class AdvancedPage(QWidget):
         self.hotkey_overview_label.setObjectName("hintLabel")
         self.hotkey_overview_label.setWordWrap(True)
         self.hotkey_overview_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        section_layout.addWidget(self.hotkey_overview_label)
 
         refresh_row = QHBoxLayout()
-        refresh_row.addStretch(1)
+        refresh_row.addWidget(self.hotkey_overview_label, 1)
         refresh_btn = QPushButton("刷新")
-        refresh_btn.setFixedHeight(32)
-        refresh_btn.setMinimumWidth(96)
         style_as_secondary_button(refresh_btn)
         refresh_btn.clicked.connect(self._refresh_hotkey_overview)
-        refresh_row.addWidget(refresh_btn)
+        refresh_row.addWidget(refresh_btn, 0, Qt.AlignTop)
         section_layout.addLayout(refresh_row)
 
         parent_layout.addWidget(panel)
@@ -818,28 +762,17 @@ class AdvancedPage(QWidget):
         # R6 加的重置前快照是**带外补救**（要重启、要进快照页），不改变按钮本身的危险性。
         # 注意它原本被 ui_style_applier 按文案猜成了 actionButton（不红）——
         # 全站最不可逆的操作反而是灰的，正是 D-06 要修的东西。
-        reset_button.setFixedHeight(38)
-        reset_button.setMinimumWidth(148)
-        reset_button.setFont(QFont("Microsoft YaHei", 12))
         # 必须放在最后：这一行原本是 style_as_secondary_button，
         # 谁在后面谁说了算（两者都是 setObjectName）。
         style_as_danger_button(reset_button)
         reset_button.clicked.connect(self._reset_all_settings)
 
-        action_hint = QLabel("建议先备份，再重置。")
-        action_hint.setObjectName("hintLabel")
-        action_hint.setWordWrap(True)
-        buttons_layout.addWidget(action_hint, 1)
-        buttons_layout.addStretch()
-        buttons_layout.addWidget(reset_button)
-
         backup_button = QPushButton("备份设置")
-        backup_button.setFixedHeight(38)
-        backup_button.setMinimumWidth(132)
-        backup_button.setFont(QFont("Microsoft YaHei", 12))
-        style_as_primary_button(backup_button)
+        style_as_secondary_button(backup_button)
         backup_button.clicked.connect(self._backup_settings)
         buttons_layout.addWidget(backup_button)
+        buttons_layout.addWidget(reset_button)
+        buttons_layout.addStretch()
         
         section_layout.addLayout(buttons_layout)
         parent_layout.addLayout(section_layout)
@@ -1008,7 +941,7 @@ class AdvancedPage(QWidget):
             _ = list_snapshots  # 只为确认快照子系统可用
             snapshot_hint = "\n\n执行前会自动保存一份设置快照，重启后可在「软件设置快照」页恢复。"
         except Exception:
-            snapshot_hint = "\n\n⚠ 快照子系统不可用，本次重置**无法回滚**。"
+            snapshot_hint = "\n\n⚠ 快照子系统不可用，本次重置无法回滚。"
 
         reply = QMessageBox.question(
             self,
@@ -1035,7 +968,7 @@ class AdvancedPage(QWidget):
                 # 建不了快照就把选择权交回用户，别默默做不可逆的事
                 again = QMessageBox.warning(
                     self, "无法创建快照",
-                    "创建设置快照失败，继续重置将**无法回滚**。\n\n仍要继续吗？",
+                    "创建设置快照失败，继续重置将无法回滚。\n\n仍要继续吗？",
                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
                 )
                 if again != QMessageBox.Yes:
@@ -1052,7 +985,7 @@ class AdvancedPage(QWidget):
                     "成功",
                     "设置已重置！\n\n程序将自动关闭，请重新启动以应用更改。"
                     + ("\n\n如需找回旧配置：重启后到「软件设置快照」页恢复 "
-                       "`before_reset_all`。" if snapshot_ok else ""),
+                       "before_reset_all 这一份。" if snapshot_ok else ""),
                 )
 
                 # 关闭程序

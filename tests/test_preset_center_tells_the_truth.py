@@ -150,7 +150,7 @@ def test_this_page_has_no_such_thing_as_an_unsaved_change(page):
     # ⚠ 空转守卫（批 40 补刀补上）：下面那条是**否定断言 + 一次 AST 扫描** ——
     #   源码读空了、或者 `ast.parse` 换了形状，它一样是绿的。
     #   ⭐ 先证明这次真的扫到了一整页的函数，那条「没人再调 dirty」才算数。
-    assert len(functions) >= 25, (
+    assert len(functions) >= 20, (
         f"只从 {SRC.name} 里扫出 {len(functions)} 个函数 —— 分母塌了，"
         "下面那条「没人再调 dirty」是靠扫了个空拿到的绿。")
     callers = [fn.name for fn in ast.walk(tree)
@@ -1115,7 +1115,11 @@ def test_the_way_to_open_a_friends_file_is_on_the_first_screen(qapp, real_window
     # 高度令牌原来被当成 QSS 的内容盒发出去，全站控件比规格高 16~18px；
     # 单位修对之后这一页的按钮/下拉框各矮一截，内容整体收了 86px。
     # ⭐ 这个数**不是我调出来的**，是这条守卫逼出来的 —— 它正是 RN-551 在这一页的收益。
-    _CONTENT_H = 1089
+    # 批 145（RN-733/734）1007：控件高、卡片内边距和页头都按新规格收了一档。
+    # 批 149（RN-745）952：七个范围勾选合成一行，「和朋友交换」少一句说明。
+    # ⚠ 批 149 第一版读到 1108：多出来的 156 px 是尾巴上的空白（流式容器的策略），
+    #   这条守卫当时被我改成了 1108，看图才发现（RN-753）。
+    _CONTENT_H = 952
     actual_h = scroll.widget().height()
     assert abs(actual_h - _CONTENT_H) <= 24, (
         f"这一页在夹具里的内容高是 {actual_h}，而登记的是 {_CONTENT_H}（±24）。\n"

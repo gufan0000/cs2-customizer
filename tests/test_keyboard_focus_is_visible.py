@@ -114,6 +114,10 @@ def _sample(win):
 
 def test_the_ruler_itself_works(app, win):
     """⭐ 阳性对照先立起来：本来就有 `:focus` 规则的那几个必须会变。"""
+    # 批 148：总览页没有主按钮了，阳性对照换到底栏两颗都在的音乐页
+    win.show_page("music", animated=False, force=True)
+    for _ in range(6):
+        app.processEvents()
     rows = [(n, b) for n, b in _sample(win) if n in CONTROL]
     assert len(rows) >= 2, f"只取到 {[n for n, _ in rows]} —— 阳性对照的分母塌了"
     for name, b in rows:
@@ -124,18 +128,31 @@ def test_the_ruler_itself_works(app, win):
 
 
 def test_every_button_shows_something_when_focused(app, win):
-    """RN-546：这 8 类按钮 Tab 上去，屏幕上必须有变化。"""
-    rows = [(n, b) for n, b in _sample(win) if n in WAS_MUTE]
+    """RN-546：这 8 类按钮 Tab 上去，屏幕上必须有变化。
+
+    批 145（RN-733）：账号和汉堡按钮只在紧凑档出现，两档都量才够分母。
+    """
+    seen, mute = set(), []
+    try:
+        for compact, size in ((False, (1280, 800)), (True, (860, 640))):
+            win._apply_compact_mode(compact)
+            win.resize(*size)
+            for _ in range(6):
+                app.processEvents()
+            for name, b in _sample(win):
+                if name not in WAS_MUTE or name in seen:
+                    continue
+                seen.add(name)
+                got, diff = _focus_diff(app, b)
+                if got and diff == 0:
+                    mute.append(name)
+    finally:
+        win._apply_compact_mode(False)
+        win.resize(1280, 800)
+        for _ in range(6):
+            app.processEvents()
     # ⚠ 批 98：下限 5 —— 开源版首屏没有「登录账号」那颗（RN-543）。
-    assert len(rows) >= 5, (
-        f"只取到 {sorted(n for n, _ in rows)} —— 分母塌了（批 62 实测这 8 类都在首屏）")
-    mute = []
-    for name, b in rows:
-        got, diff = _focus_diff(app, b)
-        if not got:
-            continue
-        if diff == 0:
-            mute.append(name)
+    assert len(seen) >= 5, f"只取到 {sorted(seen)} —— 分母塌了（批 62 实测这 8 类都在）"
     assert not mute, (
         f"这几类按钮 Tab 上去屏幕上一个像素都不变：{sorted(mute)}\n"
         "⭐ WCAG 2.1 §2.4.7：键盘焦点必须看得见 —— 侧栏导航是键盘用户的主路。")

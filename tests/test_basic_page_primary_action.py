@@ -66,16 +66,27 @@ def _primary_buttons(page):
             if b.objectName() == "primaryButton" and b.isVisibleTo(page)]
 
 
+def _setup_left(win, left):
+    """把状态条摆到「还有 / 没有步骤没走完」。"""
+    from core.runtime.system_status_service import ReadinessView
+
+    win._sync_home_readiness(ReadinessView("warn" if left else "ok", "x", "", needs_setup=left))
+
+
 def test_the_only_purple_button_is_the_onboarding_guide(win, qapp):
-    """⭐ 这一页唯一的主按钮是「打开上手引导」。"""
+    """⭐ 还有步骤没走完时，这一页唯一的主按钮是「打开上手引导」。走完了这一页就没有主按钮（批 148）。"""
     page = win.pages["basic"]
+    _setup_left(win, True)
     qapp.processEvents()
     primaries = _primary_buttons(page)
     assert [b.text() for b in primaries] == ["打开上手引导"], (
-        f"基础设置页的主按钮是 {[b.text() for b in primaries]} —— "
+        f"总览页的主按钮是 {[b.text() for b in primaries]} —— "
         f"首次使用要做的是「选 CS2 目录 → 写 GSI → 试听」，"
         f"不是一个装完就已经做过的动作")
     assert primaries[0] is win.basic_onboarding_btn
+    _setup_left(win, False)
+    qapp.processEvents()
+    assert not _primary_buttons(page), "都走完了，它不该还是这一屏最抢眼的那颗"
 
 
 def test_there_is_exactly_one_primary_button(win, qapp):
@@ -85,10 +96,11 @@ def test_there_is_exactly_one_primary_button(win, qapp):
     往这一页加东西的人很容易顺手再 `primary=True` 一个。
     """
     page = win.pages["basic"]
+    _setup_left(win, True)
     qapp.processEvents()
     primaries = _primary_buttons(page)
     assert len(primaries) <= MAX_PRIMARY_BUTTONS, (
-        f"基础设置页有 {len(primaries)} 颗主按钮："
+        f"总览页有 {len(primaries)} 颗主按钮："
         f"{[b.text() for b in primaries]}。两颗紫的等于零颗。")
 
 

@@ -20,7 +20,7 @@ _PACKS: List[Tuple[str, str, str, Dict]] = [
     (
         "clean_alerts",
         "纯净提示",
-        "只开回合/血量等关键提示音,不动准心与视觉——适合想保持原版手感的玩家。",
+        "只开回合、血量等关键提示音，不动准心和视觉，适合想保持原版手感的玩家。",
         {
             "schema": SCHEMA_NAME,
             "schema_version": SCHEMA_VERSION,
@@ -46,7 +46,7 @@ _PACKS: List[Tuple[str, str, str, Dict]] = [
     (
         "esports_minimal",
         "电竞极简",
-        "小点准心+击杀联动,关闭花哨特效——比赛味儿的最小干扰方案。",
+        "小点准心加击杀联动，关闭花哨特效，比赛味儿的最小干扰方案。",
         {
             "schema": SCHEMA_NAME,
             "schema_version": SCHEMA_VERSION,

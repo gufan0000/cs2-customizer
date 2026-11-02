@@ -115,8 +115,7 @@ def test_primary_button_text_meets_aa_on_both_gradient_stops(name):
     """
     theme = dict(_themes())[name]
     c = theme.colors
-    stops = (theme._accent_gradient_top(), c.accent_primary)
-    ratio = worst_contrast(c.text_on_primary, stops)
+    ratio = worst_contrast(c.text_on_primary, (c.accent_primary,))
     assert ratio >= AA_NORMAL, f"{name} 主按钮文字仅 {ratio:.2f}:1"
 
 
@@ -126,6 +125,11 @@ def test_danger_button_text_meets_aa(name):
     bg = theme._danger_bg()
     ratio = contrast_ratio(theme._on_color(bg), bg)
     assert ratio >= AA_NORMAL, f"{name} 危险按钮文字仅 {ratio:.2f}:1"
+    # 批 145：常态是透明底红字，三种底上都要读得清
+    c = theme.colors
+    for page_bg in (c.bg_primary, c.bg_secondary, c.bg_card):
+        ratio = contrast_ratio(theme._danger_text(), page_bg)
+        assert ratio >= AA_NORMAL, f"{name} 危险按钮常态文字在 {page_bg} 上仅 {ratio:.2f}:1"
 
 
 @pytest.mark.parametrize("name", _theme_ids())

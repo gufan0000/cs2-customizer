@@ -74,12 +74,12 @@ def page_on(qapp):
 
 
 def _labels(page, gun_type: str) -> list[str]:
-    combo = page.weapon_rows[gun_type]["style_combo"]
+    combo = page.weapon_rows[gun_type].style_combo
     return [combo.itemText(i) for i in range(combo.count())]
 
 
 def _data(page, gun_type: str) -> list[str]:
-    combo = page.weapon_rows[gun_type]["style_combo"]
+    combo = page.weapon_rows[gun_type].style_combo
     return [combo.itemData(i) for i in range(combo.count())]
 
 
@@ -234,10 +234,10 @@ def test_the_stale_message_is_not_silently_swallowed(tmp_path, page_on, monkeypa
     assert "AK-47" in page.status_hint_label.text()
     # ⚠ `status_badge_label` 是 `AudioStatusBadgeBar`（一排 QLabel 芯片），不是 QLabel ——
     #   我的第一版对它调 `.text()`，尺子自己错了。读芯片池里真正那几行字。
-    badges = " ".join(chip.text() for chip in page.status_badge_label._chip_pool)
+    badges = " ".join(page.status_badge_label.badge_texts())
     assert "失效" in badges, f"stale 被屏幕那一行压掉了，而徽章里也没有：{badges!r}"
     # 详情里永远写全 —— 择一只发生在屏幕那一行上。
-    assert "不是任何一把枪的代号" in page.summary_label.toolTip()
+    assert "不是任何一把枪的代号" in page.status_card.toolTip()
 
 
 def test_the_resource_badge_does_not_say_normal_while_a_dir_is_unreadable(tmp_path, page_on):
@@ -249,7 +249,7 @@ def test_the_resource_badge_does_not_say_normal_while_a_dir_is_unreadable(tmp_pa
     """
     _wav(tmp_path / "AK-47" / "我的风格" / "a.wav")
     page = page_on(tmp_path)
-    chips = [chip.text() for chip in page.status_badge_label._chip_pool]
+    chips = page.status_badge_label.badge_texts()
     joined = " ".join(chips)
     assert "读不到" in joined, f"徽章没跟着提示行走：{chips}"
     assert "资源 · 正常" not in joined, f"提示行说读不到，徽章却说正常：{chips}"
@@ -259,7 +259,7 @@ def test_a_healthy_library_still_says_normal(tmp_path, page_on):
     """阳性对照的反面：没有认不出的目录时，那颗徽章不许被我改坏。"""
     _wav(tmp_path / "ak47" / "正常风格" / "a.wav")
     page = page_on(tmp_path)
-    joined = " ".join(chip.text() for chip in page.status_badge_label._chip_pool)
+    joined = " ".join(page.status_badge_label.badge_texts())
     assert "读不到" not in joined, f"库是干净的，徽章却在报读不到：{joined}"
 
 

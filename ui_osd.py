@@ -16,6 +16,7 @@ from PySide6.QtGui import QFont, QGuiApplication
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QWidget
 
 from config import config
+from core.utils.app_fonts import UI_FONT_FAMILY
 
 #: RN-429 覆盖层的运行前提。功能状态变化时在屏幕角落弹的提示，也是画在游戏画面上的。
 DRAWN_OVER_THE_GAME = True
@@ -39,7 +40,7 @@ class _OsdWindow(QWidget):
         lay = QHBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         self.label = QLabel("")
-        self.label.setFont(QFont("Microsoft YaHei", 12, QFont.DemiBold))
+        self.label.setFont(QFont(UI_FONT_FAMILY, 12, QFont.DemiBold))
         self.label.setStyleSheet(
             "QLabel { color: #FFFFFF; background-color: rgba(20,22,28,0.82);"
             " border: 1px solid rgba(255,255,255,0.18); border-radius: 14px;"

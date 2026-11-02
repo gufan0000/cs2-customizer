@@ -39,7 +39,7 @@ def _switch(monkeypatch, key, checked, handler):
         config=config, logger=types.SimpleNamespace(info=lambda *a: None, exception=lambda *a: None,
                                                     error=lambda *a: None),
         gsi_handlers={"utility": handler}, pages={},
-        sender=lambda: None, _sync_master_switch_rows=lambda k: None,
+        sender=lambda: None, _sync_master_switch_rows=lambda k: None, _sync_feature_cards=lambda: None,
         _flash_card_border=lambda s: None)
     gui_widget.MainWindow._on_switch_changed(fake, key, checked)
 

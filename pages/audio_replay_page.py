@@ -41,6 +41,7 @@ from resource_manager import ResourceManager
 from widgets.page_action_bar import PageActionBar
 from widgets.settings_card import SettingsCard
 from widgets.page_header import PageHeader
+from widgets.status_strip import StatusStrip
 
 
 class AudioReplayPage(QWidget):
@@ -85,16 +86,15 @@ class AudioReplayPage(QWidget):
         #   那颗「?」要每页自己装，否则表里有、屏幕上没有。
         install_help_panel(header.title_row, header.body, PAGE_HELP_TEXTS["audio_replay"])
 
-        card, card_layout = SettingsCard.make("当前状态")
+        card = StatusStrip()
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(0, 0, 0, 0)
+        card_layout.setSpacing(8)
         self.status_card = card
 
         self.status_badge_label = create_badge_label()
         card_layout.addWidget(self.status_badge_label)
 
-        self.summary_label = QLabel("暂无事件")
-        self.summary_label.setObjectName("hintLabel")
-        self.summary_label.hide()
-        card_layout.addWidget(self.summary_label)
 
         # 批 124：环形缓冲满了会静默顶掉最老的记录 —— 排障时「第一条」不是真的第一条。
         self.overwritten_label = QLabel("")
@@ -104,10 +104,7 @@ class AudioReplayPage(QWidget):
         card_layout.addWidget(self.overwritten_label)
         layout.addWidget(card)
 
-        filter_card, filter_layout = SettingsCard.make(
-            "筛选与操作",
-            "动作、事件和关键字筛选会影响当前列表；重放与导出都只针对当前筛选结果。",
-        )
+        table_card, table_layout = SettingsCard.make("事件列表")
 
         # ⭐⭐⭐ RN-508（2026-09-05 批 48）：这三个筛选原来是**自由输入框**，
         #   提示语分别写着 `play/drop/preempt/load`、`kill/headshot/c4/...`、
@@ -127,68 +124,73 @@ class AudioReplayPage(QWidget):
         for value, label in ACTION_LABELS.items():
             self.action_combo.addItem(label, value)
         self.action_combo.setFixedWidth(130)
-        self.action_combo.setFixedHeight(34)
         filter_row.addWidget(self.action_combo)
         filter_row.addWidget(QLabel("事件"))
         self.event_combo = QComboBox()
         self.event_combo.addItem("全部", "")
         self.event_combo.setFixedWidth(150)
-        self.event_combo.setFixedHeight(34)
         filter_row.addWidget(self.event_combo)
         filter_row.addWidget(QLabel("音效名"))
         self.key_edit = QLineEdit()
-        self.key_edit.setPlaceholderText("输入一段音效名搜索，留空为全部")
+        self.key_edit.setPlaceholderText("输入音效名搜索")
         self.key_edit.setFixedWidth(180)
-        self.key_edit.setFixedHeight(34)
         filter_row.addWidget(self.key_edit)
         filter_row.addStretch()
-        filter_layout.addLayout(filter_row)
+        table_layout.addLayout(filter_row)
 
-        # ⚠ 这三个筛选**原来一根线都没接**：改完要再点一次「刷新」才生效，
-        #   而这张卡的副标题逐字写着「动作、事件和关键字筛选会影响当前列表」——
-        #   ⭐ 那句话在接上线之前是假的（同 RN-502 那一族：卡片副标题就是承诺）。
-        #   自由输入时这还能靠「输完总要点一下」蒙混过去；换成下拉之后，
-        #   选完没反应就是明显的坏掉。⇒ 接上，让那句话成真。
+        # ⚠ 这三个筛选原来一根线都没接：改完要再点一次「刷新」才生效，换成下拉之后选完没反应就是坏掉。
         self.action_combo.currentIndexChanged.connect(self._refresh_events)
         self.event_combo.currentIndexChanged.connect(self._refresh_events)
         self.key_edit.textChanged.connect(self._refresh_events)
+
+        self.empty_results_label = QLabel("")
+        self.empty_results_label.setObjectName("hintLabel")
+        self.empty_results_label.setWordWrap(True)
+        table_layout.addWidget(self.empty_results_label)
 
         # 2.2.0 排版修复:原先筛选+按钮挤一行(min 宽 1061px),默认 1200 窗口即横滚。
         # 拆两行后整页最小宽 ≤660,紧凑模式(860 窗)也不再出横向滚动条。
         action_row = QHBoxLayout()
         action_row.setSpacing(8)
-        action_row.addStretch()
+
+        # Phase1-1.3: 空状态提供直接动作，避免大片留白没有出路。
+        # ⚠⚠ 一条记录都还没有时，清筛选没用、刷新也没用 —— 事件只有在真的播过一次音效之后才会写进来。
+        #   外审 6 发逐字报「无一键测试或跳转引导导致操作断流」。
+        # ⭐ 空状态该给的是**能产生第一条记录**的那条路。
+        self.empty_goto_btn = QPushButton("去「击杀音效」试听一次")
+        self.empty_goto_btn.setObjectName("primaryButton")
+        self.empty_goto_btn.clicked.connect(
+            lambda: self._navigate_to_page("kill_sound"))
+        action_row.addWidget(self.empty_goto_btn)
+
+        # ⚠⚠ 它原来写的是「立即刷新事件」，绑 `_refresh_events`：这一页第三个刷新入口，
+        #   而且答非所问（那句空状态文案说的出路是放宽筛选条件）。
+        # ⭐⭐ **空状态该给的，是它自己那句话点名的那个动作。**
+        self.empty_refresh_btn = QPushButton("清空筛选条件")
+        self.empty_refresh_btn.setObjectName("secondaryButton")
+        self.empty_refresh_btn.clicked.connect(self._clear_filters)
+        action_row.addWidget(self.empty_refresh_btn)
 
         # ⭐ 批 46：底栏那颗变身式主按钮撤掉之后，这一屏一颗主按钮都不剩，
-        #   外审当场报「按钮平级、无视觉重心」。⇒ 把**第一步**升为主按钮，
-        #   且**恒定不变**（不像底栏那颗随选中状态换词）。
-        #   这一页的第一步是「刷新」：先把最近的事件取回来，才谈得上筛选/重放/导出。
+        #   外审当场报「按钮平级、无视觉重心」。⇒ 把**第一步**升为主按钮。
         self.refresh_btn = QPushButton("刷新")
         # ⚠ 主/次由 `_sync_first_step()` 定：一条记录都没有时，刷新刷不出东西，
-        #   第一步在空状态卡里（去试听一次）；有记录了刷新才是第一步。
+        #   第一步是去试听一次；有记录了刷新才是第一步。
         self.refresh_btn.setObjectName("secondaryButton")
-        self.refresh_btn.setMinimumHeight(34)
         self.refresh_btn.clicked.connect(self._refresh_events)
         action_row.addWidget(self.refresh_btn)
 
         self.replay_btn = QPushButton("重放选中")
         self.replay_btn.setObjectName("secondaryButton")
-        self.replay_btn.setMinimumHeight(34)
         self.replay_btn.clicked.connect(self._replay_selected)
         action_row.addWidget(self.replay_btn)
 
         self.export_btn = QPushButton("导出 JSON")
         self.export_btn.setObjectName("secondaryButton")
-        self.export_btn.setMinimumHeight(34)
         self.export_btn.clicked.connect(self._export_json)
         action_row.addWidget(self.export_btn)
-        filter_layout.addLayout(action_row)
-        layout.addWidget(filter_card)
-
-        table_card, table_layout = SettingsCard.make(
-            "事件列表",
-            "结果按时间倒序显示，适合先筛选后重放，快速定位某一次具体触发。",
-        )
+        action_row.addStretch()
+        table_layout.addLayout(action_row)
 
         self.table = QTableWidget(0, 7)
         self.table.setHorizontalHeaderLabels(["时间", "动作", "事件", "通道", "键", "原因", "结果"])
@@ -200,44 +202,6 @@ class AudioReplayPage(QWidget):
         self.table.itemSelectionChanged.connect(self._sync_status_strip)
         self.table.setMinimumHeight(220)
         table_layout.addWidget(self.table)
-
-        self.empty_results_label = QLabel("当前筛选条件下还没有音频事件结果，可以先放宽筛选条件或等待新的事件写入。")
-        self.empty_results_label.setObjectName("hintLabel")
-        self.empty_results_label.setAlignment(Qt.AlignCenter)
-        self.empty_results_label.setWordWrap(True)
-        self.empty_results_label.setMinimumHeight(110)
-        table_layout.addWidget(self.empty_results_label)
-
-        # Phase1-1.3: 空状态提供直接动作，避免大片留白没有出路。
-        # ⚠⚠ 但它原来写的是「立即刷新事件」，绑 `_refresh_events` ——
-        #   那是这一页**第三个**刷新入口（筛选卡一颗、底栏一颗、这里一颗），
-        #   而且**答非所问**：上面那句空状态文案说的出路是
-        #   「可以先**放宽筛选条件**或等待新的事件写入」，两条都不是「刷新」。
-        # ⭐⭐ **空状态该给的，是它自己那句话点名的那个动作。**
-        # ⛔ 不是撤掉了事：批 3 的空库引导先例 —— 空状态要有直接出路，
-        #   只留一段话等于把人留在原地。
-        self.empty_refresh_btn = QPushButton("清空筛选条件")
-        self.empty_refresh_btn.setObjectName("secondaryButton")
-        self.empty_refresh_btn.setFixedHeight(36)
-        self.empty_refresh_btn.setMinimumWidth(150)
-        self.empty_refresh_btn.clicked.connect(self._clear_filters)
-
-        # ⚠⚠ 另一态的出路完全不同：**一条记录都还没有**时，清筛选没用、
-        #   刷新也没用 —— 事件只有在真的播过一次音效之后才会写进来。
-        #   外审 6 发逐字报「无一键测试或跳转引导导致操作断流」。
-        # ⭐ 空状态该给的是**能产生第一条记录**的那条路。
-        self.empty_goto_btn = QPushButton("去「击杀音效」试听一次")
-        self.empty_goto_btn.setObjectName("primaryButton")
-        self.empty_goto_btn.setFixedHeight(36)
-        self.empty_goto_btn.setMinimumWidth(170)
-        self.empty_goto_btn.clicked.connect(
-            lambda: self._navigate_to_page("kill_sound"))
-        empty_btn_row = QHBoxLayout()
-        empty_btn_row.addStretch(1)
-        empty_btn_row.addWidget(self.empty_goto_btn)
-        empty_btn_row.addWidget(self.empty_refresh_btn)
-        empty_btn_row.addStretch(1)
-        table_layout.addLayout(empty_btn_row)
         layout.addWidget(table_card)
         layout.addStretch()
 
@@ -245,8 +209,6 @@ class AudioReplayPage(QWidget):
         root.addWidget(scroll, 1)
 
         self.action_bar = PageActionBar(self)
-        self.action_bar.secondary_btn.setMinimumWidth(116)
-        self.action_bar.primary_btn.setMinimumWidth(132)
         root.addWidget(self.action_bar, 0)
 
     def showEvent(self, event):
@@ -331,8 +293,7 @@ class AudioReplayPage(QWidget):
         else:
             action_message = (
                 f"当前筛选：动作 {action_text or '全部'} / 事件 {event_text or '全部'} / 关键字 {key_text or '全部'}"
-                f" · 共 {len(self._events)} 条结果；要导出就点上面「筛选与操作」里的"
-                f"「{self.export_btn.text()}」。"
+                f" · 共 {len(self._events)} 条结果；要导出就点「{self.export_btn.text()}」。"
             )
         self.action_bar.set_message(action_message)
 
@@ -349,12 +310,6 @@ class AudioReplayPage(QWidget):
             ("info" if not key_text else "positive", self._format_filter_badge("关键字", key_text)),
         ]
 
-        compact_parts = [
-            f"{len(self._events)} 条",
-            f"动作{action_text or '全部'}",
-            f"事件{event_text or '全部'}",
-            f"关键字{key_text or '全部'}",
-        ]
         detail_text = (
             f"当前筛选结果共 {len(self._events)} 条事件。"
             f"动作筛选：{action_text or '全部'}；"
@@ -362,8 +317,6 @@ class AudioReplayPage(QWidget):
             f"关键字筛选：{key_text or '全部'}。"
         )
         render_badges(self.status_badge_label, badges, detail_tooltip=detail_text)
-        self.summary_label.setText(" · ".join(compact_parts))
-        self.summary_label.setToolTip(detail_text)
         if hasattr(self, "status_card"):
             self.status_card.setToolTip(detail_text)
         self._sync_action_bar()
@@ -440,11 +393,11 @@ class AudioReplayPage(QWidget):
                     "当前筛选条件下没有音频事件。放宽或清掉筛选条件再看看。")
             else:
                 self.empty_results_label.setText(
-                    "还没有任何音频事件。软件每真的播一次音效就会在这里留一条记录 —— "
+                    "还没有音频事件。软件每播一次音效就会留一条记录："
                     # ⚠ 这句原来写「再回来刷新」，而本批已改成**回到这一页就自动取一次**
                     #   （`showEvent`）。⭐ 我改了行为，而描述它的这句话留在原地 ——
                     #   同一形态第三次（批 45 撤按钮 / 批 48 改按钮名 / 这次改行为）。
-                    "进游戏打一局，或者先去「击杀音效」点一次「试听」；本页每次重新打开都会自动取最新记录。")
+                    "进游戏打一局，或者先去「击杀音效」点一次「试听」，回来这里会自动取最新记录。")
         if hasattr(self, "empty_refresh_btn"):
             self.empty_refresh_btn.setVisible(not has_events and filtering)
         if hasattr(self, "empty_goto_btn"):

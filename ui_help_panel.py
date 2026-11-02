@@ -4,6 +4,8 @@
 每个页面标题旁的 "?" 按钮 + 可折叠帮助卡片
 """
 
+import html
+
 from PySide6.QtCore import (
     Qt, QPropertyAnimation, QEasingCurve
 )
@@ -12,6 +14,7 @@ from PySide6.QtWidgets import (
     QSizePolicy, QScrollArea
 )
 from PySide6.QtGui import QFont
+from core.utils.app_fonts import UI_FONT_FAMILY
 
 
 class HelpButton(QPushButton):
@@ -76,7 +79,7 @@ class HelpPanel(QWidget):
         top_row = QHBoxLayout()
         title = QLabel("帮助")
         title.setObjectName("helpCardTitle")
-        title.setFont(QFont("Microsoft YaHei", 12, QFont.Bold))
+        title.setFont(QFont(UI_FONT_FAMILY, 12, QFont.Bold))
         top_row.addWidget(title)
         top_row.addStretch()
 
@@ -99,7 +102,7 @@ class HelpPanel(QWidget):
         content.setObjectName("helpContent")
         content.setWordWrap(True)
         content.setTextFormat(Qt.RichText)
-        content.setFont(QFont("Microsoft YaHei", 13))
+        content.setFont(QFont(UI_FONT_FAMILY, 13))
         content.setContentsMargins(0, 4, 8, 4)
         scroll.setWidget(content)
 
@@ -124,9 +127,10 @@ class HelpPanel(QWidget):
         self._anim = QPropertyAnimation(self, b"maximumHeight")
         self._anim.setEasingCurve(QEasingCurve.OutCubic)
 
-        # 初始隐藏
+        # 初始隐藏。⚠ 光把高度收成 0 不够：布局仍会为它留一条 spacing，每页标题下都多一道缝（批 145）
         self.setMaximumHeight(0)
         self._card.setVisible(False)
+        self.hide()
 
     # PLACEHOLDER_METHODS
 
@@ -140,6 +144,7 @@ class HelpPanel(QWidget):
         if self._expanded:
             return
         self._expanded = True
+        self.show()
         self._card.setVisible(True)
 
         self._anim.stop()
@@ -165,6 +170,7 @@ class HelpPanel(QWidget):
         except Exception:
             pass
         self._card.setVisible(False)
+        self.hide()
 
 
 def install_help_panel(header_layout, parent_layout, help_text, insert_after_index=None):
@@ -176,6 +182,10 @@ def install_help_panel(header_layout, parent_layout, help_text, insert_after_ind
     help_text: HTML 帮助文本
     insert_after_index: 帮助面板在 parent_layout 中的插入位置（None=自动检测）
     """
+    # 批 145：页头那段说明不占首屏了，字放到帮助最前面（PageHeader 没有说明时是 None）
+    lead = getattr(parent_layout.parentWidget(), "description_label", None) if parent_layout else None
+    if lead is not None and lead.text():
+        help_text = f"<p>{html.escape(lead.text())}</p>{help_text}"
     btn = HelpButton()
     # 在 stretch 之前插入按钮
     stretch_idx = None
@@ -229,11 +239,11 @@ def install_help_panel(header_layout, parent_layout, help_text, insert_after_ind
 PAGE_HELP_TEXTS = {
     "basic": (
         "<b>功能说明</b><br>"
-        "基础设置页面是所有功能的总控中心，负责开关、音量和主题等全局项。<br><br>"
+        "总览说三件事：现在能不能进游戏、开了哪些功能、主音量。其余全局设置往下滚。<br><br>"
         "<b>使用方法</b><br>"
-        "1. 打开对应功能的开关以启用该功能<br>"
-        "2. 拖动音量滑块调整各功能的独立音量<br>"
-        "3. 右上角可切换应用主题（深色 / 浅色 / 自定义）<br>"
+        "1. 点功能卡进到那一页；卡片右边的开关就是这个功能的总开关<br>"
+        "2. 第一次用点「打开上手引导」：选 CS2 目录 → 写入 GSI 配置 → 试听验证<br>"
+        "3. 主音量管全部音效，往下滚可以给每类音效单独设音量<br>"
         "4. 所有开关和音量设置会自动保存<br><br>"
         "<b>文件与配置位置</b><br>"
         "1. 本页无需手动放资源文件。<br>"
@@ -264,8 +274,8 @@ PAGE_HELP_TEXTS = {
         "<b>功能说明</b><br>"
         "准心功能为游戏提供覆盖式自定义准心，叠加在游戏画面上方，不影响游戏内的鼠标操作。<br><br>"
         "<b>使用方法</b><br>"
-        "1. 在本页状态卡最上面打开「总开关」<br>"
-        "2. 选择准心形状（十字、圆点、圆环等）<br>"
+        "1. 打开页面标题旁边的「总开关」<br>"
+        "2. 选择准心形状（十字、圆点、圆环等）；预览下面可以换亮、暗、烟雾三种底色<br>"
         "3. 调整准心的颜色、大小、粗细等参数<br>&nbsp;&nbsp;&nbsp;• 中心间隙：让准心中间留空，不挡住要瞄的那个点<br>&nbsp;&nbsp;&nbsp;• 黑色描边：亮地板/沙地上看不清准星时开它<br>&nbsp;&nbsp;&nbsp;• 中心点、不透明度、自定义颜色（六个固定色不够用时）<br>"
         "4. 可选开启动画效果（如击杀时的缩放动画）<br>"
         "5. 所有设置实时生效，准心会立即显示在屏幕中央<br><br>"
@@ -282,9 +292,9 @@ PAGE_HELP_TEXTS = {
         "击杀音效会在击杀敌人时播放自定义音效，支持通用风格和武器专属风格两套资源结构。<br><br>"
         "<b>使用方法</b><br>"
         "1. 在本页状态卡最上面打开「总开关」<br>"
-        "2. 切换到对应武器类别选项卡（步枪、手枪、冲锋枪等）<br>"
-        "3. 为每把武器选择音效风格，下拉菜单中会合并显示通用风格和武器专属风格<br>"
-        "4. 点击「测试」按钮可预听当前选择的音效<br><br>"
+        "2. 在「风格库」里选一个风格，再点下面的枪名，这把枪就配上了；再点一次取消<br>"
+        "3. 也可以用每一格的下拉直接选，列表里合并显示通用风格和武器专属风格<br>"
+        "4. 点格子里的「试听」可预听这把枪现在的音效<br><br>"
         "<b>自定义音效目录</b><br>"
         "1. 通用连杀风格放在 <code>AppData/Local/CS2Customizer/resources/audio/kill_sounds/风格名/</code><br>"
         "2. 武器专属风格放在 <code>AppData/Local/CS2Customizer/resources/audio/weapon_kill_sounds/武器名/风格名/</code><br>"
@@ -297,9 +307,9 @@ PAGE_HELP_TEXTS = {
         "击杀语音会在击杀敌人时播放语音播报，支持通用风格和武器专属风格。<br><br>"
         "<b>使用方法</b><br>"
         "1. 在本页状态卡最上面打开「总开关」<br>"
-        "2. 切换到对应武器类别选项卡<br>"
-        "3. 为每把武器选择语音风格<br>"
-        "4. 点击「测试」按钮可预听当前选择的语音<br><br>"
+        "2. 在「风格库」里选一个风格，再点下面的枪名，这把枪就配上了；再点一次取消<br>"
+        "3. 也可以用每一格的下拉直接选<br>"
+        "4. 点格子里的「试听」可预听这把枪现在的语音<br><br>"
         "<b>自定义语音目录</b><br>"
         "1. 通用语音风格放在 <code>AppData/Local/CS2Customizer/resources/audio/kill_voices/风格名/</code><br>"
         "2. 武器专属语音风格放在 <code>AppData/Local/CS2Customizer/resources/audio/weapon_kill_voices/武器名/风格名/</code><br>"
@@ -349,14 +359,14 @@ PAGE_HELP_TEXTS = {
         "<b>功能说明</b><br>"
         "被击杀音效会在玩家被击杀时播放自定义音效。<br><br>"
         "<b>使用方法</b><br>"
-        "1. 在本页状态卡最上面打开「总开关」<br>"
-        "2. 从下拉菜单选择音效风格<br>"
-        "3. 点击「测试」按钮可预听当前选择的音效<br><br>"
-        "<b>自定义音效目录</b><br>"
-        "1. 被击杀音效使用扁平文件结构，不是风格文件夹。<br>"
-        "2. 直接把文件放到 <code>AppData/Local/CS2Customizer/resources/audio/death/</code><br>"
-        "3. 程序会按文件名识别风格，例如 <code>anime.mp3</code>、<code>impact.wav</code> 会显示成 anime / impact<br>"
-        "4. 支持 MP3/WAV/OGG，新增后点击「刷新风格列表」即可"
+        "1. 打开页面最上面的总开关<br>"
+        "2. 在风格库点一张卡就用它，再点一下取消<br>"
+        "3. 卡上的播放键可以试听，不会改掉正在用的那个<br><br>"
+        "<b>加自己的音效</b><br>"
+        "1. 把音频文件拖到这一页，或点「新建风格」<br>"
+        "2. 也可以直接放进 <code>AppData/Local/CS2Customizer/resources/audio/death/</code>："
+        "一个文件就是一个风格，风格名就是文件名，例如 <code>anime.mp3</code> 显示成 anime<br>"
+        "3. 支持 MP3/WAV/OGG，放完点「刷新风格列表」"
     ),
     "gun_sound": (
         "<b>功能说明</b><br>"
@@ -365,13 +375,14 @@ PAGE_HELP_TEXTS = {
         "全自动武器扫射时软件会多留一点原声（约 20%）当节奏骨架 —— 游戏每 0.1 秒左右才报一次开火，"
         "留着原声，两次上报之间的那几发不会听起来像断了。<br><br>"
         "<b>使用方法</b><br>"
-        "1. 在本页状态卡最上面打开「总开关」<br>"
-        "2. 进入对应武器选项卡，为每把武器单独选择「枪声风格」<br>"
-        "3. 调整「原声保留」（原始枪声音量，默认 18%）和「静音覆盖时长」（压低原声的时长），用测试按钮试听<br>"
+        "1. 打开页面最上面的总开关<br>"
+        "2. 为每把武器单独选风格，点「试听」听效果<br>"
+        "3. 点枪名，底下的微调栏就换到这把枪：调「原声保留」（原始枪声音量，默认 18%）和"
+        "「静音覆盖」（压低原声的时长）<br>"
         "4. 「整套套用」按<b>套系</b>配：素材作者给每把枪起的名字不一样（离子AK、离子战神、离子大狙…），"
         "名字开头相同的算一套，选一套各枪各配各的；确认框会逐把列出谁配哪个<br><br>"
         "<b>调校建议</b><br>"
-        "• 单发 / 慢射速武器（AWP、沙鹰）可适当增加「静音覆盖时长」，让自定义音更完整<br>"
+        "• 单发 / 慢射速武器（AWP、沙鹰）可适当增加「静音覆盖」，让自定义音更完整<br>"
         "• 手枪等快射速武器建议缩短覆盖时长，避免连续开火时声音糊成一片<br>"
         "• 全自动武器（AK / M4 / 冲锋枪 / 机枪）的素材选 1 秒以上、有余音的样本：前一发还在响时下一发叠上来，扫射才连贯；短促的单发样本会听出空洞<br>"
         "• 想保留原枪声质感，可调高「原声保留」音量<br><br>"
@@ -379,15 +390,15 @@ PAGE_HELP_TEXTS = {
         "1. 每把武器的目录结构为 <code>AppData/Local/CS2Customizer/resources/audio/gun_sounds/武器名/风格名/</code><br>"
         "2. 风格文件夹里放 1 个或多个 MP3/WAV/OGG 文件：放多个时每一发随机换一个取样（不和上一发重复），"
         "扫射就不会一个声音复读；最多用前 5 个<br>"
-        "3. 放完后点击「刷新风格列表」，对应武器页就会出现这个风格"
+        "3. 放完后点击「刷新风格列表」，那把枪的下拉里就会出现这个风格"
     ),
     "switch_weapon": (
         "<b>功能说明</b><br>"
         "切枪音效会在切换武器时播放自定义音效。<br><br>"
         "<b>使用方法</b><br>"
         "1. 在本页状态卡最上面打开「总开关」<br>"
-        "2. 为每把武器选择切枪音效风格<br>"
-        "3. 点击「测试」按钮可预听当前选择的音效<br><br>"
+        "2. 在「风格库」里选一个风格，再点下面的枪名，这把枪就配上了；再点一次取消<br>"
+        "3. 点格子里的「试听」可预听这把枪现在的音效<br><br>"
         "<b>自定义音效目录</b><br>"
         "1. 目录结构为 <code>AppData/Local/CS2Customizer/resources/audio/switch_weapons/武器名/风格名/</code><br>"
         "2. 风格文件夹里放 1 个或多个 MP3/WAV/OGG 文件即可<br>"
@@ -398,8 +409,8 @@ PAGE_HELP_TEXTS = {
         "换弹音效会在武器换弹时播放自定义音效。<br><br>"
         "<b>使用方法</b><br>"
         "1. 在本页状态卡最上面打开「总开关」<br>"
-        "2. 为每把武器选择换弹音效风格<br>"
-        "3. 点击「测试」按钮可预听当前选择的音效<br><br>"
+        "2. 在「风格库」里选一个风格，再点下面的枪名，这把枪就配上了；再点一次取消<br>"
+        "3. 点格子里的「试听」可预听这把枪现在的音效<br><br>"
         "<b>自定义音效目录</b><br>"
         "1. 目录结构为 <code>AppData/Local/CS2Customizer/resources/audio/reload_sounds/武器名/风格名/</code><br>"
         "2. 风格文件夹里放 1 个或多个 MP3/WAV/OGG 文件即可<br>"
@@ -418,7 +429,7 @@ PAGE_HELP_TEXTS = {
         "1. 切换到对应音效类别的选项卡<br>"
         "2. 启用该类别的开关<br>"
         "3. 为每个事件选择音效风格<br>"
-        "4. 点击「测试」按钮预听效果<br><br>"
+        "4. 点击「试听」按钮预听效果<br><br>"
         "<b>自定义音效目录</b><br>"
         "所有目录都在 <code>AppData/Local/CS2Customizer/resources/audio/</code> 下。"
         "<b>除了回合音效，其余几类都不挑文件名</b> —— 风格目录里放一个音频文件就行，"
@@ -456,8 +467,8 @@ PAGE_HELP_TEXTS = {
         "<b>功能说明</b><br>"
         "开镜放大功能会在使用狙击枪开镜时放大屏幕中心区域，也支持联动局内灵敏度。<br><br>"
         "<b>使用方法</b><br>"
-        "1. 在本页状态卡最上面打开「总开关」<br>"
-        "2. 调整放大倍率和放大区域大小<br>"
+        "1. 打开「总开关」<br>"
+        "2. 调整放大倍率，画面没对准就校准偏移<br>"
         "3. 如需灵敏度联动，填写你在 CS2 中的基础 sensitivity 和联动倍率<br>"
         "4. 选择触发的武器类型（AWP、Scout 等）<br><br>"
         "<b>文件与生效位置</b><br>"
@@ -514,7 +525,7 @@ PAGE_HELP_TEXTS = {
         "什么都看不到，切换时还会黑屏几秒<br>"
         "2. 点「打开并登录抖音」<b>先登录一次</b>——没登录刷不出内容<br><br>"
         "<b>使用方法</b><br>"
-        "1. 打开总开关（和「基础设置」里那颗是同一颗）<br>"
+        "1. 打开总开关（和「总览」里那颗是同一颗）<br>"
         "2. 在「触发条件」里勾上你实际会玩的对局模式——"
         "<b>默认只勾了「死亡竞赛」和「休闲」，打排位的要自己勾上「竞技」</b><br>"
         "3. 「预览效果」会当场把窗口弹出来看位置，点「收回窗口」结束<br><br>"
@@ -657,20 +668,20 @@ PAGE_HELP_TEXTS = {
     "audio_import_wizard": (
         "<b>功能说明</b><br>"
         "把你下载或自己做的素材认出来、摆进对应目录。"
-        "压缩包、文件夹、单个素材文件都收，**不用先解压**。<br><br>"
+        "压缩包、文件夹、单个素材文件都收，不用先解压。<br><br>"
         "<b>怎么用</b><br>"
-        "1. 把压缩包 / 文件夹 / 单个素材文件**直接拖进页面**，"
+        "1. 把压缩包 / 文件夹 / 单个素材文件直接拖进页面，"
         "或者点「选择文件夹」「选择压缩包 / 文件…」<br>"
-        "2. 点「扫描素材」。扫描**只看不写**，不会动你现有的素材<br>"
+        "2. 点「扫描素材」。扫描只看不写，不会动你现有的素材<br>"
         "3. 第 2 步看扫描结果：能认出来的、有冲突的、没认出来的各多少<br>"
         "4. 确认无误后点「开始导入（不覆盖已有文件）」<br>"
-        "5. 认不出来的会**问你一次**，并把依据摆出来给你看<br>"
+        "5. 认不出来的会问你一次，并把依据摆出来给你看<br>"
         "6. 导完之后提示条上有「撤销」，点一下就能全部收回<br><br>"
         "<b>注意事项</b><br>"
         "• 导入默认不覆盖同名文件，先扫描再导入是安全的<br>"
         "• 勾了「仅生成建议」就只出报告、一个文件都不复制<br>"
-        "• 击杀音效/语音产品按 `1`~`5` 的文件名播放，"
-        "名字不对的会**替你改好**并在提示条里说明<br>"
+        "• 击杀音效/语音产品按 1~5 的文件名播放，"
+        "名字不对的会替你改好并在提示条里说明<br>"
         "• RAR / 7z 打不开，但会认出来并告诉你先解压"
     ),
     "audio_task_panel": (
@@ -724,7 +735,7 @@ PAGE_HELP_TEXTS = {
         "3. <b>开源与 Star</b> — 开源版仓库地址（可复制）<br>"
         "4. <b>反馈与求助</b> — 复制诊断信息、下载解决包、复制群号<br><br>"
         "<b>注意事项</b><br>"
-        "• 开源版是**功能子集**，不等于你正在用的这一份<br>"
+        "• 开源版是功能子集，不等于你正在用的这一份<br>"
         "• 「复制诊断信息」只收版本 / 系统 / 配置概况，"
         "不含账号口令，粘给别人之前可以自己先看一眼<br>"
         "• 这一页不改任何设置 —— 看完就走，不会留下任何改动"

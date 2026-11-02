@@ -60,22 +60,30 @@ def win(app):
     app.processEvents()
 
 
-def _chips(win):
-    """屏幕上真正画出来的那几颗芯片。
+@pytest.fixture(scope="module")
+def chip_bar(app):
+    """各页状态带共用的那一条。批 148 起总览不再用它，判据直接建一条。"""
+    from pages.audio_status_badge import AudioStatusBadgeBar
 
-    ⚠ **不是** `win.basic_gsi_badge` 那几个 —— 它们是隐藏的载体，
-      真正显示的是 `render_badges` 建的芯片池。
-      量错对象的话，这条判据会一直绿着而屏幕上什么都没变。
-    """
-    bar = win.basic_status_badge_label
+    bar = AudioStatusBadgeBar()
+    yield bar
+    bar.deleteLater()
+    app.processEvents()
+
+
+def _chips(bar):
+    """把会报的问题都报一遍，取屏幕上画出来的那几颗。"""
+    from pages.audio_status_badge import render_badges
+
+    render_badges(bar, [("warn", "GSI · 未运行"), ("warn", "音频 · 需检查 3"), ("warn", "配置 · 未保存")])
     return [c for c in bar.findChildren(QLabel)
             if c.text().strip() and not c.isHidden()]
 
 
-def test_every_status_chip_carries_its_own_explanation(win):
+def test_every_status_chip_carries_its_own_explanation(chip_bar):
     """⭐⭐ 每颗芯片都要说得出自己是什么，而不是靠排第几去分一份共享的。"""
-    chips = _chips(win)
-    assert len(chips) >= 5, (
+    chips = _chips(chip_bar)
+    assert len(chips) >= 3, (
         f"只找到 {len(chips)} 颗芯片 —— 状态带没渲染出来，这条判据在空转")
     mute = [c.text() for c in chips if not (c.toolTip() or "").strip()]
     assert not mute, (
@@ -83,13 +91,13 @@ def test_every_status_chip_carries_its_own_explanation(win):
         "⭐ 屏幕上就那么几个字（「GSI」对玩家尤其生僻），别处再没有第二处说明。")
 
 
-def test_no_two_chips_share_one_borrowed_explanation(win):
+def test_no_two_chips_share_one_borrowed_explanation(chip_bar):
     """⭐ 反向守卫：解释必须是**各自的**，不是整条那份被某一颗借去了。
 
     没有这一条，「每颗都有 tooltip」可以靠**给所有芯片贴同一段明细**满足 ——
     那和原来「第 3 颗拿走共享明细」是同一个毛病，只是摊薄了。
     """
-    chips = _chips(win)
+    chips = _chips(chip_bar)
     tips = [(c.text(), (c.toolTip() or "").strip()) for c in chips]
     distinct = {tip for _t, tip in tips}
     assert len(distinct) >= max(3, len(chips) - 1), (
@@ -160,9 +168,9 @@ def test_a_clickable_switch_name_looks_clickable(win):
 
     page = win.pages["basic"]
     marked, unmarked = [], []
-    for sid, tg in win.switches.items():
-        label = getattr(tg, "_label", None)
-        if label is None or not label.isVisibleTo(page):
+    for sid, card in win.feature_cards.items():
+        label = card.name_label
+        if not label.isVisibleTo(page):
             continue
         has_page = gui_widget.MainWindow._get_home_switch_target_page(sid)
         (marked if has_page else unmarked).append((sid, label.text()))
@@ -199,10 +207,10 @@ def test_an_explained_chip_still_shows_the_specifics():
 
     DETAIL = "资源体检结果：共发现 3 项问题。缺失目录 2 项，失效引用 1 项。"
     bar = AudioStatusBadgeBar()
-    render_badges(bar, [("warn", "音频 · 需检查 3"), ("info", "项目 · 3 项")],
+    render_badges(bar, [("warn", "音频 · 需检查 3"), ("danger", "资源 · 异常 3")],
                   detail_tooltip=DETAIL)
     tips = {c.text(): (c.toolTip() or "") for c in bar._chip_pool if not c.isHidden()}
-    assert set(tips) == {"音频 · 需检查 3", "项目 · 3 项"}, f"芯片没渲染出来：{tips}"
+    assert set(tips) == {"音频 · 需检查 3", "资源 · 异常 3"}, f"芯片没渲染出来：{tips}"
 
     assert "缺失目录 2 项" in tips["音频 · 需检查 3"], (
         "会变红的那颗芯片看不到**是哪几项**，只有一句定义：\n  "
@@ -211,6 +219,6 @@ def test_an_explained_chip_still_shows_the_specifics():
     assert CHIP_EXPLAINS["音频"] in tips["音频 · 需检查 3"], (
         "把明细补回去的时候，不许把 RN-232 那句解释挤掉 —— 两句各回答一个问题。")
     # 阳性对照：名字不在解释表里的那颗，本来就该拿到明细
-    assert "缺失目录 2 项" in tips["项目 · 3 项"], (
+    assert "缺失目录 2 项" in tips["资源 · 异常 3"], (
         "连没被解释表命中的芯片都拿不到明细 —— 那是明细根本没传进来，"
         "这条判据在一个恒定的答案上空转")

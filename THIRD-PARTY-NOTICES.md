@@ -17,7 +17,8 @@
 
 这一条单独列出，因为它是本仓库与闭源版本最大的分发差异：
 
-- 仓库中**不分发**任何音效、语音、击杀图标、字体、贴图或其他游戏相关素材文件。
+- 仓库中**不分发**任何音效、语音、击杀图标、贴图或其他游戏相关素材文件。
+  唯一随仓库分发的第三方文件是界面字体（`fonts/`，SIL OFL 1.1），见第 3.3 节。
 - 原闭源版本内置的素材涉及第三方（含 Valve、Riot Games、腾讯等）的版权，
   **已在开源裁剪时物理删除，且不会以任何形式重新加入本仓库。**
 - 程序在**没有任何内置素材**的情况下必须能正常启动与运行；素材由用户自行准备并通过
@@ -169,6 +170,16 @@ qtawesome 的 **Python 代码**是 MIT，但它随包分发的字体文件各有
 "or later" 使其可以按 LGPL-3.0 使用，与本项目的 GPL-3.0-or-later 兼容。
 它同样是动态加载的共享库，第 2.2 节关于 LGPL 第 4 条的分析同理适用：
 公开完整源码即满足重新链接要求。
+
+### 3.3 界面字体 Noto Sans SC（子集）
+
+`fonts/SailSansSC-Regular.ttf`、`-Medium.ttf`、`-Bold.ttf` 是 **Noto Sans SC** 的子集，
+由 `build_tools/make_ui_fonts.py` 生成，族名改为 `Sail Sans SC`
+（OFL 的「保留字体名」条款要求修改版不得沿用原名）。
+
+- 授权：**SIL Open Font License 1.1**，全文与版权声明见 `fonts/OFL.txt`，随仓库和安装包一起分发。
+- 版权：Copyright 2014-2021 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'.
+- OFL 允许与任何软件捆绑分发；字体本身不能单独出售。
 
 ---
 

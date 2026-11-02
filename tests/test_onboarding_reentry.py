@@ -8,7 +8,7 @@
 
 所以这一组钉的是三件事：
 1. 关于页那句「请确保已正确选择 CS 文件夹」旁边有真正的入口（原先是句死提示）;
-2. 基础设置页有一条能重新打开引导的引导条;
+2. 总览页的状态条上有能重新打开引导的按钮;
 3. 自动弹和手动开**走同一个入口** —— 抄第二份的下场见 RN-002。
 
 ⚠ 用例里绝不真的构造 `OnboardingDialog`：它是模态窗，会打扰前台。
@@ -72,7 +72,7 @@ def test_auto_popup_and_manual_reopen_share_one_entry_point():
 
 
 def test_opening_the_guide_twice_reuses_the_same_window(qapp):
-    """入口有三处（首启自动 / 基础设置页 / 关于页），但窗口只该有一个。
+    """入口有三处（首启自动 / 总览页 / 关于页），但窗口只该有一个。
 
     `self._onboarding_dialog = dialog` 是**唯一**的防 GC 引用 —— 造第二个就会把
     第一个的引用覆盖掉，而第一个还显示在屏幕上。
@@ -99,7 +99,7 @@ def test_opening_the_guide_twice_reuses_the_same_window(qapp):
 
 
 def test_about_page_hint_now_has_somewhere_to_go(qapp, monkeypatch):
-    """「请确保已正确选择 CS 文件夹」旁边真的能点到引导。"""
+    """「还没设过 CS2 目录」旁边真的能点到引导。"""
     from pages.about_page import AboutPage
 
     opened = []
@@ -110,7 +110,7 @@ def test_about_page_hint_now_has_somewhere_to_go(qapp, monkeypatch):
     host._show_onboarding_dialog = lambda: opened.append("guide")
 
     page_text = "".join(label.text() for label in page.findChildren(QLabel))
-    assert "请确保已正确选择 CS 文件夹" in page_text, (
+    assert "还没设过 CS2 目录" in page_text, (
         "那句提示没了。它本身没问题，问题是它原先没有落点 —— "
         "删掉它并不能解决 RN-110，只会让新用户连「要做这件事」都不知道")
 
@@ -150,9 +150,9 @@ def test_basic_page_carries_the_three_step_guide_bar(qapp, monkeypatch):
         monkeypatch.setattr(win, "_show_onboarding_dialog",
                             lambda: opened.append("guide"))
 
-        assert "三步上手" in win.basic_onboarding_hint.text()
+        assert "三步" in win.basic_onboarding_btn.toolTip() or "CS2" in win.basic_onboarding_btn.toolTip()
         win.basic_onboarding_btn.click()
-        assert opened == ["guide"], f"基础设置页的引导按钮没接上，实际调用 {opened}"
+        assert opened == ["guide"], f"总览页的引导按钮没接上，实际调用 {opened}"
     finally:
         win.close()
         win.deleteLater()

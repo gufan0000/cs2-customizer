@@ -25,8 +25,10 @@
 **改前 24/24 答「分不清」**（逐字：「左边紧挨着一颗开着的紫色开关，右边较远处又有一颗」）；
 **改后 24/24 全部答对**，且理由是版面本身（「每一项开关都紧跟在其对应功能名称的右侧」）。
 
-⛔ 不拿像素比，拿**几何关系**比 —— 批 43 记过：能用结构表达的不变量别拿像素去量。
-   这里量的是「谁离谁近」这个序关系，不是绝对坐标。
+## 批 148
+
+功能开关住进了卡片，开关贴卡片右边、名字贴左边：**边框接手了归属**，不再靠距离。
+量的还是几何关系：开关和名字在同一张卡里，卡片之间留得开，同一列的开关对得齐。
 """
 from __future__ import annotations
 
@@ -49,184 +51,64 @@ def app():
     return QApplication.instance() or QApplication([])
 
 
-def _home_switch_geometry(win, page):
-    """(switch_id, 离自己标签的距离, 离右边那个标签的距离, 右边那个的文案)。
-
-    ⚠ 分母取**产品自己的那张表** `win.switches` 与它自己接的那条线 `toggle._label` ——
-      不按控件类型猜、不靠 y 坐标凑行（批 34 连造三个错分母的教训）。
-    """
-    def rect(w):
-        tl = w.mapTo(page, w.rect().topLeft())
-        return tl.x(), tl.y(), w.width(), w.height()
-
-    geo = {}
-    for sid, tg in win.switches.items():
-        label = getattr(tg, "_label", None)
-        if label is None or not tg.isVisibleTo(page):
-            continue
-        lx, ly, lw, lh = rect(label)
-        # 量**文字**的右沿，不是控件的右沿（批 59 复跑补刀）：
-        # 标签统一宽度之后控件右沿永远紧挨着开关（6px），
-        # 而用户看见的是文字结束的地方 —— 两者最多差 56px。
-        # 判据量控件、用户看文字，就是一条量错了东西的判据。
-        text_w = min(lw, label.fontMetrics().horizontalAdvance(label.text()))
-        geo[sid] = (rect(tg), (lx, ly, text_w, lh), label.text())
-
-    out = []
-    for sid, (t, lb, _text) in geo.items():
-        tx, ty, tw, th = t
-        lx, _ly, lw, _lh = lb
-        own = tx - (lx + lw)
-        cy = ty + th / 2
-        others = [
-            (o_lb[0] - (tx + tw), o_text)
-            for k, (_o_t, o_lb, o_text) in geo.items()
-            if k != sid
-            and abs(o_lb[1] + o_lb[3] / 2 - cy) <= 12
-            and o_lb[0] >= tx + tw
-        ]
-        nearest, text = min(others, default=(None, None))
-        out.append((sid, own, nearest, text))
-    return out
-
-
-@pytest.mark.parametrize("viewport", sorted(VIEWPORTS))
-def test_every_home_switch_is_nearest_to_its_own_label(app, viewport):
-    """⭐⭐ **S2**：每一颗开关，离自己的标签必须比离别人的标签近。"""
+@pytest.fixture(params=sorted(VIEWPORTS))
+def win(app, request):
     import gui_widget
     from PySide6.QtCore import Qt
 
-    width, height = VIEWPORTS[viewport]
-    win = gui_widget.MainWindow(auto_background_preload=False)
-    try:
-        win.setAttribute(Qt.WA_DontShowOnScreen, True)
-        win.resize(width, height)
-        win.show()
-        for _ in range(4):
-            app.processEvents()
-        win.show_page("basic", animated=False, force=True)
-        for _ in range(4):
-            app.processEvents()
-        page = win.pages["basic"]
-
-        rows = _home_switch_geometry(win, page)
-        #: 空转守卫：首页有 17 颗开关。一颗都量不到时下面那个循环什么都不比。
-        assert len(rows) >= 15, (
-            f"{viewport}档只量到 {len(rows)} 颗开关 —— 分母塌了，这条判据在空转")
-
-        confusing = [
-            (sid, own, other, text)
-            for sid, own, other, text in rows
-            if other is not None and other < own
-        ]
-        assert not confusing, (
-            f"{viewport}档有 {len(confusing)} 颗开关离**别人的**标签更近：\n  "
-            + "\n  ".join(
-                f"{sid}：离自己 {own}px，而离「{text}」只有 {other}px"
-                for sid, own, other, text in confusing)
-            + "\n⭐ 站在那几个字前面往左看，最近的那颗开关是上一个功能的。\n"
-            "⚠ 调列间距没用 —— 差距是十倍量级；弹簧必须在开关**后面**。")
-    finally:
-        win._force_exit = True
-        win.close()
-        win.deleteLater()
+    width, height = VIEWPORTS[request.param]
+    window = gui_widget.MainWindow(auto_background_preload=False)
+    window.setAttribute(Qt.WA_DontShowOnScreen, True)
+    window.resize(width, height)
+    window.show()
+    for _ in range(4):
         app.processEvents()
+    window.show_page("basic", animated=False, force=True)
+    for _ in range(8):
+        app.processEvents()
+    yield window
+    window._force_exit = True
+    window.close()
+    window.deleteLater()
+    app.processEvents()
 
 
-@pytest.mark.parametrize("viewport", sorted(VIEWPORTS))
-def test_the_gap_to_its_own_label_stays_small(app, viewport):
-    """⭐ 反向守卫：上面那条只比**序关系**，它在「所有标签都离得一样远」时也绿。
+def _rect(widget, page):
+    return widget.rect().translated(widget.mapTo(page, widget.rect().topLeft()))
 
-    这一条钉住「贴在一起」这个事实本身（实测修完是 6px），
-    免得哪天有人用「把别人的标签推得更远」来满足上一条。
+
+def test_every_home_switch_shares_a_card_with_its_own_name(win):
+    """⭐⭐ **S2**：每一颗开关和它自己的名字在同一张卡里，别人的名字不在这张卡里。"""
+    page = win.pages["basic"]
+    assert len(win.switches) == 17, f"只量到 {len(win.switches)} 颗开关 —— 分母塌了"
+    names = {sid: _rect(card.name_label, page) for sid, card in win.feature_cards.items()}
+    for sid, toggle in win.switches.items():
+        box = _rect(win.feature_cards[sid], page)
+        assert box.contains(_rect(toggle, page)), sid
+        assert box.contains(names[sid]), sid
+        strangers = [other for other, rect in names.items() if other != sid and box.intersects(rect)]
+        assert not strangers, f"{sid} 那张卡盖住了 {strangers} 的名字"
+
+
+def test_the_cards_do_not_touch(win):
+    """⭐ 反向守卫：边框是归属的全部依据，贴在一起就又分不清了。"""
+    page = win.pages["basic"]
+    rects = [(sid, _rect(card, page)) for sid, card in win.feature_cards.items()]
+    for sid, rect in rects:
+        for other, other_rect in rects:
+            if other != sid:
+                assert not rect.adjusted(-4, -4, 4, 4).intersects(other_rect), (sid, other)
+
+
+def test_the_switches_still_line_up_in_columns(win):
+    """⭐⭐ 批 59：开关跟着标签字数长短跑，外审 6/6 发报「参差错位」，而几何判据一条都看不见。
+
+    这条钉的就是「对齐」：三组卡片里，同一列的开关 x 只许有一个取值。
     """
-    import gui_widget
-    from PySide6.QtCore import Qt
-
-    width, height = VIEWPORTS[viewport]
-    win = gui_widget.MainWindow(auto_background_preload=False)
-    try:
-        win.setAttribute(Qt.WA_DontShowOnScreen, True)
-        win.resize(width, height)
-        win.show()
-        for _ in range(4):
-            app.processEvents()
-        win.show_page("basic", animated=False, force=True)
-        for _ in range(4):
-            app.processEvents()
-        page = win.pages["basic"]
-
-        rows = _home_switch_geometry(win, page)
-        assert len(rows) >= 15, f"{viewport}档只量到 {len(rows)} 颗开关 —— 分母塌了"
-        far = [(sid, own) for sid, own, _o, _t in rows if own > 80]
-        assert not far, (
-            f"{viewport}档这几颗开关离自己那几个字超过 80px：{far}\n"
-            "⭐ 实测（标签统一宽度之后）最远的是「准心」两个字的 68px，"
-            "而下一列的标签在 229px 外 —— 差 3 倍以上才叫归属清楚。")
-
-        # ⭐ 序关系还不够：own 必须**显著**小于 next，
-        #   否则「差不多远」的时候人还是要猜。
-        ratio_bad = [
-            (sid, own, other) for sid, own, other, _t in rows
-            if other is not None and own * 2 > other
-        ]
-        assert not ratio_bad, (
-            f"{viewport}档这几颗开关离自己那几个字，超过了到下一个标签距离的一半：\n  "
-            + "\n  ".join(f"{sid}：自己 {own}px / 下一个 {other}px"
-                          for sid, own, other in ratio_bad))
-    finally:
-        win._force_exit = True
-        win.close()
-        win.deleteLater()
-        app.processEvents()
-
-@pytest.mark.parametrize("viewport", sorted(VIEWPORTS))
-def test_the_switches_still_line_up_in_columns(app, viewport):
-    """⭐⭐ **改完复跑逼出来的那一刀**（批 59）。
-
-    把弹簧挪到开关后面之后，开关跟着标签字数长短跑 ——
-    外审同一批图 **6/6 发**报「开关未按列对齐，参差错位」（中）。
-    ⚠ 那是我为了修 RN-530 亲手引入的，而**几何判据一条都看不见它**
-      （序关系照样成立、间距照样小）。
-
-    ⇒ 修法：标签统一到同一个宽度。两件事同时成立 ——
-      开关仍紧跟自己的那几个字（最远 68px），而三列重新对齐。
-
-    这条判据钉的就是「对齐」这件事：同一列里的开关，x 只许有一个取值。
-    """
-    import gui_widget
-    from PySide6.QtCore import Qt
-
-    width, height = VIEWPORTS[viewport]
-    win = gui_widget.MainWindow(auto_background_preload=False)
-    try:
-        win.setAttribute(Qt.WA_DontShowOnScreen, True)
-        win.resize(width, height)
-        win.show()
-        for _ in range(4):
-            app.processEvents()
-        win.show_page("basic", animated=False, force=True)
-        for _ in range(4):
-            app.processEvents()
-        page = win.pages["basic"]
-
-        columns: dict[int, set[int]] = {}
-        for _sid, tg in win.switches.items():
-            label = getattr(tg, "_label", None)
-            if label is None or not tg.isVisibleTo(page):
-                continue
-            lx = label.mapTo(page, label.rect().topLeft()).x()
-            tx = tg.mapTo(page, tg.rect().topLeft()).x()
-            columns.setdefault(lx, set()).add(tx)
-
-        assert len(columns) >= 3, (
-            f"{viewport}档只认出 {len(columns)} 列 —— 分母塌了，这条判据在空转")
-        ragged = {lx: sorted(xs) for lx, xs in columns.items() if len(xs) > 1}
-        assert not ragged, (
-            f"{viewport}档这几列里的开关没对齐（同一列出现了多个 x）：{ragged}\n"
-            "⭐ 标签字数不一样时，开关会跟着长短跑 —— 统一标签宽度才压得住。")
-    finally:
-        win._force_exit = True
-        win.close()
-        win.deleteLater()
-        app.processEvents()
+    page = win.pages["basic"]
+    columns: dict[int, set[int]] = {}
+    for sid, toggle in win.switches.items():
+        columns.setdefault(_rect(win.feature_cards[sid], page).x(), set()).add(_rect(toggle, page).x())
+    assert len(columns) >= 2, f"只认出 {len(columns)} 列 —— 分母塌了，这条判据在空转"
+    ragged = {x: sorted(xs) for x, xs in columns.items() if len(xs) > 1}
+    assert not ragged, f"这几列里的开关没对齐：{ragged}"

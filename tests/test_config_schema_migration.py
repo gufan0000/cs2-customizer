@@ -107,6 +107,21 @@ def test_the_migration_leaves_every_other_combination_alone(raw):
     assert _migrated(raw).music_enabled is before, f"这一组不该被动：{raw}"
 
 
+def test_an_old_config_gets_the_frequent_group_turned_off():
+    """批 145（RN-733）：老配置里那个 True 几乎都是默认值，不关的话老用户的侧栏还是一屏放不下。"""
+    cfg = Config.__new__(Config)
+    cfg.config_schema_version = CONFIG_SCHEMA_VERSION
+    cfg.nav_frequent_enabled = True
+    cfg._do_save_config = lambda: None
+    cfg._run_schema_migrations({"config_schema_version": 2, "nav_frequent_enabled": True})
+    assert cfg.nav_frequent_enabled is False
+
+    # 已经是新版的配置：用户在「高级设置」开回来的，下次启动不许再关掉
+    cfg.nav_frequent_enabled = True
+    cfg._run_schema_migrations({"config_schema_version": CONFIG_SCHEMA_VERSION})
+    assert cfg.nav_frequent_enabled is True
+
+
 def test_the_migration_is_actually_registered():
     """⭐ 先证明它真的挂在表上，再让上面那几条去断言它的行为。
 

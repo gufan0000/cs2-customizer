@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""crosshair 页 B 堆三条的判据（RN-114 / RN-115 / RN-116 / RN-119，2026-08-19 用户裁定）。
+"""crosshair 页的版面和预览（RN-115 / RN-116 / RN-119，2026-08-19 用户裁定；批 146 改成舞台 + 参数栏）。
 
 三条都是**用户能看见的行为**，所以判据全部落在行为上，不落在"源码里有没有那一行"。
 
@@ -15,9 +15,7 @@ RN-115 的原始证据是几何（完整档视口 546px、样式卡从 y=630 起
 from __future__ import annotations
 
 import pytest
-from PySide6.QtWidgets import (
-    QApplication, QFrame, QLabel, QLayout, QScrollArea, QWidget,
-)
+from PySide6.QtWidgets import QApplication, QLayout, QScrollArea, QWidget
 
 from config import config
 import pages.crosshair_page as crosshair_page_module
@@ -38,39 +36,21 @@ def page(qapp, monkeypatch):
     qapp.processEvents()
 
 
-def _card_title(widget: QWidget) -> str:
-    """一张卡片的标题 = 它里面第一个 `objectName == "cardTitle"` 的标签。
-
-    ⚠ 判据**不许为了自己好写而要求产品加属性**。这些卡片本来就有标题标签，
-    读它即可；给每张卡挂一个 `_card_title` 只是把判据的需求塞进产品代码里。
-    """
-    if not isinstance(widget, QFrame) or widget.objectName() != "card":
-        return ""
-    for label in widget.findChildren(QLabel):
-        if label.objectName() == "cardTitle":
-            return label.text().strip()
-    return ""
-
-
-def _titles_in_layout_order(root: QWidget) -> list[str]:
-    """卡片标题，**按它们在版面上从上到下的顺序**。
+def _widgets_in_layout_order(root: QWidget) -> list[QWidget]:
+    """控件，**按它们在版面上的顺序**。
 
     走布局树而不是 `findChildren`：后者按对象树顺序返回，那与屏幕顺序无关
     （版面顺序恰恰是这几条判据要管的东西）。
     """
-    titles: list[str] = []
+    found: list[QWidget] = []
 
     def descend(w: QWidget):
         # ⚠ 滚动区的内容**不在布局树里**（`setWidget` 不是 `addWidget`）。
         # 第一版忘了这一层，整页扫出来是空的 —— 而"扫出来是空的"会让
         # 顺序判据全绿：空列表里当然不存在"样式排在参数后面"。
         if isinstance(w, QScrollArea) and w.widget() is not None:
-            inner = w.widget()
-            t = _card_title(inner)
-            if t:
-                titles.append(t)
-            if inner.layout() is not None:
-                walk(inner.layout())
+            found.append(w.widget())
+            descend(w.widget())
         elif w.layout() is not None:
             walk(w.layout())
 
@@ -79,64 +59,111 @@ def _titles_in_layout_order(root: QWidget) -> list[str]:
             item = layout.itemAt(i)
             w = item.widget()
             if w is not None:
-                title = _card_title(w)
-                if title:
-                    titles.append(title)
+                found.append(w)
                 descend(w)
             elif item.layout() is not None:
                 walk(item.layout())
 
     if root.layout() is not None:
         walk(root.layout())
-    return titles
+    return found
 
 
-def _order_in_scroll(page: QWidget) -> list[str]:
-    return _titles_in_layout_order(page)
-
-
-def _index(titles: list[str], name: str) -> int:
-    assert name in titles, f"版面里找不到「{name}」卡片，现有：{titles}"
-    return titles.index(name)
-
-
-# ------------------------------------------------------------ RN-115 / RN-114
+# ------------------------------------------------------------ RN-115 / 批 146
 
 
 def test_style_and_color_come_before_the_numeric_parameters(page):
     """⭐ RN-115：**先让人选准心，再让人调参数。**
 
     改之前：完整档视口 546px，而「准心样式」卡从 y=630 起 —— 这一页最核心的
-    选择在首屏之外；紧凑档视口只有 386px，连「大小与粗细」都被切在中间。
-    外审两档 10 发都指着这块，措辞是"被截断/被遮挡"，实测机制是**可滚的首屏之外**。
+    选择在首屏之外。外审两档 10 发都指着这块。
     """
-    titles = _order_in_scroll(page)
-    assert _index(titles, "准心样式") < _index(titles, "大小与粗细"), (
-        f"「准心样式」又排到参数后面去了：{titles}")
-    assert _index(titles, "准心颜色") < _index(titles, "大小与粗细"), (
-        f"「准心颜色」又排到参数后面去了：{titles}")
+    order = _widgets_in_layout_order(page)
+    style = page.style_group.buttons()[0]
+    color = page.color_group.buttons()[0]
+    assert style in order and color in order and page.size_slider in order
+    assert order.index(style) < order.index(page.size_slider), "样式又排到参数后面去了"
+    assert order.index(color) < order.index(page.size_slider), "颜色又排到参数后面去了"
 
 
-def test_the_left_column_is_not_a_hole_under_the_preview(page):
-    """RN-114：预览卡下面那块 455×203 的空洞要被真内容填上。
+def test_the_preview_stays_put_while_the_parameters_scroll(page):
+    """批 146：这一页的结构就是这一条：调参数时预览一直在眼前。
 
-    机制：预览卡只有 239px 高，而右边那一列 570px —— 差出来的部分在完整档里
-    就是左半列一块什么都没有的方块。修法是把「动画效果」「击杀联动」挪进左列。
+    预览要是进了滚动区，矮窗口里一滚参数它就走了，那就回到了改版之前。
     """
-    preview_col = getattr(page, "preview_column", None)
-    assert preview_col is not None, "预览那一列没有留下可检查的引用（preview_column）"
-    titles = _titles_in_layout_order(preview_col)
-    assert "准心预览" in titles, titles
-    assert len(titles) >= 2, (
-        f"预览下面又空着了 —— 左列只有 {titles}，那块空洞会回来")
+    assert page.parameter_scroll.isAncestorOf(page.size_slider), "参数不在那一栏里"
+    assert page.parameter_scroll.isAncestorOf(page.draw_button), "绘制准心不在那一栏里"
+    assert not page.parameter_scroll.isAncestorOf(page.preview_frame)
+    node = page.preview_frame.parentWidget()
+    while node is not None and node is not page:
+        assert not isinstance(node, QScrollArea), "预览进了滚动区：参数一滚它就不在眼前了"
+        node = node.parentWidget()
 
 
-def test_every_card_still_present(page):
-    """空转守卫：上面两条只管顺序，删掉一张卡它们照样绿。"""
-    titles = _order_in_scroll(page)
-    for name in ("准心预览", "大小与粗细", "准心样式", "准心颜色",
-                 "动画效果", "击杀联动", "自定义准心"):
-        assert name in titles, f"「{name}」卡片不见了：{titles}"
+def test_every_control_still_present(page):
+    """空转守卫：上面两条只管位置，删掉一个控件它们照样绿。"""
+    panel = page.parameter_scroll.widget()
+    for attr in ("size_slider", "thickness_slider", "gap_slider", "outline_slider", "alpha_slider",
+                 "dot_checkbox", "custom_color_btn", "animation_combo", "kill_effect_combo",
+                 "sharecode_edit", "draw_button", "action_bar"):
+        assert panel.isAncestorOf(getattr(page, attr)), f"「{attr}」不在参数栏里"
+    assert len(page.style_group.buttons()) == 5
+    assert len(page.color_group.buttons()) == 6
+
+
+def test_the_scene_switch_really_changes_what_is_behind_the_crosshair(page, qapp):
+    """亮、暗、烟雾三个底是拿来看准心清不清楚的：换了要真的换。"""
+    from PySide6.QtCore import Qt
+
+    page.setAttribute(Qt.WA_DontShowOnScreen, True)
+    page.resize(1040, 700)
+    page.show()
+    qapp.processEvents()
+    assert len(page.scene_group.buttons()) == 3
+    seen = set()
+    for button in page.scene_group.buttons():
+        button.click()
+        qapp.processEvents()
+        image = page.preview_frame.grab().toImage()
+        seen.add(image.pixelColor(image.width() // 2, image.height() // 3).rgb())
+    assert len(seen) == 3, "三个底色画出来有一样的：切换没有生效"
+    page.hide()
+
+
+def test_scene_is_not_config(page, monkeypatch):
+    """换底色只是看一眼，不写配置：它不影响游戏里的准心。"""
+    saved = []
+    monkeypatch.setattr(config, "save_config", lambda: saved.append(1), raising=False)
+    for button in page.scene_group.buttons():
+        button.click()
+    assert not saved, "换预览底色触发了写配置"
+
+
+def test_segments_and_swatches_are_clickable_everywhere(page, qapp):
+    """分段按钮和色块整块都能点。色块没有文字：没有样式表（极简主题）时默认的点击区只有一个小圈。"""
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtTest import QTest
+
+    from theme_manager import get_theme_manager
+
+    previous = qapp.styleSheet()
+    try:
+        page.setAttribute(Qt.WA_DontShowOnScreen, True)
+        page.resize(1040, 700)
+        page.show()
+        qapp.processEvents()
+        swatch = page.color_group.buttons()[-1]
+        QTest.mouseClick(swatch, Qt.LeftButton, Qt.NoModifier, QPoint(2, 2))
+        assert swatch.isChecked(), "点色块的边上没反应"
+        # ⚠ 分段按钮的内边距是样式表给的：不装上量不到
+        qapp.setStyleSheet(get_theme_manager().themes["dark"].generate_stylesheet())
+        qapp.processEvents()
+        corner = page.style_group.buttons()[-1]
+        QTest.mouseClick(corner, Qt.LeftButton, Qt.NoModifier, QPoint(1, 1))
+        assert corner.isChecked(), "点分段按钮的边上没反应"
+    finally:
+        page.hide()
+        qapp.setStyleSheet(previous)
 
 
 # ------------------------------------------------------------------- RN-116
@@ -216,15 +243,14 @@ def test_leaving_the_page_stops_the_burst(page, qapp):
 
 
 def test_import_says_what_it_actually_accepts(page):
-    """RN-119：导入入口必须说明**只认本软件导出的 json**。
+    """RN-119：导入入口必须说明**只认本软件导出的文件**。
 
     玩家手里的准心几乎都是 CS2 官方分享码（`CSGO-xxxxx-…`），
-    而导入走 `validate_crosshair_import`，只认本软件的 json。
-    不写清楚 = 点了才发现不支持。
+    而导入走 `validate_crosshair_import`，只认本软件的文件。
+    不写清楚 = 点了才发现不支持。⭐ 说明挂在那颗按钮上：困惑就发生在那儿（RN-410）。
     """
-    hint = getattr(page, "custom_hint_label", None)
-    assert hint is not None, "自定义准心卡片里没有可检查的说明标签"
-    text = hint.text()
+    text = page.action_bar.extra_btn.toolTip()
+    assert page.action_bar.extra_btn.text() == "导入准心"
     assert "json" in text.lower(), f"没说清收什么格式：{text!r}"
     assert "分享" in text or "CSGO-" in text, (
         f"没提 CS2 分享码这件事 —— 那正是玩家会来试的东西：{text!r}")
@@ -241,7 +267,7 @@ def test_the_share_code_row_does_what_the_hint_says(page, monkeypatch):
                 "crosshair_gap", "crosshair_size", "crosshair_outline", "crosshair_dot", "crosshair_color"):
         monkeypatch.setattr(config, key, getattr(config, key), raising=False)
     monkeypatch.setattr(page, "_update_crosshair_system", lambda *a, **k: None)
-    assert "分享码" in page.custom_hint_label.text()
+    assert "分享码" in page.action_bar.extra_btn.toolTip()
 
     page.sharecode_edit.setText("CSGO-hLbCn-69VT6-Bok83-9MOqW-SWzwQ")   # 静态十字 #32FA32 gap4 len8 粗2 @1080
     monkeypatch.setattr(page, "_screen_height_px", lambda: 1080)

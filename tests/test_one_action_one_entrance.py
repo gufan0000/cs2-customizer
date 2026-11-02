@@ -90,9 +90,7 @@ _IS_FULL_BUILD = (REPO / "build_tools" / "oss_sync").exists()
 #:   它们改由下面 `test_the_four_renovated_pages_have_exactly_one_entrance` 钉死。
 BAR_CARD_DUPLICATE_ACTIONS = {
     "advanced": ("_browse_for_csgo_dir",),
-    "flash": ("_open_flash_audio_folder", "_open_flash_images_folder",
-              "_preview_flash", "_refresh_audio_styles", "_refresh_styles",
-              "_reset_settings"),
+    # ⭐ `flash` 批 150 清零：卡里那几颗撤了，动作归底栏。
     "kill_icon": ("_on_primary_clicked", "_open_workshop"),
     # ⭐ `preset_center` 2026-09-01 批 38 清零 ⇒ 移到下面 `RENOVATED_PAGES`。
     #   撤的是**底栏**那颗（RN-281：它在默认状态下写回 57 个键、0 个会变），
@@ -423,57 +421,6 @@ def test_no_visible_button_text_appears_both_in_a_card_and_in_the_bar(four_pages
         "\n⭐ 外审改前 16 发全部逐字报出这一对，理由一律是「无法判断是不是同一件事」。")
 
 
-def test_the_card_that_lost_its_button_says_where_the_action_went():
-    """⭐⭐⭐ 撤掉一颗按钮，**它留下的那行字会接管它的位置和读法**。
-
-    改前 4 发**没有一发**提过 `viewmodel` 那行 CFG 状态文字；
-    撤掉卡内那颗「保存到CFG」之后，同题同图 **3/3** 说
-    「分不清左边那个是可点击的同步按钮还是状态展示」，
-    一发逐字写「左侧的更像状态展示或**已置灰的按钮**」。
-
-    原因不在那行字本身（它一个字都没改），而在它的邻居没了 ——
-    它成了那张卡最下面、最像动作的东西，而那正是按钮刚才待的位置。
-    ⭐ **一个控件怎么被读，由它的邻居决定。**
-
-    ⇒ 两条要求：① 那行字是**整句**，不是短动词短语；
-    ② 未保存那一支必须**指出动作去哪儿了**，且点名的按钮真的存在（RN-167 族）。
-    """
-    from PySide6.QtWidgets import QAbstractButton
-
-    src = (REPO / "pages" / "viewmodel_page.py").read_text(encoding="utf-8")
-    tree = ast.parse(src)
-    fn = next((n for n in ast.walk(tree)
-               if isinstance(n, ast.FunctionDef) and n.name == "_mark_unsaved"), None)
-    assert fn is not None, "viewmodel_page 里找不到 `_mark_unsaved` —— 这条判据瞎了"
-    texts = [n.value for n in ast.walk(fn)
-             if isinstance(n, ast.Constant) and isinstance(n.value, str) and len(n.value) > 6]
-    assert texts, "`_mark_unsaved` 里已经没有文案了 —— 这条判据在空转"
-    msg = max(texts, key=len)
-    assert msg.endswith("。"), (
-        f"未保存时那行字是「{msg}」—— 它得是一句话。"
-        "短动词短语 + 一个符号，在按钮刚被撤走的位置上会被读成按钮。")
-    assert "保存到CFG" in msg, (
-        f"未保存时那行字「{msg}」没说动作去哪儿了。"
-        "撤掉入口的那张卡，有义务说清楚入口搬到了哪里（同 RN-131）。")
-
-    # RN-167 族：点名的控件必须真的存在。
-    page_ids = ["viewmodel"]
-    assert page_ids  # 只是让下面这段的意图显式
-    import _audit_neutralize as neutral
-    from config import config
-    neutral.apply(config)
-    import pages.viewmodel_page as vm
-    page = vm.ViewmodelPage()
-    try:
-        labels = {b.text().strip() for b in page.findChildren(QAbstractButton)}
-        labels.add(page.action_bar.primary_btn.text().strip())
-        assert "保存到CFG" in labels, (
-            "那行字点名了「保存到CFG」，而这一页现在没有这颗按钮 —— "
-            "文案点名的控件必须存在（RN-167 / RN-401）。")
-    finally:
-        page.deleteLater()
-
-
 def test_the_dirty_flag_is_not_read_back_out_of_a_label():
     """⭐⭐⭐ 一句文案同时是这一页的状态真源时，**任何一次文字润色都是一次行为变更**。
 
@@ -482,7 +429,7 @@ def test_the_dirty_flag_is_not_read_back_out_of_a_label():
         cfg_text = self._cfg_status_label.text().strip()
         is_dirty = ("未保存" in cfg_text) or ("已修改" in cfg_text)
 
-    底栏那句回执、三张卡的摘要、五颗状态芯片，全都读它。
+    底栏那句回执、三张卡的摘要、五颗状态芯片，全都读它（那个标签批 150 撤了，话说在底栏上）。
     于是批 31 只是把那句话改得更像一句话，**整页的脏/净判断当场反了**
     —— 新句子里既没有「未保存」也没有「已修改」。
 
@@ -499,14 +446,14 @@ def test_the_dirty_flag_is_not_read_back_out_of_a_label():
               "pages/viewmodel_page.py 里的 .text() 调用")
     offenders = []
     for node in ast.walk(tree):
-        # `self._cfg_status_label.text()` —— 只要还有人读它，就有可能拿它当状态
+        # `action_bar.message_label.text()` —— 只要还有人读它，就有可能拿它当状态
         if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
                 and node.func.attr == "text"
                 and isinstance(node.func.value, ast.Attribute)
-                and node.func.value.attr == "_cfg_status_label"):
+                and node.func.value.attr == "message_label"):
             offenders.append(node.lineno)
     assert not offenders, (
-        f"第 {offenders} 行又在读 `_cfg_status_label.text()` —— "
+        f"第 {offenders} 行又在读 `message_label.text()` —— "
         "那是**画在屏幕上的东西**，不是状态。脏标记的真源是 `_cfg_dirty`。"
         "\n⭐ 一句文案同时是状态真源时，改一个字就是改一次行为。")
 

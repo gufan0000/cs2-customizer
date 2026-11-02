@@ -107,13 +107,14 @@ class FlowLayout(QLayout):
 def make_flow_container(widget_cls=None, **kwargs):
     """建一个装着 FlowLayout 的容器 QWidget，返回 (容器, 布局)。
 
-    容器的垂直策略设为 Minimum：让它按 heightForWidth 撑到需要的行数，
-    而不是被父布局拉伸或压扁。
+    行数靠 heightForWidth，父布局和滚动区都认它。
+    ⚠ 垂直策略不能用 Minimum：那个策略让最小高度等于 sizeHint，而 sizeHint 的高度是
+    「一个一行」算出来的。七个一行放得下的勾选框，页面尾巴会多留 156 px 空白（批 150）。
     """
     from PySide6.QtWidgets import QWidget
 
     container = QWidget() if widget_cls is None else widget_cls()
     layout = FlowLayout(container, **kwargs)
     container.setLayout(layout)
-    container.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
+    container.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
     return container, layout

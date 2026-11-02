@@ -98,9 +98,10 @@ main_window = _shared_main_window
 
 CHIP = "audioStatusChip"
 
-#: 分母下限。实测全站 **27 页 / 122 颗**（而登记册那一格写的是「20+ 页，
+#: 分母下限。批 96 实测全站 **27 页 / 122 颗**（而登记册那一格写的是「20+ 页，
 #: 旧账实证 10 页」）。⭐ 认出一族是免费的，数清有几个成员不是 —— 又一次。
-MIN_CHIPS = 100
+#: 批 145（RN-734）起常态只显示问题，`live_chips` 给每一条状态喂两颗再数。
+MIN_CHIPS = 40
 MIN_PAGES = 20
 
 #: 标本尺寸。钉死它，缺字体就影响不到形状。
@@ -127,8 +128,7 @@ def _hexed(rgb) -> str:
     return "#%02x%02x%02x" % tuple(rgb)
 
 
-def _render_specimen(qapp, kind: str, level: str | None = None,
-                     master_off: bool = False):
+def _render_specimen(qapp, kind: str, level: str | None = None):
     """在一张真卡片上放一颗尺寸钉死的控件，抓它的像素。
 
     ⚠ 宿主必须是 `QFrame#card` —— 它有实底，抓出来才是不透明的；
@@ -138,12 +138,6 @@ def _render_specimen(qapp, kind: str, level: str | None = None,
 
     host = QFrame()
     host.setObjectName("card")
-    if master_off:
-        # ⚠ 批 16 那条 `QFrame#card[masterOffHost="true"] QLabel#audioStatusChip`
-        #   **特异度比 level 那几条都高**，它一度会把闭合轮廓整个加回来。
-        # ⭐ 破坏验证逮到的空转：标本没有这个祖先属性，那条规则就够不着 ——
-        #   **一条只在某个祖先属性下才生效的规则，需要一个带那个祖先的标本。**
-        host.setProperty("masterOffHost", "true")
     layout = QHBoxLayout(host)
     layout.setContentsMargins(24, 24, 24, 24)
     widget = QLabel("A") if kind == CHIP else QPushButton("A")
@@ -237,8 +231,6 @@ def specimens(qapp):
         for level in (None, "info", "warning", "danger"):
             key = f"chip:{level or 'base'}"
             out[key] = _render_specimen(qapp, CHIP, level)
-        out["chip:masterOff"] = _render_specimen(qapp, CHIP, "warning",
-                                                 master_off=True)
         out["secondaryButton"] = _render_specimen(qapp, "secondaryButton")
         out["actionButton"] = _render_specimen(qapp, "actionButton")
     finally:
@@ -261,8 +253,7 @@ def test_the_specimen_renderer_actually_draws_something(specimens):
         f"实测 {specimens['secondaryButton']['bottom_span']:.2f}")
 
 
-@pytest.mark.parametrize("level", [None, "info", "warning", "danger",
-                                   "masterOff"])
+@pytest.mark.parametrize("level", [None, "info", "warning", "danger"])
 def test_a_status_chip_is_not_drawn_as_a_closed_box(specimens, level):
     """⭐⭐ 主刀：不可点的东西不许长按钮的形状 —— **不许是闭合的框**。
 
@@ -272,8 +263,7 @@ def test_a_status_chip_is_not_drawn_as_a_closed_box(specimens, level):
     ⭐ **一条规则有几个特化分支，就要判几次** —— 改了基础忘了特化，
       屏幕上剩下的那几颗照样在冒充按钮。
     """
-    shape = specimens[("chip:masterOff" if level == "masterOff"
-                       else f"chip:{level or 'base'}")]
+    shape = specimens[f"chip:{level or 'base'}"]
     assert shape["bottom_span"] < CLOSED_BOX_SPAN, (
         f"level={level!r} 的状态胶囊被画成了闭合的框："
         f"最底下那行 ink 横跨了 {shape['bottom_span']:.0%} 的宽度"
@@ -294,8 +284,7 @@ def test_a_real_button_is_still_drawn_as_a_closed_box(specimens):
             "修胶囊别把按钮一起修了")
 
 
-@pytest.mark.parametrize("level", [None, "info", "warning", "danger",
-                                   "masterOff"])
+@pytest.mark.parametrize("level", [None, "info", "warning", "danger"])
 def test_the_chip_has_no_left_bar_either(specimens, level):
     """⚖ RN-643（批 96，用户 2026-09-15 在场改判）：胶囊改成**纯文字**（RN-103 那轮的候选 C）。
 
@@ -305,8 +294,7 @@ def test_the_chip_has_no_left_bar_either(specimens, level):
     ⇒ 现在守的是：左边**不许再画色条**（`left_rows` 落回文字本身的水平），
     「一排状态会糊成一句话」的风险改由右侧 14px 间距 + 等级字色承担。
     """
-    shape = specimens[("chip:masterOff" if level == "masterOff"
-                       else f"chip:{level or 'base'}")]
+    shape = specimens[f"chip:{level or 'base'}"]
     assert shape["left_rows"] < LEFT_BAR_ROWS, (
         f"level={level!r} 的胶囊左边又画上了色条"
         f"（{shape['left_rows']:.0%} 的行左缘有 ink）—— RN-643 改判为纯文字")
@@ -316,7 +304,12 @@ def test_the_chip_has_no_left_bar_either(specimens, level):
 
 @pytest.fixture(scope="module")
 def live_chips(main_window, qapp):
-    """全站还剩多少颗胶囊、分布在几页。⭐ **数个数不需要字体**，所以这条能跑。"""
+    """全站有多少颗胶囊、分布在几页。⭐ **数个数不需要字体**，所以这条能跑。
+
+    屏幕上剩几颗取决于这台机器有什么问题，不够当分母 ⇒ 每一条状态喂两颗问题，数完放回去。
+    """
+    from pages.audio_status_badge import AudioStatusBadgeBar, render_badges
+
     pages, total = set(), 0
     for page_id in list(main_window._page_names.keys()):
         try:
@@ -328,16 +321,23 @@ def live_chips(main_window, qapp):
         page = main_window.pages.get(page_id)
         if page is None:
             continue
+        bars = page.findChildren(AudioStatusBadgeBar)
+        saved = [bar.badges() for bar in bars]
+        for bar in bars:
+            render_badges(bar, [("warn", "素材 · 有空目录"), ("danger", "资源 · 异常 1")])
+        qapp.processEvents()
         chips = [w for w in page.findChildren(QLabel)
                  if w.objectName() == CHIP and w.isVisibleTo(page)
                  and (w.text() or "").strip()]
+        for bar, badges in zip(bars, saved):
+            render_badges(bar, badges)
         if chips:
             pages.add(page_id)
             total += len(chips)
     return pages, total
 
 
-def test_no_status_chip_is_allowed_to_wrap(main_window, qapp):
+def test_no_status_chip_is_allowed_to_wrap(main_window, qapp, live_chips):
     """状态胶囊按设计就是**一行**，不许有折行的可能（RN-121 的又一次现身）。
 
     ⚠ `ui_style_applier.fix_text_display()` 给**每一个** QLabel 无条件
@@ -380,7 +380,7 @@ def test_no_status_chip_is_allowed_to_wrap(main_window, qapp):
 
 
 def test_the_specimen_is_representative_of_the_whole_site(live_chips):
-    """⭐ 标本只有一颗，所以必须证明**全站那 122 颗走的是同一条 QSS 规则**。
+    """⭐ 标本只有一颗，所以必须证明**全站每一颗走的是同一条 QSS 规则**。
 
     量的是「有多少颗控件叫 `audioStatusChip`、分布在几页」——
     这一条不依赖字体，所以在 offscreen 进程里照样成立。

@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import atexit
 import math
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -14,6 +16,7 @@ import tempfile
 def prepare_environment() -> Path:
     """Run before importing product modules; never migrate a user's profile."""
     root = Path(tempfile.mkdtemp(prefix="cs2customizer_benchmark_"))
+    atexit.register(shutil.rmtree, root, ignore_errors=True)
     for name in ("config", "logs", "local", "roaming", "game/game/csgo/cfg"):
         (root / name).mkdir(parents=True, exist_ok=True)
     os.environ.update({
@@ -27,6 +30,7 @@ def prepare_environment() -> Path:
         "QT_QPA_PLATFORM": "offscreen",
         "SDL_AUDIODRIVER": "dummy",
         "SDL_VIDEODRIVER": "dummy",
+        "CS2C_AUDIT_SANDBOX_DIR": str(root / "game"),
     })
     (root / "config/config.json").write_text(json.dumps({
         "csgo_dir": str(root / "game"), "onboarding_completed": True,

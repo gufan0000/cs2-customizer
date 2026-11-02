@@ -103,7 +103,7 @@ def test_the_event_rules_come_before_the_number_keys(page):
 def test_every_card_is_still_there(page):
     """空转守卫：上面那条只管顺序，删掉一张卡它照样绿。"""
     titles = _titles_in_layout_order(page)
-    for name in ("预设工作台", "数字键颜色映射", "事件响应"):
+    for name in ("配色预设", "数字键颜色映射", "事件响应"):
         assert name in titles, f"「{name}」卡片不见了：{titles}"
 
 

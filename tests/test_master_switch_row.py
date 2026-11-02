@@ -314,36 +314,23 @@ def test_a_missing_home_switch_reports_instead_of_pretending(main_window):
 @pytest.mark.parametrize("page_id", sorted(EXPECTED_KEYS))
 def test_every_page_that_shows_master_state_offers_the_switch(
         main_window, qapp, page_id):
-    """七页都要有，且**开关就在状态卡里**。
+    """每一页都要有，且**就在页头、紧挨标题**。
 
-    "就在状态卡里"是要害 —— 摆到页尾就等于没摆
+    "紧挨标题"是要害 —— 摆到页尾就等于没摆
     （网站那轮实测：解释性文字放在困惑发生的位置之后 = 没放）。
+    批 145（RN-734）：状态卡撤了，开关搬进页头。
+    ⚠ 第一版 6 页找不到页头（主布局还没装上页面），开关建了、屏幕上没有 ⇒ 还要量它真在页面里。
     """
+    from widgets.page_header import PageHeader
+
     page, row = _page_with_row(main_window, qapp, page_id)
-
-    #: ⭐⭐ RN-538（批 58）：原来这里查的是**属性名** `status_card`。
-    #:   `fun_afterlife` 进分母的第一天它就红了 —— 而实测那颗行**就在卡里、在第一屏**
-    #:   （`SettingsCard#card`，y=147，对照页 118）。⇒ 判据认的是词，不是事实（同 RN-524）。
-    #:   改成量**它要的那件事**：行在某张卡里，且那张卡在第一屏。
-    #:   ⚠ 这不是放宽：声明了 `status_card` 的页仍然要求行落在**那一张**里。
-    declared = getattr(page, "status_card", None)
-    if declared is not None:
-        assert declared.isAncestorOf(row), (
-            f"{page_id} 页声明了 status_card，而总开关行不在它里面 —— "
-            "状态在一处、动作在另一处，等于没修")
-
-    card = None
-    node = row.parentWidget()
-    while node is not None and node is not page:
-        if node.objectName() == "card" or type(node).__name__.endswith("Card"):
-            card = node
-            break
-        node = node.parentWidget()
-    assert card is not None, (
-        f"{page_id} 页的总开关行不在任何一张卡里 —— 它是散落在页面上的一行")
+    header = row.parentWidget()
+    assert isinstance(header, PageHeader), (
+        f"{page_id} 页的总开关不在页头里 —— 它是散落在页面上的一行")
+    assert page.isAncestorOf(header), f"{page_id} 页的总开关建了，但不在这一页上"
 
     y = row.mapTo(page, row.rect().topLeft()).y()
-    assert y <= 400, (
+    assert y <= 60, (
         f"{page_id} 页的总开关行在 y={y} —— 摆到页尾就等于没摆"
         "（网站那轮实测：解释性内容放在困惑发生的位置之后 = 没放）")
 
@@ -416,22 +403,15 @@ def test_the_badge_follows_the_switch_it_describes(main_window, qapp):
     ⚠ 这条专治一个很容易写出来的优化：`refresh()` 里"值没变就早退"。
     用户拨的就是这一颗时，开关早就是新值了 —— 一早退，页面就永远收不到通知。
     """
-    from PySide6.QtWidgets import QLabel
-
     page, row = _page_with_row(main_window, qapp, "kill_icon")
     # ⚠ 批 117 回退验证逮到：拨开关 ⇒ 主窗让播放器重装素材 ⇒ `assets_ready` ⇒ 页面也会刷新徽章。
     #   这条旁路赶在断言前回来（装载变快一点就会），就把「开关没通知页面」盖住了 —— 结果取决于时序。
     #   ⇒ 断开旁路，只量「开关 → 页面」这一条（RN-689 同族）。
     page.set_kill_icon_player(None)
 
-    def badge_texts():
-        chip = getattr(page, "status_badge_label", None)
-        assert chip is not None
-        return [lab.text() for lab in chip.findChildren(QLabel)]
-
     row.set_checked_by_user(not row.is_checked())
     qapp.processEvents()
-    after = " / ".join(badge_texts())
+    after = " / ".join(page.status_badge_label.badge_texts())
     wanted = "已开启" if row.is_checked() else "未开启"
     assert f"显示 · {wanted}" in after, (
         f"开关现在是 {row.is_checked()}，徽章却写着：{after}\n"
@@ -480,7 +460,6 @@ def test_the_row_spells_out_that_it_is_the_same_switch_as_home(main_window, qapp
     page, row = _page_with_row(main_window, qapp, "crosshair")
     tip = row.toolTip()
     assert link.MASTER_SWITCH_PAGE_NAME in tip, f"tooltip 没说它和哪一页同源：{tip!r}"
-    assert link.MASTER_SWITCH_CARD_NAME in tip, f"tooltip 没说在哪张卡：{tip!r}"
 
 
 
@@ -570,7 +549,8 @@ def test_no_page_with_its_own_switch_still_sends_the_user_away():
             #   只有"整个字符串就等于某个页签名"才算标签。
             if node.value.strip() in own_tabs:
                 continue
-            if link.MASTER_SWITCH_PAGE_NAME in node.value:
+            # 批 148 之前这一页叫「基础设置」：旧名字照样是指路
+            if link.MASTER_SWITCH_PAGE_NAME in node.value or "基础设置" in node.value:
                 offenders.append((path.name, node.lineno, node.value[:50]))
     assert not offenders, (
         f"这些页有自己的总开关了，文案却还在把用户支去「{link.MASTER_SWITCH_PAGE_NAME}」：\n"
@@ -655,12 +635,13 @@ def test_the_status_chip_does_not_repeat_the_word_next_to_it():
         f"而同一行右端就是那颗{link.ROW_LABEL_TEXT}：{offenders}")
 
 
-def test_the_page_name_in_the_copy_is_not_a_hand_written_literal():
-    """各页不许自己抄一份「功能开关」。
+def test_no_page_names_the_card_that_is_gone():
+    """各页不许再提「功能开关」这张卡：批 148 起总览没有这张卡了，开关都在各自的功能卡上。
 
     ⭐ 文案里点名的目标名要跟真正的目标走。抄成字面量之后，
     那一页改名的当天就有好几处对不上，而且**一处都不会报错**。
     """
+    gone_card = "功能开关"
     offenders = []
     for name in must_scan(("crosshair_page.py", "screen_effects_page.py",
                            "reload_sound_page.py", "kill_icon_page.py",
@@ -671,11 +652,9 @@ def test_the_page_name_in_the_copy_is_not_a_hand_written_literal():
         for node in ast.walk(tree):
             if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
                 continue
-            if link.MASTER_SWITCH_CARD_NAME in node.value:
+            if gone_card in node.value:
                 offenders.append((name, node.lineno, node.value))
-    assert not offenders, (
-        f"这几页自己抄了「{link.MASTER_SWITCH_CARD_NAME}」这个卡片名：{offenders}\n"
-        "统一从 widgets/master_switch_link.py 取。")
+    assert not offenders, f"这几页还在提「{gone_card}」这张已经没有了的卡：{offenders}"
 
 
 # ==================================================== 覆盖面：谁**本该**有就地开关

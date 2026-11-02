@@ -117,8 +117,8 @@ def test_no_internal_token_is_left_on_screen(page):
     page.action_combo.setCurrentIndex(page.action_combo.findData("play"))
     page._refresh_events()
     qtexts = [page.action_bar.message_label.text(),
-              page.summary_label.text(),
-              page.summary_label.toolTip()]
+              page.status_card.toolTip(),
+              page.status_card.toolTip()]
     for row in range(page.table.rowCount()):
         for col in range(page.table.columnCount()):
             item = page.table.item(row, col)

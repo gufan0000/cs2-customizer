@@ -104,6 +104,25 @@ def _receiver(func):
     return getattr(value, "id", None) or getattr(value, "attr", None)
 
 
+def _literal_parts(node):
+    """f 串的静态片段也会上屏；不把插值里的日志/内部常量算成正文。"""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        yield node.lineno, node.value
+    elif isinstance(node, ast.JoinedStr):
+        for part in node.values:
+            if isinstance(part, ast.Constant) and isinstance(part.value, str):
+                yield part.lineno, part.value
+
+
+def test_screen_copy_recognizes_static_parts_of_f_strings():
+    expr = ast.parse('f"保持列表式效率 {count} 首屏判断会更直接"', mode="eval").body
+    parts = list(_literal_parts(expr))
+    assert [text for _line, text in parts] == ["保持列表式效率 ", " 首屏判断会更直接"]
+    assert all(any(word in text for word in LAYOUT_JARGON) for _line, text in parts)
+    # 插值表达式里的字符串不是必然会显示的文本。
+    assert list(_literal_parts(ast.parse('f"{lookup(\'internal_key\')}"', mode="eval").body)) == []
+
+
 def _iter_page_copy():
     """产出 (文件名, 行号, 文案)。
 
@@ -128,22 +147,20 @@ def _iter_page_copy():
                     if where is not None:
                         taken = node.args[where]
                 for arg in taken:
-                    if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
-                        yield path.name, arg.lineno, arg.value
+                    for lineno, text in _literal_parts(arg):
+                        yield path.name, lineno, text
                 # description="..." 这类关键字实参
                 for kw in node.keywords:
-                    if (kw.arg in COPY_KEYWORDS
-                            and isinstance(kw.value, ast.Constant)
-                            and isinstance(kw.value.value, str)):
-                        yield path.name, kw.value.lineno, kw.value.value
+                    if kw.arg in COPY_KEYWORDS:
+                        for lineno, text in _literal_parts(kw.value):
+                            yield path.name, lineno, text
             # PAGE_LEAD = "..." 这类模块/类级常量
             elif isinstance(node, ast.Assign):
                 name = getattr(node.targets[0], "id", "") or getattr(
                     node.targets[0], "attr", "")
-                if (name in COPY_KEYWORDS
-                        and isinstance(node.value, ast.Constant)
-                        and isinstance(node.value.value, str)):
-                    yield path.name, node.value.lineno, node.value.value
+                if name in COPY_KEYWORDS:
+                    for lineno, text in _literal_parts(node.value):
+                        yield path.name, lineno, text
 
 
 def test_page_copy_has_no_layout_jargon():
@@ -241,8 +258,8 @@ def test_the_denominator_does_not_fall_behind():
         1 for _f, _l, text in _iter_page_copy() if HAN.search(text))
     total_han = _han_literals_in_pages()
     ratio = seen_han / total_han
-    assert seen_han >= 800, (
-        f"屏幕承载物只认出 {seen_han} 条中文文案（批 51 实测 833）——"
+    assert seen_han >= 650, (
+        f"屏幕承载物只认出 {seen_han} 条中文文案（批 51 实测 833，批 150 减字之后 708）——"
         "识别器多半瞎了，而不是文案真的少了这么多。")
     assert ratio >= 0.20, (
         f"分母覆盖率掉到 {ratio:.1%}（批 51 实测 23.2%，下限 20%）。\n"

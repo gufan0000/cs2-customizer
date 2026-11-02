@@ -59,13 +59,19 @@ def _top(query):
     ("准心回正", "viewmodel"),        # 改造前：第一位是基础设置页那个孤零零的「准心」
     ("准星回正", "viewmodel"),        # 同上 + 还要过一层同义词
     ("循环切换", "viewmodel"),
-    ("同步cfg", "viewmodel"),         # 中英混排，且顺序和界面上是反的
+    ("同步cfg", "viewmodel"),         # 界面上不再有这个词（批 150），靠页级关键词
 ])
 def test_fragment_cover_recalls_composed_queries(query, page_id):
     assert page_id in _pages(query), (
         f"「{query}」召回不到 {page_id}，前 3 条是 "
         f"{[(r['page_id'], r['text']) for r in search_detailed(query)[:3]]}"
     )
+
+
+def test_fragment_cover_works_at_the_item_level():
+    """页级也有片段覆盖：只看页面的话，项级这一档坏了也看不出来（批 150 断点逮到）。"""
+    rows = [(r["page_id"], r["text"]) for r in search_detailed("准心回正") if r["kind"] == "item"]
+    assert ("viewmodel", "启用准心快速回正") in rows, rows
 
 
 def test_fragment_cover_demands_most_of_the_query():
@@ -196,9 +202,7 @@ def test_variant_count_is_bounded():
 
 
 @pytest.mark.parametrize("title,page_id", [
-    ("CFG 同步", "viewmodel"),
     ("准心快速回正", "viewmodel"),
-    ("准心样式", "crosshair"),
 ])
 def test_card_titles_are_indexed(title, page_id):
     """卡片标题**要**能搜到。
@@ -220,9 +224,12 @@ def test_card_context_coverage_did_not_regress():
     """
     with_card = sum(1 for i in ITEMS if i["card"])
     assert with_card >= 200, f"只有 {with_card}/{len(ITEMS)} 条带卡片上下文"
-    crosshair = [i for i in ITEMS if i["page"] == "crosshair"]
-    assert sum(1 for i in crosshair if i["card"]) >= len(crosshair) // 2, (
-        "准心设置页（手写 _create_card）的卡片上下文又丢了")
+
+
+@pytest.mark.parametrize("title", ["准心样式", "准心颜色", "准心大小", "动画效果"])
+def test_short_labels_on_the_crosshair_panel_keep_their_long_names(title):
+    """批 146：参数栏的小节名和滑块名短了（「样式」「大小」），用户搜的还是长名字。"""
+    assert "crosshair" in _pages(title), f"搜「{title}」到不了准心页"
 
 
 def test_every_page_with_cards_has_card_titles_in_the_index():

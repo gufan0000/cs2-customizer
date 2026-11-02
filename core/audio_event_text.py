@@ -88,7 +88,7 @@ TASK_TYPE_LABELS: Dict[str, str] = {
 TASK_SOURCE_LABELS: Dict[str, str] = {
     "audio_import_wizard": "导入资源（自动）",
     "audio_import_wizard_manual": "导入资源（手动触发）",
-    "basic_reload_audio": "基础设置页",
+    "basic_reload_audio": "总览页",
     "reload_audio": "重新载入音频",
     "import_refresh": "刷新导入的资源",
 }

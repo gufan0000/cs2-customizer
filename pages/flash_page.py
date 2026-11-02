@@ -6,13 +6,12 @@ Flash 闪光效果页面 - 完全参照原版CustomTkinter布局
 """
 
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QBoxLayout, QLabel, QPushButton,
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QSlider, QComboBox, QCheckBox, QScrollArea, QFrame,
-    QTabWidget, QRadioButton, QButtonGroup, QGridLayout,
+    QTabWidget, QRadioButton, QButtonGroup,
     QSizePolicy
 )
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont
 from config import config, get_app_data_dir
 from core.utils.logger import get_logger
 from widgets.drop_import_mixin import enable_pack_drop, rescan_if_imported
@@ -24,7 +23,9 @@ from widgets.flash_preview_widget import FlashPreviewWidget
 from widgets.page_header import PageHeader
 from widgets.page_action_bar import PageActionBar
 from widgets.settings_card import SettingsCard
+from widgets.settings_row import plain_row
 from widgets.overlay_requirement import make_overlay_requirement_label
+from widgets.status_strip import StatusStrip
 import os
 
 #: RN-429：闪光白屏画在游戏画面上（独立进程里的置顶分层窗口）。
@@ -32,6 +33,9 @@ DRAWS_OVER_THE_GAME = True
 
 #: RN-519：卡片说明要点名这颗按钮，而说明比按钮先建 —— 名字只留一份。
 REFRESH_STYLES_BUTTON_TEXT = "刷新样式列表"
+
+#: 页签内容的外边距：左右贴齐页签条和页面其它内容。
+TAB_MARGINS = (0, 8, 0, 8)
 
 
 class FlashPage(QWidget):
@@ -145,11 +149,6 @@ class FlashPage(QWidget):
             "orange": "橙色",
         }
         return color_map_reverse.get(getattr(config, "flash_bg_color", "white"), "白色")
-
-    def _current_transition_text(self):
-        fade_in = bool(getattr(config, "flash_fade_in_enabled", True))
-        fade_out = bool(getattr(config, "flash_fade_out_enabled", True))
-        return f"淡入{'开' if fade_in else '关'} / 淡出{'开' if fade_out else '关'}"
 
     def _current_runtime_text(self):
         status_text = str(getattr(getattr(self, "preview_status_label", None), "text", lambda: "就绪")()).strip()
@@ -297,7 +296,7 @@ class FlashPage(QWidget):
                                          "刷新音频列表"):
                 return
         elif current_tab == "效果预览":
-            self.action_bar.configure_secondary("50%预览", lambda: self._quick_preview(50), visible=True)
+            self.action_bar.configure_secondary("", None, visible=False)
             self.action_bar.configure_primary("自定义强度预览", self._preview_flash, visible=True)
             action_message = (
                 f"当前页面：{current_tab} · 预览强度 {getattr(self, 'preview_intensity_label', None).text() if hasattr(self, 'preview_intensity_label') else '75%'}"
@@ -384,7 +383,6 @@ class FlashPage(QWidget):
         opacity = int(round(float(getattr(config, "flash_max_opacity", 0.75)) * 100))
         fade_in = bool(getattr(config, "flash_fade_in_enabled", True))
         fade_out = bool(getattr(config, "flash_fade_out_enabled", True))
-        transition_text = self._current_transition_text()
         image_rotation = str(getattr(config, "flash_image_rotation", "none") or "none")
         audio_enabled = bool(getattr(config, "flash_audio_enabled", False))
         audio_rotation = str(getattr(config, "flash_audio_rotation", "none") or "none")
@@ -412,39 +410,9 @@ class FlashPage(QWidget):
         summary_text = "\n".join(detail_lines)
         render_badges(self.status_badge_label, badges, detail_tooltip=summary_text)
         self.status_card.setToolTip(summary_text)
-        if hasattr(self, "basic_overview_title_label"):
-            self.basic_overview_title_label.setText(f"{bg_color_text}背景 · {opacity}%")
-        if hasattr(self, "basic_overview_meta_label"):
-            self.basic_overview_meta_label.setText(f"{style_text} · {media_text} · {transition_text}")
-        if hasattr(self, "basic_overview_hint_label"):
-            image_text = self._current_image_style_text()
-            audio_text = self._current_audio_style_text() if audio_enabled else "关闭"
-            self.basic_overview_hint_label.setText(
-                f"图片 {image_text} · 音频 {audio_text} · 状态 {preview_text}"
-                + (f" · 运行 {runtime_text}" if runtime_shown else "")
-            )
         self._sync_action_bar()
 
 
-    @staticmethod
-    def _set_compact_heights(*controls, height=34):
-        for control in controls:
-            if control is not None:
-                control.setMinimumHeight(height)
-
-    @staticmethod
-    def _create_slider_row(label_text, slider, value_label, label_width=78):
-        row = QHBoxLayout()
-        row.setSpacing(8)
-        label = QLabel(label_text)
-        label.setMinimumWidth(label_width)
-        row.addWidget(label)
-        row.addWidget(slider, 1)
-        value_label.setMinimumWidth(52)
-        value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        row.addWidget(value_label)
-        return row
-    
     def init_ui(self):
         """初始化UI"""
         # 主布局
@@ -464,13 +432,14 @@ class FlashPage(QWidget):
             spacing=12,
         )
         self.page_lead_label = header.description_label
+        # 别的页说明都收起来了；这一页光看名字不知道开了会发生什么（批 150 外审）
+        self.page_lead_label.show()
         main_layout.addWidget(header)
         install_help_panel(header.title_row, header.body, PAGE_HELP_TEXTS["flash"])
 
-        self.status_card = QFrame()
-        self.status_card.setObjectName("card")
+        self.status_card = StatusStrip()
         status_card_layout = QVBoxLayout(self.status_card)
-        status_card_layout.setContentsMargins(14, 12, 14, 12)
+        status_card_layout.setContentsMargins(0, 0, 0, 0)
         status_card_layout.setSpacing(8)
 
         # RN-189：就地总开关。首页「功能开关」里有「自定闪光」，而站在这一页上
@@ -481,13 +450,9 @@ class FlashPage(QWidget):
 
         self.master_switch_row = make_master_switch_row(
             self, "flash_enabled", "自定闪光")
-        status_card_layout.addWidget(self.master_switch_row)
 
         status_header = QHBoxLayout()
         status_header.setSpacing(10)
-        status_title = QLabel("当前状态")
-        status_title.setObjectName("statusLabel")
-        status_header.addWidget(status_title)
         self.status_badge_label = create_badge_label()
         status_header.addWidget(self.status_badge_label, 1)
         status_header.addStretch()
@@ -523,29 +488,16 @@ class FlashPage(QWidget):
         self._create_preview_tab()    # 效果预览
 
         self.action_bar = PageActionBar(self)
-        self.action_bar.secondary_btn.setMinimumWidth(124)
-        self.action_bar.primary_btn.setMinimumWidth(148)
         main_layout.addWidget(self.action_bar, 0)
         self._sync_overview_status()
-        self._update_compact_layout()
     
     def _create_basic_tab(self):
         """创建基础设置标签页
 
-        UP-095：这个页签原本**整个没有滚动区**（本文件五个页签里，样式/图片/音频
-        三个都有）。它的最小高实测 **599px**，而 1280×800 窗口下页签可视区只有
-        458px——Qt 满足不了最小高时不会自己长出滚动条，而是**把控件压扁**，
-        实拍到的后果是卡片标题与正文字形直接重叠、不可读。
-
-        为什么会超：`basic_top_layout` 在页宽 < 1180 时按响应式规则改成竖排
-        （见 `_apply_responsive_layout`），两张卡从并排 max(159,145) 变成
-        相加 159+145+10=314；再加上预览卡的 259（`basic_preview_widget`
-        的 minimumHeight 是 180）——8+314+10+259+8 = 599。
-        **竖排本身是设计内的**，缺的是"竖排之后装不下怎么办"。
-
-        修法与同文件其它三个页签一致：套一层 `QScrollArea`。装得下时
-        `widgetResizable` 让内容跟着可视区长高，预览卡照旧填满下半屏，观感不变；
-        装不下时出滚动条，而不是把控件压扁。
+        UP-095：每个页签都套滚动区。Qt 满足不了最小高时不会自己长出滚动条，
+        而是把控件压扁，卡片标题和正文字形会直接重叠。
+        批 150：原来还有一张「当前组合」把这一页的值再念一遍；控件一行一个，创建顺序就是屏幕顺序，
+        Tab 焦点链不用再手工钉（UP-102）。
         """
         tab = QWidget()
         outer = QVBoxLayout(tab)
@@ -559,116 +511,37 @@ class FlashPage(QWidget):
 
         content = QWidget()
         layout = QVBoxLayout(content)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(10)
+        layout.setContentsMargins(*TAB_MARGINS)
+        layout.setSpacing(12)
 
-        controls_card, controls_layout = SettingsCard.make(
-            "基础参数",
-            "被闪时用什么颜色、盖得多浓、淡入淡出多快。",
-        )
-        controls_grid = QGridLayout()
-        controls_grid.setContentsMargins(0, 2, 0, 0)
-        controls_grid.setHorizontalSpacing(14)
-        controls_grid.setVerticalSpacing(10)
+        controls_card, controls_layout = SettingsCard.make("基础参数")
 
-        color_layout = QHBoxLayout()
-        color_layout.setSpacing(8)
         self.bg_color_combo = QComboBox()
         self.bg_color_combo.addItems(["白色", "黑色", "红色", "绿色", "蓝色", "黄色", "青色", "品红", "橙色"])
-        self.bg_color_combo.setMinimumWidth(132)
-        self._set_compact_heights(self.bg_color_combo)
         self.bg_color_combo.currentTextChanged.connect(self._on_bg_color_changed)
-        color_layout.addWidget(self.bg_color_combo)
         self.color_preview = QLabel()
         self.color_preview.setFixedSize(30, 30)
-        color_layout.addWidget(self.color_preview)
-        color_layout.addStretch()
-        controls_grid.addWidget(QLabel("背景颜色:"), 0, 0)
-        controls_grid.addLayout(color_layout, 0, 1)
+        controls_layout.addWidget(plain_row("背景颜色", self.bg_color_combo, self.color_preview))
 
-        opacity_layout = QHBoxLayout()
-        opacity_layout.setSpacing(8)
         self.opacity_slider = QSlider(Qt.Horizontal)
         self.opacity_slider.setRange(1, 100)
         self.opacity_slider.setValue(75)
         self.opacity_slider.valueChanged.connect(self._on_opacity_changed)
-        opacity_layout.addWidget(self.opacity_slider)
         self.opacity_label = QLabel("75%")
-        self.opacity_label.setMinimumWidth(50)
-        opacity_layout.addWidget(self.opacity_label)
-        controls_grid.addWidget(QLabel("背景不透明度:"), 1, 0)
-        controls_grid.addLayout(opacity_layout, 1, 1, 1, 3)
+        controls_layout.addWidget(plain_row("背景不透明度", self.opacity_slider, self.opacity_label))
 
-        fade_layout = QHBoxLayout()
-        fade_layout.setSpacing(8)
         self.fade_in_checkbox = QCheckBox("启用淡入")
         self.fade_in_checkbox.setChecked(True)
         self.fade_in_checkbox.toggled.connect(self._on_fade_in_toggled)
-        fade_layout.addWidget(self.fade_in_checkbox)
         self.fade_out_checkbox = QCheckBox("启用淡出")
         self.fade_out_checkbox.setChecked(True)
         self.fade_out_checkbox.toggled.connect(self._on_fade_out_toggled)
-        fade_layout.addWidget(self.fade_out_checkbox)
-        fade_layout.addStretch()
-        controls_grid.addWidget(QLabel("过渡方式:"), 0, 2)
-        controls_grid.addLayout(fade_layout, 0, 3)
-        controls_grid.setColumnStretch(1, 2)
-        controls_grid.setColumnStretch(3, 2)
+        controls_layout.addWidget(plain_row("过渡方式", self.fade_in_checkbox, self.fade_out_checkbox, width=None))
 
-        controls_layout.addLayout(controls_grid)
-
-        # UP-102: 这个网格里「过渡方式」在第 0 行第 3 列、「背景不透明度」在第 1 行，
-        # 但**创建顺序**是 颜色 → 不透明度 → 过渡 —— 而 Qt 的默认 Tab 链跟的是
-        # 创建顺序，不是网格位置。于是键盘用户按 Tab 会从「背景颜色」直接跳到
-        # 下面一行的不透明度滑块，再**跳回上一行**的两个淡入淡出复选框。
-        # 排版毫无异常，坏的只有键盘顺序，所以一直没人看见——与 R8d 在 music 页
-        # 查出的那 2 处是同一类缺陷（`UP-077` 的真缺陷部分）。
-        #
-        # ⚠ 这三行必须写在 `addLayout(controls_grid)` **之后**。写在前面无效：
-        # 那时这些控件还没有父控件，等布局被挂到卡片上时它们才被 reparent，
-        # 而 reparent 会按插入顺序**重建焦点链**，把 setTabOrder 的结果冲掉。
-        # 第一版就写在前面，判据照旧报红——这也是"判据跑红先查前提"的反面：
-        # 前提成立时，红就是真的。
-        self.setTabOrder(self.bg_color_combo, self.fade_in_checkbox)
-        self.setTabOrder(self.fade_in_checkbox, self.fade_out_checkbox)
-        self.setTabOrder(self.fade_out_checkbox, self.opacity_slider)
-
-        controls_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
-        self.basic_controls_card = controls_card
-
-        overview_card, overview_layout = SettingsCard.make(
-            "当前组合",
-            "当前这一套配置的摘要：颜色、媒体和预览状态。",
-        )
-        overview_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
-        self.basic_overview_card = overview_card
-
-        self.basic_overview_title_label = QLabel("")
-        self.basic_overview_title_label.setObjectName("statusLabel")
-        overview_layout.addWidget(self.basic_overview_title_label)
-
-        self.basic_overview_meta_label = QLabel("")
-        self.basic_overview_meta_label.setObjectName("hintLabel")
-        self.basic_overview_meta_label.setWordWrap(True)
-        overview_layout.addWidget(self.basic_overview_meta_label)
-
-        self.basic_overview_hint_label = QLabel("")
-        self.basic_overview_hint_label.setObjectName("hintLabel")
-        self.basic_overview_hint_label.setWordWrap(True)
-        overview_layout.addWidget(self.basic_overview_hint_label)
-
-        self.basic_top_layout = QBoxLayout(QBoxLayout.LeftToRight)
-        self.basic_top_layout.setSpacing(10)
-        self.basic_top_layout.addWidget(controls_card, 5, Qt.AlignTop)
-        self.basic_top_layout.addWidget(overview_card, 4, Qt.AlignTop)
-
-        layout.addLayout(self.basic_top_layout)
+        layout.addWidget(controls_card)
 
         # 实时预览卡片（v3.3 新增 — 填充下半屏空白，提供即时视觉反馈）
-        preview_card, preview_layout = SettingsCard.make(
-            "实时预览",
-            "按你当前的颜色和不透明度合成出实际观感；点一下预览区就模拟一次淡入。",
-        )
+        preview_card, preview_layout = SettingsCard.make("实时预览")
         preview_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.basic_preview_widget = FlashPreviewWidget()
         preview_layout.addWidget(self.basic_preview_widget, 1)
@@ -683,130 +556,78 @@ class FlashPage(QWidget):
         outer.addWidget(scroll)
 
         self.tab_widget.addTab(tab, "基础设置")
-    
+
     def _create_style_tab(self):
-        """创建样式设置标签页"""
+        """创建样式设置标签页：选样式，下面跟着这个样式自己的参数。"""
         tab = QWidget()
-        layout = QVBoxLayout(tab)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(12)
-        
-        # 样式选择
-        style_layout = QHBoxLayout()
-        style_layout.addWidget(QLabel("闪光样式:"))
-        
-        self.style_combo = QComboBox()
-        self.style_combo.addItems(["标准", "模糊", "彩虹", "波纹", "闪烁", "旋转", "颗粒"])
-        self.style_combo.setMinimumWidth(150)
-        self._set_compact_heights(self.style_combo)
-        self.style_combo.currentTextChanged.connect(self._on_style_changed)
-        style_layout.addWidget(self.style_combo)
-        style_layout.addStretch()
-        
-        layout.addLayout(style_layout)
-        
-        # 样式参数区域（可滚动）
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
-        
-        scroll_content = QWidget()
-        self.style_params_layout = QVBoxLayout(scroll_content)
-        self.style_params_layout.setSpacing(12)
-        
-        # 创建所有样式的参数卡片（初始隐藏）
+        scroll.setWidget(tab)
+
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(*TAB_MARGINS)
+        layout.setSpacing(12)
+
+        card, self.style_params_layout = SettingsCard.make("闪光样式")
+
+        self.style_combo = QComboBox()
+        self.style_combo.addItems(["标准", "模糊", "彩虹", "波纹", "闪烁", "旋转", "颗粒"])
+        self.style_combo.currentTextChanged.connect(self._on_style_changed)
+        self.style_params_layout.addWidget(plain_row("样式", self.style_combo))
+
+        # 创建所有样式的参数行（初始隐藏）
         self._create_style_param_cards()
-        
-        self.style_params_layout.addStretch()
-        scroll.setWidget(scroll_content)
-        layout.addWidget(scroll)
-        
+
+        layout.addWidget(card)
+        layout.addStretch()
+
         # 显示标准样式参数
         self._show_style_params("标准")
-        
-        self.tab_widget.addTab(tab, "样式设置")
-    
+
+        self.tab_widget.addTab(scroll, "样式设置")
+
     def _create_style_param_cards(self):
-        """创建所有样式参数卡片"""
-        # 模糊参数
-        self.style_param_frames["模糊"] = self._create_param_card(
-            "模糊效果参数",
-            [
-                ("模糊范围:", 0.1, 1.0, 0.3, "_blur_factor"),
-                ("模糊层数:", 3, 10, 5, "_blur_layers", True)
-            ]
-        )
-        
-        # 彩虹参数
-        self.style_param_frames["彩虹"] = self._create_param_card(
-            "彩虹效果参数",
-            [
-                ("颜色速度:", 0.5, 5.0, 2.0, "_rainbow_speed"),
-                ("颜色强度:", 0.1, 1.0, 0.3, "_rainbow_intensity")
-            ]
-        )
-        
-        # 波纹参数
-        self.style_param_frames["波纹"] = self._create_param_card(
-            "波纹效果参数",
-            [
-                ("波纹速度:", 0.5, 5.0, 2.0, "_wave_speed"),
-                ("波纹数量:", 1, 10, 3, "_wave_count", True)
-            ]
-        )
-        
-        # 闪烁参数
-        self.style_param_frames["闪烁"] = self._create_param_card(
-            "闪烁效果参数",
-            [
-                ("闪烁速度:", 1.0, 30.0, 15.0, "_flicker_speed"),
-                ("闪烁强度:", 0.1, 1.0, 0.3, "_flicker_intensity")
-            ]
-        )
-        
-        # 旋转参数
-        self.style_param_frames["旋转"] = self._create_param_card(
-            "旋转效果参数",
-            [
-                ("旋转速度:", 0.5, 5.0, 2.0, "_spiral_speed"),
-                ("射线数量:", 3, 30, 12, "_spiral_rays", True)
-            ]
-        )
-        
-        # 颗粒参数
-        self.style_param_frames["颗粒"] = self._create_param_card(
-            "颗粒效果参数",
-            [
-                ("颗粒数量:", 50, 500, 200, "_particle_count", True),
-                ("颗粒大小:", 1, 20, 4, "_particle_size", True)
-            ]
-        )
-    
-    def _create_param_card(self, title, params):
-        """创建参数卡片"""
-        card = QFrame()
-        card.setObjectName("card")
-        
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(12, 12, 12, 12)
+        """创建所有样式的参数行"""
+        self.style_param_frames["模糊"] = self._create_param_rows([
+            ("模糊范围", 0.1, 1.0, 0.3, "_blur_factor"),
+            ("模糊层数", 3, 10, 5, "_blur_layers", True),
+        ])
+        self.style_param_frames["彩虹"] = self._create_param_rows([
+            ("颜色速度", 0.5, 5.0, 2.0, "_rainbow_speed"),
+            ("颜色强度", 0.1, 1.0, 0.3, "_rainbow_intensity"),
+        ])
+        self.style_param_frames["波纹"] = self._create_param_rows([
+            ("波纹速度", 0.5, 5.0, 2.0, "_wave_speed"),
+            ("波纹数量", 1, 10, 3, "_wave_count", True),
+        ])
+        self.style_param_frames["闪烁"] = self._create_param_rows([
+            ("闪烁速度", 1.0, 30.0, 15.0, "_flicker_speed"),
+            ("闪烁强度", 0.1, 1.0, 0.3, "_flicker_intensity"),
+        ])
+        self.style_param_frames["旋转"] = self._create_param_rows([
+            ("旋转速度", 0.5, 5.0, 2.0, "_spiral_speed"),
+            ("射线数量", 3, 30, 12, "_spiral_rays", True),
+        ])
+        self.style_param_frames["颗粒"] = self._create_param_rows([
+            ("颗粒数量", 50, 500, 200, "_particle_count", True),
+            ("颗粒大小", 1, 20, 4, "_particle_size", True),
+        ])
+
+    def _create_param_rows(self, params):
+        """一个样式的几行参数滑块，放进「闪光样式」卡里，选到这个样式才露出来。"""
+        group = QWidget()
+        layout = QVBoxLayout(group)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
-        
-        # 标题
-        title_label = QLabel(title)
-        title_label.setFont(QFont("Microsoft YaHei", 11, QFont.Bold))
-        layout.addWidget(title_label)
-        
-        # 参数滑块
+
         for param in params:
             if len(param) == 5:
                 label_text, min_val, max_val, default_val, attr_name = param
                 is_int = False
             else:
                 label_text, min_val, max_val, default_val, attr_name, is_int = param
-            
-            param_layout = QHBoxLayout()
-            param_layout.addWidget(QLabel(label_text))
-            
+
             slider = QSlider(Qt.Horizontal)
             if is_int:
                 slider.setRange(int(min_val), int(max_val))
@@ -814,25 +635,22 @@ class FlashPage(QWidget):
             else:
                 slider.setRange(int(min_val * 100), int(max_val * 100))
                 slider.setValue(int(default_val * 100))
-            
+
             slider.valueChanged.connect(lambda v, a=attr_name, i=is_int: self._on_param_changed(v, a, i))
-            param_layout.addWidget(slider)
-            
+
             value_label = QLabel(f"{default_val:.2f}" if not is_int else str(int(default_val)))
-            value_label.setMinimumWidth(60)
-            param_layout.addWidget(value_label)
-            
+
             # 保存引用
             setattr(self, f"{attr_name}_slider", slider)
             setattr(self, f"{attr_name}_label", value_label)
-            
-            layout.addLayout(param_layout)
-        
-        card.hide()  # 初始隐藏
-        self.style_params_layout.addWidget(card)
-        
-        return card
-    
+
+            layout.addWidget(plain_row(label_text, slider, value_label))
+
+        group.hide()  # 初始隐藏
+        self.style_params_layout.addWidget(group)
+
+        return group
+
     def _create_image_tab(self):
         """创建图片设置标签页"""
         tab = QWidget()
@@ -842,9 +660,10 @@ class FlashPage(QWidget):
         scroll.setWidget(tab)
 
         layout = QVBoxLayout(tab)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(10)
+        layout.setContentsMargins(*TAB_MARGINS)
+        layout.setSpacing(12)
 
+        # 批 150：「刷新」「打开文件夹」这两个动作在底栏（RN-165 的空库引导也换的是那两颗），卡里不再摆一份
         source_card, source_layout = SettingsCard.make(
             "图片来源",
             "选一套闪光图片。自己往图片文件夹里加了素材，点"
@@ -853,111 +672,59 @@ class FlashPage(QWidget):
         self.image_style_combo = QComboBox()
         self.image_style_combo.addItem("不使用图片", "none")
         self._load_image_styles()
-        self.image_style_combo.setMinimumWidth(200)
-        self._set_compact_heights(self.image_style_combo)
         self.image_style_combo.currentIndexChanged.connect(self._on_image_style_changed)
-        source_row = QHBoxLayout()
-        source_row.setSpacing(8)
-        source_row.addWidget(QLabel("图片样式:"))
-        source_row.addWidget(self.image_style_combo, 1)
-        source_layout.addLayout(source_row)
+        source_layout.addWidget(plain_row("图片样式", self.image_style_combo))
 
-        action_row = QHBoxLayout()
-        action_row.setSpacing(8)
-        refresh_btn = QPushButton(REFRESH_STYLES_BUTTON_TEXT)
-        refresh_btn.clicked.connect(self._refresh_styles)
-        folder_btn = QPushButton("打开图片文件夹")
-        folder_btn.clicked.connect(self._open_flash_images_folder)
-        reset_btn = QPushButton("重置设置")
-        reset_btn.clicked.connect(self._reset_settings)
-        self._set_compact_heights(refresh_btn, folder_btn, reset_btn)
-        action_row.addWidget(refresh_btn)
-        action_row.addWidget(folder_btn)
-        action_row.addWidget(reset_btn)
-        action_row.addStretch()
-        source_layout.addLayout(action_row)
-        source_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
-
-        behavior_card, behavior_layout = SettingsCard.make(
-            "呈现方式",
-            "多张图片要不要换着出现，以及图片盖上去有多实。",
-        )
         self.image_rotation_combo = QComboBox()
         self.image_rotation_combo.addItem("不轮换", "none")
         self.image_rotation_combo.addItem("随机轮换", "random")
         self.image_rotation_combo.addItem("顺序轮换", "sequence")
-        self.image_rotation_combo.setMinimumWidth(150)
-        self._set_compact_heights(self.image_rotation_combo)
         self.image_rotation_combo.currentIndexChanged.connect(self._on_image_rotation_changed)
-        rotation_row = QHBoxLayout()
-        rotation_row.setSpacing(8)
-        rotation_row.addWidget(QLabel("图片轮换:"))
-        rotation_row.addWidget(self.image_rotation_combo, 1)
-        behavior_layout.addLayout(rotation_row)
+        source_layout.addWidget(plain_row("图片轮换", self.image_rotation_combo))
+        layout.addWidget(source_card)
 
+        # 批 150：原来是「呈现方式」「图片位置」「图片大小」三张卡，两两并排还不等高（批 145 外审 S3）
+        display_card, display_layout = SettingsCard.make("图片显示")
+        self.image_display_card = display_card
         self.image_opacity_slider = QSlider(Qt.Horizontal)
         self.image_opacity_slider.setRange(0, 100)
         self.image_opacity_slider.setValue(50)
         self.image_opacity_slider.valueChanged.connect(self._on_image_opacity_changed)
         self.image_opacity_label = QLabel("50%")
-        behavior_layout.addLayout(
-            self._create_slider_row("图片不透明度:", self.image_opacity_slider, self.image_opacity_label, 92)
-        )
-        behavior_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+        display_layout.addWidget(plain_row("图片不透明度", self.image_opacity_slider, self.image_opacity_label))
 
-        top_row = QHBoxLayout()
-        top_row.setSpacing(10)
-        top_row.addWidget(source_card, 5, Qt.AlignTop)
-        top_row.addWidget(behavior_card, 4, Qt.AlignTop)
-        layout.addLayout(top_row)
-
-        position_card, position_layout = SettingsCard.make(
-            "图片位置",
-            "用 X / Y 直接微调素材落点，适合和游戏 HUD 避开冲突区域。",
-        )
         self.image_x_slider = QSlider(Qt.Horizontal)
         self.image_x_slider.setRange(0, 100)
         self.image_x_slider.setValue(50)
         self.image_x_slider.valueChanged.connect(self._on_image_position_changed)
         self.image_x_label = QLabel("50%")
-        position_layout.addLayout(self._create_slider_row("X 轴位置:", self.image_x_slider, self.image_x_label, 86))
+        display_layout.addWidget(plain_row("X 轴位置", self.image_x_slider, self.image_x_label))
 
         self.image_y_slider = QSlider(Qt.Horizontal)
         self.image_y_slider.setRange(0, 100)
         self.image_y_slider.setValue(50)
         self.image_y_slider.valueChanged.connect(self._on_image_position_changed)
         self.image_y_label = QLabel("50%")
-        position_layout.addLayout(self._create_slider_row("Y 轴位置:", self.image_y_slider, self.image_y_label, 86))
-        position_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+        display_layout.addWidget(plain_row("Y 轴位置", self.image_y_slider, self.image_y_label))
 
-        size_card, size_layout = SettingsCard.make(
-            "图片大小",
-            "宽高单独控制，裁切类素材和海报类素材都能快速试到顺眼比例。",
-        )
         self.image_w_slider = QSlider(Qt.Horizontal)
         self.image_w_slider.setRange(10, 100)
         self.image_w_slider.setValue(30)
         self.image_w_slider.valueChanged.connect(self._on_image_size_changed)
         self.image_w_label = QLabel("30%")
-        size_layout.addLayout(self._create_slider_row("宽度占比:", self.image_w_slider, self.image_w_label, 86))
+        display_layout.addWidget(plain_row("宽度占比", self.image_w_slider, self.image_w_label))
 
         self.image_h_slider = QSlider(Qt.Horizontal)
         self.image_h_slider.setRange(10, 100)
         self.image_h_slider.setValue(30)
         self.image_h_slider.valueChanged.connect(self._on_image_size_changed)
         self.image_h_label = QLabel("30%")
-        size_layout.addLayout(self._create_slider_row("高度占比:", self.image_h_slider, self.image_h_label, 86))
-        size_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
-
-        bottom_row = QHBoxLayout()
-        bottom_row.setSpacing(10)
-        bottom_row.addWidget(position_card, 1, Qt.AlignTop)
-        bottom_row.addWidget(size_card, 1, Qt.AlignTop)
-        layout.addLayout(bottom_row)
+        display_layout.addWidget(plain_row("高度占比", self.image_h_slider, self.image_h_label))
+        layout.addWidget(display_card)
         layout.addStretch()
 
         self.tab_widget.addTab(scroll, "图片设置")
-    
+
     def _create_audio_tab(self):
         """创建音频设置标签页"""
         tab = QWidget()
@@ -967,65 +734,32 @@ class FlashPage(QWidget):
         scroll.setWidget(tab)
 
         layout = QVBoxLayout(tab)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(10)
+        layout.setContentsMargins(*TAB_MARGINS)
+        layout.setSpacing(12)
 
-        source_card, source_layout = SettingsCard.make(
-            "音频来源",
-            "启用开关、样式选择和试听集中展示，调试媒体时更顺手。",
-        )
+        # 批 150：原来是「音频来源」「播放行为」两张并排的卡，下面这些都听「启用闪光音频」这一个勾
+        audio_card, audio_layout = SettingsCard.make(
+            "闪光音频", "每套音频一个文件夹：放进音频文件夹，再点「刷新音频列表」就会出现在这里。")
         self.audio_enabled_checkbox = QCheckBox("启用闪光音频")
         self.audio_enabled_checkbox.setChecked(False)
         self.audio_enabled_checkbox.toggled.connect(self._on_audio_enabled_toggled)
-        source_layout.addWidget(self.audio_enabled_checkbox)
+        audio_layout.addWidget(self.audio_enabled_checkbox)
 
         self.audio_style_combo = QComboBox()
         self.audio_style_combo.addItem("不使用音频", "none")
         self._load_audio_styles()
-        self.audio_style_combo.setMinimumWidth(200)
         self.audio_style_combo.setEnabled(False)
-        self._set_compact_heights(self.audio_style_combo)
         self.audio_style_combo.currentIndexChanged.connect(self._on_audio_style_changed)
-
         self.audio_preview_btn = QPushButton("预览")
         self.audio_preview_btn.setEnabled(False)
-        self._set_compact_heights(self.audio_preview_btn)
         self.audio_preview_btn.clicked.connect(self._preview_audio)
-        audio_source_row = QHBoxLayout()
-        audio_source_row.setSpacing(8)
-        audio_source_row.addWidget(QLabel("音频样式:"))
-        audio_source_row.addWidget(self.audio_style_combo, 1)
-        audio_source_row.addWidget(self.audio_preview_btn)
-        source_layout.addLayout(audio_source_row)
+        audio_layout.addWidget(plain_row("音频样式", self.audio_style_combo, self.audio_preview_btn))
 
-        audio_btn_row = QHBoxLayout()
-        audio_btn_row.setSpacing(8)
-        open_audio_folder_btn = QPushButton("打开音频文件夹")
-        open_audio_folder_btn.clicked.connect(self._open_flash_audio_folder)
-        refresh_audio_btn = QPushButton("刷新音频列表")
-        refresh_audio_btn.clicked.connect(self._refresh_audio_styles)
-        self._set_compact_heights(open_audio_folder_btn, refresh_audio_btn)
-        audio_btn_row.addWidget(open_audio_folder_btn)
-        audio_btn_row.addWidget(refresh_audio_btn)
-        audio_btn_row.addStretch()
-        source_layout.addLayout(audio_btn_row)
-        source_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
-
-        behavior_card, behavior_layout = SettingsCard.make(
-            "播放行为",
-            "被闪时这段音效怎么播：换不换着播、多大声、闪光结束后要不要跟着停。",
-        )
         self.audio_rotation_combo = QComboBox()
         self.audio_rotation_combo.addItems(["不轮换", "随机", "顺序"])
         self.audio_rotation_combo.setEnabled(False)
-        self.audio_rotation_combo.setMinimumWidth(120)
-        self._set_compact_heights(self.audio_rotation_combo)
         self.audio_rotation_combo.currentTextChanged.connect(self._on_audio_rotation_changed)
-        rotation_row = QHBoxLayout()
-        rotation_row.setSpacing(8)
-        rotation_row.addWidget(QLabel("音频轮换:"))
-        rotation_row.addWidget(self.audio_rotation_combo, 1)
-        behavior_layout.addLayout(rotation_row)
+        audio_layout.addWidget(plain_row("音频轮换", self.audio_rotation_combo))
 
         self.audio_volume_slider = QSlider(Qt.Horizontal)
         self.audio_volume_slider.setRange(0, 100)
@@ -1033,34 +767,21 @@ class FlashPage(QWidget):
         self.audio_volume_slider.setEnabled(False)
         self.audio_volume_slider.valueChanged.connect(self._on_audio_volume_changed)
         self.audio_volume_label = QLabel("100%")
-        behavior_layout.addLayout(
-            self._create_slider_row("音频音量:", self.audio_volume_slider, self.audio_volume_label, 78)
-        )
+        audio_layout.addWidget(plain_row("音频音量", self.audio_volume_slider, self.audio_volume_label))
 
         self.audio_auto_stop_checkbox = QCheckBox("闪光结束时自动停止音频")
         self.audio_auto_stop_checkbox.setChecked(True)
         self.audio_auto_stop_checkbox.setEnabled(False)
         self.audio_auto_stop_checkbox.toggled.connect(self._on_audio_auto_stop_toggled)
-        behavior_layout.addWidget(self.audio_auto_stop_checkbox)
-        behavior_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+        audio_layout.addWidget(plain_row("", self.audio_auto_stop_checkbox, width=None))
 
-        top_row = QHBoxLayout()
-        top_row.setSpacing(10)
-        top_row.addWidget(source_card, 5, Qt.AlignTop)
-        top_row.addWidget(behavior_card, 4, Qt.AlignTop)
-        layout.addLayout(top_row)
+        layout.addWidget(audio_card)
         layout.addStretch()
 
         self.tab_widget.addTab(scroll, "音频设置")
-    
-    def _create_preview_tab(self):
-        """创建效果预览标签页
 
-        UP-095 顺带：这是全仓 12 个建页签方法里**最后一个**没有滚动区的。
-        它当前不溢出（最小高 346px < 可视 458px），属潜伏风险；补上之后
-        「每个页签都要有滚动区」这条判据就能写成 12/12 无豁免，
-        不用挂一份会慢慢变长的豁免名单。
-        """
+    def _create_preview_tab(self):
+        """创建效果预览标签页"""
         tab = QWidget()
         outer = QVBoxLayout(tab)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -1073,8 +794,8 @@ class FlashPage(QWidget):
 
         content = QWidget()
         layout = QVBoxLayout(content)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(10)
+        layout.setContentsMargins(*TAB_MARGINS)
+        layout.setSpacing(12)
 
         # ⛔ RN-063：矮的这张必须排在「预览控制」之前（判据 `test_flash_page_puts_the_one_tap_card_first`）。
         #   ⛔ 只换 `addWidget` 顺序不算 —— 焦点链走构造顺序（批 38）。叙事见档案。
@@ -1083,65 +804,46 @@ class FlashPage(QWidget):
             # ⛔ RN-077：这句不许提位置 —— 版面一动它就变成假话（本批正是一例）。
             "点一下就按这个强度放一次，不用先调滑块。",
         )
-        button_grid = QGridLayout()
-        button_grid.setHorizontalSpacing(8)
-        button_grid.setVerticalSpacing(8)
+        button_row = QHBoxLayout()
+        button_row.setSpacing(8)
         for intensity in [25, 50, 75, 100]:
             btn = QPushButton(f"{intensity}%预览")
-            btn.setMinimumHeight(40)
-            btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             btn.clicked.connect(lambda checked, i=intensity: self._quick_preview(i))
-            button_grid.addWidget(btn, 0, [25, 50, 75, 100].index(intensity))
-        quick_layout.addLayout(button_grid)
-        quick_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+            button_row.addWidget(btn)
+        button_row.addStretch()
+        quick_layout.addLayout(button_row)
         layout.addWidget(quick_card)
 
+        # 批 150：「自定义强度预览」这个动作在底栏，卡里不再摆一份
         control_card, control_layout = SettingsCard.make(
             "预览控制",
             "不用进游戏也能试：定好强度和时长，直接放一次看效果。",
         )
-        status_row = QHBoxLayout()
-        status_row.setSpacing(8)
-        status_row.addWidget(QLabel("当前状态:"))
-        self.preview_status_label = QLabel("就绪")
-        self.preview_status_label.setObjectName("badgeLabel")
-        self.preview_status_label.setAlignment(Qt.AlignCenter)
-        self.preview_status_label.setMinimumWidth(110)
-        self.preview_status_label.setMinimumHeight(34)
-        status_row.addWidget(self.preview_status_label)
-        status_row.addStretch()
-        self.preview_btn = QPushButton("自定义强度预览")
-        self.preview_btn.setMinimumHeight(40)
-        self.preview_btn.clicked.connect(self._preview_flash)
-        status_row.addWidget(self.preview_btn)
-        control_layout.addLayout(status_row)
-
         self.preview_intensity_slider = QSlider(Qt.Horizontal)
         self.preview_intensity_slider.setRange(0, 100)
         self.preview_intensity_slider.setValue(75)
         self.preview_intensity_slider.valueChanged.connect(self._on_preview_intensity_changed)
         self.preview_intensity_label = QLabel("75%")
-        control_layout.addLayout(
-            self._create_slider_row("预览强度:", self.preview_intensity_slider, self.preview_intensity_label, 78)
-        )
+        control_layout.addWidget(plain_row("预览强度", self.preview_intensity_slider, self.preview_intensity_label))
 
-        duration_layout = QHBoxLayout()
-        duration_layout.setSpacing(8)
-        duration_layout.addWidget(QLabel("预览持续时间:"))
         self.duration_group = QButtonGroup()
+        duration_radios = []
         for duration in [1, 2, 3, 5]:
             radio = QRadioButton(f"{duration}秒")
             radio.setProperty("duration", duration)
             radio.toggled.connect(lambda checked, d=duration: self._on_duration_changed(d) if checked else None)
             self.duration_group.addButton(radio)
-            duration_layout.addWidget(radio)
+            duration_radios.append(radio)
             if duration == 3:
                 radio.setChecked(True)
-        duration_layout.addStretch()
-        control_layout.addLayout(duration_layout)
-        control_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
-        layout.addWidget(control_card)
+        control_layout.addWidget(plain_row("持续时间", *duration_radios, width=None))
 
+        self.preview_status_label = QLabel("就绪")
+        self.preview_status_label.setObjectName("hintLabel")
+        status_row = plain_row("当前状态", self.preview_status_label, width=None)
+        status_row.label_widget.setProperty("fp_index_skip", True)
+        control_layout.addWidget(status_row)
+        layout.addWidget(control_card)
 
         layout.addStretch()
 
@@ -1150,26 +852,6 @@ class FlashPage(QWidget):
 
         self.tab_widget.addTab(tab, "效果预览")
 
-    def _update_compact_layout(self):
-        if not hasattr(self, "basic_top_layout"):
-            return
-
-        direction = QBoxLayout.TopToBottom if self.width() < 1180 else QBoxLayout.LeftToRight
-        if self.basic_top_layout.direction() != direction:
-            self.basic_top_layout.setDirection(direction)
-
-        if hasattr(self, "basic_overview_card"):
-            if direction == QBoxLayout.TopToBottom:
-                self.basic_overview_card.setMinimumWidth(0)
-                self.basic_overview_card.setMaximumWidth(16777215)
-            else:
-                self.basic_overview_card.setMinimumWidth(320)
-                self.basic_overview_card.setMaximumWidth(380)
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        self._update_compact_layout()
-    
     # ====================  辅助方法  ====================
     
     def _load_image_styles(self):
@@ -1335,7 +1017,14 @@ class FlashPage(QWidget):
             else:
                 self.process_manager.load_flash_image("none")
                 self.logger.info("已禁用图片")
+        self._sync_image_controls()
         self._sync_overview_status()
+
+    def _sync_image_controls(self):
+        """不用图片时，轮换、透明度、位置、大小都没有效果。"""
+        uses_image = self.image_style_combo.currentData() not in (None, "", "none")
+        self.image_rotation_combo.setEnabled(uses_image)
+        self.image_display_card.setEnabled(uses_image)
     
     def _on_image_opacity_changed(self, value):
         """图片不透明度改变"""

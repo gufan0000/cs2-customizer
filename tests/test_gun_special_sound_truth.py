@@ -173,9 +173,8 @@ def test_pages_do_not_count_raw_config_values(page):
 # ==================================================== 行为层：gun_sound
 
 def _visible_chips(page):
-    from PySide6.QtWidgets import QLabel
     bar = page.status_badge_label
-    return [c.text() for c in bar.findChildren(QLabel) if not c.isHidden()]
+    return bar.badge_texts()
 
 
 def _chip(page, prefix: str) -> str:
@@ -224,7 +223,7 @@ def test_gun_sound_does_not_count_styles_that_are_gone(qapp, monkeypatch):
     page = _make_gun_page(monkeypatch, {t: "已被删除的风格" for t in types}, {})
 
     for gun_type in types:
-        combo = page.weapon_rows[gun_type]["style_combo"]
+        combo = page.weapon_rows[gun_type].style_combo
         assert combo.currentText() == page.DISABLED_STYLE_TEXT, (
             "前提没成立：这一行应当显示「不启用」，判据才有意义")
 
@@ -324,7 +323,7 @@ def test_special_sound_round_count_is_not_capped_at_five(qapp, monkeypatch):
 
     page = _make_special_page(
         monkeypatch, {e.key: "存在的风格" for e in events}, ["存在的风格"])
-    text = page.round_summary_label.text()
+    text = page.status_card.toolTip()     # 批 147：数字住进状态条的 tooltip
     assert f"{len(events)}/{len(events)}" in text, (
         f"回合摘要说的是 {text!r} —— 应当是 {len(events)}/{len(events)}。"
         "计数分子还在手写那 5 个字段（RN-046）。")
@@ -339,9 +338,9 @@ def test_special_sound_round_count_ignores_stale_styles(qapp, monkeypatch):
 
     for event in events:
         combo = page.round_combos[event.key]
-        assert combo.currentText() == "不启用", "前提没成立"
+        assert combo.currentText() == "未选风格", "前提没成立"
 
-    text = page.round_summary_label.text()
+    text = page.status_card.toolTip()
     assert f"已选 0/{len(events)}" in text, (
         f"回合摘要把失效项算成已选了：{text!r}")
     assert f"有 {len(events)} 项" in text, (
@@ -708,14 +707,22 @@ def test_health_tab_keeps_the_two_sliders_on_one_row(qapp, monkeypatch):
     复跑当场报「高」，而改之前紧凑档这一页是 NONE。
     ⇒ **拿一个「中」换来一个「高」是笔亏本的交易。**
 
-    现在的改法不加高度：两个**同类**的东西（阈值滑块 / 间隔滑块）并排，
-    「选风格 + 试听」通栏在下。行数与原来一致，而视觉分组终于和语义一致了。
+    现在的改法不加高度：两个**同类**的东西（阈值滑块 / 间隔滑块）并排。
+    批 147：「选风格 + 试听」那一格挪到它们上面（先选声音，再调什么时候响）。
 
     判据盯的是**几何**（同一个 y），不是代码写法 —— 换个写法只要行数没变就放行。
     """
-    page = _make_special_page(monkeypatch, {}, [])
+    from PySide6.QtCore import QPoint
+
+    page = _make_special_page(monkeypatch, {}, ["存在的风格"])
     page.resize(1280, 800)
     page.show()
+    # ⚠ 批 145：血量不是默认页签，没切过去就没布局，所有子控件 y 都是 0。
+    #   以前靠卡片阴影碰巧触发了一次布局，阴影一删就量不到了。
+    for index in range(page.tab_widget.count()):
+        if page.tab_widget.widget(index).isAncestorOf(page.threshold_slider):
+            page.tab_widget.setCurrentIndex(index)
+            break
     qapp.processEvents()
 
     threshold_row = page.threshold_slider.parentWidget()
@@ -725,9 +732,9 @@ def test_health_tab_keeps_the_two_sliders_on_one_row(qapp, monkeypatch):
     assert threshold_row.y() == cooldown_row.y(), (
         f"两个滑块没并排：阈值 y={threshold_row.y()}，间隔 y={cooldown_row.y()} —— "
         "卡片会高一行，紧凑档下最后一行被截（RN-055）")
-    assert style_row.y() > threshold_row.y(), (
-        f"选风格那行没在滑块下面：style y={style_row.y()}，"
-        f"slider y={threshold_row.y()}")
+    style_y = style_row.mapTo(page, QPoint(0, 0)).y()
+    slider_y = threshold_row.mapTo(page, QPoint(0, 0)).y()
+    assert style_y < slider_y, f"选风格那格没在滑块上面：style y={style_y}，slider y={slider_y}"
     page.hide()
 
 

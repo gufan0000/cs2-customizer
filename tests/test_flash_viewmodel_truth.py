@@ -279,13 +279,9 @@ def test_viewmodel_presets_are_on_the_first_screen(qapp):
     page.show()
     qapp.processEvents()
 
-    # ⚠ 判据的**定位**和**阈值**各错过一次，两次都是回退验证逮出来的假绿：
-    #   ① 定位认「包含预设摘要标签的 QFrame」⇒ 连祖先容器一起匹上，
-    #      而 `findChildren` 按树序返回，拿到的是最外层那个（y 恒为 0）⇒ 恒绿；
-    #   ② 阈值写「y < 700」⇒ 裸页 1280×800 下回退态量出 579，照样过关。
-    # 现在的规则是**推导出来的**，不是拍的数：预设卡必须**和左列并排**，
-    # 也就是它的顶边要在左列最后一张卡（「CFG 同步」）的底边**之上**。
-    # A/B 实测（1080×700，真实页面区尺寸）：现在 328 / 回退 566，左列底 555。
+    # 批 150：两列撤了，这一页单列往下排，「视角预设」就是第一张卡。
+    # ⚠ 判据的定位错过一次（认「包含某标签的 QFrame」⇒ 连祖先容器一起匹上 ⇒ y 恒为 0 ⇒ 恒绿）：
+    #   所以只认标题的父控件，再和下一张卡比先后。
     from PySide6.QtWidgets import QLabel
 
     def _card_of(title_text: str):
@@ -295,13 +291,12 @@ def test_viewmodel_presets_are_on_the_first_screen(qapp):
             f"找不到「{title_text}」那张卡的标题 —— 判据定位方式过期了，别让它悄悄空转。")
         return label.parentWidget()
 
-    left_bottom = _card_of("CFG 同步")
     presets = _card_of("视角预设")
-    left_bottom_y = left_bottom.mapTo(page, left_bottom.rect().bottomLeft()).y()
+    switching = _card_of("持枪切换")
     presets_top_y = presets.mapTo(page, presets.rect().topLeft()).y()
-    assert presets_top_y < left_bottom_y, (
-        f"「视角预设」卡顶边在 y={presets_top_y}，而左列最后一张卡的底边才 y={left_bottom_y}"
-        " —— 说明它又被推到两列**下面**去了，而右列还空着半屏。\n"
+    switching_top_y = switching.mapTo(page, switching.rect().topLeft()).y()
+    assert presets_top_y < switching_top_y, (
+        f"「视角预设」卡顶边在 y={presets_top_y}，排到了「持枪切换」（y={switching_top_y}）下面。\n"
         "这一页最核心的编辑入口（5 组预设 + 每组 FOV/XYZ）不许要滚动才看得见（RN-083）。")
 
 
@@ -350,15 +345,6 @@ def _is_fully_drawn_in(widget, root) -> bool:
     return rect == full
 
 
-def _card_of_preset(preset_vars_entry):
-    """从一组预设控件回溯到它那张卡（objectName="card"）。"""
-    card = preset_vars_entry["fov"].parentWidget()
-    while card is not None and card.objectName() != "card":
-        card = card.parentWidget()
-    assert card is not None, "找不到预设卡（objectName=card）—— 判据定位过期了。"
-    return card
-
-
 def test_viewmodel_shows_more_than_one_preset_at_a_time(qapp):
     """RN-177：卡副标题写「5 组」，屏幕上就不许只看得见 1 组。
 
@@ -369,10 +355,8 @@ def test_viewmodel_shows_more_than_one_preset_at_a_time(qapp):
       · 这一页 2026-08-18 已关档（RN-077/083/084），而**关档只表示那一页自己的账清了**。
     实测原状：视口 320px 装 872px，完整可见 1 组、部分 1 组、看不见 3 组。
 
-    判据量**屏幕**不查布局代码：数有几张预设卡整个落在页面视口里。
-    阈值 2 是**推导**的不是拍的：修法把卡高从 168 压到 122，视口 464px 扣掉
-    卡头 90px 还剩 374px ⇒ 至少放得下 2 张（374/130≈2.9）。回退到 320px 内层
-    滚动区时这个数是 1 —— 两边差得开，判据才有分辨力。
+    判据量**屏幕**不查布局代码：数有几组预设整个落在页面视口里。
+    批 150 起五组是一张表里的五行，一屏全看得见。
     """
     page = _page("viewmodel")
     page.resize(1280, 800)
@@ -383,48 +367,47 @@ def test_viewmodel_shows_more_than_one_preset_at_a_time(qapp):
     assert len(page.preset_vars) >= 5, (
         f"只数到 {len(page.preset_vars)} 组预设 —— 判据在空转，先修取卡那一段。")
 
-    fully = sum(1 for pv in page.preset_vars
-                if _is_fully_drawn_in(_card_of_preset(pv), vp))
+    fully = sum(1 for pv in page.preset_vars if _is_fully_drawn_in(pv["fov"], vp))
 
     # ⚠ 自检：先证明这个数**会随几何变化**，再拿它下结论。
     # 一条"数出来 N 张"的判据最容易的失效方式不是数错，是**恒定**——
     # 定位选错一层、或者拿到的是构造期的陈旧几何，它就会稳定返回一个好看的数。
-    # 把页面压到 420px（放不下两张 122px 的卡 + 90px 卡头）再数一次：必须掉下来。
-    page.resize(1280, 420)
+    # 把页面压到 300px 再数一次：必须掉下来。
+    page.resize(1280, 300)
     qapp.processEvents()
     shrunk = sum(1 for pv in page.preset_vars
-                 if _is_fully_drawn_in(_card_of_preset(pv), _viewmodel_page_viewport(page)))
+                 if _is_fully_drawn_in(pv["fov"], _viewmodel_page_viewport(page)))
     page.resize(1280, 800)
     qapp.processEvents()
     assert shrunk < fully, (
-        f"把页面从 800px 压到 420px，完整可见的预设卡还是 {shrunk} 张（原 {fully} 张）"
+        f"把页面从 800px 压到 300px，完整可见的预设还是 {shrunk} 组（原 {fully} 组）"
         " —— 这个数不随几何变化，说明判据没在量屏幕，先修测量那一段再看结论。")
 
-    assert fully >= 2, (
-        f"页面视口 {vp.height()}px 里只有 {fully} 张预设卡是完整可见的，"
-        "而这张卡的副标题写着「5 组持枪视角参数」、状态条写着「共 5 组预设」。\n"
+    assert fully >= 5, (
+        f"页面视口 {vp.height()}px 里只有 {fully} 组预设是完整可见的，而状态条写着「共 5 组预设」。\n"
         "文案承诺 5 组、屏幕给 1 组，就是 RN-177。"
         "别用「加个内层滚动区」来省地方 —— 那正是原来的做法。")
 
 
-def test_the_preset_summary_names_every_preset_not_just_the_first_few(qapp):
-    """RN-177：摘要自称「共 5 组」就得把 5 组都列出来。
+def test_flash_basic_tab_order_follows_the_screen(qapp):
+    """UP-102：按 Tab 不许跳行（当年「背景颜色」跳到下一行的滑块，再跳回上一行的两个复选框）。
 
-    原状是 `[:3]` —— 摘要说 5 组、只列 3 组，而屏幕上又只看得见 1 组。
-    **三个地方三个数，没有一处能互相印证。** 现在摘要本身就是「5 组确实都在」
-    的凭证：不必先滚到底才能确认。
+    批 150 起控件一行一个，创建顺序就是屏幕顺序，不用再手工 `setTabOrder`；判据直接量顺序。
     """
-    page = _page("viewmodel")
+    import sys
+
+    sys.path.insert(0, str(REPO / "scripts"))
+    from tab_order_audit import focusable_chain, min_moves, reading_order
+
+    page = _page("flash")
+    page.resize(1280, 800)
     page.show()
     qapp.processEvents()
 
-    text = page.presets_summary_label.text()
-    names = [pv["name"].text().strip() for pv in page.preset_vars]
-    assert len(names) >= 5, f"只数到 {len(names)} 组预设 —— 判据在空转。"
-    missing = [n for n in names if n and n not in text]
-    assert not missing, (
-        f"预设摘要漏了 {missing}（当前文案：{text!r}）—— "
-        "摘要自称「共 N 组」就得列得出 N 组，否则那个数字没有任何东西能印证它。")
+    chain = focusable_chain(page)
+    assert len(chain) > 5, f"只数到 {len(chain)} 个可聚焦控件 —— 判据在空转，先修取链那一段。"
+    moves = min_moves(chain, reading_order(chain, page, page.layout()))
+    assert moves == 0, f"flash 的 Tab 顺序有 {moves} 处跟屏幕顺序对不上（UP-102）。"
 
 
 def test_viewmodel_tab_order_follows_the_screen(qapp):

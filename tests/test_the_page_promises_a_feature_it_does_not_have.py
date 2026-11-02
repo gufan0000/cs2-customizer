@@ -85,6 +85,7 @@ from tests.test_master_switch_effect_is_honest import (  # noqa: E402
     main_window as _shared_main_window,
 )
 from _denominator import must_scan
+from widgets.page_header import PageHeader
 
 main_window = _shared_main_window
 
@@ -174,7 +175,9 @@ def test_no_page_asks_for_typing_it_cannot_accept(main_window, qapp):
         except AssertionError:
             continue          # 构造即起设备的页，本判据不去碰
         scanned += 1
-        hits = _hits(_visible_text(page))
+        # 批 145：页头说明收进帮助了，不在屏幕上，但一样是用户读得到的话
+        lead = getattr(page.findChild(PageHeader), "description_label", None)
+        hits = _hits(_visible_text(page) + "\n" + (lead.text() if lead is not None else ""))
         if hits and not _text_boxes(page):
             offenders.append((pid, hits))
 
@@ -344,7 +347,7 @@ def test_a_denial_is_not_read_as_a_promise():
     assert _hits("把文字转成语音说进游戏"), "同上"
 
 
-def test_opening_the_page_does_not_land_at_the_bottom_of_the_list(main_window, qapp):
+def test_opening_the_page_does_not_land_at_the_bottom_of_the_list(main_window, qapp, monkeypatch):
     """反向守卫：**建页时铺初始槽位不许把列表滚到底。**
 
     ⭐ 少了这一条，上一条判据可以靠「每加一个槽位都滚到底」全绿 ——
@@ -356,6 +359,18 @@ def test_opening_the_page_does_not_land_at_the_bottom_of_the_list(main_window, q
     assert sa.verticalScrollBar().value() == 0, (
         f"刚打开这一页，槽位列表就停在 {sa.verticalScrollBar().value()} 而不是顶部 —— "
         "建页铺初始槽位那一路（auto_init）跟着滚了")
+    # 批 145：建页时布局还没算完，上面那句读不到它滚过（回退验证逮到），这里直接问那一路滚不滚
+    calls = []
+    monkeypatch.setattr(page, "_scroll_slot_into_view", calls.append)
+    before = set(page.soundboard_slots)
+    try:
+        page._add_slot(auto_init=True)
+    finally:
+        for slot_id in set(page.soundboard_slots) - before:
+            page.soundboard_slots.pop(slot_id)["frame"].deleteLater()
+            page._slot_delete_buttons.pop(slot_id, None)
+        page.current_slot_count = len(page.soundboard_slots)
+    assert not calls, "铺初始槽位那一路（auto_init）调了滚动"
 
 
 # ============================================================ 批 44：RN-450

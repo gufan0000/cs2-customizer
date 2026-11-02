@@ -72,6 +72,30 @@ def test_flow_layout_wraps_when_narrow(qapp):
     host.deleteLater()
 
 
+def test_a_flow_container_does_not_reserve_room_for_one_per_line(qapp):
+    """⭐ 七个一行放得下，页面却按「一个一行」留高度：尾巴上 156 px 空白（RN-753）。"""
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QCheckBox, QVBoxLayout
+
+    from widgets.flow_layout import make_flow_container
+
+    host = QWidget()
+    host.setAttribute(Qt.WA_DontShowOnScreen, True)
+    column = QVBoxLayout(host)
+    column.setContentsMargins(0, 0, 0, 0)
+    wrap, flow = make_flow_container(h_spacing=8, v_spacing=8)
+    for _ in range(7):
+        flow.addWidget(QCheckBox("一项"))
+    column.addWidget(wrap)
+    column.addStretch()
+    one_line = QCheckBox("一项").sizeHint().height()
+    assert host.minimumSizeHint().height() <= one_line, host.minimumSizeHint().height()
+    # 窄了要真的撑开，不能被压回一行（那就是另一个缺陷）
+    assert column.heightForWidth(100) > one_line * 2
+    host.close()
+    host.deleteLater()
+
+
 def test_advanced_anchor_bar_uses_flow_layout():
     """UP-017：高级设置页锚点条不能再用 QHBoxLayout。"""
     tree = _tree("pages/advanced_page.py")
@@ -257,9 +281,14 @@ def test_magnifier_combos_adjust_to_contents():
               if name == "setFixedWidth" and recv.endswith("_combo")]
     assert not locked, f"这些下拉仍写死宽度: {locked}"
 
-    adjusted = [recv for recv, name in _attr_calls(tree)
-                if name == "setSizeAdjustPolicy"]
-    assert len(adjusted) >= 4, f"只有 {len(adjusted)} 个下拉改成按内容自适应"
+    # 批 150：下拉进了朴素设置行，定宽 240，「Mouse4」「4.0」放得下，不用再按内容自适应
+    from widgets.settings_row import PLAIN_CONTROL_WIDTH
+
+    in_rows = [node for node in ast.walk(tree)
+               if isinstance(node, ast.Call) and getattr(node.func, "id", "") == "plain_row"
+               and len(node.args) >= 2 and getattr(node.args[1], "attr", "").endswith("_combo")]
+    assert len(in_rows) >= 3, f"只有 {len(in_rows)} 个下拉在设置行里"
+    assert PLAIN_CONTROL_WIDTH >= 200
 
 
 # ------------------------------------------------------------------ UP-033

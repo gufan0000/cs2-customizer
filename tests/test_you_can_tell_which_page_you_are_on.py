@@ -20,6 +20,8 @@
 
 ⭐ 同 RN-063 的收尾口径：**把「为什么不成立」钉住，而不是把「不成立」写进档案就算完。**
 
+批 145（RN-733）：顶栏那颗标题和页头 H1 说同一句话，删了；这份判据改盯 H1。
+
 （本项目测试逐文件跑：
  `python -m pytest tests/test_you_can_tell_which_page_you_are_on.py`）
 """
@@ -124,19 +126,20 @@ def test_the_top_bar_always_says_which_page_you_are_on(normal_window):
     """⭐⭐⭐ 这是「我在哪」这条信息**唯一全程为真**的来源。
 
     普通模式下六个专家页在侧栏上没有任何表示（那是设计），
-    顶栏是那一刻屏幕上仅剩的答案 —— 而在这条判据之前它没有任何守卫。
+    页面标题是那一刻屏幕上仅剩的答案 —— 而在这条判据之前它没有任何守卫。
     """
-    win, app = normal_window
-    title = getattr(win, "_compact_title", None)
-    assert title is not None, "顶栏标题控件没了 —— 「我在哪」这条信息就只剩侧栏一个来源了"
+    from PySide6.QtWidgets import QLabel
 
+    win, app = normal_window
     checked = []
     for page_id, page_name in win._page_names.items():
         _goto(win, app, page_id)
+        title = win.pages[page_id].findChild(QLabel, "titleLabel")
+        assert title is not None, f"{page_id} 没有标题 —— 「我在哪」这条信息就只剩侧栏一个来源了"
         assert title.isVisible(), (
-            f"切到 {page_id} 之后顶栏标题不可见 —— RN-585 立案里那三面会全部变成真的")
+            f"切到 {page_id} 之后页面标题不可见 —— RN-585 立案里那三面会全部变成真的")
         assert title.text() == page_name, (
-            f"{page_id}：顶栏写着 {title.text()!r}，而这一页叫 {page_name!r}")
+            f"{page_id}：页面标题写着 {title.text()!r}，而这一页叫 {page_name!r}")
         checked.append(page_id)
 
     # ⭐ 分母守卫：本仓三次被「分母塌了」骗过（批 68 / 76 / 78）。

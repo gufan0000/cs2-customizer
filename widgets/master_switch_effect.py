@@ -36,10 +36,8 @@ RN-407 立案写的是「总开关默认关闭且**不够醒目**」。批 14 �
 
 ## 为什么用属性 + QSS，而不是 `QGraphicsOpacityEffect`
 
-卡片自己挂着 elevation 阴影（`SettingsCard._apply_elevation` /
-各页 `_create_shadow`）。`setGraphicsEffect` **一个控件只能挂一个** ——
-换上不透明度就把阴影顶掉并析构了，这条坑仓里记过两次
-（`gui_widget.py:4633` 的搜索高亮、`ui_transitions.py:7` 的转场）。
+`setGraphicsEffect` **一个控件只能挂一个**，而搜索高亮和转场都要用它
+（`gui_widget.py` 的搜索高亮、`ui_transitions.py:7` 的转场）。
 ⇒ 走 QSS 属性态：只换颜色，不引起重排、不动 graphicsEffect。
 """
 from __future__ import annotations
@@ -55,15 +53,12 @@ from core.utils.logger import get_logger
 #: QSS 的 `[masterOff="true"]` 比的是字符串，写 Python 的 `True` 匹配不上，
 #: 而且**不会有任何一处报错**（判据绿、屏幕原样）。
 CARD_DIM_PROPERTY = "masterOff"
-#: 挂在**状态卡**上的那个属性 —— 它自己不降权（那是要去拨的开关所在的卡），
-#: 但它里面那排状态胶囊要退成中性：关着的时候，一排彩色标签读起来就是
-#: 「当前正在运行的配置清单」。⭐ 挂在祖先上而不是逐颗挂，是因为那排胶囊
-#: 自己会因为 level 变化反复 repolish，属性挂在它们身上会被洗掉。
-HOST_DIM_PROPERTY = "masterOffHost"
 #: 那句话的 objectName。⚠ 它必须是 `QLabel`/`QFrame` 这类**自己会画 stylesheet
 #: 背景**的控件，不许是裸 `QWidget` 子类 —— 批 14 的候选 B 就废在这儿，
 #: 底色一个像素都没渲染出来。⭐ 一个没渲染出来的候选，拿去比就是在比两张一样的图。
 NOTICE_OBJECT_NAME = "masterOffNotice"
+#: 不叫 card、却同样是参数区的容器（武器板）身上挂这个属性，降权一样管它。
+PARAMETER_AREA_PROPERTY = "fp_parameter_area"
 #: 预览旁边那句话的 objectName。页面只要建一个这个名字的 QLabel，本模块就会管它。
 PREVIEW_CAPTION_OBJECT_NAME = "previewEffectCaption"
 
@@ -108,7 +103,9 @@ PREVIEW_CAPTION_OBJECT_NAME = "previewEffectCaption"
 #: ⭐⭐ **两句话分工**：这一句（紧挨着那颗开关）回答「我现在能干什么」，
 #:   底栏那句回答「我改的东西生不生效」——那一句的否定仍然在句首。
 #: ⭐ 同一屏上两句话都用同一个语序，等于把同一个后半截丢了两次。
-NOTICE_OFF_TEXT = "现在可以调、改了会保存；游戏里还不生效"
+#: 批 146：外审判断题的理由多页指着旧句「现在可以调、改了会保存；游戏里还不生效」，
+#:   「分不清先开开关还是先调」。⇒ 把先后直接说出来；「先调好」已经带着「留得住」。
+NOTICE_OFF_TEXT = "可以先调好，打开后才在游戏里生效"
 
 #: 底栏那句回执。⚠⚠ 批 10 加的版本是**无条件**的
 #: 「改动已自动保存，不用点任何按钮。」——
@@ -181,33 +178,22 @@ def _is_card(widget: QWidget) -> bool:
     于是一句解释性注释会被算成一处新的手搓卡片。
     ⭐ **一条按正则数「有没有做某件事」的棘轮，会把「谈论那件事」也算进去。**
     """
-    return isinstance(widget, QFrame) and widget.objectName() == "card"
+    return isinstance(widget, QFrame) and (
+        widget.objectName() == "card" or bool(widget.property(PARAMETER_AREA_PROPERTY)))
 
 
 def status_card_of(page) -> QWidget | None:
-    """装着总开关的那张卡。
+    """页面标题下面那条状态（`StatusStrip`）：它不是参数区，不跟着总开关降权。
 
-    ⭐ 从开关行**往上找**，不认 `page.status_card` 这个属性名 ——
-    属性名是各页各叫各的（`status_card` / `overview_card` / 局部变量都有），
-    而「开关住在哪张卡里」是一条结构事实，问结构比问名字硬。
+    ⭐ 问结构，不认属性名 —— 属性名是各页各叫各的（`status_card` / `music_overview_card`）。
     """
-    row = getattr(page, "master_switch_row", None)
-    if row is None:
-        return None
-    node = row.parentWidget()
-    while node is not None and node is not page:
-        if _is_card(node):
-            return node
-        node = node.parentWidget()
-    return None
+    from widgets.status_strip import StatusStrip
+
+    return page.findChild(StatusStrip)
 
 
 def parameter_cards(page) -> list[QWidget]:
-    """这一页上**该降权**的卡。
-
-    排除两类：装着总开关的那张卡本身，以及它内部嵌的卡。
-    ⭐ 把「你要去拨的那颗开关所在的卡」也调暗，等于把出口一起调暗了。
-    """
+    """这一页上**该降权**的卡：除了状态条里嵌的那些，都是。"""
     host = status_card_of(page)
     out = []
     for card in page.findChildren(QFrame):
@@ -248,6 +234,7 @@ def parameter_area_controls(page) -> list[QWidget]:
     ⇒ 改用一条**真实的结构边界**：参数区 = **页面主滚动区里的内容**。
     状态卡在滚动区**外面**（15 页里有 9 页如此，批 16 量过），
     底栏和页头也在外面 —— 这不是命名约定，是版面本身。
+    钉在滚动区外面的参数（枪声页的微调栏）自己声明 `PARAMETER_AREA_PROPERTY`。
 
     ⭐ 实现和判据**共用这一个定义**：各写一份的话，判据会去量一个和产品
     不一样的分母，然后全绿。
@@ -255,12 +242,13 @@ def parameter_area_controls(page) -> list[QWidget]:
     host = status_card_of(page)
     row = getattr(page, "master_switch_row", None)
     out = []
-    for area in page.findChildren(QScrollArea):
-        inner = area.widget()
+    areas = [area.widget() for area in page.findChildren(QScrollArea)]
+    areas += [w for w in page.findChildren(QFrame) if w.property(PARAMETER_AREA_PROPERTY)]
+    for inner in areas:
         if inner is None:
             continue
         for w in inner.findChildren(QWidget):
-            if not isinstance(w, _VALUE_ACCENT):
+            if not isinstance(w, _VALUE_ACCENT) or w in out:
                 continue
             if host is not None and (w is host or host.isAncestorOf(w)):
                 continue
@@ -268,38 +256,6 @@ def parameter_area_controls(page) -> list[QWidget]:
                 continue
             out.append(w)
     return out
-
-
-#: 状态卡里那条胶囊的标题（RN-428，批 20）。
-#: ⚠⚠ 立案时我写的说法是「**「当前」这两个字在说时间**」——**枚举一遍就推翻了**：
-#: `crosshair` 有 7 条「当前X」摘要，而它在外审枚举轮 **3/3 报 NONE**。
-#: 触发误读的是**描述「某件事发生时会自动做什么」**的条目
-#: （「阵亡后自动继续播放」「本地监听开启」「事件 · 2 项」「地图 · 未检测到」），
-#: 而「当前样式：点」这种**静态属性**不会。
-#: ⭐⭐ **一个读起来像实时读数 / 像规则引擎的东西，光是存在就在暗示有个进程在跑。**
-#: ⇒ 不逐句改那些摘要，只改这一处**共用**的标题：它一次性给整条胶囊重新定性。
-STRIP_TITLE_ON = "当前状态"
-STRIP_TITLE_OFF = "当前配置"
-#: 那个标题的 objectName。15 页统一（各页各建一个 QLabel，但名字一致）。
-STRIP_TITLE_OBJECT_NAME = "statusLabel"
-
-
-def status_strip_title(page) -> QWidget | None:
-    """状态卡里那条胶囊的标题控件；找不到就 None。
-
-    ⭐ 认**位置 + objectName + 它现在说的那两个词**三条一起 ——
-    状态卡里叫 `statusLabel` 的标签不止一个（还有别的说明文字），
-    只有这一个是那条胶囊的抬头。
-    """
-    host = status_card_of(page)
-    if host is None:
-        return None
-    for label in host.findChildren(QLabel):
-        if label.objectName() != STRIP_TITLE_OBJECT_NAME:
-            continue
-        if label.text() in (STRIP_TITLE_ON, STRIP_TITLE_OFF):
-            return label
-    return None
 
 
 def undimmed_cards(page) -> list[QWidget]:
@@ -342,6 +298,8 @@ def make_master_switch_notice() -> QLabel:
 #: ⭐ 第一版只降了卡片外壳（标题字色 + 竖杠），外审复跑 39/43 照旧报
 #:   「所有控件均为高亮紫色激活态 ⇒ 以为正在运行」：**说话的那个东西我没动**。
 _ACCENT_BEARING = (QCheckBox, QPushButton, QRadioButton, QSlider)
+#: 配了风格的武器格和它的下拉也带强调色，只是控件类型不在上面那几类里。
+_ACCENT_BY_NAME = ("weaponCell", "weaponCellCombo")
 
 #: RN-439：这颗按钮做的事**不归总开关管**（开浏览器、弹选文件框），
 #: 所以降权不许碰它。值同样必须是字符串 `"true"`（见 `CARD_DIM_PROPERTY`）。
@@ -410,7 +368,7 @@ def apply_effect_state(page, enabled: bool) -> None:
         #   而屏幕上那些紫色滑块和单选框**一个像素都没变** ——
         #   因为没人叫它们重算。⇒ 凡是被祖先选择器管到的后代，都要点名 repolish。
         for child in card.findChildren(QWidget):
-            if isinstance(child, _ACCENT_BEARING) or (
+            if isinstance(child, _ACCENT_BEARING) or child.objectName() in _ACCENT_BY_NAME or (
                     isinstance(child, QLabel) and child.objectName() == "cardTitle"):
                 _repolish(child)
 
@@ -424,20 +382,6 @@ def apply_effect_state(page, enabled: bool) -> None:
             continue
         widget.setProperty(CARD_DIM_PROPERTY, value)
         _repolish(widget)
-
-    # ②b 状态胶囊组退成中性。⚠ 挂在状态卡（祖先）上，见 HOST_DIM_PROPERTY。
-    host = status_card_of(page)
-    if host is not None and host.property(HOST_DIM_PROPERTY) != value:
-        host.setProperty(HOST_DIM_PROPERTY, value)
-        _repolish(host)
-        for chip in host.findChildren(QLabel):
-            if chip.objectName() == "audioStatusChip":
-                _repolish(chip)
-
-    # ②d 那条胶囊的**标题**（RN-428）：没在跑的时候，它列的是配置。
-    title = status_strip_title(page)
-    if title is not None:
-        title.setText(STRIP_TITLE_ON if enabled else STRIP_TITLE_OFF)
 
     # ③ 预览说出后果。⚠ 预览**照常渲染**——把它关掉才是那条 6/6 高的判词。
     caption = PREVIEW_ON_TEXT if enabled else PREVIEW_OFF_TEXT

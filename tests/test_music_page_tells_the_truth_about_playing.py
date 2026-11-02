@@ -557,10 +557,10 @@ def test_the_playlist_comes_before_the_link_settings_in_the_source():
             a.attr if isinstance(a, ast.Attribute) else "<?>")
         order.append(name)
     assert len(order) >= 3, f"只读出 {order} —— 布局改写法了，判据已经瞎了"
-    assert "playlist_group" in order and "top_settings_row" in order, (
+    assert "playlist_group" in order and "game_link_group" in order, (
         f"认不出这两块了：{order}"
     )
-    assert order.index("playlist_group") < order.index("top_settings_row"), (
+    assert order.index("playlist_group") < order.index("game_link_group"), (
         f"播放列表又排到联动设置后面去了：{order}\n"
         "⭐ 这一页叫「音乐播放」：列表是**内容**，联动是**配置**，内容在前。\n"
         "⚠ 而页头逐字写着「双击列表里的歌就开始放」——\n"

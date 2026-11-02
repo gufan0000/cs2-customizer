@@ -61,12 +61,12 @@ def _all_subtitles() -> list[tuple[str, int, str]]:
 def test_the_extractor_actually_sees_the_subtitles():
     """空转守卫：抽取器一旦失效，下面那条就变成永远绿。
 
-    ⚠ 60 这个数不是我拍的，是 RN-077 那条判据已经在用的同一个下限
-    （改口径两边会一起红）。
+    ⚠ 50 这个数不是我拍的，是 RN-077 那条判据已经在用的同一个下限
+    （改口径两边会一起红）。批 150 减字之后实测 58。
     """
     subs = _all_subtitles()
-    assert len(subs) >= 60, (
-        f"全站只读到 {len(subs)} 条副标题（RN-077 判据的下限是 60）。\n"
+    assert len(subs) >= 50, (
+        f"全站只读到 {len(subs)} 条副标题（RN-077 判据的下限是 50）。\n"
         "抽取器很可能已经失效，下面的判据会永远绿。")
 
 

@@ -1,105 +1,142 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+"""武器格：一把枪一格，枪名 + 风格下拉 + 试听（批 146 从一整行改成一格）。
+
+点枪名做什么由页面决定（`nameClicked`）：四个音效页是把风格库选中的风格配给这把枪，
+枪声页是让微调栏换到这把枪；特殊音效页的名字不做事（`name_is_action=False`）。
+下拉留着做精确选择，试听的是这把枪现在配的那个风格。
+样式全在 `theme_manager`（`_weapon_board_qss`）：39 格各调一次 `setStyleSheet` 是建页最慢的那一块。
 """
-武器行组件 - 用于击杀音效和切枪音效页面
-"""
 
-from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QComboBox, QMenu, QPushButton, QSizePolicy, QToolButton
-from PySide6.QtCore import Signal
-from PySide6.QtGui import QFont
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import (
+    QComboBox, QFrame, QHBoxLayout, QMenu, QPushButton, QSizePolicy, QStyle,
+    QStyleOptionComboBox, QStylePainter, QToolButton,
+)
+
+#: 格子状态（`fp_state`）：配了 / 配的风格已经不在了 / 没配（空串）。
+STATE_CONFIGURED = "configured"
+STATE_STALE = "stale"
+#: 手上有刷子时这一格能不能接（`fp_brush`）。
+BRUSH_CAN = "can"
+BRUSH_CANNOT = "cannot"
 
 
-class WeaponRowWidget(QWidget):
-    """武器行组件：武器名 + 风格选择 + 测试按钮"""
+def _repolish(widget) -> None:
+    style = widget.style()
+    style.unpolish(widget)
+    style.polish(widget)
 
-    # 信号
-    styleChanged = Signal(str)   # 风格改变信号（发送新风格）
-    testClicked = Signal()       # 测试按钮点击信号（默认试听）
-    testLevelClicked = Signal(int)  # v2.2.1: 选档位试听（1-5连杀）
+
+class FlatStyleCombo(QComboBox):
+    """格子里的下拉：风格名放不下显示省略号，弹出的列表按内容放宽。"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.setMinimumContentsLength(3)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+
+    def paintEvent(self, _event):
+        painter = QStylePainter(self)
+        option = QStyleOptionComboBox()
+        self.initStyleOption(option)
+        painter.drawComplexControl(QStyle.CC_ComboBox, option)
+        field = self.style().subControlRect(
+            QStyle.CC_ComboBox, option, QStyle.SC_ComboBoxEditField, self)
+        option.currentText = self.fontMetrics().elidedText(
+            option.currentText, Qt.ElideRight, max(0, field.width() - 2))
+        painter.drawControl(QStyle.CE_ComboBoxLabel, option)
+
+    def showPopup(self):
+        # 放在这里不放构造：`view()` 第一次调才建弹窗，39 格一起建白花时间
+        view = self.view()
+        view.setTextElideMode(Qt.ElideNone)
+        view.setMinimumWidth(max(self.width(), view.sizeHintForColumn(0) + 24))
+        super().showPopup()
+
+
+class WeaponRowWidget(QFrame):
+    """一把枪一格（类名没改：四个音效页和判据都按它找）。"""
+
+    styleChanged = Signal(str)      # 风格改变（发送新风格）
+    testClicked = Signal()          # 试听（默认档）
+    testLevelClicked = Signal(int)  # 选档位试听（1-5 连杀）
+    nameClicked = Signal()          # 点了枪名
 
     def __init__(self, weapon_name: str, weapon_key: str,
                  style_options: list, current_style: str = "不启用", parent=None,
-                 *, test_levels: list | None = None):
+                 *, test_levels: list | None = None, name_is_action: bool = True):
         super().__init__(parent)
+        self.setObjectName("weaponCell")
+        self.setProperty("fp_setting_row", True)  # 搜到枪名时高亮整格
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
         self.weapon_name = weapon_name
         self.weapon_key = weapon_key
         self._test_levels = list(test_levels or [])
 
-        self._init_ui(style_options, current_style)
-    
-    def _init_ui(self, style_options, current_style):
-        """初始化UI"""
-        from theme_manager import get_theme_manager
-
-        self._apply_theme_styles()
-        get_theme_manager().register_theme_changed_callback(self._apply_theme_styles)
-
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(10, 8, 10, 8)
-        layout.setSpacing(10)
-        
-        # 武器名称
-        name_label = QLabel(self.weapon_name, self)
-        name_label.setFont(QFont("Microsoft YaHei", 14))
-        name_label.setMinimumWidth(124)
-        name_label.setMaximumWidth(140)
-        name_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
-        layout.addWidget(name_label)
-        
-        # 风格下拉框
-        self.style_combo = QComboBox(self)
+        layout.setContentsMargins(0, 0, 4, 0)
+        layout.setSpacing(0)
+
+        self.name_button = QPushButton(weapon_name, self)
+        self.name_button.setObjectName("weaponCellName")
+        self.name_button.setAccessibleName(weapon_name)
+        self.name_button.clicked.connect(self.nameClicked.emit)
+        if not name_is_action:
+            # 这一页点名字不做事：不占 Tab，也不假装能点
+            self.name_button.setFocusPolicy(Qt.NoFocus)
+            self.name_button.setAttribute(Qt.WA_TransparentForMouseEvents)
+        layout.addWidget(self.name_button)
+
+        self.style_combo = FlatStyleCombo(self)
+        self.style_combo.setObjectName("weaponCellCombo")
+        self.style_combo.setAccessibleName(f"{weapon_name} 的风格")
         self.style_combo.addItems(style_options)
         self.style_combo.setCurrentText(current_style)
-        self.style_combo.setMinimumWidth(220)
-        # ⭐⭐⭐ RN-442 的副作用（批 62 改完复跑逮到）：「测试」按钮从 118 缩回 72
-        #   之后，多出来的 46px 全被这颗 `Expanding` 的下拉框吃掉 ——
-        #   外审同一页同一档 **批 61 两发全 NONE、批 62 3/3** 报
-        #   「选项文字与下拉箭头之间大片异常留白，箭头被推到『测试』按钮旁」。
-        #   ⇒ 给它一个上限，多出来的空间交给弹簧，别交给控件。
-        self.style_combo.setMaximumWidth(420)
-        self.style_combo.setMinimumHeight(34)
-        self.style_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.style_combo.currentTextChanged.connect(self._on_style_changed)
         layout.addWidget(self.style_combo, 1)
-        layout.addStretch()
-        
-        # 测试按钮。v2.2.1: 提供档位时用带下拉的分裂按钮（默认播1连杀，
-        # 下拉可选 2-5 连杀试听——旧版永远只能试听第 1 连杀）
+
+        # 提供档位时用带下拉的分裂按钮（默认播 1 连杀，下拉选 2-5 连杀）
         if self._test_levels:
-            test_btn = QToolButton(self)
-            test_btn.setObjectName("secondaryButton")
-            test_btn.setText("测试")
-            test_btn.setFixedWidth(84)
-            test_btn.setMinimumHeight(34)
-            test_btn.setPopupMode(QToolButton.MenuButtonPopup)
-            test_btn.clicked.connect(self.testClicked.emit)
-            menu = QMenu(test_btn)
+            self.test_button = QToolButton(self)
+            self.test_button.setPopupMode(QToolButton.MenuButtonPopup)
+            self.test_button.clicked.connect(self.testClicked.emit)
+            menu = QMenu(self.test_button)
             for level in self._test_levels:
                 action = menu.addAction(f"试听 {level} 连杀")
-                action.triggered.connect(lambda _checked=False, lv=int(level): self.testLevelClicked.emit(lv))
-            test_btn.setMenu(menu)
-            layout.addWidget(test_btn)
+                action.triggered.connect(
+                    lambda _checked=False, lv=int(level): self.testLevelClicked.emit(lv))
+            self.test_button.setMenu(menu)
         else:
-            test_btn = QPushButton("测试", self)
-            test_btn.setObjectName("secondaryButton")
-            test_btn.setFixedWidth(72)
-            test_btn.setMinimumHeight(34)
-            test_btn.clicked.connect(self.testClicked.emit)
-            layout.addWidget(test_btn)
-        
-    
+            self.test_button = QPushButton(self)
+            self.test_button.clicked.connect(self.testClicked.emit)
+        self.test_button.setObjectName("weaponCellTest")
+        self.test_button.setText("试听")
+        self.test_button.setAccessibleName(f"试听 {weapon_name}")
+        # 没配风格时没东西可听：字退后一档，配上了再亮。⚠ 不禁用，点了照样有回应
+        self.test_button.setProperty("fp_idle", "true")
+        layout.addWidget(self.test_button)
+
+        self._sync_combo_tooltip()
+
     def _on_style_changed(self, new_style: str):
-        """风格改变处理"""
+        self._sync_combo_tooltip()
         self.styleChanged.emit(new_style)
-    
+
+    def _sync_combo_tooltip(self) -> None:
+        # 窄格子里风格名可能只露一半。⚠ 置灰时 tooltip 归「为什么灰」（`community_library._set_dim`）
+        if self.style_combo.isEnabled():
+            self.style_combo.setToolTip(self.style_combo.currentText())
+
     def get_current_style(self) -> str:
         """获取当前选中的风格"""
         return self.style_combo.currentText()
-    
+
     def set_current_style(self, style: str):
         """设置当前风格"""
         self.style_combo.setCurrentText(style)
-    
+
     def update_style_options(self, options: list):
         """更新风格选项列表"""
         current = self.style_combo.currentText()
@@ -112,37 +149,41 @@ class WeaponRowWidget(QWidget):
         else:
             self.style_combo.setCurrentIndex(0)
 
-    def _apply_theme_styles(self):
-        """重新应用主题相关的内联样式"""
-        # 父页面经 Qt 父子链析构（不走 deleteLater 覆盖）时回调不会被注销，
-        # 此处检测到 C++ 对象已销毁就自行注销，否则回调表随页面重建无界增长
-        import shiboken6
-        if not shiboken6.isValid(self):
-            from theme_manager import get_theme_manager
-            get_theme_manager().unregister_theme_changed_callback(self._apply_theme_styles)
+    def set_cell_state(self, state: str) -> None:
+        """配没配、配的还在不在。页面算好传进来，这里只管样子。"""
+        if (self.property("fp_state") or "") == state:
             return
-        from theme_manager import get_color
-        from ui_style_applier import keep_inline_style
+        self.setProperty("fp_state", state)
+        self.test_button.setProperty("fp_idle", "" if state else "true")
+        _repolish(self)
+        _repolish(self.style_combo)
+        _repolish(self.test_button)
 
-        # UP-019: 这份样式是从 theme token 现算的,不是硬编码——
-        # 打标豁免 apply_complete_system 的内联样式清理,否则首次进页
-        # 分隔线和 hover 态会被抹掉,得切一次主题才回来。
-        keep_inline_style(self)
-        self.setStyleSheet(f"""
-            WeaponRowWidget {{
-                background-color: transparent;
-                border-radius: 6px;
-                border-bottom: 1px solid {get_color('border_secondary')};
-                padding-bottom: 2px;
-            }}
-            WeaponRowWidget:hover {{
-                background-color: {get_color('bg_tertiary')};
-                border-bottom-color: {get_color('border_primary')};
-            }}
-        """)
+    def cell_state(self) -> str:
+        return self.property("fp_state") or ""
 
-    def deleteLater(self):
-        """清理：注销主题回调"""
-        from theme_manager import get_theme_manager
-        get_theme_manager().unregister_theme_changed_callback(self._apply_theme_styles)
-        super().deleteLater()
+    def set_brush_state(self, value: str) -> None:
+        """手上有刷子时这一格能不能接。空串 = 手上没有刷子。"""
+        if (self.property("fp_brush") or "") == value:
+            return
+        self.setProperty("fp_brush", value)
+        _repolish(self)
+        _repolish(self.name_button)
+        self.name_button.setCursor(
+            Qt.PointingHandCursor if value == BRUSH_CAN else Qt.ArrowCursor)
+
+    def set_selected(self, selected: bool) -> None:
+        """枪声页：下面那条微调栏现在调的是这一把。"""
+        value = "true" if selected else ""
+        if (self.property("fp_selected") or "") == value:
+            return
+        self.setProperty("fp_selected", value)
+        _repolish(self)
+
+    def set_name_width(self, width: int) -> None:
+        """枪名列宽由武器板统一给，这样上下左右的下拉都对得齐。"""
+        self.name_button.setFixedWidth(width)
+
+    def name_text_width(self) -> int:
+        self.name_button.ensurePolished()
+        return self.name_button.fontMetrics().horizontalAdvance(self.weapon_name)

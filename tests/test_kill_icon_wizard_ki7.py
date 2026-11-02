@@ -260,3 +260,15 @@ def test_probing_does_not_decode_every_frame(monkeypatch, tmp_path):
     wizard = KillIconImportWizard(_write_gif(tmp_path / "5.gif"))
     assert seen.get("analyze") is False, "小窗把整套帧解了一遍"
     wizard.deleteLater()
+
+
+def test_a_single_picture_is_not_called_an_animation():
+    """批 146（外审 S4）：「动图 · 静态图」两个词互斥，用户不知道到底认成了什么。"""
+    from types import SimpleNamespace
+
+    from dialogs.kill_icon_import_wizard import describe_probe
+
+    probe = SimpleNamespace(kind="animation", frame_count=1, frame_width=64, frame_height=64,
+                            hold_seconds=1.5, duration=0.0)
+    text = describe_probe(probe)
+    assert "静态图" in text and "动图" not in text, text

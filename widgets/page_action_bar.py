@@ -7,13 +7,21 @@ import html
 import re
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton
+
+from widgets.status_strip import CollapsingFrame
 
 
-class PageActionBar(QFrame):
-    def __init__(self, parent=None):
+class PageActionBar(CollapsingFrame):
+    def __init__(self, parent=None, *, inline: bool = False):
+        """`inline=True`：不是页面底下那一条，而是嵌在某一行标题里（音效页的风格库）。
+
+        这时三颗按钮都不是这一屏的主角，主按钮也用次要样式。
+        """
         super().__init__(parent)
-        self.setObjectName("pageActionBar")
+        #: `community_library.guide_empty_library` 按它决定还不还紫色。
+        self.inline = bool(inline)
+        self.setObjectName("pageActionBarInline" if inline else "pageActionBar")
         self._primary_callback = None
         self._secondary_callback = None
         self._extra_callback = None
@@ -22,12 +30,14 @@ class PageActionBar(QFrame):
         self._base_message = ""
         #: 这一截是不是富文本（页面显式声明）。⛔ 默认 False —— 见 `set_message`。
         self._message_is_rich = False
+        #: 这一截是不是用户现在必须读到的话（页面显式声明）。见 `set_message`。
+        self._message_important = False
         self._init_ui()
 
     #: 这一排按钮的高度。⭐ RN-549（批 66）：**同一排、同一角色的按钮，高度只有这一处声明。**
     #: 页面往这排里插按钮时走 `adopt_button()`，别自己写第二个数。
-    SECONDARY_HEIGHT = 36
-    PRIMARY_HEIGHT = 38
+    SECONDARY_HEIGHT = 32
+    PRIMARY_HEIGHT = 32
 
     def adopt_button(self, btn, *, primary: bool = False):
         """把页面自己造的按钮收进这一排，按这一排的规矩钉住高度。
@@ -48,7 +58,7 @@ class PageActionBar(QFrame):
 
     def _init_ui(self):
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(14, 8, 14, 8)
+        layout.setContentsMargins(0, 0 if self.inline else 8, 0, 0 if self.inline else 8)
         layout.setSpacing(8)
 
         self.message_label = QLabel("")
@@ -62,7 +72,9 @@ class PageActionBar(QFrame):
         #   这条回执里过的多半是用户自己起的字。叙事与实测见
         #   `tests/test_the_bottom_bar_stops_shouting.py` 那条同名判据。
         self.message_label.setTextFormat(Qt.PlainText)
+        self.message_label.hide()
         layout.addWidget(self.message_label, 1)
+        layout.addStretch(0)    # 消息藏起来时，按钮还靠右
 
         # v2.2.1: 第三按钮（如"新建风格"），与 secondary 同级样式
         self.extra_btn = QPushButton("")
@@ -78,7 +90,7 @@ class PageActionBar(QFrame):
         layout.addWidget(self.secondary_btn, 0)
 
         self.primary_btn = QPushButton("")
-        self.primary_btn.setObjectName("primaryButton")
+        self.primary_btn.setObjectName("secondaryButton" if self.inline else "primaryButton")
         self.primary_btn.setFixedHeight(self.PRIMARY_HEIGHT)
         self.primary_btn.hide()
         layout.addWidget(self.primary_btn, 0)
@@ -119,14 +131,18 @@ class PageActionBar(QFrame):
         """总开关动了 —— 把这一条回执重算一遍。"""
         self._render_message()
 
-    def set_message(self, text: str, *, rich: bool = False):
+    def set_message(self, text: str, *, rich: bool = False, important: bool = False):
         """底栏那一条回执。
 
+        ⭐ 批 145：常态下这句话不显示，只进这一条的 tooltip —— 状态页面上都看得见，
+        底栏再复述一遍是噪音。`important=True` 只给「用户现在必须读到」的那几句
+        （试听失败、要手动 exec、快捷键冲突）。
         ⛔ `rich=True` 显式给，只给真嵌了 `page_route(...)` 链接的那几处（RN-528、RN-589）；
         富文本档下**调用方负责自己那一截是安全的 HTML**。
         """
         self._base_message = str(text or "")
         self._message_is_rich = bool(rich)
+        self._message_important = bool(important)
         self._render_message()
 
     def _render_message(self):
@@ -164,7 +180,10 @@ class PageActionBar(QFrame):
                 parts.append(ACTION_BAR_ON_TEXT if auto else ACTION_BAR_ON_TEXT_MANUAL)
             else:
                 parts.append(ACTION_BAR_OFF_TEXT if auto else ACTION_BAR_OFF_TEXT_MANUAL)
-        fixed = "".join(parts)          # 上面那句固定回执，是我们自己的常量
+        # 上面那句固定回执，是我们自己的常量。开关开着时不用再说（批 145），
+        # 真要用户读的那句话前面不带它，一眼读到正事。
+        # ⚠ 关着时得带：「点保存才写入」前面没有这一句，就读成了点完就生效（RN-407）。
+        fixed = "" if self._message_important and enabled else "".join(parts)
         body = self._base_message       # 页面给的那一截
         if self._message_is_rich:
             # 固定回执转义（它是纯文本），页面那截原样（调用方保证它是安全 HTML）。
@@ -178,6 +197,8 @@ class PageActionBar(QFrame):
             tooltip = message
         self.message_label.setText(message)
         self.message_label.setToolTip(tooltip)
+        self.message_label.setVisible(self._message_important)
+        self.setToolTip(tooltip)
 
     def set_primary_pending(self, pending: bool | None):
         """这颗主按钮现在有没有「待提交的东西」（RN-504）。

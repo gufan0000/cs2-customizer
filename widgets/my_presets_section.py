@@ -7,7 +7,7 @@
 `PresetCenterPage` 只需要多继承一下、在布局里调一次 `build_my_presets_card()`。
 
 依赖 `PresetCenterPage` 提供的三件东西（都是它已有的）：
-`_selected_types()` / `_selected_type_labels()` / `_TYPE_CHECKBOX_SPEC` / `_set_compact_heights()`。
+`_selected_types()` / `_selected_type_labels()` / `_TYPE_CHECKBOX_SPEC`。
 """
 from __future__ import annotations
 
@@ -22,14 +22,12 @@ from PySide6.QtWidgets import (
     QPushButton,
 )
 
-# UP-100: 这一行横排时的最小宽实测 **883px**（下拉框钉了 220 下限 + 5 个按钮 + 间距），
-# 加上页面留白 32px 与滚动条约 6px，需要页宽 ≥ 921px 才装得下。取 960 留 39px 余量。
-#
-# 紧凑模式（860×640）下页宽只有 860 —— 于是整页横向滚动，`preset_center` 在
-# **8 主题 × 3 字号 24 个组合全中**，溢出 58~61px。这个模式用户点一下界面上的
-# 「切换紧凑/完整模式」按钮就能进，而 R0~R10 十一轮审计跑的全是完整模式，
-# 从来没量过这一档。
-MY_PRESETS_ROW_MIN_WIDTH = 960
+from widgets.settings_row import PLAIN_CONTROL_WIDTH
+
+# UP-100: 这一行曾把紧凑模式（860×640）整页顶出横向滚动条，8 主题 × 3 字号 24 个组合全中。
+# 这个模式用户点一下就能进，而 R0~R10 十一轮审计跑的全是完整模式，从来没量过这一档。
+# 批 149：下拉框定宽 240，加 5 个按钮和页面留白最宽约 700（125% 字号），取 720。
+MY_PRESETS_ROW_MIN_WIDTH = 720
 
 
 class MyPresetsMixin:
@@ -49,23 +47,19 @@ class MyPresetsMixin:
         # ⇒ 照 RN-401 的规矩改：**点名控件，不指方向**。
         card, layout = SettingsCard.make(
             "我的预设",
-            "把「保存/导出的范围」勾中的类别存成一套具名预设，之后一键切回来。"
-            "应用前会自动建快照，可在配置快照页回滚。",
+            "把「保存/导出的范围」勾中的类别存成一套，之后一键切回来。",
             spacing=10,
         )
 
-        # UP-100: 原本是一个 QHBoxLayout 把下拉框和 5 个按钮平铺到底，最小宽 883px，
-        # 窄窗口下顶穿。改成「下拉框」+「按钮子行」两段，外层用 QBoxLayout 以便按页宽
-        # 切方向（`_update_my_presets_layout`）——横排时布局与改之前**逐像素相同**
-        # （stretch 仍是 1，按钮仍按原顺序紧跟其后），只有窄到装不下时才竖过来。
+        # UP-100: 「下拉框」+「按钮子行」两段，外层用 QBoxLayout 以便按页宽切方向
+        # （`_update_my_presets_layout`），只有窄到装不下时才竖过来。
         row = QBoxLayout(QBoxLayout.LeftToRight)
         row.setSpacing(8)
         self.my_preset_row = row
 
         self.my_preset_combo = QComboBox()
-        self.my_preset_combo.setFixedHeight(34)
-        self.my_preset_combo.setMinimumWidth(220)
-        row.addWidget(self.my_preset_combo, 1)
+        self.my_preset_combo.setFixedWidth(PLAIN_CONTROL_WIDTH)
+        row.addWidget(self.my_preset_combo)
 
         btn_row = QHBoxLayout()
         btn_row.setSpacing(8)
@@ -98,13 +92,7 @@ class MyPresetsMixin:
         btn_row.addWidget(self.my_preset_delete_btn)
 
         row.addLayout(btn_row, 0)
-
-        if hasattr(self, "_set_compact_heights"):
-            self._set_compact_heights(
-                self.my_preset_apply_btn, self.my_preset_save_btn,
-                self.my_preset_overwrite_btn, self.my_preset_rename_btn,
-                self.my_preset_delete_btn,
-            )
+        row.addStretch(1)
         layout.addLayout(row)
 
         self.my_preset_hint_label = QLabel("")
@@ -123,9 +111,6 @@ class MyPresetsMixin:
         宿主页面在 `resizeEvent` 里调它。放在 mixin 里而不是页面里，是因为
         这一行的最小宽是这个文件决定的——判据和阈值应该跟着决定它的代码走，
         否则改了按钮文案却忘了改另一个文件里的阈值，缺陷会静悄悄回来。
-
-        竖排时把下拉框的 stretch 归 0：QBoxLayout 竖过来之后 stretch 管的是**高**，
-        而下拉框 `setFixedHeight(34)` 长不了，留着 stretch=1 只会在它下面撑出一段空隙。
         """
         row = getattr(self, "my_preset_row", None)
         if row is None:
@@ -134,7 +119,6 @@ class MyPresetsMixin:
         direction = QBoxLayout.TopToBottom if vertical else QBoxLayout.LeftToRight
         if row.direction() != direction:
             row.setDirection(direction)
-            row.setStretch(0, 0 if vertical else 1)
 
     # ------------------------------------------------------------------ 数据
 
@@ -367,4 +351,4 @@ class MyPresetsMixin:
         except Exception:
             bar = getattr(self, "action_bar", None)
             if bar is not None and hasattr(bar, "set_message"):
-                bar.set_message(message)
+                bar.set_message(message, important=True)

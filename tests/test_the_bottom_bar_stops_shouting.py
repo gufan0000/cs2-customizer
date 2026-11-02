@@ -174,13 +174,14 @@ def _chip_values(page) -> list[str]:
     ⭐⭐⭐ 否则这条判据会以「底栏没复述任何芯片」的样子**全绿**，
     而它其实一颗芯片都没看见（同 RN-183 立案里那句假话的来路）。
     """
+    from pages.audio_status_badge import AudioStatusBadgeBar
+
     out = []
-    for c in page.findChildren(QLabel):
-        if c.objectName() != "audioStatusChip" or not c.isVisibleTo(page):
-            continue
-        parts = [p.strip() for p in (c.text() or "").split("·") if p.strip()]
-        if len(parts) >= 2:
-            out.append(parts[-1])
+    for bar in page.findChildren(AudioStatusBadgeBar):
+        for text in bar.badge_texts():
+            parts = [p.strip() for p in text.split("·") if p.strip()]
+            if len(parts) >= 2:
+                out.append(parts[-1])
     return out
 
 
@@ -411,7 +412,7 @@ def test_no_anchor_chip_is_an_ancestor_of_another(win, qapp):
     批 64 那条：判据改成按形状划分母，新页天生进分母。
     """
     from PySide6.QtCore import QPoint
-    from PySide6.QtWidgets import QLabel, QScrollArea
+    from PySide6.QtWidgets import QScrollArea
 
     from widgets.anchor_bar import _is_ancestor
 
@@ -470,6 +471,29 @@ def test_no_anchor_chip_is_an_ancestor_of_another(win, qapp):
         "不知该去哪里配置」），实测 5 颗里 3 颗是「基础」的后代。")
 
 
+def test_a_chip_row_drops_the_section_that_holds_another(qapp):
+    """批 150 起产品里的卡片不再嵌套，上面那条全站扫描没有样本了：这里自己造一组。"""
+    from PySide6.QtWidgets import QFrame, QHBoxLayout, QScrollArea, QVBoxLayout, QWidget
+
+    from widgets.anchor_bar import install_anchor_chips
+
+    body = QWidget()
+    column = QVBoxLayout(body)
+    outer, other = QFrame(), QFrame()
+    inner = QFrame(outer)
+    column.addWidget(outer)
+    column.addWidget(other)
+    scroll = QScrollArea()
+    scroll.setWidget(body)
+    bar = QWidget()
+    install_anchor_chips(
+        QHBoxLayout(bar), scroll,
+        [("外层", "外层", outer), ("内层", "内层", inner), ("另一段", "另一段", other)],
+        lead=None)
+    texts = [chip.text() for chip in bar.findChildren(QPushButton)]
+    assert texts == ["内层", "另一段"], texts
+
+
 def test_dropping_containers_keeps_the_leaves_not_the_parents():
     """阳性 + 阴性对照：合成一棵父子结构，断言丢掉的是**容器**不是内容。
 
@@ -514,7 +538,6 @@ def test_the_message_label_does_not_guess_whether_user_text_is_html():
 
     ⇒ 默认档必须是 `PlainText`；要富文本得**显式**传 `rich=True`（那几处嵌了页名链接）。
     """
-    from PySide6.QtWidgets import QLabel
 
     from widgets.page_action_bar import PageActionBar
 

@@ -22,7 +22,7 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import Qt  # noqa: E402
-from PySide6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtWidgets import QApplication, QPushButton, QStackedWidget  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -142,6 +142,10 @@ def _visible_texts(widget):
             t = ""
         if isinstance(t, str) and t.strip():
             out.append(t.strip())
+        # 批 146：标签可以比用户搜的词短，别名由控件自己带（准心页的「大小」）
+        alias = w.property("fp_search_text")
+        if alias:
+            out.append(str(alias))
     return out
 
 
@@ -149,6 +153,7 @@ def _visible_texts(widget):
     ("启用回合音效", "special_sound", "回合"),
     ("启用投掷物音效", "special_sound", "投掷物"),
     ("启用低血量警告", "special_sound", "血量警告"),
+    ("启用 C4 音效", "special_sound", "C4"),
 ])
 def test_jump_switches_to_the_right_tab(win, app, query, page_id, tab):
     """项落在非当前页签里时，跳转必须先把页签切过去。
@@ -219,6 +224,81 @@ def test_every_indexed_item_is_locatable_on_its_page(win, app):
           f"覆盖 {len(by_page)} 个运行时页）")
     assert checked >= 20, f"抽样太少({checked})，这条判据说明不了问题"
     assert not misses, f"索引里有、页面上找不到：{misses}"
+
+
+# 总开关关着时主按钮要退成中性，那几条规则比高亮更具体（`masterOff`）：这一颗跳过去看不出高亮。
+_DARK_ON_PURPOSE = {"crosshair:绘制准心"}
+
+
+def _is_whole_area(widget):
+    parent = widget.parentWidget()
+    return (isinstance(widget, QStackedWidget) or isinstance(parent, QStackedWidget)
+            or widget.objectName() == "qt_scrollarea_viewport"
+            or (parent is not None and parent.objectName() == "qt_scrollarea_viewport"))
+
+
+def _lights_up(widget):
+    def repolish():
+        widget.style().unpolish(widget)
+        widget.style().polish(widget)
+
+    widget.setAttribute(Qt.WA_StyledBackground, True)
+    before = widget.grab().toImage()
+    widget.setProperty("searchHit", "true")
+    repolish()
+    after = widget.grab().toImage()
+    widget.setProperty("searchHit", None)
+    repolish()
+    return before != after
+
+
+def test_every_indexed_control_can_be_found_and_lit(win, app):
+    """RN-744 的分母：按钮、标签、开关全量走一遍，不是每页抽几条。
+
+    上面那条只抽 check/radio，看不见按钮：枪名从标签改成按钮后，164 条按钮里 122 条
+    跳过去只落到页头，它全程绿。
+    """
+    data = json.loads((ROOT / "core" / "search_index.json").read_text(encoding="utf-8"))
+    runtime_pages = set(data["coverage"]["runtime_pages"])
+    by_page = {}
+    for it in data["items"]:
+        if it["page"] in runtime_pages and it["kind"] in ("button", "label", "check", "radio"):
+            by_page.setdefault(it["page"], []).append(it)
+
+    found = {"button": 0, "label": 0, "check": 0, "radio": 0}
+    missed, whole, dark = [], [], set()
+    for pid, items in sorted(by_page.items()):
+        win.ensure_page_loaded(pid)
+        win.show_page(pid, force=True)
+        app.processEvents()
+        page = win.pages.get(pid)
+        if page is None:
+            continue
+        for it in items:
+            win._activate_page_tab(page, it.get("tab", ""))
+            app.processEvents()
+            text = it["text"]
+            row = win._find_setting_row(page, text) or win._find_setting_row(page, text, buttons=True)
+            if row is None:
+                # 只认页面上此刻真看得见的：有些按钮只在某个状态下才露出来
+                if it["kind"] == "button" and any(
+                        text in button.text() and button.isVisibleTo(page)
+                        for button in page.findChildren(QPushButton)):
+                    missed.append(f"{pid}:{text}")
+                continue
+            found[it["kind"]] += 1
+            if _is_whole_area(row):
+                whole.append(f"{pid}:{text} -> {type(row).__name__}#{row.objectName()}")
+            if not _lights_up(row):
+                dark.add(f"{pid}:{text}")
+
+    print(f"\n[分母] 定位到 {found}")
+    assert not missed, f"页面上看得见，跳过去却找不到：{missed}"
+    assert not whole, f"高亮落在一整块内容区上，等于没定位：{whole}"
+    assert dark <= _DARK_ON_PURPOSE, f"高亮看不出来（多半是新的 id 规则，加进 _search_hit_qss）：{dark - _DARK_ON_PURPOSE}"
+    assert found["button"] >= 100, found
+    assert found["label"] >= 100, found
+    assert found["check"] >= 50, found
 
 
 # ---------------- 空态与最近搜索 ----------------

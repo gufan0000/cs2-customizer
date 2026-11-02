@@ -13,7 +13,6 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFrame,
     QHBoxLayout,
-    QLabel,
     QMessageBox,
     QPushButton,
     QScrollArea,
@@ -33,6 +32,7 @@ from resource_manager import ResourceManager
 from widgets.page_action_bar import PageActionBar
 from widgets.settings_card import SettingsCard
 from widgets.page_header import PageHeader
+from widgets.status_strip import StatusStrip
 
 
 class AudioHealthPage(QWidget):
@@ -76,7 +76,7 @@ class AudioHealthPage(QWidget):
             #   完整档 4/4 仍答「不会」—— 理由逐字指向这一句：它只举了「音效不响」一个例子，
             #   于是这一页又被框回声音。⭐ **改了容器的名字，里面那句话还在替旧名字说话。**
             description=("检查音效和图片素材是不是齐的 —— 音效不响、击杀图标不出现，"
-                         "都先来这儿查一遍。点右上角「?」看用法。"),
+                         "都先来这儿查一遍。"),
             title_font_size=None,
             spacing=12,
         )
@@ -84,24 +84,18 @@ class AudioHealthPage(QWidget):
         layout.addWidget(header)
         install_help_panel(header.title_row, header.body, PAGE_HELP_TEXTS["audio_health"])
 
-        card, card_layout = SettingsCard.make("当前状态")
+        card = StatusStrip()
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(0, 0, 0, 0)
+        card_layout.setSpacing(8)
         self.status_card = card
 
         self.status_badge_label = create_badge_label()
         card_layout.addWidget(self.status_badge_label)
 
-        self.summary_label = QLabel("等待体检结果...")
-        self.summary_label.setObjectName("hintLabel")
-        self.summary_label.setWordWrap(True)
-        self.summary_label.hide()
-        card_layout.addWidget(self.summary_label)
         layout.addWidget(card)
 
-        actions_card, actions_layout = SettingsCard.make(
-            "体检与修复",
-            # RN-508：按钮已改名成「一键修复（只补不删）」，这句话得跟着说人话。
-            "先体检，看清楚缺什么，再决定要不要让软件把缺的目录补上；导出报告适合留档或发给我继续排查。",
-        )
+        actions_card, actions_layout = SettingsCard.make("体检与修复")
 
         actions = QHBoxLayout()
         # ⭐ 批 46：这一屏没了视觉重心 ⇒ 把**第一步**升为主按钮。⚠ 批 79 更正：
@@ -129,25 +123,19 @@ class AudioHealthPage(QWidget):
         actions_layout.addLayout(actions)
         layout.addWidget(actions_card)
 
-        report_card, report_layout = SettingsCard.make(
-            "体检报告",
-            "报告会汇总资源缺失、失效引用和空目录等问题，便于确认修复前后的差异。",
-        )
+        report_card, report_layout = SettingsCard.make("体检报告")
 
         self.report_text = QTextEdit()
         self.report_text.setReadOnly(True)
-        self.report_text.setMinimumHeight(400)
+        self.report_text.setMinimumHeight(240)
         report_layout.addWidget(self.report_text)
 
-        layout.addWidget(report_card)
-        layout.addStretch()
+        layout.addWidget(report_card, 1)
 
         scroll.setWidget(content)
         root.addWidget(scroll, 1)
 
         self.action_bar = PageActionBar(self)
-        self.action_bar.secondary_btn.setMinimumWidth(116)
-        self.action_bar.primary_btn.setMinimumWidth(148)
         root.addWidget(self.action_bar, 0)
 
         self.check_btn.clicked.connect(self._run_health_check)
@@ -190,7 +178,7 @@ class AudioHealthPage(QWidget):
                 f"当前状态：发现 {issue_count} 项问题 · 「{self.fix_btn.text()}」"
                 f"只建缺的目录、不删素材；想先核对就看「体检报告」。"
             )
-        self.action_bar.set_message(action_message)
+        self.action_bar.set_message(action_message, important=not overall_ok)
 
     def _sync_first_step(self, overall_ok: bool):
         """⭐ 那一颗紫的必须是**当下的第一步**（批 44 RN-450 的裁定）。
@@ -257,13 +245,6 @@ class AudioHealthPage(QWidget):
              "视觉 · 正常" if visual_ok else f"视觉 · 需检查 {visual_n} 项"),
         ]
 
-        # ⚠ RN-527①：芯片改口之后这一句要跟着改 —— 同一屏上说同一件事的两处，
-        #   改了一处另一处留在原地，正是 RN-508 记过的那个形状（本页已犯过一次）。
-        compact_summary = (
-            f"状态 · {'健康' if overall_ok else '发现问题'}"
-            f" · 音频{'正常' if audio_ok else f'需检查 {audio_n} 项'}"
-            f" · 视觉{'正常' if visual_ok else f'需检查 {visual_n} 项'}"
-        )
         detail_text = (
             f"资源体检结果：音频{'正常' if audio_ok else '需要关注'}，"
             f"视觉{'正常' if visual_ok else '需要关注'}，"
@@ -273,8 +254,6 @@ class AudioHealthPage(QWidget):
             f"空风格目录 {summary.get('empty_style_dirs', 0)} 项。"
         )
         render_badges(self.status_badge_label, badges, detail_tooltip=detail_text)
-        self.summary_label.setText(compact_summary)
-        self.summary_label.setToolTip(detail_text)
         if hasattr(self, "status_card"):
             self.status_card.setToolTip(detail_text)
         self._sync_action_bar(report)
@@ -353,7 +332,9 @@ class AudioHealthPage(QWidget):
                 "修复已执行（只补缺的、不删你的文件）。"
                 f"\n音频目录补齐：{created_audio}"
                 f"\n视觉目录补齐：{created_visual}"
-                f"\n回退配置项：{reset}",
+                f"\n回退配置项：{reset}"
+                # 批 145 外审：补的是空目录，读起来却像把音效修回来了
+                "\n\n补上的是空目录：音效和图片还要从「导入资源」放进去。",
             )
         except Exception as e:
             self.logger.error(f"Audio conservative fix failed: {e}", exc_info=True)

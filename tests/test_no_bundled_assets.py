@@ -215,6 +215,8 @@ def _fake_onedir_tree(tmp_path, *, with_resources: bool) -> Path:
     (internal / "core").mkdir()
     (internal / "core" / "search_index.json").write_text("{}", encoding="utf-8")
     (internal / "python313.dll").write_bytes(b"x")
+    (internal / "fonts").mkdir()
+    (internal / "fonts" / "SailSansSC-Medium.ttf").write_bytes(b"font-fixture")
     (folder / "CS2 Customizer.exe").write_bytes(b"x")
     if with_resources:
         (internal / "resources").mkdir()
@@ -240,6 +242,17 @@ def test_onedir_gate_accepts_missing_resources_when_declared(tmp_path, monkeypat
     mod.verify_onedir_tree(
         folder, "CS2 Customizer", require_obfuscation=False, require_bundled_assets=False
     )
+
+
+def test_onedir_gate_still_rejects_missing_fonts_without_assets(tmp_path, monkeypatch):
+    mod = _build_release_module()
+    monkeypatch.setattr(mod, "find_tool", lambda name: None)
+    folder = _fake_onedir_tree(tmp_path, with_resources=False)
+    (folder / "_internal" / "fonts" / "SailSansSC-Medium.ttf").unlink()
+    with pytest.raises(RuntimeError, match="界面字体"):
+        mod.verify_onedir_tree(
+            folder, "CS2 Customizer", require_obfuscation=False, require_bundled_assets=False
+        )
 
 
 def _patch_archive_viewer(mod, monkeypatch, entries):

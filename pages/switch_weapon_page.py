@@ -133,7 +133,6 @@ class SwitchWeaponPage(SoundPageBase, QWidget):
         self.audio_manager = get_runtime_audio_manager()
         self.weapon_rows: dict[str, WeaponRowWidget] = {}
         self.weapon_switch_styles: dict[str, list[str]] = {}
-        self._tab_groups = list(self.CATEGORIES.items())
         self._loading = False
 
         self.categories = self.CATEGORIES
@@ -167,22 +166,13 @@ class SwitchWeaponPage(SoundPageBase, QWidget):
         if not hasattr(config, "switch_weapon_sound_enabled"):
             config.switch_weapon_sound_enabled = False
 
-    def _get_current_tab_info(self) -> tuple[str, tuple[str, ...]]:
-        if not hasattr(self, "tab_widget") or self.tab_widget.count() == 0 or not self._tab_groups:
-            return ("未分组", tuple())
-        index = self.tab_widget.currentIndex()
-        if index < 0 or index >= len(self._tab_groups):
-            index = 0
-        name, weapons = self._tab_groups[index]
-        return name, tuple(weapons)
-
     # ------------------------------------------------ R9-D 基类钩子
     PAGE_TITLE = "切枪音效设置"
     # RN-034：原文无条件写「先去「基础设置」打开总开关」，而徽章上同时
     # 明明写着「开关 · 已启用」—— 自相矛盾，外审六发里四发独立点出这一条。
     # 改成陈述总开关在哪，不再命令用户去做一件可能已经做完的事；
     # "现在到底开没开"由徽章和底部操作条按状态说（那两处本来就是条件文案）。
-    PAGE_LEAD = "切换武器时播放你自己的音效。逐把枪选风格，点「测试」试听；总开关管它开不开。"
+    PAGE_LEAD = "切换武器时播放你自己的音效。选一个风格再点枪名就配上；总开关管它开不开。"
     HELP_KEY = "switch_weapon"
     STYLE_TOOLS_MENU = False
     # RN-147：与 reload_sound 同一个机制——状态卡上写着总开关开没开，
@@ -210,14 +200,14 @@ class SwitchWeaponPage(SoundPageBase, QWidget):
                 all_options.append(style)
         return all_options
 
-    def _test_weapon(self, weapon: str, level=None) -> None:
+    def _test_weapon(self, weapon: str, level=None, style=None) -> None:
         # RN-037：原来写成 `... if level is None else self._test_switch_sound(weapon, level)`，
         # 而 `_test_switch_sound()` **只接一个参数** —— 那个分支一旦走到必报 TypeError。
         # 它没爆过，纯粹因为本页 `TEST_LEVELS is None` ⇒ `WeaponRowWidget` 不建档位菜单、
         # `testLevelClicked` 永不发射。是死代码，但是**写错的**死代码：哪天给本页
         # 加上档位试听，第一次点就崩。连杀档位是击杀音效独有的，这里直接忽略 level。
         del level
-        self._test_switch_sound(weapon)
+        self._test_switch_sound(weapon, style=style)
 
 
     def _scan_switch_weapon_styles(self):
@@ -309,19 +299,22 @@ class SwitchWeaponPage(SoundPageBase, QWidget):
 
         self.logger.info(f"武器 {weapon} 切枪音效更新: {old_style} -> {normalized}")
 
-    def _test_switch_sound(self, weapon: str):
-        configured = self._configured_style(weapon)
-        if not self._is_style_enabled(configured):
-            report_preview_failure(self, PreviewFailure.NO_STYLE, weapon)
-            return
-        # RN-033：原来直接拿配置的原始值去找目录，于是**那一行明明显示「不启用」**，
-        # 点「测试」却报「文件不存在」—— 用户会去查音频设备/素材，而真正的原因是
-        # 他配的那个风格已经被改名或删掉了。这里先问解析后的值，把话说准。
-        style_value = self._resolved_style(weapon)
-        if not self._is_style_enabled(style_value):
-            report_preview_failure(self, PreviewFailure.STALE_STYLE,
-                                   f"{weapon} · {configured}")
-            return
+    def _test_switch_sound(self, weapon: str, style: str | None = None):
+        """`style` 给了就试听它（风格卡上那颗按钮），不看这把枪配的是什么。"""
+        style_value = style
+        if style_value is None:
+            configured = self._configured_style(weapon)
+            if not self._is_style_enabled(configured):
+                report_preview_failure(self, PreviewFailure.NO_STYLE, weapon)
+                return
+            # RN-033：原来直接拿配置的原始值去找目录，于是**那一行明明显示「不启用」**，
+            # 点「试听」却报「文件不存在」—— 用户会去查音频设备/素材，而真正的原因是
+            # 他配的那个风格已经被改名或删掉了。这里先问解析后的值，把话说准。
+            style_value = self._resolved_style(weapon)
+            if not self._is_style_enabled(style_value):
+                report_preview_failure(self, PreviewFailure.STALE_STYLE,
+                                       f"{weapon} · {configured}")
+                return
 
         sound_key = f"switch-{weapon}-{style_value}"
         sounds = getattr(self.audio_manager, "_sounds", {})
@@ -361,8 +354,6 @@ class SwitchWeaponPage(SoundPageBase, QWidget):
         resolved = self._resolved_styles()
         selected_count = self._configured_weapon_count(resolved=resolved)
         stale_count = self._stale_weapon_count(resolved)
-        current_tab_name, current_weapons = self._get_current_tab_info()
-        current_count = self._configured_weapon_count(list(current_weapons), resolved=resolved)
 
         health = collect_category_health(("switch_weapons",))
         detail_tooltip = build_health_detail_tooltip(health)
@@ -370,10 +361,6 @@ class SwitchWeaponPage(SoundPageBase, QWidget):
         badges = [
             ("success" if enabled else "warn", f"开关 · {'已开启' if enabled else '未开启'}"),
             self._configured_badge(selected_count, stale_count),
-            (
-                "success" if current_count else "info",
-                f"分类 · {self._compact_text(current_tab_name)} {current_count}/{len(current_weapons)}",
-            ),
             # RN-035：分级收进 `resource_badge()` 一份 —— 原先七个音效页各抄一遍，
             # 七份都把"素材目录还没建"（全新安装的样子）报成**红色异常**。
             resource_badge(health),
@@ -381,8 +368,6 @@ class SwitchWeaponPage(SoundPageBase, QWidget):
 
         detail_lines = [
             f"总开关：{'已开启' if enabled else '未开启'}",
-            f"当前分类：{current_tab_name}",
-            f"当前分类已配置：{current_count}/{len(current_weapons)}",
             f"全部武器已配置：{selected_count}/{sum(len(weapons) for weapons in self.CATEGORIES.values())}",
             "测试策略：按需加载当前武器目录下的首个可用音频文件",
         ]
@@ -394,15 +379,9 @@ class SwitchWeaponPage(SoundPageBase, QWidget):
 
         summary_text = "\n".join(detail_lines)
         render_badges(self.status_badge_label, badges, detail_tooltip=summary_text)
-        self.summary_label.setText(summary_text)
-        self.summary_label.setToolTip(summary_text)
         self.status_card.setToolTip(summary_text)
         # RN-038：这里原本又算了一遍 `_configured_preview_names()`，而上面十行之内
         # 没有任何东西改变过它的输入 —— 纯重复计算，与 kill_voice 的 RN-014 同形。
-        self.category_overview_title_label.setText(f"当前分类 · {current_tab_name}")
-        self.category_overview_meta_label.setText(
-            f"本分类已配置 {current_count}/{len(current_weapons)} · 全局已配置 {selected_count}/{sum(len(weapons) for weapons in self.CATEGORIES.values())}"
-        )
         # RN-033/RN-035：这一行是**屏幕上唯一说得清"出了什么事、该怎么办"的地方**
         # （`summary_label` 是 RN-009 那个建出来就 hide 的死控件，写进去等于没写）。
         # 优先级：失效项（可行动）> 资源状态（新用户第一次来就该看到的那句）> 已配置示例。
@@ -416,15 +395,17 @@ class SwitchWeaponPage(SoundPageBase, QWidget):
             )
         else:
             self.category_overview_hint_label.setText("当前还没有启用切枪音效映射，可逐项试听后再配置。")
+        self._sync_category_hint(stale_count, health)
         if hasattr(self, "action_bar"):
             if enabled:
                 action_message = (
-                    f"当前分类：{current_tab_name} · 已配置 {current_count}/{len(current_weapons)}，"
+                    f"已配置 {selected_count}/{len(self._get_all_weapons())}，"
                     "新增资源后可直接刷新风格列表。"
                 )
             else:
                 action_message = "总开关当前关闭，这里的映射会保留；如新增资源，可先刷新风格列表，再拨开总开关。"
             self.action_bar.set_message(action_message)
+        self._sync_weapon_board(resolved)
         # RN-153：空库时把主按钮换成社区引导（逻辑在基类，只有一份）。
         # ⚠ 必须放在 set_message **之后** —— 它会覆盖上面那句文案。
         self._sync_community_guidance()

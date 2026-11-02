@@ -29,6 +29,15 @@ from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QVBoxLayout, QWidget
 )
 
+from ui_style_applier import keep_single_line
+
+
+#: 朴素设置行（批 149）：标签一列对齐，控件不拉满。1000 px 宽的下拉框读起来像一堵墙。
+PLAIN_LABEL_WIDTH = 120
+PLAIN_CONTROL_WIDTH = 240
+#: 控件高 32：滑条和勾选框本身矮，不钉的话这几行会比下拉框那几行挤。
+PLAIN_ROW_MIN_HEIGHT = 32
+
 
 class SettingsRow(QWidget):
     """单行设置项.
@@ -119,3 +128,23 @@ class SettingsRow(QWidget):
     def add_widget(self, widget: QWidget) -> None:
         """往主行追加 widget(如多控件横排)."""
         self.row.addWidget(widget)
+
+
+def inline_hint(text: str) -> QLabel:
+    """跟在控件后面的一句短提示：不折行。"""
+    label = keep_single_line(QLabel(text))
+    label.setObjectName("hintLabel")
+    return label
+
+
+def plain_row(label: str, control: QWidget, *extras: QWidget, width: int | None = PLAIN_CONTROL_WIDTH) -> SettingsRow:
+    """一行设置：标签 + 定宽控件，后面可以跟按钮，再往右留白。`width=None` 用控件自己的宽度。"""
+    row = SettingsRow(label, control=control, label_min_width=PLAIN_LABEL_WIDTH, control_align="left")
+    keep_single_line(row.label_widget)
+    row.setMinimumHeight(PLAIN_ROW_MIN_HEIGHT)
+    if width is not None:
+        control.setFixedWidth(width)
+    stretch_at = row.row.count() - 1
+    for offset, extra in enumerate(extras):
+        row.row.insertWidget(stretch_at + offset, extra)
+    return row

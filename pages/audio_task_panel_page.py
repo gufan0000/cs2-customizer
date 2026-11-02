@@ -27,6 +27,7 @@ from pages.audio_status_badge import create_badge_label, render_badges
 from widgets.page_action_bar import PageActionBar
 from widgets.settings_card import SettingsCard
 from widgets.page_header import PageHeader
+from widgets.status_strip import StatusStrip
 
 
 class AudioTaskPanelPage(QWidget):
@@ -75,7 +76,10 @@ class AudioTaskPanelPage(QWidget):
         #   那颗「?」要每页自己装，否则表里有、屏幕上没有。
         install_help_panel(header.title_row, header.body, PAGE_HELP_TEXTS["audio_task_panel"])
 
-        card, card_layout = SettingsCard.make("当前状态")
+        card = StatusStrip()
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(0, 0, 0, 0)
+        card_layout.setSpacing(8)
         self.status_card = card
 
         self.status_badge_label = create_badge_label()
@@ -88,13 +92,19 @@ class AudioTaskPanelPage(QWidget):
         card_layout.addWidget(self.summary_label)
         layout.addWidget(card)
 
-        history_card, history_layout = SettingsCard.make(
-            "任务历史",
-            "已经跑完的后台任务：做了什么、成没成。正在跑的任务看「当前状态」。",
-        )
+        history_card, history_layout = SettingsCard.make("任务历史")
+
+        self.empty_history_label = QLabel("还没有任务记录。导入或重载音效之后，这里会自动列出来。")
+        self.empty_history_label.setObjectName("hintLabel")
+        self.empty_history_label.setWordWrap(True)
+        history_layout.addWidget(self.empty_history_label)
 
         action_row = QHBoxLayout()
         action_row.setSpacing(8)
+        # Phase1-1.3: 空状态给一个明确的"下一步"入口，而不是一片留白
+        self.empty_action_btn = QPushButton("前往资源导入向导")
+        self.empty_action_btn.clicked.connect(lambda: self._navigate_to_page("audio_import_wizard"))
+        action_row.addWidget(self.empty_action_btn)
         # ⭐ 批 46：底栏那颗变身式主按钮撤掉之后，这一屏一颗主按钮都不剩，
         #   外审当场报「按钮平级、无视觉重心」。⇒ 把**第一步**升为主按钮，
         #   且**恒定不变**（不像底栏那颗随状态换词）。这一页的第一步是「刷新」：它是这张卡上唯一能推进的动作。
@@ -104,7 +114,6 @@ class AudioTaskPanelPage(QWidget):
         #   「最抢眼的紫色主按钮是**无实质产出的**『刷新』，点后毫无反馈」：
         #   空状态下刷新确实刷不出任何东西，第一步是去产生一个任务。
         self.refresh_btn.setObjectName("secondaryButton")
-        self.refresh_btn.setMinimumHeight(34)
         self.refresh_btn.clicked.connect(self._reload_history)
         action_row.addWidget(self.refresh_btn)
         action_row.addStretch()
@@ -123,32 +132,12 @@ class AudioTaskPanelPage(QWidget):
         self.table.setMinimumHeight(180)
         history_layout.addWidget(self.table)
 
-        self.empty_history_label = QLabel("当前还没有后台音频任务历史，导入、刷新或重载完成后会自动显示在这里。")
-        self.empty_history_label.setObjectName("hintLabel")
-        self.empty_history_label.setAlignment(Qt.AlignCenter)
-        self.empty_history_label.setWordWrap(True)
-        self.empty_history_label.setMinimumHeight(96)
-        history_layout.addWidget(self.empty_history_label)
-
-        # Phase1-1.3: 空状态给一个明确的"下一步"入口，而不是一片留白
-        self.empty_action_btn = QPushButton("前往资源导入向导")
-        self.empty_action_btn.setFixedHeight(36)
-        self.empty_action_btn.setMinimumWidth(170)
-        self.empty_action_btn.clicked.connect(lambda: self._navigate_to_page("audio_import_wizard"))
-        empty_action_row = QHBoxLayout()
-        empty_action_row.addStretch(1)
-        empty_action_row.addWidget(self.empty_action_btn)
-        empty_action_row.addStretch(1)
-        history_layout.addLayout(empty_action_row)
-
         layout.addWidget(history_card)
         layout.addStretch()
         scroll.setWidget(content)
         root.addWidget(scroll, 1)
 
         self.action_bar = PageActionBar(self)
-        self.action_bar.secondary_btn.setMinimumWidth(116)
-        self.action_bar.primary_btn.setMinimumWidth(132)
         root.addWidget(self.action_bar, 0)
 
     def _select_latest_task(self):

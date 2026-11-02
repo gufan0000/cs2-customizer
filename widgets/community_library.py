@@ -59,10 +59,34 @@ class EmptyLibraryCallout:
     把第一步放到**空白发生的地方**，底栏只留第二、三步。
     """
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, *, large: bool = False):
+        """`large=True`：这一块是整片空白（音效页没有风格时不铺武器板，批 146）。
+
+        样子是一块放东西的地方，说的也是这件事：下好的包拖到这一页就能装上。
+        """
+        from PySide6.QtCore import Qt
         from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton
 
+        from ui_style_applier import keep_single_line
         from widgets.settings_card import SettingsCard
+
+        self._large = bool(large)
+        if self._large:
+            self.frame, outer = SettingsCard.make(
+                margins=(24, 48, 24, 48), spacing=12, parent=parent)
+            self.frame.setProperty("fp_dropzone", True)
+            self.title = keep_single_line(QLabel(""))
+            self.title.setObjectName("emptyStateTitle")
+            outer.addWidget(self.title, 0, Qt.AlignHCenter)
+            self.hint = keep_single_line(QLabel(""))
+            self.hint.setObjectName("hintLabel")
+            outer.addWidget(self.hint, 0, Qt.AlignHCenter)
+            outer.addSpacing(4)
+            self.button = QPushButton("")
+            self.button.setMinimumWidth(180)
+            outer.addWidget(self.button, 0, Qt.AlignHCenter)
+            self.frame.hide()
+            return
 
         # ⚠ 用 `SettingsCard.make(...)`，**不许手搓 `QFrame` + objectName("card")**。
         # 第一版就是手搓的，回退验证当场把 `test_handrolled_cards_do_not_grow`
@@ -115,7 +139,14 @@ class EmptyLibraryCallout:
         from page_theme_helper import style_as_primary_button
 
         # 批 123：「拿到之后怎么办」和「去哪拿」在同一句、同一张卡里（不再劈成顶 / 底两处）
-        self.title.setText(f"还没有任何可用{what} —— 本软件不带素材，下好的包拖到这一页就能装上。")
+        if self._large:
+            self.title.setText(f"还没有任何可用{what}")
+            self.hint.setText("本软件不带素材，下好的包拖到这一页就能装上。")
+        else:
+            self.title.setText(f"还没有任何可用{what} —— 本软件不带素材，下好的包拖到这一页就能装上。")
+            # 提示行已并进底栏那句话（RN-185/186 那一轮把这张卡压成一行）。
+            # 留空是为了不在同一屏上把第 2、3 步说两遍。
+            self.hint.setText("")
         self.button.setText(cta_text)
         try:                                  # 重复接会叠加，先断干净
             self.button.clicked.disconnect()
@@ -129,9 +160,6 @@ class EmptyLibraryCallout:
         from widgets.master_switch_effect import mark_ungoverned_by_master
 
         mark_ungoverned_by_master(self.button)
-        # 提示行已并进底栏那句话（RN-185/186 那一轮把这张卡压成一行）。
-        # 留空是为了不在同一屏上把第 2、3 步说两遍。
-        self.hint.setText("")
         self.frame.show()
 
     def hide(self) -> None:
@@ -173,9 +201,11 @@ def guide_empty_library(bar, *, empty: bool, category_key: str, cta_text: str,
             # ⚠ 借了要还：空库态把底栏主按钮降成了次级档（RN-186），
             # 库补上就得还回去，否则这一页从此再没有主按钮 ——
             # 那是一次静默的视觉主次丢失，而**没有任何一处会报错**（同 RN-153）。
+            # 嵌在标题行里的那一排（批 146）本来就没有主按钮，不用还。
             from page_theme_helper import style_as_primary_button
 
-            style_as_primary_button(bar.primary_btn)
+            if not bar.inline:
+                style_as_primary_button(bar.primary_btn)
         return False
 
     if use_callout:
@@ -234,7 +264,7 @@ def guide_empty_library(bar, *, empty: bool, category_key: str, cta_text: str,
 
 
 #: 下拉框里等于"什么都没选"的占位项。只剩这些 = 没得选。
-_PLACEHOLDER_ITEMS = {"不启用", "未启用", "不使用", "无", "关闭", "默认", ""}
+_PLACEHOLDER_ITEMS = {"不启用", "未选风格", "未启用", "不使用", "无", "关闭", "默认", ""}
 #: 「点了也不会有反应」的按钮文案。
 _DEAD_BUTTON_WORDS = ("测试", "试听", "预览", "播放")
 #: 置灰前的原状，存在控件自己身上 —— 借了要还（同 RN-153 那条）。

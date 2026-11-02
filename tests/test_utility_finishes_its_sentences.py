@@ -237,10 +237,9 @@ def test_the_empty_state_explains_itself_on_the_screen_it_happens_on(monkeypatch
     app, page = _page(monkeypatch)
     try:
         app.processEvents()
-        texts = [(w.text() or "").strip() for w in page.findChildren(QLabel)
-                 if w.isVisibleTo(page)]
-        blob = " ".join(texts)
-        assert "未检测到" in blob, "第一屏上连「未检测到」都没有了 —— 判据已经瞎了"
+        # 批 145：这几颗不是问题，屏幕上不再摆（RN-734）；底下那句解释还在，算出来的值也还在
+        chips = " ".join(page.status_badge_label.badge_texts())
+        assert "未检测到" in chips, "这一页连「未检测到」都算不出来了 —— 判据已经瞎了"
         card = getattr(page, "status_card", None) or page
 
         def _near() -> str:

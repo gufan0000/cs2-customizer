@@ -373,75 +373,16 @@ def test_every_destructive_word_can_actually_match_something():
 
 # ============================================ 6. RN-143：别让它们再长回去
 
-#: 被挤到折行的两句话（RN-143 在本页的两处），连同**实测的字数上界**。
-#: 上界怎么来的：紧凑档量到「宽 W / 需 N」，按 N/字数 得到每字约 12.4px，
-#: 再用可用宽度 W 反推。留 1 字余量。
-#:
-#: ⭐⭐ **这条判据故意不量像素。** 判据跑在 `QT_QPA_PLATFORM=offscreen` 的进程里，
-#:   而那里 `QFontDatabase.families()` 是 **0**（批 26 踩实）——
-#:   在没有字体的进程里量文字宽度，量的是一个用户从没见过的版面。
-#:   ⇒ 量「别再变长」不需要字体，量「有没有折行」需要。**只做前者。**
-#:   后者由 `scripts/squeezed_label_audit.py` 用真实字体守着（本批把
-#:   紧凑档 14→11、紧凑+1.25 档 19→16，magnifier 三处全部清零）。
-LENGTH_BUDGET = (
-    ("联动关着也能先把数值填好。", 16,
-     "灵敏度卡里 2×1 跨行的说明位，紧凑档只有 198px；原文 22 字要 322px，折成 6 行"),
-    ("主武器和手枪各自指定放大热键，并选长按还是单击切换。", 27,
-     "「热键与触发」卡的副标题，紧凑档 335px；原文 27 字要 336px —— **差 1px** 就折行"),
-)
+# ================================ 7. RN-196 横向那 29px：两组方向键别再顶穿整页
 
 
-@pytest.mark.parametrize("text,limit,why", LENGTH_BUDGET)
-def test_these_hints_do_not_grow_back(text, limit, why):
-    src = (ROOT / "pages" / "magnifier_page.py").read_text(encoding="utf-8")
-    assert text in src, (
-        f"在 magnifier_page.py 里找不到「{text}」—— 文案改了就把这条一起改，"
-        "别让它静默失效（RN-093：判据的锚点会随产品代码一起腐烂）")
-    assert len(text) <= limit, (
-        f"「{text}」已经 {len(text)} 字，超过上界 {limit}。\n它必须放得下一行，因为：{why}\n"
-        "⭐ 折行不是「放不下」，是「我说我能折行」—— 折行的 QLabel 会把自己的"
-        "宽度报小，于是它躲得过一切「有没有溢出 / 有没有截断」的判据。")
+def test_the_nudge_groups_stay_whole(main_window, qapp):
+    """偏移卡的「微调 / 大幅」：每组 4 颗方向键是一条不拆的横排，两组各占一行（批 150）。
 
-
-def test_the_length_budget_is_not_vacuous():
-    """分母守卫：表空了，上面那条参数化判据**一个用例都不跑**，而 pytest 静默通过。"""
-    assert len(LENGTH_BUDGET) >= 2, "RN-143 的字数上界表被清空了 —— 上面那条现在什么都不测"
-    for text, limit, why in LENGTH_BUDGET:
-        assert text and why and limit > 0
-        assert limit >= len(text), f"上界 {limit} 比现有文案 {len(text)} 字还小，这条一建就红"
-
-
-# ================================ 7. RN-196 横向那 29px：那一行必须能换行
-
-
-def test_the_nudge_row_can_wrap(main_window, qapp):
-    """偏移卡的「微调 / 大幅」那 8 颗方向键，必须待在一个能换行的布局里。
-
-    ## 根因（批 28 查实）
-
-    代码里写的是 `btn.setFixedSize(QSize(30, 26))`，而它们**实际渲染成 80×50**：
-    `ui_style_applier._style_button` 在页面建完之后无条件抬最小尺寸，
-    而 `setFixedSize` 是把 min 和 max 一起设死 —— 只抬 min 不动 max ⇒
-    `min > max` ⇒ Qt 取 min。**调用点写的固定尺寸一个像素都不生效。**
-    ⇒ 一行 8 颗 ≈ 800px，顶穿整页最小宽度，紧凑档横向溢出 29px。
-
-    ⭐ **一句无效的声明不是无害的。** 它没有被忽略，它被放大了两倍半。
-
-    ## 为什么钉「能不能换行」而不钉像素
-
-    量宽度要真实字体，而判据跑在 `offscreen`（`QFontDatabase.families()==0`，
-    批 26 踩实）——在那里量出来的宽度是用户从没见过的版面。
-    ⇒ 这里钉**机制**：那一行是 `FlowLayout`。像素由
-    `scripts/layout_overflow_audit.py --compact` 用真实字体守着（29px → 0）。
-
-    ## ⚠⚠ 第一版修法自己踩的坑（改完复跑 3/3 全票逮住的）
-
-    第一版是把 8 颗按钮和两个标签**平铺**进 FlowLayout ——
-    于是换行点落进了「大幅」那一组的中间：前 3 颗留在上一行，
-    第 4 颗 `v` 掉到下一行最左边。外审判词逐字：「按钮组断裂错位」。
-    ⭐⭐ **我修掉了「放不下就溢出」，换来了「放不下就断在一组的中间」。**
-      ⭐ **能换行的单位应该是「一组」，不是「一颗」。**
-    ⇒ 所以这条判据钉的是**两层**：组内是不可拆的横排，组之间才允许换行。
+    批 28 的根因：代码写 `setFixedSize(QSize(30, 26))`，实际渲染成 80×50（`_style_button` 只抬 min 不动 max），
+    一行 8 颗 ≈ 800 px，顶穿整页最小宽度。第一版改成平铺进 FlowLayout，换行点又落进一组的中间。
+    现在每组一行，定宽 32 也真的生效，放得下，就没有「断在中间」这回事。
+    ⭐ 一句无效的声明不是无害的：所以连实际宽度一起量。
     """
     from widgets.flow_layout import FlowLayout
 
@@ -449,34 +390,25 @@ def test_the_nudge_row_can_wrap(main_window, qapp):
     arrows = getattr(page, "_arrow_buttons", None)
     assert arrows and len(arrows) == 8, (
         f"方向键不是 8 颗（现在 {0 if not arrows else len(arrows)} 颗）—— "
-        "判据在空转，或者这一块被重做了，请重读上面那段根因")
+        "判据在空转，或者这一块被重做了")
 
     groups = {}
     for b in arrows:
         parent = b.parentWidget()
         assert parent is not None, "方向键没有父控件 —— 判据在空转"
         groups.setdefault(id(parent), []).append(b)
+    assert len(groups) == 2, f"方向键分成了 {len(groups)} 组 —— 应该正好两组（微调 / 大幅）。"
 
-    assert len(groups) == 2, (
-        f"方向键分成了 {len(groups)} 组 —— 应该正好两组（微调 / 大幅）。\n"
-        "⭐ 每组必须是一个不可拆的小控件，换行才不会断在组的中间。")
+    tops = set()
     for members in groups.values():
         assert len(members) == 4, f"某一组只有 {len(members)} 颗方向键，不是 4 颗"
-
-    wraps = set()
-    for gid, members in groups.items():
         group = members[0].parentWidget()
-        assert not isinstance(group.layout(), FlowLayout), (
-            "组**内部**用了 FlowLayout —— 那正是第一版的错法："
-            "换行点会落进一组的中间，把 4 颗方向键拆散。组内必须是横排。")
-        outer = group.parentWidget()
-        assert outer is not None, "方向键组没有外层容器 —— 判据在空转"
-        wraps.add(id(outer))
-        assert isinstance(outer.layout(), FlowLayout), (
-            f"方向键组的外层又变回 {type(outer.layout()).__name__} 了。\n"
-            "它必须能换行：8 颗按钮实际是 80×50（不是代码里写的 30×26），"
-            "一行摆不下就会把整页最小宽度顶穿。")
-    assert len(wraps) == 1, "两组方向键不在同一个可换行容器里"
+        assert not isinstance(group.layout(), FlowLayout), "组内部不许换行：4 颗方向键会被拆散"
+        assert len({b.y() for b in members}) == 1, "一组方向键不在一行上"
+        assert max(b.width() for b in members) <= 40, (
+            f"方向键实际宽 {max(b.width() for b in members)} px，定宽没生效（批 28 那条根因）")
+        tops.add(group.mapTo(page, group.rect().topLeft()).y())
+    assert len(tops) == 2, "两组方向键挤到了一行上"
 
 
 def test_a_destructive_primary_would_actually_be_caught(main_window, qapp):

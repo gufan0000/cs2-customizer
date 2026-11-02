@@ -100,9 +100,10 @@ def test_pruning_rejects_missing_or_external_python_ssl_source(tmp_path, monkeyp
 @pytest.mark.parametrize("suffix", ["-3.dll", "-3-x64.dll"])
 def test_onedir_checks_the_actual_ssl_dependency_names(tmp_path, monkeypatch, suffix):
     internal = tmp_path / "_internal"
-    for directory in ("resources", "PySide6", "core"):
+    for directory in ("resources", "PySide6", "core", "fonts"):
         (internal / directory).mkdir(parents=True, exist_ok=True)
-    for file in ("python313.dll", "core/search_index.json", "libssl" + suffix, "libcrypto" + suffix):
+    for file in ("python313.dll", "core/search_index.json", "fonts/SailSansSC-Medium.ttf",
+                 "libssl" + suffix, "libcrypto" + suffix):
         (internal / file).write_bytes(b"synthetic")
     (tmp_path / "test.exe").write_bytes(b"synthetic")
     required = {"libssl" + suffix, "libcrypto" + suffix}

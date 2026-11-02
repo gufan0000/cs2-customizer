@@ -142,7 +142,7 @@ def test_every_page_in_the_family_has_the_action(page_id, qapp):
         assert page.apply_all_btn.text() == "应用到全部武器", (
             f"按钮文案变了：{page.apply_all_btn.text()!r}。"
             "这个词是行为题调研里玩家自己说得最多的那个（7 次），别随手改。")
-        assert hasattr(page, "apply_all_combo") and hasattr(page, "apply_all_hint")
+        assert hasattr(page, "apply_all_combo")
     finally:
         page.deleteLater()
         qapp.processEvents()
@@ -160,7 +160,8 @@ def test_it_says_why_when_it_cannot_be_used(page_id, qapp):
         if usable:
             pytest.skip("这台机器上有可用风格，这条走不到（它守的是空库那一支）")
         assert not page.apply_all_combo.isEnabled()
-        hint = page.apply_all_hint.text()
+        # 批 146：四个音效页的说明进了按钮的 tooltip，枪声页批 147 再改
+        hint = page.apply_all_hint.text() if page_id == "gun_sound" else page.apply_all_btn.toolTip()
         assert "先导入或新建" in hint, f"置灰了却没说为什么：{hint!r}"
     finally:
         page.deleteLater()
@@ -377,37 +378,59 @@ def test_it_skips_weapons_that_do_not_have_the_style(page_id, qapp, monkeypatch,
         qapp.processEvents()
 
 
-@pytest.mark.parametrize("page_id", sorted(FAMILY))
-def test_compact_hides_the_row_but_not_the_ability(page_id, qapp):
-    """⭐ 紧凑档（860×640）藏的是**控件**，不是**能力**。
+@pytest.mark.parametrize("page_id", sorted(set(FAMILY) - {"gun_sound"}))
+def test_the_row_is_there_at_every_width(page_id, qapp, styles_on_disk):
+    """批 146：这一行跟着武器区走、随页面滚动，紧凑档不用再藏。
 
-    ⚠ 实测：那一行放在状态卡里会把整页顶出可视区 60px 上下，而这一族本来
-    就欠着 64px 的在册债（RN-196）；把行高 32→26 只换回 4px ⇒
-    **不是它太高，是那张卡装不下第七行**；挪到卡外、页签之上更糟（39 处）。
-    ⇒ 紧凑档把那一行藏起来，动作改从底栏够得着。
-    ⛔ 藏了控件却没给替代入口 = 那个动作在紧凑档消失了 —— 这条钉的就是这件事。
+    ⛔ 空库时它不出现（上面那条空库引导在说，批 145 RN-734）；有风格时任何宽度都要够得着。
+    """
+    page = _build(page_id, qapp)
+    try:
+        page._refresh_style_catalog()
+        qapp.processEvents()
+        for width, height in ((1040, 720), (820, 548)):
+            page.resize(width, height)
+            qapp.processEvents()
+            assert page.apply_all_btn.isVisibleTo(page), f"{width} 宽下看不到「应用到全部武器」"
+            assert page.apply_all_btn.isEnabled(), "有风格时这颗按钮不该灰"
+    finally:
+        page.deleteLater()
+        qapp.processEvents()
+
+
+@pytest.mark.parametrize("page_id", ["gun_sound"])
+def test_the_row_stays_in_compact_mode_too(page_id, qapp, monkeypatch):
+    """批 147：这一行住进滚动区了，不会再把整页顶出可视区，紧凑档也不用藏。
+
+    以前（RN-196）它在状态卡里，紧凑档只能藏起来、另给一个入口。
     """
     page = _build(page_id, qapp)
     try:
         page.resize(1200, 800)
         qapp.processEvents()
         page._sync_apply_all_visibility()
+        assert not page.apply_all_btn.isVisibleTo(page), (
+            "一个风格都没有时这一行该整个不出现：上面那条空库引导已经在说（批 145，RN-734）")
+
+        # ⚠ 有社区站时整块武器板都藏了，量不到这一行自己的门。没有社区站的发行版（开源版）
+        # 空库也摆着武器板，这一行不能留一个只有占位项的下拉。
+        from widgets import community_library
+
+        monkeypatch.setattr(community_library, "guide_empty_library", lambda *_a, **_k: False)
+        page._sync_community_guidance()
+        assert page.weapon_section.isVisibleTo(page)
+        assert not page.apply_all_btn.isVisibleTo(page), "下拉里只有占位项，这一行还摆着"
+
+        page.weapon_styles = {"ak47": ["风格甲"]}
+        page.apply_all_combo.addItems(["风格甲", "风格乙"])
+        page._sync_apply_all_visibility()
+        page._sync_community_guidance()
         assert page.apply_all_btn.isVisibleTo(page), "完整档反而看不到那一行"
 
         page.resize(860, 548)
         qapp.processEvents()
         page._sync_apply_all_visibility()
-        assert not page.apply_all_btn.isVisibleTo(page), (
-            "紧凑档还摆着那一行 —— 它会把整页顶出可视区")
-
-        # 能力还在：紧凑档下必须有一个够得着的入口
-        entry = (getattr(page, "_apply_all_menu_action", None)
-                 or getattr(page, "_apply_all_compact_btn", None))
-        assert entry is not None, (
-            f"{page_id}：紧凑档把那一行藏了，却没有任何替代入口 —— "
-            "那不是「换个地方」，是「这个动作在紧凑档消失了」。")
-        assert callable(getattr(page, "_pick_style_and_apply_to_all", None)), (
-            "替代入口没有对应的动作实现")
+        assert page.apply_all_btn.isVisibleTo(page), "紧凑档把这个动作藏没了"
     finally:
         page.deleteLater()
         qapp.processEvents()

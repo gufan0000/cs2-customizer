@@ -22,7 +22,6 @@ import pathlib
 import sys
 
 import pytest
-from PySide6.QtWidgets import QLabel
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -61,13 +60,7 @@ class _DummyProcessManager:
 
 
 def _chips(status_bar) -> list[str]:
-    layout = status_bar.layout()
-    out = []
-    for idx in range(layout.count() if layout else 0):
-        w = layout.itemAt(idx).widget()
-        if isinstance(w, QLabel) and w.objectName() == "audioStatusChip" and not w.isHidden():
-            out.append(w.text())
-    return out
+    return status_bar.badge_texts()
 
 
 def _make_page(qapp, tmp_path, monkeypatch, *, enabled: bool, running: bool):
@@ -205,7 +198,6 @@ def test_a_switched_off_page_does_not_dangle_a_listener_state(qapp, tmp_path, mo
         chips = _chips(page.status_badge_label)
         return {
             "芯片": any(t.startswith("运行") for t in chips),
-            "概览": "运行" in page.basic_overview_hint_label.text(),
             "底栏": "运行状态" in page.action_bar.message_label.text(),
         }
 

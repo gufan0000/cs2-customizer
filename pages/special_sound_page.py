@@ -6,17 +6,12 @@
 import os
 
 from PySide6.QtCore import Qt, QUrl
-from PySide6.QtGui import QDesktopServices, QFont
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
-    QFrame,
-    QGridLayout,
     QHBoxLayout,
     QLabel,
-    QPushButton,
-    QScrollArea,
-    QSizePolicy,
     QSlider,
     QTabWidget,
     QVBoxLayout,
@@ -44,14 +39,16 @@ from pages.audio_status_badge import (
 )
 from widgets.preview_feedback import PreviewFailure, report_preview_failure
 from ui_help_panel import PAGE_HELP_TEXTS, install_help_panel
+from ui_style_applier import keep_single_line
 from widgets.page_action_bar import PageActionBar
-from widgets.settings_card import SettingsCard
 from widgets.page_header import PageHeader
+from widgets.status_strip import StatusStrip
+from widgets.weapon_board import BoardScrollArea, WeaponBoard
+from widgets.weapon_row_widget import STATE_CONFIGURED, STATE_STALE, WeaponRowWidget
 
-
-#: RN-519：卡片说明要点名这颗按钮，而说明比按钮先建 —— 名字只留一份。
-#: ⚠ 这一页有 4 颗同名的「测试」（四种投掷物各一颗），更不能各抄一份。
-TEST_BUTTON_TEXT = "测试"
+#: 格子不多，三列刚好：再多就拉成窄窄一排，风格名露不全。
+SPECIAL_BOARD_COLUMNS = 3
+SLIDER_VALUE_MIN_WIDTH = 56
 
 
 class SpecialSoundPage(QWidget):
@@ -89,8 +86,10 @@ class SpecialSoundPage(QWidget):
         self.grenade_combos = {}
         self.round_combos = {}
         self.c4_combos = {}
-        self.grenade_cards = []
-        self.round_cards = []
+        #: 配置值 → 格子，算「配了 / 配的没了」用：[(格子, 配置原始值的读法, 生效值的读法)]
+        self._cells: list[tuple] = []
+        #: 页签名 → 这个页签的内容。空库时只留上面那块引导。
+        self._tab_bodies: dict[str, list[QWidget]] = {}
 
         self._ensure_config_defaults()
         self._refresh_special_sound_styles()
@@ -159,7 +158,7 @@ class SpecialSoundPage(QWidget):
     # 原状（探针实测，8 个回合事件全配上一个已删除的风格）：
     #
     #   回合摘要   「已选 5/8」          ← 分子手写 5 个字段、且数的是原始值
-    #   八行下拉框 全是「不启用」        ← `findData` 找不到就退回第 0 项
+    #   八行下拉框 全是「未选风格」      ← `findData` 找不到就退回第 0 项
     #
     # 两个错叠在一起：**分子上限 5、分母 8**（分母 `len(ROUND_TYPE_META)` 是
     # 从事件表派生的，2.2.4 加的 比赛开始/比赛结束/半场交换 只进了分母），
@@ -199,19 +198,25 @@ class SpecialSoundPage(QWidget):
     def _selected(effective: dict) -> int:
         return sum(1 for value in effective.values() if value != "0")
 
-    def _stale_total(self) -> int:
-        """配过、但风格已经不在了的项数（四类合计）。"""
+    def _stale_by_tab(self) -> dict[str, int]:
+        """配过、但风格已经不在了的项数，按页签分。"""
         raw_grenade = config.grenade_sound_styles or {}
-        pairs = [(raw_grenade.get(g, "0"), v)
-                 for g, v in self._effective_grenade_styles().items()]
-        pairs += [(getattr(config, self.ROUND_TYPE_META[k][2], "0"), v)
-                  for k, v in self._effective_round_styles().items()]
-        pairs += [(getattr(config, e.config_attr, "0"), self._effective_c4_styles()[e.key])
-                  for e in self.C4_EVENTS]
-        pairs.append((getattr(config, "health_warning_style", "0"),
-                      self._effective_health_style()))
-        return sum(1 for configured, effective in pairs
-                   if str(configured or "0").strip() not in ("", "0") and effective == "0")
+        pairs = {
+            "投掷物": [(raw_grenade.get(g, "0"), v)
+                    for g, v in self._effective_grenade_styles().items()],
+            "C4": [(getattr(config, e.config_attr, "0"), self._effective_c4_styles()[e.key])
+                   for e in self.C4_EVENTS],
+            "血量警告": [(getattr(config, "health_warning_style", "0"),
+                      self._effective_health_style())],
+            "回合": [(getattr(config, self.ROUND_TYPE_META[k][2], "0"), v)
+                   for k, v in self._effective_round_styles().items()],
+        }
+        return {tab: sum(1 for configured, effective in items
+                         if str(configured or "0").strip() not in ("", "0") and effective == "0")
+                for tab, items in pairs.items()}
+
+    def _stale_total(self) -> int:
+        return sum(self._stale_by_tab().values())
 
     def _style_summary(self, style_value):
         if str(style_value or "").strip() == "0":
@@ -219,24 +224,12 @@ class SpecialSoundPage(QWidget):
         return self._compact_text(style_value, "未启用", 18)
 
     def _module_state_note(self, enabled: bool, selected: int) -> str:
-        """这一类的开关状态；**选了风格却没勾开关时额外挑明**。
+        """选了风格却没勾开关时挑明；别的时候不说话，开关和格子自己看得见（批 147）。
 
-        RN-051：这一页有**两层开关**（模块复选框 + 每一项的「不启用」）。
-        外审 8 发截图里 4 发独立报「双重开关逻辑冲突，玩家容易只选下拉项而
-        遗漏总开关，导致局内不生效」。加控件会让事情更复杂；
-        真正缺的是**把当前状态说清楚**。
-
-        ⚠ 第一版我写成"只在配了却没开时才说话"，其余情况返回空串 ——
-        于是"模块已关闭且什么都没配"这个状态**一个字都没有了**，
-        而原来的文案是会说「模块已关闭」的。
-        既有判据 `test_special_sound_page_status_card_tracks_threshold_and_volume`
-        当场逮住。⇒ **收敛文案时先问"原来说的哪句话被我弄没了"。**
+        RN-051：这一页有**两层开关**（模块复选框 + 每一项的「未选风格」）。
+        外审 8 发截图里 4 发独立报「玩家容易只选下拉项而遗漏总开关，导致局内不生效」。
         """
-        if enabled:
-            return " · 功能已开启"
-        if selected:
-            return " · 功能已关闭（配了也不会响）"
-        return " · 功能已关闭"
+        return "配了也不会响：上面的开关还关着。" if selected and not enabled else ""
 
     def _count_enabled_modules(self):
         return sum(
@@ -255,7 +248,7 @@ class SpecialSoundPage(QWidget):
 
         RN-046：原来这里收的是配置里的原始值（`config_defaults()` 的键逐个
         `getattr`），于是「样式 · N」这颗徽章数出来的 N 和屏幕上每一行显示的
-        「不启用」永久对不上。
+        「未选风格」永久对不上。
         """
         values = list(self._effective_grenade_styles().values())
         values.extend(self._effective_round_styles().values())
@@ -264,95 +257,27 @@ class SpecialSoundPage(QWidget):
         return values
 
 
-    @staticmethod
-    def _row_card(horizontal=True):
-        """卡片**内部**的一行小卡（`QFrame#card`）。
+    def _create_summary_label(self):
+        """有事才出现的一行：开关没开、配的风格没了（可能带去社区的链接，RN-197）。"""
+        from widgets import community_library as _cl
 
-        本页原来有 8 处逐字重复的「建 QFrame、setObjectName("card")、配一个
-        Layout」，R11 的手搓卡片棘轮（tests/test_closed_items_ratchet_r11）正是
-        冲着这类重复来的。
-
-        ⚠ 这里不能用 `SettingsCard.make()` 顶替：那个产出的是**带标题的整张
-        卡片**，而这些是嵌在卡片里的行，换过去观感会变。所以正确的收敛方向是
-        "本页只留一处手搓"，而不是"改用现成卡片"。
-        """
-        frame = QFrame()
-        frame.setObjectName("card")
-        layout = (QHBoxLayout if horizontal else QVBoxLayout)(frame)
-        layout.setContentsMargins(10, 8, 10, 8)
-        layout.setSpacing(8)
-        return frame, layout
-
-    @staticmethod
-    def _create_summary_label():
         label = QLabel("")
         label.setObjectName("hintLabel")
         label.setWordWrap(True)
+        label.hide()
+        _cl.wire_stale_route(label, lambda: self.COMMUNITY_CATEGORY_KEY)
         return label
-
-    @staticmethod
-    def _set_compact_heights(*controls, height=34):
-        for control in controls:
-            if control is not None:
-                control.setMinimumHeight(height)
 
     @staticmethod
     def _reset_combo_items(combo: QComboBox, style_options, current_value):
         blocked = combo.blockSignals(True)
         combo.clear()
-        combo.addItem("不启用", "0")
+        # 这一页上面有「启用」开关：格子再写「不启用」，勾上之后读着像没勾上（外审 S4）
+        combo.addItem("未选风格", "0")
         for style in style_options:
             combo.addItem(style, style)
         combo.blockSignals(blocked)
         SpecialSoundPage._set_combo_data(combo, current_value)
-
-    @staticmethod
-    def _clear_grid_layout(grid: QGridLayout):
-        while grid.count():
-            item = grid.takeAt(0)
-            if item is not None and item.widget() is not None:
-                item.widget().setParent(item.widget().parentWidget())
-
-    @staticmethod
-    def _apply_responsive_grid(grid: QGridLayout, cards, columns: int):
-        SpecialSoundPage._clear_grid_layout(grid)
-        total_columns = max(int(columns or 1), 1)
-        for column in range(6):
-            grid.setColumnStretch(column, 0)
-        for index, card in enumerate(cards):
-            row = index // total_columns
-            column = index % total_columns
-            grid.addWidget(card, row, column)
-        for column in range(total_columns):
-            grid.setColumnStretch(column, 1)
-
-    def _responsive_columns_for_cards(self, count: int) -> int:
-        """⭐ RN-666③：阈值原来是 1380 / 940，而**这一页永远到不了 1380**（1280 窗口
-        减侧栏只剩 ~1060）⇒ 那一档一次都没生效过。现按卡片真正需要多宽来定：
-        一列 = 下拉框 190 + 测试钮 80 + 间距 8 + 卡内边距 24 ≈ 302。
-        """
-        if count <= 1:
-            return 1
-        width = max(self.width(), 0)
-        if width >= 1040 and count >= 3:
-            return 3
-        if width >= 700 and count >= 2:
-            return 2
-        return 1
-
-    def _refresh_responsive_grids(self):
-        if hasattr(self, "grenade_grid"):
-            self._apply_responsive_grid(
-                self.grenade_grid,
-                self.grenade_cards,
-                self._responsive_columns_for_cards(len(self.grenade_cards)),
-            )
-        if hasattr(self, "round_grid"):
-            self._apply_responsive_grid(
-                self.round_grid,
-                self.round_cards,
-                self._responsive_columns_for_cards(len(self.round_cards)),
-            )
 
     def _refresh_style_catalog(self):
         self._refresh_special_sound_styles()
@@ -405,36 +330,36 @@ class SpecialSoundPage(QWidget):
         )
         self.page_lead_label = header.description_label
         main_layout.addWidget(header)
+
+        # 操作放在标题这一行：不多占一行，四个页签都够得着。
+        self.action_bar = PageActionBar(self, inline=True)
+        # RN-165：记下 extra 的原样，空库态要借用这个位置。
+        self._extra_default = (self.action_bar.extra_btn.text(),
+                               self.action_bar._extra_callback,
+                               self.action_bar.extra_btn.menu())
+        self.action_bar.configure_secondary("刷新风格列表", self._refresh_style_catalog, visible=True)
+        self.action_bar.configure_primary("打开音频资源", self._open_current_resource_root, visible=True)
+        header.dock_beside_title(self.action_bar)
         install_help_panel(header.title_row, header.body, PAGE_HELP_TEXTS.get("special_sound", ""))
 
-        self.status_card = QFrame()
-        self.status_card.setObjectName("card")
+        self.status_card = StatusStrip()
         status_card_layout = QVBoxLayout(self.status_card)
-        status_card_layout.setContentsMargins(14, 12, 14, 12)
+        status_card_layout.setContentsMargins(0, 0, 0, 0)
         status_card_layout.setSpacing(8)
 
         status_header = QHBoxLayout()
         status_header.setSpacing(10)
-        status_title = QLabel("当前状态")
-        status_title.setObjectName("statusLabel")
-        status_header.addWidget(status_title)
         self.status_badge_label = create_badge_label()
         status_header.addWidget(self.status_badge_label, 1)
         status_header.addStretch()
         status_card_layout.addLayout(status_header)
 
-        self.summary_label = QLabel("")
-        self.summary_label.setObjectName("hintLabel")
-        self.summary_label.setWordWrap(True)
-        self.summary_label.hide()
-        status_card_layout.addWidget(self.summary_label)
         main_layout.addWidget(self.status_card)
 
-        # RN-180：空库时的第一步放在状态卡正下方 —— 那一片置灰控件的上方，
-        # 也就是困惑发生的位置。放底栏等于没放（CLAUDE.md 那条我自己写下又没照做的）。
+        # RN-180：空库时的第一步放在页签上面 —— 那一片控件的上方，也就是困惑发生的位置。
         from widgets.community_library import EmptyLibraryCallout
 
-        self.empty_callout = EmptyLibraryCallout(self)
+        self.empty_callout = EmptyLibraryCallout(self, large=True)
         main_layout.addWidget(self.empty_callout.frame)
 
         self.tab_widget = QTabWidget()
@@ -446,281 +371,147 @@ class SpecialSoundPage(QWidget):
         self._create_health_tab()
         self._create_round_tab()
 
-        self.action_bar = PageActionBar(self)
-        # RN-165：记下 extra 的原样，空库态要借用这个位置。
-        self._extra_default = (self.action_bar.extra_btn.text(),
-                               self.action_bar._extra_callback,
-                               self.action_bar.extra_btn.menu())
-        self.action_bar.configure_secondary("刷新风格列表", self._refresh_style_catalog, visible=True)
-        self.action_bar.configure_primary("打开当前资源", self._open_current_resource_root, visible=True)
-        self.action_bar.secondary_btn.setMinimumWidth(148)
-        self.action_bar.primary_btn.setMinimumWidth(148)
-        main_layout.addWidget(self.action_bar, 0)
+    def _make_tab(self, tab_name: str, head: QWidget):
+        """一个页签：滚动区里顶上是开关那一行（`head`），下面一竖排。返回（滚动区，那一竖排）。
+
+        空库时藏的是那一竖排，开关留着：先开着没有坏处，搜索也要落得到它。
+        """
+        scroll = BoardScrollArea()
+        content = QWidget(scroll)
+        outer = QVBoxLayout(content)
+        outer.setContentsMargins(0, 12, 0, 12)
+        outer.setSpacing(10)
+        head.setProperty("fp_setting_row", True)
+        outer.addWidget(head)
+        body = QWidget(content)
+        layout = QVBoxLayout(body)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+        outer.addWidget(body)
+        outer.addStretch(1)
+        scroll.setWidget(content)
+        self._tab_bodies[tab_name] = [body]
+        self.tab_widget.addTab(scroll, tab_name)
+        return scroll, layout
+
+    def _make_cell(self, name: str, key: str, styles, current: str, read_configured, read_effective,
+                   on_changed, on_test) -> WeaponRowWidget:
+        """一格：名字 + 风格下拉 + 试听。`read_*` 现读这一格的配置值和生效值。"""
+        cell = WeaponRowWidget(name, key, [], name_is_action=False)
+        self._reset_combo_items(cell.style_combo, styles, current)
+        cell.style_combo.currentIndexChanged.connect(lambda _index: on_changed())
+        cell.testClicked.connect(on_test)
+        self._cells.append((cell, read_configured, read_effective))
+        return cell
+
+    def _make_board(self, scroll: BoardScrollArea, cells: list) -> WeaponBoard:
+        board = WeaponBoard(max_columns=SPECIAL_BOARD_COLUMNS)
+        board.add_group("", cells)
+        scroll.availableWidthChanged.connect(board.set_available_width)
+        return board
+
+    @staticmethod
+    def _make_slider_row(label_text: str, slider: QSlider, value_label: QLabel) -> QWidget:
+        holder = QWidget()
+        holder.setProperty("fp_setting_row", True)
+        row = QHBoxLayout(holder)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(8)
+        row.addWidget(keep_single_line(QLabel(label_text)))
+        row.addWidget(slider, 1)
+        value_label.setMinimumWidth(SLIDER_VALUE_MIN_WIDTH)
+        row.addWidget(value_label)
+        return holder
 
     def _create_grenade_tab(self):
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(10)
-
-        header_card, header_layout = SettingsCard.make(
-            "投掷物音效",
-            f"每种投掷物各选一个风格，点「{TEST_BUTTON_TEXT}」就能听到实际效果。",
-        )
         self.grenade_enabled_checkbox = QCheckBox("启用投掷物音效")
         self.grenade_enabled_checkbox.setChecked(bool(config.grenade_sound_enabled))
         self.grenade_enabled_checkbox.toggled.connect(self._on_grenade_enabled_toggled)
-        header_layout.addWidget(self.grenade_enabled_checkbox)
-        self.grenade_summary_label = self._create_summary_label()
-        header_layout.addWidget(self.grenade_summary_label)
-
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.NoFrame)
-
-        scroll_content = QWidget()
-        scroll_layout = QVBoxLayout(scroll_content)
-        scroll_layout.setContentsMargins(0, 0, 0, 0)
-        scroll_layout.setSpacing(8)
-
-        # UP-100: 同 `_create_round_tab`——头部卡进滚动区。这一档的头部卡最小高 125px
-        # （1.25 档 139px），滚动区视口被挤到 103px，内容 652px。
-        scroll_layout.addWidget(header_card)
-
-        # ⭐⭐ RN-664（社区问「怎么导入手雷的音效」「没有教程和命名格式」）：六个类型
-        #   目录名**只存在于源码里**，帮助面板那行还是占位符。⇒ 摆在它该在的地方。
-        #   ⚠ 文件名那句也要说：帮助面板以前写 `throw.mp3`，而代码根本不看文件名。
-        #   ⚠⚠ **放在滚动区里而不是头部卡里**：头部卡最小高 125px（见上面 UP-100），
-        #   多行文本塞进去会被裁掉最后一行 —— 而排版审计和挤压审计**都看不见那种裁切**
-        #   （外审 9/9 逮到，本机三条审计 0/3，同 §1 那条血账）。
-        # ⚠ 不用 <code>：等宽字体和中文混排时字距会乱（外审 4 发报「燃烧瓶/燃烧弹
-        #   重叠挤压」，而本机排版审计照样绿）。类型名分两行排，一行三个。
-        #   ⚠⚠⚠ RN-666③：它原先摆在网格**上面**，三行 ≈55px 顶在首屏，把六张卡
-        #   又往下推了半行 ⇒ 已挪到网格下面（「我要自己做素材」不是第一眼要看的）。
-        _types = [f"{key}（{label}）" for key, label in self.GRENADE_TYPES.items()]
-        naming_hint = QLabel(
-            "自己加素材：grenade_sounds / 类型 / 风格名 / ，文件名随便起。<br>"
-            "类型只认这六个：" + "、".join(_types[:3]) + "、<br>"
-            + "、".join(_types[3:])
-        )
-        naming_hint.setObjectName("hintLabel")
-        naming_hint.setWordWrap(True)
-        naming_hint.setTextFormat(Qt.RichText)
-
-        grid = QGridLayout()
-        grid.setContentsMargins(0, 0, 0, 0)
-        grid.setHorizontalSpacing(10)
-        grid.setVerticalSpacing(8)
-        self.grenade_grid = grid
+        scroll, layout = self._make_tab("投掷物", self.grenade_enabled_checkbox)
 
         grenade_styles = getattr(self.audio_manager, "grenade_sound_styles", {})
-        for index, (grenade_type, display_name) in enumerate(self.GRENADE_TYPES.items()):
-            row = QFrame()
-            row.setObjectName("card")
-            row.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
-            row_layout = QVBoxLayout(row)
-            row_layout.setContentsMargins(12, 10, 12, 10)
-            row_layout.setSpacing(8)
-
-            name_label = QLabel(display_name)
-            name_label.setObjectName("statusLabel")
-            row_layout.addWidget(name_label)
-
-            controls_row = QHBoxLayout()
-            controls_row.setContentsMargins(0, 0, 0, 0)
-            controls_row.setSpacing(8)
-
-            combo = QComboBox()
-            combo.addItem("不启用", "0")
-            for style in grenade_styles.get(grenade_type, []):
-                combo.addItem(style, style)
-            # RN-666③：220 → 190，为三列腾出余量（算式见 `_responsive_columns_for_cards`）
-            combo.setMinimumWidth(190)
-            self._set_compact_heights(combo)
-            combo.currentIndexChanged.connect(
-                lambda _idx, g=grenade_type: self._on_grenade_style_changed(g)
+        cells = []
+        for grenade_type, display_name in self.GRENADE_TYPES.items():
+            cell = self._make_cell(
+                display_name, grenade_type,
+                grenade_styles.get(grenade_type, []),
+                config.grenade_sound_styles.get(grenade_type, "0"),
+                lambda g=grenade_type: (config.grenade_sound_styles or {}).get(g, "0"),
+                lambda g=grenade_type: self._effective_grenade_styles()[g],
+                lambda g=grenade_type: self._on_grenade_style_changed(g),
+                lambda g=grenade_type: self._test_grenade_sound(g),
             )
-            controls_row.addWidget(combo, 1)
+            self.grenade_combos[grenade_type] = cell.style_combo
+            cells.append(cell)
+        layout.addWidget(self._make_board(scroll, cells))
 
-            test_btn = QPushButton(TEST_BUTTON_TEXT)
-            test_btn.setObjectName("secondaryButton")
-            test_btn.setFixedWidth(80)
-            self._set_compact_heights(test_btn)
-            test_btn.clicked.connect(lambda _checked=False, g=grenade_type: self._test_grenade_sound(g))
-            controls_row.addWidget(test_btn, 0)
+        self.grenade_summary_label = self._create_summary_label()
+        layout.addWidget(self.grenade_summary_label)
 
-            row_layout.addLayout(controls_row)
-            self.grenade_cards.append(row)
-            self.grenade_combos[grenade_type] = combo
-
-        self._apply_responsive_grid(grid, self.grenade_cards, self._responsive_columns_for_cards(len(self.grenade_cards)))
-        scroll_layout.addLayout(grid)
-        scroll_layout.addWidget(naming_hint)   # RN-666③：在网格**之后**，理由见上面
-        scroll_layout.addStretch()
-        scroll.setWidget(scroll_content)
-        layout.addWidget(scroll)
-
-        self.tab_widget.addTab(tab, "投掷物")
+        # ⭐⭐ RN-664（社区问「怎么导入手雷的音效」「没有教程和命名格式」）：
+        # 六个类型目录名原来只存在于源码里。全文在帮助面板，这里说一句它在哪。
+        naming_hint = QLabel("自己加素材：grenade_sounds / 类型 / 风格名 / ，文件名随便起；类型只认六个英文名，见右上角「?」。")
+        naming_hint.setObjectName("hintLabel")
+        naming_hint.setWordWrap(True)
+        layout.addWidget(naming_hint)
 
     def _create_c4_tab(self):
-        """C4 页签。
-
-        UP-081（R10 复核纠正）：登记册原写的是「血量警告页签没有滚动区」——
-        那条**早就修好了**（见 `_create_health_tab` 的注释），四个页签里真正
-        没有滚动区的是这一个。当前排版审计全绿，因为这页内容确实少
-        （一张卡：复选框 + 摘要 + 一行下拉），所以它是**潜伏风险**不是活缺陷。
-        补上的理由与 `_create_health_tab` 当年一样：余量薄的地方，
-        任何文案变长都会翻车，而文案是最常改的东西。
-        """
-        tab = QWidget()
-        outer = QVBoxLayout(tab)
-        outer.setContentsMargins(0, 0, 0, 0)
-        outer.setSpacing(0)
-
-        tab_scroll = QScrollArea()
-        tab_scroll.setWidgetResizable(True)
-        tab_scroll.setFrameShape(QFrame.NoFrame)
-        tab_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-
-        content = QWidget()
-        layout = QVBoxLayout(content)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(10)
-
-        card, card_layout = SettingsCard.make(
-            "C4 音效",
-            "安放、拆除、爆炸各配一个音效；三者共用同一个风格目录，靠文件名区分。",
-        )
         self.c4_enabled_checkbox = QCheckBox("启用 C4 音效")
         self.c4_enabled_checkbox.setChecked(bool(config.c4_sound_enabled))
         self.c4_enabled_checkbox.toggled.connect(self._on_c4_enabled_toggled)
-        card_layout.addWidget(self.c4_enabled_checkbox)
+        scroll, layout = self._make_tab("C4", self.c4_enabled_checkbox)
+
+        cells = []
+        for event in self.C4_EVENTS:
+            cell = self._make_cell(
+                event.label, event.key,
+                getattr(self.audio_manager, "c4_sound_styles", []),
+                getattr(config, event.config_attr, "0"),
+                lambda e=event: getattr(config, e.config_attr, "0"),
+                lambda e=event: self._effective_c4_styles()[e.key],
+                lambda e=event: self._on_c4_style_changed(e),
+                lambda e=event: self._test_c4_sound(e),
+            )
+            self.c4_combos[event.key] = cell.style_combo
+            cells.append(cell)
+        # 老属性名保留：放大镜页等处按名字读它
+        self.c4_style_combo = self.c4_combos["planted"]
+        layout.addWidget(self._make_board(scroll, cells))
+
         self.c4_summary_label = self._create_summary_label()
-        card_layout.addWidget(self.c4_summary_label)
+        layout.addWidget(self.c4_summary_label)
 
         naming_hint = QLabel(
-            "拆除和爆炸靠文件名认素材：文件名里带「拆除 / defuse」「爆炸 / explode」才会被选中，"
-            "认不出来就保持安静——不会拿安放的音效顶替。"
+            "每个事件各选一个风格，可以选同一个。拆除和爆炸靠文件名认素材：文件名里带「拆除 / defuse」"
+            "「爆炸 / explode」才会被选中，认不出来就保持安静 —— 不会拿安放的音效顶替。"
         )
         naming_hint.setObjectName("hintLabel")
         naming_hint.setWordWrap(True)
-        card_layout.addWidget(naming_hint)
-
-        for event in self.C4_EVENTS:
-            row, row_layout = self._row_card()
-
-            name_label = QLabel(event.label)
-            name_label.setFont(QFont("Microsoft YaHei", 12))
-            name_label.setMinimumWidth(120)
-            row_layout.addWidget(name_label)
-
-            combo = QComboBox()
-            combo.addItem("不启用", "0")
-            for style in getattr(self.audio_manager, "c4_sound_styles", []):
-                combo.addItem(style, style)
-            combo.setMinimumWidth(220)
-            self._set_compact_heights(combo)
-            combo.currentIndexChanged.connect(
-                lambda _idx, e=event: self._on_c4_style_changed(e)
-            )
-            row_layout.addWidget(combo, 1)
-
-            test_btn = QPushButton(TEST_BUTTON_TEXT)
-            test_btn.setObjectName("secondaryButton")
-            test_btn.setFixedWidth(80)
-            self._set_compact_heights(test_btn)
-            test_btn.clicked.connect(lambda _checked=False, e=event: self._test_c4_sound(e))
-            row_layout.addWidget(test_btn)
-            card_layout.addWidget(row)
-            self.c4_combos[event.key] = combo
-
-        # 老属性名保留：放大镜页等处按名字读它
-        self.c4_style_combo = self.c4_combos["planted"]
-        layout.addWidget(card)
-        layout.addStretch()
-
-        tab_scroll.setWidget(content)
-        outer.addWidget(tab_scroll)
-
-        self.tab_widget.addTab(tab, "C4")
+        layout.addWidget(naming_hint)
 
     def _create_health_tab(self):
-        # UP-081: 这个页签原本**整个没有滚动区**（`addWidget(card)` + `addStretch()` 到底），
-        # 与 UP-071 的 about/death_sound/utility 同类。当前不溢出，但纵向余量只有几十
-        # 像素——R8-W5 期间一次让摘要多折一行的改动就把它顶出可视区 39px。
-        # 余量这么薄本身就是缺陷：任何文案变长都会触发，而文案是最常改的东西。
-        tab = QWidget()
-        outer = QVBoxLayout(tab)
-        outer.setContentsMargins(0, 0, 0, 0)
-        outer.setSpacing(0)
-        tab_scroll = QScrollArea()
-        tab_scroll.setWidgetResizable(True)
-        tab_scroll.setFrameShape(QFrame.NoFrame)
-        tab_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        tab_body = QWidget()
-        layout = QVBoxLayout(tab_body)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(10)
-
-        card, card_layout = SettingsCard.make(
-            "血量警告",
-            "血量掉到设定值以下时提醒你一声。阈值和提醒间隔都可以自己调。",
-        )
         self.health_enabled_checkbox = QCheckBox("启用低血量警告")
         self.health_enabled_checkbox.setChecked(bool(config.health_warning_enabled))
         self.health_enabled_checkbox.toggled.connect(self._on_health_enabled_toggled)
-        card_layout.addWidget(self.health_enabled_checkbox)
-        self.health_summary_label = self._create_summary_label()
-        card_layout.addWidget(self.health_summary_label)
+        scroll, layout = self._make_tab("血量警告", self.health_enabled_checkbox)
 
-        threshold_row, threshold_layout = self._row_card()
-
-        threshold_label = QLabel("触发阈值")
-        threshold_label.setFont(QFont("Microsoft YaHei", 12))
-        threshold_label.setMinimumWidth(100)
-        threshold_layout.addWidget(threshold_label)
+        cell = self._make_cell(
+            "警告音效", "health_warning",
+            getattr(self.audio_manager, "health_warning_styles", []),
+            getattr(config, "health_warning_style", "0"),
+            lambda: getattr(config, "health_warning_style", "0"),
+            self._effective_health_style,
+            lambda: self._on_health_style_changed(0),
+            self._test_health_warning,
+        )
+        self.health_style_combo = cell.style_combo
+        layout.addWidget(self._make_board(scroll, [cell]))
 
         self.threshold_slider = QSlider(Qt.Horizontal)
         self.threshold_slider.setRange(5, 50)
         self.threshold_slider.setValue(int(config.health_warning_threshold))
         self.threshold_slider.valueChanged.connect(self._on_threshold_changed)
-        threshold_layout.addWidget(self.threshold_slider)
-
         self.threshold_value_label = QLabel(str(self.threshold_slider.value()))
-        self.threshold_value_label.setMinimumWidth(50)
-        self.threshold_value_label.setFont(QFont("Microsoft YaHei", 12, QFont.Bold))
-        threshold_layout.addWidget(self.threshold_value_label)
-
-        style_row, style_layout = self._row_card()
-
-        name_label = QLabel("警告音效")
-        name_label.setFont(QFont("Microsoft YaHei", 12))
-        name_label.setMinimumWidth(100)
-        style_layout.addWidget(name_label)
-
-        self.health_style_combo = QComboBox()
-        self.health_style_combo.addItem("不启用", "0")
-        for style in getattr(self.audio_manager, "health_warning_styles", []):
-            self.health_style_combo.addItem(style, style)
-        self.health_style_combo.setMinimumWidth(220)
-        self._set_compact_heights(self.health_style_combo)
-        self.health_style_combo.currentIndexChanged.connect(self._on_health_style_changed)
-        style_layout.addWidget(self.health_style_combo, 1)
-
-        test_btn = QPushButton(TEST_BUTTON_TEXT)
-        test_btn.setObjectName("secondaryButton")
-        test_btn.setFixedWidth(80)
-        self._set_compact_heights(test_btn)
-        test_btn.clicked.connect(self._test_health_warning)
-        style_layout.addWidget(test_btn)
-
-        cooldown_row, cooldown_layout = self._row_card()
-
-        cooldown_label = QLabel("再次提醒间隔")
-        cooldown_label.setFont(QFont("Microsoft YaHei", 12))
-        cooldown_label.setMinimumWidth(100)
-        cooldown_layout.addWidget(cooldown_label)
 
         # 以前这个值写死在 gsi_handler_special 里（5 秒），嫌吵和嫌少的都改不了
         self.cooldown_slider = QSlider(Qt.Horizontal)
@@ -728,59 +519,26 @@ class SpecialSoundPage(QWidget):
         self.cooldown_slider.setValue(int(float(getattr(config, "health_warning_cooldown", 5.0))))
         self.cooldown_slider.setToolTip("触发一次低血量警告后，至少隔这么久才会再响一次")
         self.cooldown_slider.valueChanged.connect(self._on_cooldown_changed)
-        cooldown_layout.addWidget(self.cooldown_slider)
-
         self.cooldown_value_label = QLabel(f"{self.cooldown_slider.value()} 秒")
-        self.cooldown_value_label.setMinimumWidth(50)
-        self.cooldown_value_label.setFont(QFont("Microsoft YaHei", 12, QFont.Bold))
-        cooldown_layout.addWidget(self.cooldown_value_label)
 
-        # RN-055：三行同级设置项原来是「两行并排半宽 + 一行通栏」，
-        # 外审 S3 报「触发阈值与警告音效带独立边框包裹，而同级的再次提醒间隔
-        # 通栏拉伸，容器样式与排版结构不一致」。
-        # 核实：三行**都是** `_row_card()`（同一个 `QFrame#card`），
-        # 所以"无边框"那半句是错的 —— 但**现象是真的**：同一层级的三个东西，
-        # 两个半宽一个通栏，读起来像分了组，而它们并没有分组。
-        # ⚠ 第一版我改成**三行等宽通栏**，容器是一致了，但卡片高了一行 ——
-        # 改完复跑外审，紧凑档（860×640）当场报「警告音效下拉框与测试按钮
-        # 被卡片容器底边截断」（高），而改之前紧凑档这一页是 NONE。
-        # ⇒ **我用一个「中」换来了一个「高」，是笔亏本的交易。**
-        #
-        # 现在的改法不加高度：把**两个滑块**（阈值 / 间隔，同一类东西）并排，
-        # 「选风格 + 试听」通栏单独一行。行数和原来一样是 2，
-        # 而分组从"两个不同类的东西并排"变成"两个同类的东西并排" ——
-        # 外审那条抱怨的根子是**视觉分组和语义分组不一致**，不是边框本身。
+        # RN-055：两根滑条（同一类东西）并排，分组和语义一致。
         slider_row = QHBoxLayout()
         slider_row.setContentsMargins(0, 0, 0, 0)
-        slider_row.setSpacing(10)
-        slider_row.addWidget(threshold_row, 1)
-        slider_row.addWidget(cooldown_row, 1)
-        card_layout.addLayout(slider_row)
-        card_layout.addWidget(style_row)
-        layout.addWidget(card)
-        layout.addStretch()
+        slider_row.setSpacing(24)
+        slider_row.addWidget(self._make_slider_row(
+            "触发阈值", self.threshold_slider, self.threshold_value_label), 1)
+        slider_row.addWidget(self._make_slider_row(
+            "再次提醒间隔", self.cooldown_slider, self.cooldown_value_label), 1)
+        layout.addLayout(slider_row)
 
-        tab_scroll.setWidget(tab_body)
-        outer.addWidget(tab_scroll)
-        self.tab_widget.addTab(tab, "血量警告")
+        self.health_summary_label = self._create_summary_label()
+        layout.addWidget(self.health_summary_label)
 
     def _create_round_tab(self):
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(10)
-
-        header_card, header_layout = SettingsCard.make(
-            "回合音效",
-            "回合开始、结束、MVP 等时刻各播一段音效。逐项选风格，音量统一由上面这一条控制。",
-        )
-        # ⭐ RN-669：开关和总音量**并成一行**，音量不再单独占一张卡中卡。
-        #   这一页有 8 个回合事件，而状态条写着「已选 0/8」—— 三列排下来要三行，
-        #   实测首屏只露得出两行（第 7、8 个「半场交换 / 比赛结束」在折线外）。
-        #   卡中卡的上下内边距 + 独占一行，合起来正好是差的那一截。
-        #   ⚠ 顺带是更对的信息结构：总音量本来就属于「启不启用」那一档，
-        #     不是和八个逐项风格并列的第九件事。
-        control_row = QHBoxLayout()
+        # ⭐ RN-669：开关和总音量**并成一行**：总音量本来就属于「启不启用」那一档，
+        #   不是和八个逐项风格并列的第九件事。
+        head = QWidget()
+        control_row = QHBoxLayout(head)
         control_row.setContentsMargins(0, 0, 0, 0)
         control_row.setSpacing(12)
 
@@ -788,106 +546,43 @@ class SpecialSoundPage(QWidget):
         self.round_enabled_checkbox.setChecked(bool(config.round_sound_enabled))
         self.round_enabled_checkbox.toggled.connect(self._on_round_enabled_toggled)
         control_row.addWidget(self.round_enabled_checkbox)
+        control_row.addSpacing(12)
 
-        volume_label = QLabel("回合音效音量")
-        volume_label.setFont(QFont("Microsoft YaHei", 12, QFont.Bold))
-        volume_label.setMinimumWidth(140)
-        control_row.addWidget(volume_label)
+        # 不写裸的「音量」：搜这个词要先到总览的主音量，这一格只管回合音效
+        volume_caption = keep_single_line(QLabel("回合音量"))
+        control_row.addWidget(volume_caption)
 
         self.round_volume_slider = QSlider(Qt.Horizontal)
         self.round_volume_slider.setRange(0, 100)
         self.round_volume_slider.setValue(int(float(config.round_sound_volume) * 100))
+        self.round_volume_slider.setMaximumWidth(320)
         self.round_volume_slider.valueChanged.connect(self._on_round_volume_changed)
         control_row.addWidget(self.round_volume_slider, 1)
 
         self.round_volume_label = QLabel(f"{self.round_volume_slider.value()}%")
-        self.round_volume_label.setMinimumWidth(55)
-        self.round_volume_label.setFont(QFont("Microsoft YaHei", 12, QFont.Bold))
+        self.round_volume_label.setMinimumWidth(SLIDER_VALUE_MIN_WIDTH)
         control_row.addWidget(self.round_volume_label)
+        control_row.addStretch(1)
+        scroll, layout = self._make_tab("回合", head)
+        self._tab_bodies["回合"] += [volume_caption, self.round_volume_slider, self.round_volume_label]
 
-        header_layout.addLayout(control_row)
+        cells = []
+        for round_type, (display_name, manager_attr, config_attr) in self.ROUND_TYPE_META.items():
+            cell = self._make_cell(
+                display_name, round_type,
+                getattr(self.audio_manager, manager_attr, []),
+                getattr(config, config_attr, "0"),
+                lambda ca=config_attr: getattr(config, ca, "0"),
+                lambda rt=round_type: self._effective_round_styles()[rt],
+                lambda rt=round_type, ca=config_attr: self._on_round_style_changed(rt, ca),
+                lambda rt=round_type: self._test_round_sound(rt),
+            )
+            self.round_combos[round_type] = cell.style_combo
+            cells.append(cell)
+        layout.addWidget(self._make_board(scroll, cells))
 
         self.round_summary_label = self._create_summary_label()
-        from widgets import community_library as _cl  # RN-197 出口接线
-
-        _cl.wire_stale_route(self.round_summary_label,
-                             lambda: self.COMMUNITY_CATEGORY_KEY)
-        header_layout.addWidget(self.round_summary_label)
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.NoFrame)
-
-        scroll_content = QWidget()
-        scroll_layout = QVBoxLayout(scroll_content)
-        scroll_layout.setContentsMargins(0, 0, 0, 0)
-        scroll_layout.setSpacing(8)
-
-        # UP-100/UP-081②: 头部卡原本 `layout.addWidget(header_card)` 钉在滚动区**外面**。
-        # 完整模式下看不出问题（可视 750px 富余），紧凑模式（860×640）下页签内容区
-        # 只剩 186px，而这张头部卡自己的最小高就是 169px（1.25 档 188px）——
-        # 于是滚动区被挤成一个**视口只有 62px 的舷窗**，里面装着 542px 的内容。
-        # 判据报的"超出 71px"读起来像"滚一下就好"，实际是没法用。
-        #
-        # 改法与本文件里 `_create_c4_tab` / `_create_health_tab` 一致：整个页签
-        # 只留一个滚动区，头部卡也进去。代价是窄窗口下往下滚时启用开关和总音量
-        # 会滚出视野——但对照"62px 舷窗"，这个代价是划算的，而且完整模式下
-        # 高度富余、根本不会滚，观感不变。
-        scroll_layout.addWidget(header_card)
-
-        grid = QGridLayout()
-        grid.setContentsMargins(0, 0, 0, 0)
-        grid.setHorizontalSpacing(10)
-        grid.setVerticalSpacing(8)
-        self.round_grid = grid
-
-        for index, (round_type, (display_name, manager_attr, config_attr)) in enumerate(self.ROUND_TYPE_META.items()):
-            row = QFrame()
-            row.setObjectName("card")
-            row.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
-            row_layout = QVBoxLayout(row)
-            row_layout.setContentsMargins(12, 10, 12, 10)
-            row_layout.setSpacing(8)
-
-            name_label = QLabel(display_name)
-            name_label.setObjectName("statusLabel")
-            row_layout.addWidget(name_label)
-
-            controls_row = QHBoxLayout()
-            controls_row.setContentsMargins(0, 0, 0, 0)
-            controls_row.setSpacing(8)
-
-            combo = QComboBox()
-            combo.addItem("不启用", "0")
-            for style in getattr(self.audio_manager, manager_attr, []):
-                combo.addItem(style, style)
-            # RN-666③：和投掷物页签同一个数 —— 两边共用 `_responsive_columns_for_cards`，
-            # 阈值按 190 算的，这里留 220 会让回合页签在三列下顶到边。
-            combo.setMinimumWidth(190)
-            self._set_compact_heights(combo)
-            combo.currentIndexChanged.connect(
-                lambda _idx, rt=round_type, ca=config_attr: self._on_round_style_changed(rt, ca)
-            )
-            controls_row.addWidget(combo, 1)
-
-            test_btn = QPushButton(TEST_BUTTON_TEXT)
-            test_btn.setObjectName("secondaryButton")
-            test_btn.setFixedWidth(80)
-            self._set_compact_heights(test_btn)
-            test_btn.clicked.connect(lambda _checked=False, rt=round_type: self._test_round_sound(rt))
-            controls_row.addWidget(test_btn, 0)
-
-            row_layout.addLayout(controls_row)
-            self.round_cards.append(row)
-            self.round_combos[round_type] = combo
-
-        self._apply_responsive_grid(grid, self.round_cards, self._responsive_columns_for_cards(len(self.round_cards)))
-        scroll_layout.addLayout(grid)
-        scroll_layout.addStretch()
-        scroll.setWidget(scroll_content)
-        layout.addWidget(scroll)
-
-        self.tab_widget.addTab(tab, "回合")
+        layout.addWidget(self.round_summary_label)
 
     def _on_grenade_enabled_toggled(self, checked):
         config.grenade_sound_enabled = bool(checked)
@@ -1124,23 +819,46 @@ class SpecialSoundPage(QWidget):
             empty=self._current_tab_is_empty(),   # RN-650：按页签算空
             category_key=self.COMMUNITY_CATEGORY_KEY,
             cta_text="去社区拿一套特殊音效",
-            keep_text="打开当前资源",
+            keep_text="打开音频资源",
             keep_callback=self._open_current_resource_root,
             message=community_library.empty_library_message("风格"),
             callout=getattr(self, "empty_callout", None),   # RN-180
             what="风格",
             refresh_label="刷新风格列表",
         )
+        # 空库时当前页签只留开关和上面那块引导：一片全灰的格子只是噪音（批 145，RN-734）。
+        current = self.tab_widget.tabText(self.tab_widget.currentIndex())
+        for name, widgets in self._tab_bodies.items():
+            for widget in widgets:
+                widget.setVisible(not (applied and name == current))
         if not applied:
             # ⚠ **借了要还**：空库态借用了 extra 那个位置。
-            bar.configure_primary("打开当前资源", self._open_current_resource_root,
+            bar.configure_primary("打开音频资源", self._open_current_resource_root,
                                   visible=True)
             text, callback, menu = getattr(
-                self, "_extra_default", ("新建风格", None, None))
-            bar.configure_extra(text, callback, visible=True)
+                self, "_extra_default", ("", None, None))
+            bar.configure_extra(text, callback, visible=bool(text))
             bar.extra_btn.setMenu(menu)
 
+    def _sync_cell_states(self) -> None:
+        """格子上看得出来：配了、配的风格没了。"""
+        for cell, read_configured, read_effective in self._cells:
+            configured = str(read_configured() or "0").strip()
+            effective = read_effective()
+            if effective != "0":
+                cell.set_cell_state(STATE_CONFIGURED)
+            elif configured not in ("", "0"):
+                cell.set_cell_state(STATE_STALE)
+            else:
+                cell.set_cell_state("")
+
+    def _sync_sidebar_dot(self) -> None:
+        window = self.window()
+        if hasattr(window, "sync_nav_dots"):
+            window.sync_nav_dots()
+
     def _refresh_status_badge(self):
+        self._sync_sidebar_dot()
         enabled_modules = self._count_enabled_modules()
 
         grenade_on = bool(getattr(config, "grenade_sound_enabled", False))
@@ -1162,10 +880,6 @@ class SpecialSoundPage(QWidget):
         round_total = len(self.ROUND_TYPE_META)
         c4_total = len(self.C4_EVENTS)
 
-        grenade_available = sum(
-            len(styles)
-            for styles in (getattr(self.audio_manager, "grenade_sound_styles", {}) or {}).values()
-        )
         round_volume = int(round(float(getattr(config, "round_sound_volume", 1.0)) * 100))
         health_threshold = int(getattr(config, "health_warning_threshold", 20))
 
@@ -1220,44 +934,33 @@ class SpecialSoundPage(QWidget):
 
         summary_text = "\n".join(detail_lines)
         render_badges(self.status_badge_label, badges, detail_tooltip=summary_text)
-        self.summary_label.setText(summary_text)
-        self.summary_label.setToolTip(summary_text)
         self.status_card.setToolTip(summary_text)
 
         from widgets import community_library as _cl  # RN-197
 
-        stale_note = (f"（有 {stale_count} 项配的风格已被改名或删除，"
-                      "下面显示成「不启用」，重新选一个即可）"
-                      + _cl.stale_style_route(self.COMMUNITY_CATEGORY_KEY)
-                      ) if stale_count else ""
+        stale = self._stale_by_tab()
 
-        if hasattr(self, "grenade_summary_label"):
-            self.grenade_summary_label.setText(
-                f"当前已选 {grenade_selected}/{grenade_total} 类 · 可用风格 {grenade_available} 个"
-                f"{self._module_state_note(grenade_on, grenade_selected)}"
-            )
-            self.grenade_summary_label.setToolTip(summary_text)
-        if hasattr(self, "c4_summary_label"):
-            # RN-054：原文写「当前样式：X」，而 X 只是**安放**那一个事件的风格
-            # （`c4_sound_style` 是 planted 的 config_attr）。拆除/爆炸是 2.2.4
-            # 新增的两个独立事件，它们配了什么这行字从来没说。
-            self.c4_summary_label.setText(
-                f"已选 {c4_selected}/{c4_total} 项"
-                f"{self._module_state_note(c4_on, c4_selected)}"
-            )
-            self.c4_summary_label.setToolTip(summary_text)
-        if hasattr(self, "health_summary_label"):
-            self.health_summary_label.setText(
-                f"阈值 {health_threshold} · 当前风格：{self._style_summary(health_effective)}"
-                f"{self._module_state_note(health_on, 1 if health_effective != '0' else 0)}"
-            )
-            self.health_summary_label.setToolTip(summary_text)
-        if hasattr(self, "round_summary_label"):
-            self.round_summary_label.setText(
-                f"音量 {round_volume}% · 已选 {round_selected}/{round_total}"
-                f"{self._module_state_note(round_on, round_selected)}{stale_note}"
-            )
-            self.round_summary_label.setToolTip(summary_text)
+        def stale_note(tab: str) -> str:
+            if not stale[tab]:
+                return ""
+            return (f"有 {stale[tab]} 项配的风格已被改名或删除，那一格显示成「未选风格」，重新选一个即可。"
+                    + _cl.stale_style_route(self.COMMUNITY_CATEGORY_KEY))
+
+        self._sync_cell_states()
+        notes = {
+            "grenade_summary_label": (self._module_state_note(grenade_on, grenade_selected)
+                                      + stale_note("投掷物")),
+            "c4_summary_label": self._module_state_note(c4_on, c4_selected) + stale_note("C4"),
+            "health_summary_label": (self._module_state_note(
+                health_on, 1 if health_effective != "0" else 0) + stale_note("血量警告")),
+            "round_summary_label": self._module_state_note(round_on, round_selected) + stale_note("回合"),
+        }
+        for name, note in notes.items():
+            label = getattr(self, name, None)
+            if label is not None:
+                label.setText(note)
+                label.setVisible(bool(note))
+                label.setToolTip(summary_text)
         if hasattr(self, "action_bar"):
             # ⚠ RN-168：这里原来传 `open_label="打开当前资源"`（RN-056 的遗产）。
             # RN-153 把那句提示改成**不再点名任何按钮**之后，这个参数就没人读了，
@@ -1283,7 +986,3 @@ class SpecialSoundPage(QWidget):
             self.action_bar.set_message(action_message)
         # RN-165：空库引导（逻辑在 community_library，只有一份）
         self._sync_community_guidance()
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        self._refresh_responsive_grids()

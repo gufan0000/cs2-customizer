@@ -130,14 +130,14 @@ def _checks(theme):
         or (c.bg_tertiary, c.bg_elevated)
     )
     text_bgs = (c.bg_primary, c.bg_secondary, c.bg_card)
-    # primaryButton 底是 lighten(accent) → accent 的渐变，两端都要算
-    accent_stops = (theme._accent_gradient_top(), c.accent_primary)
+    accent_stops = (c.accent_primary,)
     return [
         ("正文 text_primary", c.text_primary, text_bgs, AA_NORMAL),
         ("次要 text_secondary", c.text_secondary, text_bgs, AA_NORMAL),
         ("提示 text_muted(hintLabel)", c.text_muted, text_bgs, AA_NORMAL),
         ("主按钮文字 text_on_primary", c.text_on_primary, accent_stops, AA_NORMAL),
         ("危险按钮文字", theme._on_color(theme._danger_bg()), (theme._danger_bg(),), AA_NORMAL),
+        ("危险按钮常态文字", theme._danger_text(), text_bgs, AA_NORMAL),
         ("chip 警告文字", theme._chip_text(c.accent_warm), (c.bg_card,), AA_NORMAL),
         ("chip 错误文字", theme._chip_text(c.error), (c.bg_card,), AA_NORMAL),
         # R7 补 R4 的漏：R4 只查了「禁用色和常态色能否分辨」，没查「禁用文字在

@@ -70,11 +70,6 @@ def test_event_filter_no_longer_owns_card_shadow():
     )
 
 
-def test_create_card_does_not_install_second_shadow_controller():
-    fn = _func_node(ROOT / "gui_widget.py", "_create_card", "MainWindow")
-    assert "_card_shadow" not in _attribute_names(fn)
-
-
 def test_search_highlight_does_not_touch_graphics_effect():
     """UP-024：搜索高亮不许再动 graphicsEffect。
 
@@ -244,8 +239,6 @@ def test_clear_all_styles_respects_keep_flag(qapp):
 
 
 @pytest.mark.parametrize("module_path,marker", [
-    ("widgets/weapon_row_widget.py", "keep_inline_style"),
-    ("pages/utility_page.py", "keep_inline_style"),
     ("pages/magnifier_page.py", "keep_inline_style"),
 ])
 def test_inline_style_sites_are_marked(module_path, marker):

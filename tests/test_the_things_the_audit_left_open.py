@@ -476,54 +476,60 @@ def test_gsi_stand_ins_implement_what_the_handlers_actually_call():
 
 # ==================== ⑤ 投掷物六张卡要露得出来 ====================
 
-class _WidthShell:
-    """只给 `_responsive_columns_for_cards` 它唯一要的那个输入。"""
+def _lay_out_a_tab(qapp, monkeypatch, attr, width):
+    """真的建页、给宽度、切到那个页签，数这一块板排了几列几行。"""
+    from core.audio.special_events import SOUND_EVENTS, styles_attr
+    import pages.special_sound_page as mod
 
-    def __init__(self, width):
-        self._w = width
+    def inject(self):
+        self.audio_manager.grenade_sound_styles = {g: ["甲"] for g in self.GRENADE_TYPES}
+        for event in SOUND_EVENTS:
+            setattr(self.audio_manager, styles_attr(event), ["甲"])
 
-    def width(self):
-        return self._w
+    monkeypatch.setattr(mod.SpecialSoundPage, "_refresh_special_sound_styles", inject)
+    page = mod.SpecialSoundPage()
+    try:
+        combos = getattr(page, attr)
+        cells = [combo.parentWidget() for combo in combos.values()]
+        for index in range(page.tab_widget.count()):
+            if page.tab_widget.widget(index).isAncestorOf(cells[0]):
+                page.tab_widget.setCurrentIndex(index)
+        page.resize(width, 700)
+        page.show()
+        qapp.processEvents()
+        return cells[0].parentWidget().columns(), len({cell.y() for cell in cells}), len(cells)
+    finally:
+        page.close()
+        page.deleteLater()
+        qapp.processEvents()
 
 
 @pytest.mark.parametrize(
     "width, expected, why",
     [
         (1060, 3, "1280 窗口减掉侧栏的真实页宽"),
-        (824, 2, "紧凑档 860 窗口的真实页宽"),
-        (520, 1, "再窄就只能一列"),
+        (824, 3, "紧凑档 860 窗口的真实页宽"),
+        (300, 1, "再窄就只能一列"),
     ],
 )
-def test_the_grenade_grid_uses_the_columns_the_width_allows(width, expected, why):
+def test_the_grenade_board_uses_the_columns_the_width_allows(qapp, monkeypatch, width, expected, why):
     """⭐ 阈值原来是 1380，而这一页**永远到不了 1380** ——
     一个达不到的阈值和没有这一档是一回事，却在代码里长得像已经考虑过宽屏了。"""
-    from pages.special_sound_page import SpecialSoundPage
-
-    got = SpecialSoundPage._responsive_columns_for_cards(_WidthShell(width), 6)
-    assert got == expected, f"页宽 {width}（{why}）应当 {expected} 列，实际 {got}"
+    columns, _rows, _total = _lay_out_a_tab(qapp, monkeypatch, "grenade_combos", width)
+    assert columns == expected, f"页宽 {width}（{why}）应当 {expected} 列，实际 {columns}"
 
 
-def test_six_grenade_types_fit_in_two_rows_on_a_normal_window():
+def test_six_grenade_types_fit_in_two_rows_on_a_normal_window(qapp, monkeypatch):
     """六种投掷物、状态条写「0/6」——那六张就得在首屏摆得下（RN-665③）。"""
-    from core.audio.audio_manager import AudioManager
-    from pages.special_sound_page import SpecialSoundPage
-
-    total = len(AudioManager.GRENADE_TYPES)
+    columns, rows, total = _lay_out_a_tab(qapp, monkeypatch, "grenade_combos", 1060)
     assert total == 6, f"投掷物类型变成 {total} 种了，这条判据的算式要重算"
-    columns = SpecialSoundPage._responsive_columns_for_cards(_WidthShell(1060), total)
-    rows = -(-total // columns)
     assert rows <= 2, f"1060 的页宽下要排 {rows} 行，首屏放不下（列数 {columns}）"
 
 
-def test_eight_round_events_fit_in_three_rows():
+def test_eight_round_events_fit_in_three_rows(qapp, monkeypatch):
     """回合有 8 个事件、状态条写「已选 0/8」，那就不该排成四行往下掉（RN-669）。"""
-    from core.audio.special_events import events_in_group
-    from pages.special_sound_page import SpecialSoundPage
-
-    total = len(list(events_in_group("round")))
+    columns, rows, total = _lay_out_a_tab(qapp, monkeypatch, "round_combos", 1060)
     assert total >= 6, f"回合事件只剩 {total} 个了，这条判据的算式要重算"
-    columns = SpecialSoundPage._responsive_columns_for_cards(_WidthShell(1060), total)
-    rows = -(-total // columns)
     assert rows <= 3, f"1060 的页宽下要排 {rows} 行（列数 {columns}）"
 
 
@@ -539,7 +545,7 @@ def test_the_round_volume_shares_a_row_with_the_switch():
     switch_at = body.index("round_enabled_checkbox = QCheckBox")
     slider_at = body.index("round_volume_slider = QSlider")
     between = body[switch_at:slider_at]
-    assert "_row_card()" not in between, (
+    assert "SettingsCard(" not in between, (
         "总音量又被包回一张卡中卡里了 —— 那会把第 7、8 个回合事件推出首屏"
     )
     assert "control_row.addWidget(self.round_volume_slider" in body, (
@@ -553,8 +559,9 @@ def test_the_naming_hint_sits_below_the_cards():
     ⚠ 它是「我要自己做素材」时才看的，不是进页面第一眼要看的。
     """
     src = (ROOT / "pages" / "special_sound_page.py").read_text(encoding="utf-8")
-    grid_at = src.index("scroll_layout.addLayout(grid)")
-    hint_at = src.index("scroll_layout.addWidget(naming_hint)")
-    assert hint_at > grid_at, (
-        "命名提示又跑到网格上面去了 —— 那会把六张卡里的最后两张推出首屏"
+    tab = src[src.index("def _create_grenade_tab"):src.index("def _create_c4_tab")]
+    board_at = tab.index("layout.addWidget(self._make_board(")
+    hint_at = tab.index("layout.addWidget(naming_hint)")
+    assert hint_at > board_at, (
+        "命名提示又跑到格子上面去了 —— 那会把六格里的最后两格推出首屏"
     )

@@ -43,17 +43,16 @@ import time
 from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
-    QFrame,
     QHBoxLayout,
     QLabel,
-    QScrollArea,
-    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
 from config import get_app_data_dir
 from core.audio.audio_file_utils import DEFAULT_AUDIO_EXTENSIONS
+from ui_style_applier import keep_single_line
+from widgets.status_strip import StatusStrip
 
 
 #: 空库时主按钮的兜底文案（子类没写 `EMPTY_PRIMARY_TEXT` 时用）。
@@ -165,6 +164,15 @@ class SoundPageBase:
             what="风格",
             refresh_label="刷新风格列表",
         )
+        # 引导卡出来了就不铺 39 把枪：一片「不启用」只会让人以为第一步是逐把配（批 146 外审）。
+        # ⚠ 没有社区站的发行版没有引导卡，武器板得留着（置灰），不然这一页什么都没有。
+        self.weapon_section.setVisible(not applied)
+        self.style_library.setVisible(not applied and bool(self.style_library.styles()))
+        self.library_hint.setVisible(not applied)
+        self._sync_library_hint()
+        # 一个素材都没有时不说「当场生效」：开关开着，可游戏里什么都不会响（批 145 外审）。
+        # 按库空不空判，不按引导卡出没出来：没有社区站的发行版空库时没有引导卡（批 152 开源同步）。
+        self.master_switch_row.set_has_content(not self._library_is_empty())
         if applied:
             return
 
@@ -212,8 +220,11 @@ class SoundPageBase:
         """
         raise NotImplementedError
 
-    def _test_weapon(self, weapon: str, level=None) -> None:
-        """试听。各页的实现名字不同（`_test_weapon_sound` / `_test_switch_sound` …）。"""
+    def _test_weapon(self, weapon: str, level=None, style=None) -> None:
+        """试听。各页的实现名字不同（`_test_weapon_sound` / `_test_switch_sound` …）。
+
+        `style` 给了就试听这个风格，不管这把枪现在配的是什么（风格卡上那颗按钮）。
+        """
         raise NotImplementedError
 
     # -------------------------------- 「配了、但那个风格已经不在了」（RN-026 / RN-033）
@@ -334,23 +345,6 @@ class SoundPageBase:
         return text + community_library.stale_style_route(
             self.COMMUNITY_CATEGORY_KEY, what="风格")
 
-    # ---------------------------------------------------------------- 文案
-
-    @staticmethod
-    def _compact_text(text, fallback="未分组", max_length=8):
-        """把过长文案压成带省略号的短串。
-
-        ⚠ 合并时核对过全部调用点：四页各调一次，**实际参数完全一致**
-        （都是 `('未分组', 8)`），只是 kill_sound/kill_voice 显式传参、
-        switch_weapon/reload_sound 靠默认值。所以默认值取后者的那套，
-        四页行为逐字节不变。原先 kill_sound 那份默认 `('未设置', 12)`
-        从来没有被任何调用点用到。
-        """
-        value = str(text or "").strip() or fallback
-        if len(value) > max_length:
-            return value[: max_length - 1] + "…"
-        return value
-
     # ---------------------------------------------------------------- 资源
 
     @staticmethod
@@ -370,9 +364,8 @@ class SoundPageBase:
     def _style_creator_extra_kwargs(self) -> dict:
         """给 `StyleCreatorDialog` 补的额外参数，默认没有。
 
-        存在的唯一原因：`reload_sound` 会多传一个 `preselect_weapon`
-        （取当前页签的第一把武器）。为这一个差异保留一个钩子，
-        比让四页各留一份完整的 `_open_style_creator` 划算。
+        存在的唯一原因：`reload_sound` 会多传一个 `preselect_weapon`。
+        为这一个差异保留一个钩子，比让四页各留一份完整的 `_open_style_creator` 划算。
         """
         return {}
 
@@ -394,15 +387,15 @@ class SoundPageBase:
     # ---------------------------------------------------------- 页面骨架
 
     def _build_sound_page_ui(self) -> None:
-        """四个武器音效页的 `_init_ui` 正文（R9-D 上提）。
+        """四个武器音效页的 `_init_ui` 正文（R9-D 上提，批 146 改版）。
 
-        页面结构：页头 → 当前状态卡 → 分类页签 → 底部动作条。
-        原来四份实现里 75 行有 64~72 行逐字相同，剩下的差异都由类属性表达。
+        页面结构：页头 → 有事才出现的状态条 → 一个滚动区（风格库 → 武器板）。
+        滚动区只有这一个，不嵌套：1280×800 下 39 把枪一屏看完，分类页签不需要了。
         """
         from pages.audio_status_badge import create_badge_label
         from ui_help_panel import PAGE_HELP_TEXTS, install_help_panel
-        from widgets.page_action_bar import PageActionBar
         from widgets.page_header import PageHeader
+        from widgets.weapon_board import BoardScrollArea
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
@@ -421,10 +414,9 @@ class SoundPageBase:
             PAGE_HELP_TEXTS[self.HELP_KEY or self.SOUND_CATEGORY],
         )
 
-        self.status_card = QFrame()
-        self.status_card.setObjectName("card")
+        self.status_card = StatusStrip()
         status_card_layout = QVBoxLayout(self.status_card)
-        status_card_layout.setContentsMargins(14, 12, 14, 12)
+        status_card_layout.setContentsMargins(0, 0, 0, 0)
         status_card_layout.setSpacing(8)
 
         if self.MASTER_SWITCH_KEY:
@@ -436,36 +428,19 @@ class SoundPageBase:
             self.master_switch_row = make_master_switch_row(
                 self, self.MASTER_SWITCH_KEY,
                 self.MASTER_SWITCH_NAME or self.PAGE_TITLE)
-            status_card_layout.addWidget(self.master_switch_row)
 
         status_header = QHBoxLayout()
         status_header.setSpacing(10)
-        status_title = QLabel("当前状态")
-        status_title.setObjectName("statusLabel")
-        status_header.addWidget(status_title)
         self.status_badge_label = create_badge_label()
         status_header.addWidget(self.status_badge_label, 1)
         status_header.addStretch()
         status_card_layout.addLayout(status_header)
 
-        self.summary_label = QLabel("")
-        self.summary_label.setObjectName("hintLabel")
-        self.summary_label.setWordWrap(True)
-        self.summary_label.hide()
-        status_card_layout.addWidget(self.summary_label)
-
-        self.category_overview_title_label = QLabel("")
-        self.category_overview_title_label.setObjectName("statusLabel")
-        status_card_layout.addWidget(self.category_overview_title_label)
-
-        self.category_overview_meta_label = QLabel("")
-        self.category_overview_meta_label.setObjectName("hintLabel")
-        self.category_overview_meta_label.setWordWrap(True)
-        status_card_layout.addWidget(self.category_overview_meta_label)
 
         self.category_overview_hint_label = QLabel("")
         self.category_overview_hint_label.setObjectName("hintLabel")
         self.category_overview_hint_label.setWordWrap(True)
+        self.category_overview_hint_label.hide()
         # RN-197：失效项那句话里带一条「去社区补回来」的链接（`_stale_style_hint`）。
         # ⚠ 链接**不走系统浏览器的默认打开**（`setOpenExternalLinks` 保持 False）：
         #   地址要由 `community_library` 那一份唯一真源来拼，页面不许自己拼 URL。
@@ -474,61 +449,58 @@ class SoundPageBase:
         _cl.wire_stale_route(self.category_overview_hint_label,
                              lambda: self.COMMUNITY_CATEGORY_KEY)
         status_card_layout.addWidget(self.category_overview_hint_label)
-
-        # ⭐⭐⭐ RN-181（2026-09-05 批 50）：39 把武器要逐个下拉配置，
-        #   外审 35 发 / 跨 10 页票数最高。批 50 的行为题调研更直接：
-        #   问「你想让全部 34 把枪都用同一个风格，会怎么做」——**30/30 答「找不到」**，
-        #   而他们在找的词是「应用到全部武器」（7 次）、「全局风格」（6 次）。
-        # ⇒ 就叫他们说的那个词，放在**状态卡里**：那张卡说的正是
-        #   「34 把里配了几把」，一个页面级的动作属于它，而且不随页签切换而消失。
-        # ⛔ 没有放进底栏：底栏那颗主按钮现在是「打开音频资源」（安全动作），
-        #   而「应用到全部武器」会**覆盖每一把武器已有的设置** ——
-        #   让同一个像素在这两者之间变身，正是 RN-506 那条线。
-        status_card_layout.addLayout(self._build_apply_all_row())
         layout.addWidget(self.status_card)
 
-        # RN-180：空库时的第一步放在**状态卡和武器页签之间** —— 也就是
-        # 那一片置灰下拉框的正上方，困惑发生的位置。放底栏等于没放。
+        self.content_scroll = BoardScrollArea(self)
+        content = QWidget(self.content_scroll)
+        body = QVBoxLayout(content)
+        body.setContentsMargins(0, 0, 0, 12)
+        body.setSpacing(16)
+
+        self._build_library_section(content, body)
+        self._build_weapon_section(content, body)
+        body.addStretch(1)
+
+        self.content_scroll.setWidget(content)
+        self.content_scroll.availableWidthChanged.connect(self.weapon_board.set_available_width)
+        layout.addWidget(self.content_scroll, 1)
+
+        # 建完页先同步一次「整套套用」那一行
+        self._sync_apply_all_row()
+        self._sync_library_hint()
+
+    def _build_library_section(self, content: QWidget, body: QVBoxLayout) -> None:
+        """风格库：标题行（说明 + 操作）→ 空库引导或风格卡。"""
+        from PySide6.QtWidgets import QMenu
+
         from widgets.community_library import EmptyLibraryCallout
+        from widgets.page_action_bar import PageActionBar
+        from widgets.style_library import StyleLibrary
 
-        self.empty_callout = EmptyLibraryCallout(self)
-        layout.addWidget(self.empty_callout.frame)
+        section = QVBoxLayout()
+        section.setContentsMargins(0, 0, 0, 0)
+        section.setSpacing(8)
 
-        self.tab_widget = QTabWidget()
-        # 先 addTab 再 connect：加首个 tab 会触发 currentChanged，
-        # 此刻 action_bar 尚未创建，回调只靠 hasattr 守卫幸免
-        for category, weapons in self.CATEGORIES.items():
-            self.tab_widget.addTab(self._create_category_tab(weapons), category)
-        self.tab_widget.currentChanged.connect(self._refresh_status_badge)
-        layout.addWidget(self.tab_widget, 1)
+        head = QHBoxLayout()
+        head.setContentsMargins(0, 0, 0, 0)
+        head.setSpacing(12)
+        title = QLabel("风格库")
+        title.setObjectName("cardTitle")
+        head.addWidget(title)
+        self.library_hint = keep_single_line(QLabel(""))
+        self.library_hint.setObjectName("hintLabel")
+        head.addWidget(self.library_hint)
 
-        self.action_bar = PageActionBar(self)
+        self.action_bar = PageActionBar(content, inline=True)
         if self.STYLE_TOOLS_MENU:
             # v2.2.1: 风格工具菜单（新建/管理）
-            from PySide6.QtWidgets import QMenu
-
             style_menu = QMenu(self)
             style_menu.addAction("新建风格…", self._open_style_creator)
             style_menu.addAction("管理风格（重命名/删除）…", self._open_style_manager)
-            # 紧凑档（860×640）摆不下那条「整套套用」行 ⇒ 动作从这里也够得着。
-            self._apply_all_menu_action = style_menu.addAction(
-                "应用到全部武器…", self._pick_style_and_apply_to_all)
             self.action_bar.configure_extra("风格工具", None, visible=True)
             self.action_bar.extra_btn.setMenu(style_menu)
         else:
-            # ⚠⚠ 这一支（`STYLE_TOOLS_MENU` 为假：reload_sound / switch_weapon）
-            #   底栏那颗 extra 是**没有菜单**的按钮 —— 第一版只给有菜单的那一支
-            #   挂了紧凑档入口，于是这两页在紧凑档里那个动作**真的消失了**。
-            #   判据当场点名（「藏的是控件，不是能力」）。
-            # ⇒ 这一支也给一颗菜单，把「新建风格」和「应用到全部武器…」都放进去。
-            from PySide6.QtWidgets import QMenu
-
-            plain_menu = QMenu(self)
-            plain_menu.addAction("新建风格…", self._open_style_creator)
-            self._apply_all_menu_action = plain_menu.addAction(
-                "应用到全部武器…", self._pick_style_and_apply_to_all)
             self.action_bar.configure_extra("新建风格", self._open_style_creator, visible=True)
-            self.action_bar.extra_btn.setMenu(plain_menu)
         # RN-153：记下「风格工具/新建风格」的原样 —— 空库态要把这个位置
         # 借给「打开音频资源」，恢复时得原样放回去。
         self._extra_default = (self.action_bar.extra_btn.text(),
@@ -536,97 +508,77 @@ class SoundPageBase:
                                self.action_bar.extra_btn.menu())
         self.action_bar.configure_secondary("刷新风格列表", self._refresh_style_catalog, visible=True)
         self.action_bar.configure_primary("打开音频资源", self._open_audio_resource_root, visible=True)
-        self.action_bar.extra_btn.setMinimumWidth(120)
-        self.action_bar.secondary_btn.setMinimumWidth(148)
-        self.action_bar.primary_btn.setMinimumWidth(148)
-        layout.addWidget(self.action_bar, 0)
+        head.addWidget(self.action_bar, 1)
+        section.addLayout(head)
 
-        # 建完页先同步一次「整套套用」那一行
-        self._sync_apply_all_row()
+        # RN-180：空库时的第一步放在风格库这里 —— 困惑发生的位置。
+        self.empty_callout = EmptyLibraryCallout(content, large=True)
+        section.addWidget(self.empty_callout.frame)
+
+        self.style_library = StyleLibrary(content, focus_after=self.action_bar.primary_btn)
+        self.style_library.brushChanged.connect(self._on_brush_changed)
+        self.style_library.auditionRequested.connect(self._audition_style)
+        section.addWidget(self.style_library)
+        body.addLayout(section)
+
+    def _build_weapon_section(self, content: QWidget, body: QVBoxLayout) -> None:
+        """武器：标题行（已配置几把 + 整套套用）→ 武器板。"""
+        self.weapon_section = QWidget(content)
+        section = QVBoxLayout(self.weapon_section)
+        section.setContentsMargins(0, 0, 0, 0)
+        section.setSpacing(8)
+
+        head = QHBoxLayout()
+        head.setContentsMargins(0, 0, 0, 0)
+        head.setSpacing(12)
+        title = QLabel("武器")
+        title.setObjectName("cardTitle")
+        head.addWidget(title)
+        self.weapon_count_label = keep_single_line(QLabel(""))
+        self.weapon_count_label.setObjectName("hintLabel")
+        self.weapon_count_label.setProperty("fp_index_skip", True)  # 当前值，不进索引（RN-568）
+        head.addWidget(self.weapon_count_label)
+        head.addStretch(1)
+        # ⭐⭐⭐ RN-181（2026-09-05 批 50）：39 把武器要逐个下拉配置，
+        #   外审 35 发 / 跨 10 页票数最高。批 50 的行为题调研更直接：
+        #   问「你想让全部 34 把枪都用同一个风格，会怎么做」——**30/30 答「找不到」**，
+        #   而他们在找的词是「应用到全部武器」（7 次）、「全局风格」（6 次）。
+        # ⇒ 就叫他们说的那个词，紧挨着它要改的那片武器。
+        head.addLayout(self._build_apply_all_row())
+        section.addLayout(head)
+
+        self.weapon_board = self._build_weapon_board()
+        section.addWidget(self.weapon_board)
+        body.addWidget(self.weapon_section)
 
     def _build_apply_all_row(self):
-        """「整套套用」那一行：选一个风格 → 套到这一页的全部武器（RN-181）。"""
+        """「整套套用」：选一个风格 → 套到这一页的全部武器（RN-181）。"""
         from PySide6.QtWidgets import QComboBox, QHBoxLayout, QPushButton
 
         row = QHBoxLayout()
         row.setSpacing(8)
         row.setContentsMargins(0, 0, 0, 0)
-        self.apply_all_row = row
 
-        self.apply_all_label = QLabel("整套套用")
-        row.addWidget(self.apply_all_label)
         self.apply_all_combo = QComboBox()
         self.apply_all_combo.setMinimumWidth(170)
-        self.apply_all_combo.setMinimumHeight(32)
         row.addWidget(self.apply_all_combo)
 
         self.apply_all_btn = QPushButton("应用到全部武器")
         self.apply_all_btn.setObjectName("secondaryButton")
-        self.apply_all_btn.setMinimumHeight(32)
         self.apply_all_btn.clicked.connect(self._apply_style_to_all_weapons)
         self.apply_all_combo.currentTextChanged.connect(
             lambda _t: self._sync_apply_all_hint())
         row.addWidget(self.apply_all_btn)
-
-        self.apply_all_hint = QLabel("")
-        self.apply_all_hint.setObjectName("hintLabel")
-        self.apply_all_hint.setWordWrap(True)
-        row.addWidget(self.apply_all_hint, 1)
         return row
 
-    def _pick_style_and_apply_to_all(self) -> None:
-        """紧凑档没有那条下拉行 ⇒ 先问选哪个风格，再走同一个动作。"""
-        from PySide6.QtWidgets import QInputDialog
+    def _sync_category_hint(self, stale_count, health) -> None:
+        """有事要做才说：配过的风格没了、风格目录是空的。
 
-        options = [o for o in self._apply_all_options()
-                   if o and o != getattr(self, "DISABLED_STYLE_TEXT", "不启用")]
-        if not options:
-            from PySide6.QtWidgets import QMessageBox
-            # ⭐ 按钮名从按钮读，别抄一份（RN-519 的棘轮盯着 —— 它当场逮到了这里）
-            QMessageBox.information(
-                self, "还没有可用的风格",
-                f"先导入或新建一个风格，再用「{self.apply_all_btn.text()}」。")
-            return
-        current = self.apply_all_combo.currentText()
-        index = options.index(current) if current in options else 0
-        style, ok = QInputDialog.getItem(
-            self, "应用到全部武器", "选一个风格：", options, index, False)
-        if not ok or not style:
-            return
-        self.apply_all_combo.setCurrentText(style)
-        self._apply_style_to_all_weapons()   # ⭐ 同一个动作，不另造一条路
-
-    def _apply_all_is_inline(self) -> bool:
-        """这一行摆不摆得出来。
-
-        ⚠ 紧凑档（860×640，内容可视区 548）里，这一行会把整页顶出可视区
-        60px 上下 —— 而这一族本来就欠着 64px 的在册债（RN-196）。
-        ⭐ 但**动作不能因此消失**：紧凑档改由底栏「风格工具」菜单提供同一个动作。
+        还没配、配了哪几把，页面上都看得见；还没有素材，上面那条引导已经说了。
         """
-        return self.width() >= 960
-
-    def _sync_apply_all_visibility(self) -> None:
-        inline = self._apply_all_is_inline()
-        for w in (getattr(self, "apply_all_label", None), self.apply_all_combo,
-                  self.apply_all_btn, self.apply_all_hint):
-            if w is not None:
-                w.setVisible(inline)
-        # ⚠ 光把控件 hide 掉，布局仍会为这一行留下 spacing（实测紧凑档还剩 3px，
-        #   而棘轮只认「变没变坏」）⇒ 间距也一并收掉。
-        row = getattr(self, "apply_all_row", None)
-        if row is not None:
-            row.setSpacing(8 if inline else 0)
-            row.setContentsMargins(0, 0, 0, 0)
-        action = getattr(self, "_apply_all_menu_action", None)
-        if action is not None:
-            action.setVisible(not inline)
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        try:
-            self._sync_apply_all_visibility()
-        except Exception:
-            pass
+        health = health or {}
+        self.category_overview_hint_label.setVisible(
+            bool(stale_count or health.get("invalid") or health.get("empty")))
 
     def _apply_all_options(self) -> list[str]:
         """下拉里给出**任意一把武器有的**风格（并集）。
@@ -649,7 +601,7 @@ class SoundPageBase:
                 if style in self._style_options_for(w)]
 
     def _sync_apply_all_row(self) -> None:
-        """刷新那一行：选项、可用性、旁边那句话。"""
+        """刷新那一行：选项、可用性、那句说明。"""
         if not hasattr(self, "apply_all_combo"):
             return
         options = [o for o in self._apply_all_options()
@@ -665,19 +617,17 @@ class SoundPageBase:
         usable = bool(options)
         self.apply_all_combo.setEnabled(usable)
         self.apply_all_btn.setEnabled(usable)
-        self._sync_apply_all_visibility()
-        if usable:
-            n = len(self._weapons_supporting(self.apply_all_combo.currentText()))
-            self.apply_all_hint.setText(f"把选中的风格一次配给能用它的 {n} 把武器")
-        else:
-            self.apply_all_hint.setText("还没有可用的风格 —— 先导入或新建一个")
+        self._sync_apply_all_hint()
 
     def _sync_apply_all_hint(self) -> None:
-        """换了下拉里的风格，旁边那句话要跟着重算 —— 能用它的武器数会变。"""
-        if not hasattr(self, "apply_all_hint") or not self.apply_all_btn.isEnabled():
+        """换了下拉里的风格，那句说明要跟着重算 —— 能用它的武器数会变。"""
+        if not hasattr(self, "apply_all_btn"):
             return
-        n = len(self._weapons_supporting(self.apply_all_combo.currentText()))
-        self.apply_all_hint.setText(f"把选中的风格一次配给能用它的 {n} 把武器")
+        if self.apply_all_combo.count():
+            n = len(self._weapons_supporting(self.apply_all_combo.currentText()))
+            self.apply_all_btn.setToolTip(f"把选中的风格一次配给能用它的 {n} 把武器")
+        else:
+            self.apply_all_btn.setToolTip("还没有可用的风格 —— 先导入或新建一个")
 
     def _apply_style_to_all_weapons(self) -> None:
         """把下拉里选中的风格套给本页**能用它的**武器。
@@ -731,66 +681,109 @@ class SoundPageBase:
         self._refresh_status_badge()
         self._sync_apply_all_row()
 
-    def _create_category_tab(self, weapons: list[str]) -> QWidget:
-        """一个分类页签：滚动区 → 卡片 → 响应式武器网格（R9-D 上提）。"""
-        from widgets.responsive_grid import ResponsiveGrid
+    def _build_weapon_board(self) -> QWidget:
+        """全部武器一张板，按分类分组。"""
+        from widgets.weapon_board import WeaponBoard
         from widgets.weapon_row_widget import WeaponRowWidget
 
-        tab = QWidget()
-        tab_layout = QVBoxLayout(tab)
-        tab_layout.setContentsMargins(0, 0, 0, 0)
+        board = WeaponBoard(self)
+        kwargs = {}
+        if self.TEST_LEVELS is not None:
+            kwargs["test_levels"] = self.TEST_LEVELS
+        for category, weapons in self.CATEGORIES.items():
+            cells = []
+            for weapon in weapons:
+                cell = WeaponRowWidget(
+                    self.WEAPON_NAMES.get(weapon, weapon),
+                    weapon,
+                    self._style_options_for(weapon),
+                    self._get_style_display_text(self._configured_style(weapon), weapon),
+                    parent=board,
+                    **kwargs,
+                )
+                cell.styleChanged.connect(
+                    lambda style, w=weapon: self._on_weapon_style_changed(w, style))
+                cell.testClicked.connect(lambda w=weapon: self._test_weapon(w))
+                cell.testLevelClicked.connect(
+                    lambda level, w=weapon: self._test_weapon(w, level))
+                cell.nameClicked.connect(lambda w=weapon: self._on_weapon_name_clicked(w))
+                self.weapon_rows[weapon] = cell
+                cells.append(cell)
+            board.add_group(category, cells)
+        return board
 
-        scroll = QScrollArea(tab)
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.NoFrame)
+    # ---------------------------------------------------------------- 风格库和武器板
 
-        scroll_widget = QWidget(scroll)
-        scroll_outer_layout = QVBoxLayout(scroll_widget)
-        scroll_outer_layout.setContentsMargins(6, 6, 6, 6)
-        scroll_outer_layout.setSpacing(0)
+    def _sync_weapon_board(self, resolved: dict[str, str] | None = None) -> None:
+        """格子的样子、风格卡的小字、「已配置几把」都从这一份解析结果来。"""
+        from collections import Counter
 
-        list_frame = QFrame(scroll_widget)
-        list_frame.setObjectName("card")
-        list_frame_layout = QVBoxLayout(list_frame)
-        list_frame_layout.setContentsMargins(10, 10, 10, 10)
-        list_frame_layout.setSpacing(6)
+        from widgets.weapon_row_widget import STATE_CONFIGURED, STATE_STALE
 
-        # v2.2 响应式：grid 宽 >= 1500 三列、>= 1000 两列、其它单列
-        # 阈值按 grid 实际宽度（已减去侧栏与边距）设计
-        responsive_grid = ResponsiveGrid(
-            breakpoints=[(1500, 3), (1000, 2), (0, 1)],
-            spacing=6,
-            parent=list_frame,
-        )
-        list_frame_layout.addWidget(responsive_grid)
+        if resolved is None:
+            resolved = self._resolved_styles()
+        used: Counter = Counter()
+        for weapon, cell in self.weapon_rows.items():
+            style = resolved.get(weapon, "0")
+            if self._is_style_enabled(style):
+                used[style] += 1
+                cell.set_cell_state(STATE_CONFIGURED)
+            elif self._is_style_enabled(self._configured_style(weapon)):
+                cell.set_cell_state(STATE_STALE)
+            else:
+                cell.set_cell_state("")
+        self.style_library.set_styles([
+            (style, f"用在 {used[style]} 把枪上" if used[style] else "未使用")
+            for style in self._apply_all_options() if style != self.DISABLED_STYLE_TEXT
+        ])
+        self.weapon_count_label.setText(
+            f"已配置 {sum(used.values())} / {len(self.weapon_rows)}")
+        self._sync_apply_all_row()
 
-        for weapon in weapons:
-            all_options = self._style_options_for(weapon)
-            display_style = self._get_style_display_text(self._configured_style(weapon), weapon)
-            kwargs = {}
-            if self.TEST_LEVELS is not None:
-                kwargs["test_levels"] = self.TEST_LEVELS
-            weapon_row = WeaponRowWidget(
-                self.WEAPON_NAMES.get(weapon, weapon),
-                weapon,
-                all_options,
-                display_style,
-                parent=responsive_grid,
-                **kwargs,
-            )
-            weapon_row.styleChanged.connect(
-                lambda style, w=weapon: self._on_weapon_style_changed(w, style))
-            weapon_row.testClicked.connect(lambda w=weapon: self._test_weapon(w))
-            weapon_row.testLevelClicked.connect(
-                lambda level, w=weapon: self._test_weapon(w, level))
-            responsive_grid.addItem(weapon_row)
-            self.weapon_rows[weapon] = weapon_row
+    def _on_brush_changed(self, style: str) -> None:
+        from widgets.weapon_row_widget import BRUSH_CAN, BRUSH_CANNOT
 
-        scroll_outer_layout.addWidget(list_frame)
-        scroll_outer_layout.addStretch()
-        scroll.setWidget(scroll_widget)
-        tab_layout.addWidget(scroll)
-        return tab
+        supporting = set(self._weapons_supporting(style)) if style else set()
+        for weapon, cell in self.weapon_rows.items():
+            cell.set_brush_state(
+                "" if not style else (BRUSH_CAN if weapon in supporting else BRUSH_CANNOT))
+        # 选中的风格同时就是「应用到全部武器」要套的那个
+        if style and self.apply_all_combo.findText(style) >= 0:
+            self.apply_all_combo.setCurrentText(style)
+        self._sync_library_hint()
+
+    def _sync_library_hint(self) -> None:
+        brush = self.style_library.brush()
+        if brush:
+            text = f"点枪名配上「{brush}」，再点一次取消"
+        elif not self.style_library.styles():
+            # 没有社区站的发行版空库时只剩这一句能说话（有社区站时引导卡顶替了它）
+            text = "还没有风格：放进音频后点「刷新风格列表」"
+        else:
+            text = "选一个风格，再点下面的枪名"
+        self.library_hint.setText(text)
+
+    def _on_weapon_name_clicked(self, weapon: str) -> None:
+        """有刷子：配给这把枪，已经是这个风格就取消。没刷子：不改任何东西。"""
+        from PySide6.QtGui import QCursor
+        from PySide6.QtWidgets import QToolTip
+
+        cell = self.weapon_rows[weapon]
+        brush = self.style_library.brush()
+        if not brush:
+            QToolTip.showText(QCursor.pos(), "先在风格库里选一个风格", cell)
+            return
+        if brush not in self._style_options_for(weapon):
+            QToolTip.showText(QCursor.pos(), f"这把枪没有「{brush}」这个风格", cell)
+            return
+        current = cell.get_current_style()
+        cell.set_current_style(self.DISABLED_STYLE_TEXT if current == brush else brush)
+
+    def _audition_style(self, style: str) -> None:
+        """试听一个风格，不用先配给谁。用第一把有这个风格的枪走各页既有的试听。"""
+        weapons = self._weapons_supporting(style)
+        if weapons:
+            self._test_weapon(weapons[0], style=style)
 
     # ---------------------------------------------------------------- 进页
 

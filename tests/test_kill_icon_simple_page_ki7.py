@@ -108,21 +108,8 @@ def page(qapp, monkeypatch):
 
 
 def _chip_texts(status_bar):
-    """状态条上可见的那些 chip 的文案。"""
-    from PySide6.QtWidgets import QLabel
-
-    layout = status_bar.layout()
-    if layout is None:
-        return []
-    out = []
-    for index in range(layout.count()):
-        item = layout.itemAt(index)
-        widget = item.widget() if item else None
-        if (isinstance(widget, QLabel)
-                and widget.objectName() == "audioStatusChip"
-                and not widget.isHidden()):
-            out.append(widget.text())
-    return out
+    """这一条算出来的全部徽章文案（屏幕上只显示其中的问题，RN-734）。"""
+    return status_bar.badge_texts()
 
 
 def _operable(page):

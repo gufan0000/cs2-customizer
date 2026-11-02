@@ -118,8 +118,12 @@ def measured(app, win):
 
 def test_the_denominator_is_not_empty(measured):
     """分母守卫：自带样式表的按钮一颗都找不到时，这条判据必须喊出来。"""
-    assert len(measured) >= 5, (
-        f"只找到 {len(measured)} 类自带样式表的按钮（批 64 实测 8）—— 分母塌了")
+    # 四颗箭头每版都有；第五类是可选账号入口。逐个点名比总数更能发现漏测。
+    required = {("actionButton", text) for text in ("←", "→", "↑", "↓")}
+    actual = {(row["name"], row["text"]) for row in measured}
+    assert required <= actual, f"自带样式的箭头漏测：{required - actual}"
+    if (REPO / "pages" / "account_page.py").is_file():
+        assert any(row["name"] == "accountQuickButton" for row in measured), "账号入口漏测"
     assert any(r["focused"] for r in measured), (
         "一颗都没真拿到焦点 —— 窗口不是活动窗口，这把尺子在空量（批 62 踩过）")
 

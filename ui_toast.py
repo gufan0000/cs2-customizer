@@ -13,6 +13,7 @@ from PySide6.QtGui import QFont, QColor
 from core.utils.logger import get_logger
 from ui_design_system import get_design_system
 from theme_manager import get_color
+from core.utils.app_fonts import UI_FONT_FAMILY
 
 #: RN-429 覆盖层的运行前提。软件**自己窗口内**的气泡提示 —— 玩家不会指望在 CS2 里看到它。⭐ 它和 crosshair_overlay 在代码上长得一模一样（都置顶），差别只在「画给谁看」，而那个差别机器推不出来 —— 所以要写下来。
 DRAWN_OVER_THE_GAME = False
@@ -67,7 +68,7 @@ class Toast(QWidget):
         
         # 消息标签
         self.message_label = QLabel()
-        self.message_label.setFont(QFont("Microsoft YaHei", 12))
+        self.message_label.setFont(QFont(UI_FONT_FAMILY, 12))
         self.message_label.setWordWrap(True)
         layout.addWidget(self.message_label, 1)
 

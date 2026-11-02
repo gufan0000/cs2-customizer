@@ -33,7 +33,7 @@ VERSION = "2.3.1"
 # P4.2: 配置 schema 版本。与软件 VERSION 解耦——只在"配置结构/语义发生需要
 # 迁移的变化"时 +1，并在 CONFIG_MIGRATIONS 注册对应迁移函数。
 # 旧配置文件读入后会从其记录的版本逐级迁移到 CONFIG_SCHEMA_VERSION。
-CONFIG_SCHEMA_VERSION = 2
+CONFIG_SCHEMA_VERSION = 3
 
 #: RN-622：退避（`replace_with_retry`，5 次约 267 ms）用尽后还肯「过一会儿再来」几次。
 #: ⚠ 两档管的不是一件事：退避管杀毒扫描那几十毫秒，这一档管「别的线程抓着 config.json」。
@@ -78,7 +78,16 @@ def _migrate_1_to_2(cfg, raw):
         logger.exception("配置迁移 v1→v2 失败（已跳过）")
 
 
-CONFIG_MIGRATIONS = {1: _migrate_1_to_2}
+def _migrate_2_to_3(cfg, raw):
+    """批 145（RN-733）：侧栏「常用」分组改成默认关。
+
+    23 项已经一屏放得下，它把同样几项再摆一遍，还把后面的项顶出可视区，而且每次启动顺序都变。
+    老配置里那个 True 几乎都是默认值，不是用户选的 ⇒ 一起关；要的人在「高级设置」能开回来。
+    """
+    cfg.nav_frequent_enabled = False
+
+
+CONFIG_MIGRATIONS = {1: _migrate_1_to_2, 2: _migrate_2_to_3}
 
 # 局内视角默认预设（单一数据源）：config 与 viewmodel 页面共用，
 # 避免 UI 与 config 各维护一套默认值导致分叉。
@@ -523,7 +532,7 @@ class Config:
         # DEBUG。注意 core/utils/logger.py 是直接读 config.json 的(它不能 import
         # config,会循环依赖),所以本项改完需重启才生效。
         self.debug_file_log = False
-        self.nav_frequent_enabled = True  # 侧栏「常用」动态分组(R1-6,重启生效)
+        self.nav_frequent_enabled = False  # 侧栏「常用」动态分组(R1-6,重启生效；批 145 起默认关)
         self.map_preset_enabled = False  # 按地图自动切预设(R2-4,默认关)
         self.map_preset_rules = {}  # {map_name: {"bundle": {...}, "saved_at": ts}}
         self.osd_enabled = True  # 游戏内 OSD 提示(R2-3)

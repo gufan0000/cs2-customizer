@@ -616,6 +616,7 @@ def build_spec_text(
     datas: List[str] = []
     data_entries = [
         (stage_dir / "resources", "resources"),
+        (stage_dir / "fonts", "fonts"),  # 界面字体，缺了退回雅黑：版面不崩，但和开发机量的不是一套度量
         (stage_dir / "icon.ico", "."),
         (stage_dir / "myicon.ico", "."),
         # splash.png 也随包分发：onefile 用 PyInstaller Splash 显示;
@@ -921,6 +922,7 @@ def verify_onedir_tree(
     checks = [
         ("主程序 exe", exe.is_file()),
         ("_internal 目录", internal.is_dir()),
+        ("界面字体", (internal / "fonts" / "SailSansSC-Medium.ttf").is_file()),
         # S2: 设置搜索的项级索引。缺了不会崩，搜索会静默退回只有页级——
         # 「装完之后搜不到具体开关」这种事在开发机上永远复现不出来。
         ("设置搜索项级索引", (internal / "core" / "search_index.json").is_file()),

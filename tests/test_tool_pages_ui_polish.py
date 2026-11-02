@@ -6,7 +6,7 @@ import time
 import pytest
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QLabel, QMessageBox, QBoxLayout, QSizePolicy
+from PySide6.QtWidgets import QApplication, QMessageBox, QSizePolicy
 
 from config import config
 from core.audio.audio_event_timeline import AudioEvent, get_audio_event_timeline
@@ -27,21 +27,8 @@ def qapp():
     return app
 
 
-def _visible_audio_status_chip_texts(status_bar) -> list[str]:
-    layout = status_bar.layout()
-    if layout is None:
-        return []
-    texts: list[str] = []
-    for idx in range(layout.count()):
-        item = layout.itemAt(idx)
-        widget = item.widget() if item else None
-        if (
-            isinstance(widget, QLabel)
-            and widget.objectName() == "audioStatusChip"
-            and not widget.isHidden()
-        ):
-            texts.append(widget.text())
-    return texts
+def _status_badge_texts(status_bar) -> list[str]:
+    return status_bar.badge_texts()
 
 
 def test_audio_health_page_uses_status_badges(qapp, monkeypatch):
@@ -133,8 +120,7 @@ def test_audio_health_page_uses_status_badges(qapp, monkeypatch):
         time.sleep(0.02)
     assert page._last_report is not None, "后台体检 5 秒内未完成"
 
-    assert page.summary_label.isHidden() is True
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     # ⚠⚠ 2026-09-10 批 74（RN-527①）：这一排从四颗变三颗，两处改动：
     #   ① 「音频 · 检查」→「音频 · 需检查 N 项」——「检查」读不出是
     #      「正在检查」「检查通过」还是「需要检查」，外审两轮各 3/3 判高；
@@ -150,7 +136,7 @@ def test_audio_health_page_uses_status_badges(qapp, monkeypatch):
     assert "视觉 · 需检查 3 项" in chips
     assert not any(c.startswith("项目 · ") for c in chips), (
         f"「项目 · N 项」又回来了 —— 它是音频 + 视觉的和，说第二遍会被读成两笔：{chips}")
-    assert "3" in page.summary_label.toolTip()
+    assert "3" in page.status_card.toolTip()
     assert "health-report" in page.report_text.toPlainText()
     # ⚠⚠ 这几行原来钉的是**底栏**那两颗。2026-09-04 批 46（RN-102/RN-506）
     #   把专家音频四页的底栏副本全撤了 —— 那几个动作卡内本来就有，
@@ -192,7 +178,7 @@ def test_advanced_page_action_bar_tracks_directory_state(qapp, monkeypatch, tmp_
 
     page = advanced_page_module.AdvancedPage()
 
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert len(chips) == 4
     assert "目录 · 未设置" in chips
     assert page.action_bar.secondary_btn.text() == "选择目录"
@@ -203,7 +189,7 @@ def test_advanced_page_action_bar_tracks_directory_state(qapp, monkeypatch, tmp_
     page._auto_detected = False
     page._update_csgo_dir_display()
 
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert "目录 · 已配置" in chips
     # RN-132：目录配好之后不再高亮任何主按钮（这一页设置改完立即生效，
     # 没有「保存」这个动作）。这条断言原本钉的是旧设计 —— 改设计要连它一起改。
@@ -256,8 +242,7 @@ def test_audio_replay_page_status_strip_tracks_filters(qapp, monkeypatch):
     page.key_edit.setText("kill-1")
     page._refresh_events()
 
-    assert page.summary_label.isHidden() is True
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert len(chips) == 4
     assert "记录 · 1 条" in chips
     # 屏幕上一律是人话：内部值 play / reload 不许再露脸
@@ -265,7 +250,7 @@ def test_audio_replay_page_status_strip_tracks_filters(qapp, monkeypatch):
     assert "事件 · 击杀语音" in chips
     assert "关键字 · kill-1" in chips
     assert not [c for c in chips if "play" in c or "kill_voice" in c], chips
-    assert "kill-1" in page.summary_label.toolTip()
+    assert "kill-1" in page.status_card.toolTip()
     # ⚠⚠ 这几行原来钉的是**底栏**那两颗。2026-09-04 批 46（RN-102/RN-506）
     #   把专家音频四页的底栏副本全撤了 —— 那几个动作卡内本来就有，
     #   而底栏那颗主按钮还在四种状态之间变身。
@@ -332,14 +317,13 @@ def test_config_snapshot_page_status_strip_tracks_selection(qapp, monkeypatch):
     page.table.selectRow(0)
     qapp.processEvents()
 
-    assert page.summary_label.isHidden() is True
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert len(chips) == 4
     assert "状态 · 已有快照" in chips
     assert "快照 · 2 份" in chips
     assert "保留 · 12 份" in chips
     assert any(text.startswith("选中 · 20260314_11111") for text in chips)
-    assert "20260314_111111_111111" in page.summary_label.text()
+    assert "20260314_111111_111111" in page.status_card.toolTip()
     assert "2026-03-14T11:11:11" in page.status_card.toolTip()
     # ⚠⚠ 这几行原来钉的是**底栏两颗按钮**（`secondary="刷新快照"` /
     #   `primary` 随选中状态在「创建快照」与「恢复选中」之间变身）。
@@ -430,8 +414,7 @@ def test_audio_import_wizard_page_uses_compact_status_strip(qapp, monkeypatch, t
     page.dry_run_checkbox.setChecked(True)
     page._scan_source()
 
-    assert page.summary_label.isHidden() is True
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert len(chips) == 4
     assert any(text.startswith("素材来源 · source") for text in chips)
     assert any(text.startswith("模式 · 音频") for text in chips)
@@ -453,9 +436,9 @@ def test_audio_import_wizard_page_uses_compact_status_strip(qapp, monkeypatch, t
     assert "当前模式：音频 · 已扫描 1 个可识别条目、0 个冲突" in page.action_bar.message_label.text()
 
     page._run_import()
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert "结果 · 1/0/0" in chips
-    assert "成功 1" in page.summary_label.toolTip()
+    assert "成功 1" in page.status_card.toolTip()
     assert "kill_sounds/default/1.wav" in page.preview_text.toPlainText()
     # ⚠ 批 46：底栏那颗**在四种状态间变身**的主按钮已撤；
     #   「打开资源目录」留在卡内（它一直都在）。
@@ -490,7 +473,7 @@ def test_audio_task_panel_page_status_strip_tracks_runtime_state(qapp, monkeypat
     assert page.summary_label.isHidden() is True
     assert page.table.isVisible() is False
     assert page.empty_history_label.isHidden() is False
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert "任务 · 空闲" in chips
     assert "历史 · 0 条" in chips
     # ⚠⚠ 这几行原来钉的是**底栏**那两颗。2026-09-04 批 46（RN-102/RN-506）
@@ -508,13 +491,13 @@ def test_audio_task_panel_page_status_strip_tracks_runtime_state(qapp, monkeypat
     assert "当前没有后台音频任务历史" in page.action_bar.message_label.text()
 
     page._on_task_started("abc123", "ui-check")
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert "任务 · 运行中" in chips
     assert "进度 · 1%" in chips
     assert "当前任务：abc123 · 进度 1%" in page.action_bar.message_label.text()
 
     page._on_task_progress("abc123", 55, "处理中")
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert "进度 · 55%" in chips
     assert "进度 55%" in page.action_bar.message_label.text()
 
@@ -531,7 +514,7 @@ def test_audio_task_panel_page_status_strip_tracks_runtime_state(qapp, monkeypat
         }
     ]
     page._on_task_finished("abc123", True, "任务完成")
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert "任务 · 空闲" in chips
     assert "历史 · 1 条" in chips
     assert "结果 · 成功" in chips
@@ -635,8 +618,7 @@ def test_utility_page_status_strip_tracks_loaded_utilities(qapp):
     page.set_utility_display(_DummyUtilityDisplay())
     page._do_update_map_info("de_mirage", "CT")
 
-    assert page.summary_label.isHidden() is True
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert len(chips) == 5
     assert any(text.startswith("热键 ·") for text in chips)
     assert any(text.startswith("地图 ·") for text in chips)
@@ -656,7 +638,7 @@ def test_utility_page_status_strip_tracks_loaded_utilities(qapp):
 
     page.tab_widget.setCurrentIndex(2)
     qapp.processEvents()
-    manage_chips = _visible_audio_status_chip_texts(page.manage_context_badge_label)
+    manage_chips = _status_badge_texts(page.manage_context_badge_label)
     assert any(text.startswith("地图 · ") for text in manage_chips)
     assert "阵营 · CT" in manage_chips
     assert "道具 · 3 项" in manage_chips
@@ -685,10 +667,9 @@ def test_utility_page_manage_tab_shows_empty_state_without_runtime_context(qapp)
 
     assert page.utility_list_text.isHidden() is True
     assert page.empty_utility_state_widget.isHidden() is False
-    assert "未在游戏中" in page.empty_utility_list_label.text()
     assert "进入对局后" in page.empty_utility_list_label.text()
     assert "等待进入对局" in page.empty_utility_title_label.text()
-    assert "自动识别当前地图与阵营" in page.empty_utility_meta_label.text()
+    assert page.empty_utility_meta_label.isHidden(), "没进对局时没有地图和阵营可说"
 
     page.deleteLater()
     qapp.processEvents()
@@ -709,20 +690,17 @@ def test_crosshair_page_action_bar_tracks_custom_data_state(qapp, monkeypatch):
 
     page = crosshair_page_module.CrosshairPage()
 
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert len(chips) == 6
     assert "显示 · 已开启" in chips
     assert "样式 · 十字" in chips
     assert "颜色 · 绿色" in chips
-    assert "当前预览：十字 · 绿色 · 18/3 · 显示已启用" in page.preview_summary_label.text()
-    assert "当前档位：大小 18 · 粗细 3" in page.size_summary_label.text()
-    assert "当前样式：十字" in page.style_summary_label.text()
-    assert "当前颜色：绿色" in page.color_summary_label.text()
-    assert "当前动画：脉冲效果" in page.animation_summary_label.text()
-    assert "当前联动：脉冲效果" in page.kill_effect_summary_label.text()
-    assert "当前还没有自定义点" in page.custom_summary_label.text()
-    assert page.preview_frame.width() == 156
-    assert page.preview_frame.height() == 156
+    # 批 146：控件自己就显示着当前值，「当前 X」摘要去掉了；没事可说时这一句也不出现。
+    assert page.custom_summary_label.isHidden()
+    assert page.size_value_label.text() == "18"
+    assert page.thickness_value_label.text() == "3"
+    assert page.preview_frame.minimumWidth() >= 240
+    assert page.preview_frame.minimumHeight() >= 220
     # ⚠⚠ RN-174（批 10）：这几行原来断言的是
     #     主按钮可见、且文案是「绘制准心」（有数据时变「导出准心」）
     # —— 也就是**把那条缺陷钉在了原地**：一颗会变身的主按钮 + 与卡片里
@@ -741,10 +719,10 @@ def test_crosshair_page_action_bar_tracks_custom_data_state(qapp, monkeypatch):
 
     monkeypatch.setattr(config, "crosshair_custom_data", [(15, 14), (15, 16)], raising=False)
     page._on_style_changed("custom")
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert "样式 · 自定义" in chips
-    assert "当前样式：自定义 · 已保存 2 个自定义点" in page.style_summary_label.text()
-    assert "当前已保存 2 个自定义点" in page.custom_summary_label.text()
+    assert "已保存 2 个自定义点" in page.custom_summary_label.text()
+    assert not page.custom_summary_label.isHidden()
     # 有数据之后：底栏动作组**不变**，只是「导出准心」从置灰变成可点。
     assert page.action_bar.primary_btn.isHidden() is True
     assert page.action_bar.secondary_btn.text() == "导出准心"
@@ -773,7 +751,7 @@ def test_viewmodel_page_status_strip_tracks_dirty_state(qapp, monkeypatch):
     # 改成断言那份详情**真的到了用户能看到的地方**（状态卡 tooltip）。
     assert not hasattr(page, "summary_label")
     assert "准星回正：已启用" in page.status_card.toolTip()
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert len(chips) == 5
     assert any(text == "CFG · 已同步" for text in chips)
     assert any(text == "准星回正 · 开" for text in chips)
@@ -790,19 +768,13 @@ def test_viewmodel_page_status_strip_tracks_dirty_state(qapp, monkeypatch):
         "RN-183：这一行摘要复述的是正上方那个复选框自己，已撤"
     assert not hasattr(page, "viewmodel_summary_label"), \
         "RN-183：这一行摘要复述的是正下方那两个输入框自己，已撤"
-    assert "写入后会同时刷新" in page.cfg_summary_label.text(), \
-        "只留因果那半句 —— 前半句「当前状态：CFG已同步」是芯片的活"
-    assert "当前状态" not in page.cfg_summary_label.text()
-    assert "预设1(F5)" in page.presets_summary_label.text(), \
-        "快捷键预览要留着（不必滚到底就知道 5 组都在，理由逐条核过）"
-    assert "当前共 5 组预设" not in page.presets_summary_label.text()
-    assert page.action_bar.secondary_btn.isHidden() is False
+    # 批 150：自动切换的开关只留卡里那一颗（一个动作一个入口）
+    assert page.action_bar.secondary_btn.isHidden() is True
     # ⭐⭐⭐ RN-504（批 82）：干净态那颗提交按钮**不出现**。
     #   ⚠ 这一行原来断言 `isHidden() is False` —— 又一条**把当时的实现钉成规格**的断言
     #   （同批 81 那七条、RN-009 同族）。三组 A/B：隐藏 不会 12/12 / 置灰 会 12/12。
     assert page.action_bar.primary_btn.isHidden() is True, \
         "刚打开、什么都没改，这颗提交按钮还在屏幕上"
-    assert page.action_bar.secondary_btn.text() == "启用自动切换"
     assert page.action_bar.primary_btn.text() == "保存到CFG", \
         "文案要留着（RN-506：底栏主按钮不许随状态变身），变的只是在不在场"
     bar_text = page.action_bar.message_label.text()
@@ -811,11 +783,12 @@ def test_viewmodel_page_status_strip_tracks_dirty_state(qapp, monkeypatch):
         "RN-183：底栏不许再复述芯片的值"
 
     page.cycle_key_input.setText("ALT")
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert any(text == "CFG · 待同步" for text in chips)
     assert any(text == "循环键 · ALT" for text in chips)
     # ⭐ 状态变了，**芯片跟着变、底栏一个字不变** —— 这正是这次分工要的样子。
-    assert page.action_bar.message_label.text() == bar_text
+    # 批 150：底栏这句分写没写（「CFG 同步」卡撤了），变的只有这一半
+    assert "还没写进" in page.action_bar.message_label.text()
     assert "ALT" not in page.action_bar.message_label.text()
 
     page.auto_switch_key_input.setText("B")
@@ -846,8 +819,7 @@ def test_hud_color_page_status_strip_tracks_dirty_state(qapp, monkeypatch):
     page.show()
     qapp.processEvents()
 
-    assert page.summary_label.isHidden() is True
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert len(chips) == 5
     # RN-162（批 4）：开关搬进同一张卡之后这条徽章改说功能词。
     # ⚠ 徽章不许再叫「总开关 · …」—— 那颗开关就在同一张卡上，
@@ -861,23 +833,16 @@ def test_hud_color_page_status_strip_tracks_dirty_state(qapp, monkeypatch):
     #   ⭐⭐ **一句真话被读成另一件事，和一句假话，要用两种修法。**
     assert "保存 · 已存下" in chips
     initial_event_badge = next(text for text in chips if text.startswith("事件 · "))
-    assert "当前预设：" in page.preset_summary_label.text()
-    assert page.preset_content_layout.direction() == QBoxLayout.LeftToRight
 
     page.key_widgets["1"]["enabled"].setChecked(True)
     page.event_checkboxes["kill"].setChecked(True)
 
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert "保存 · 有改动没存" in chips  # RN-426：同上，去掉一词两义的「同步」
     assert "数字键 · 1 项" in chips
     updated_event_badge = next(text for text in chips if text.startswith("事件 · "))
     assert updated_event_badge != initial_event_badge or "项" in updated_event_badge
     assert page.status_card.toolTip()
-    assert "数字键 1 项" in page.preset_summary_label.text()
-
-    page.resize(960, 900)
-    qapp.processEvents()
-    assert page.preset_content_layout.direction() == QBoxLayout.TopToBottom
 
     page.deleteLater()
     qapp.processEvents()
@@ -915,26 +880,20 @@ def test_screen_effects_page_status_strip_tracks_auto_saved_state(qapp, monkeypa
     # 状态详情真正的承载者是状态卡的 tooltip，改断它。
     assert "总开关：已开启" in (page.status_card.toolTip() or ""), \
         "状态详情没挂在状态卡的 tooltip 上——那是用户唯一看得到它的地方"
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert len(chips) == 4
     # ⚠ 2026-08-21（RN-163）：这颗徽章从「总开关 · …」改名了 ——
     # 同一行右端现在就是那颗总开关，一行里说两遍。
     assert "特效 · 开启" in chips
     assert "边缘特效 · 开启" in chips
     assert any(text.startswith("预设 · ") for text in chips)
-    assert page.preset_summary_name_label.text() == "电磁风暴"
     assert "粒子" in page.preset_summary_meta_label.text()
     assert "狂欢随机" in page.preset_summary_hint_label.text()
-    assert page.top_overview_layout.direction() == QBoxLayout.LeftToRight
-
-    page.resize(960, 900)
-    qapp.processEvents()
-    assert page.top_overview_layout.direction() == QBoxLayout.TopToBottom
 
     page.enable_edge_flash_checkbox.setChecked(False)
 
     assert overlay.updated >= 1
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert "边缘特效 · 关闭" in chips
     assert page.status_card.toolTip()
 
@@ -1014,8 +973,7 @@ def test_kill_icon_page_status_strip_tracks_adjustments(qapp, monkeypatch):
     page.show()
     qapp.processEvents()
 
-    assert page.summary_label.isHidden() is True
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert len(chips) == 4
     # ⚠ 2026-08-21（RN-163）：这颗徽章从「总开关 · …」改名了 ——
     # 同一行右端现在就是那颗总开关，一行里说两遍。
@@ -1043,7 +1001,7 @@ def test_kill_icon_page_status_strip_tracks_adjustments(qapp, monkeypatch):
     assert player.loaded_styles[-1] == "modern"
     assert player.position_updates[-1] == (30, -15)
     assert player.scale_updates[-1] == 1.25
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert "位置 · 30/-15 · 125%" in chips
     assert any(text.startswith("风格 · modern") for text in chips)
     assert "当前位置：X 30 / Y -15 · 缩放 125%" in page.adjust_summary_label.text()
@@ -1140,11 +1098,10 @@ def test_special_sound_page_status_card_tracks_threshold_and_volume(qapp, monkey
     page.show()
     qapp.processEvents()
 
-    assert page.summary_label.isHidden() is True
     assert page.action_bar.secondary_btn.isHidden() is False
     assert page.action_bar.primary_btn.isHidden() is False
     assert "当前标签" in page.action_bar.message_label.text()
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert len(chips) == 4
     assert any(text.startswith("功能 · 3/4") for text in chips)
     assert any(text.startswith("风格 · 8") for text in chips)
@@ -1155,7 +1112,7 @@ def test_special_sound_page_status_card_tracks_threshold_and_volume(qapp, monkey
     for index in range(page.tab_widget.count()):
         page.tab_widget.setCurrentIndex(index)
         page._refresh_status_badge()
-        tab_chips = _visible_audio_status_chip_texts(page.status_badge_label)
+        tab_chips = _status_badge_texts(page.status_badge_label)
         name = page.tab_widget.tabText(index)
         if name == "回合":
             assert any("65%" in text for text in tab_chips), tab_chips
@@ -1163,47 +1120,43 @@ def test_special_sound_page_status_card_tracks_threshold_and_volume(qapp, monkey
             assert not any("回合音量" in text for text in tab_chips), (name, tab_chips)
     page.tab_widget.setCurrentIndex(0)
     page._refresh_status_badge()
-    assert "当前已选 2/6 类" in page.grenade_summary_label.text()
-    assert "功能已开启" in page.grenade_summary_label.text()
+    # 批 147：数字住进状态条的 tooltip；页签上那行字只在要做事时出现（开关没开却配了）
+    tip = page.status_card.toolTip()
+    assert "投掷物：已启用，已选 2/6" in tip
     # RN-054：C4 有三个事件（安放/拆除/爆炸），原文「当前风格：beacon」只说了安放那一个
-    assert "已选 1/3 项" in page.c4_summary_label.text()
-    assert "功能已关闭" in page.c4_summary_label.text()
-    assert "阈值 18 · 当前风格：warning · 功能已开启" in page.health_summary_label.text()
-    assert f"音量 65% · 已选 4/{_ROUND_EVENT_COUNT} · 功能已开启" in page.round_summary_label.text()
-    assert "阈值 18" in page.status_card.toolTip()
-    grenade_index = page.grenade_grid.indexOf(page.grenade_cards[2])
-    grenade_row, grenade_col, _, _ = page.grenade_grid.getItemPosition(grenade_index)
-    assert (grenade_row, grenade_col) == (0, 2)
-    round_index = page.round_grid.indexOf(page.round_cards[2])
-    round_row, round_col, _, _ = page.round_grid.getItemPosition(round_index)
-    assert (round_row, round_col) == (0, 2)
+    assert "C4：已关闭，已选 1/3" in tip
+    assert "低血量：已启用，阈值 18" in tip and "warning" in tip
+    assert f"回合：已启用，音量 65%，已选 4/{_ROUND_EVENT_COUNT}" in tip
+    assert "配了也不会响" in page.c4_summary_label.text()
+    for label in (page.grenade_summary_label, page.health_summary_label, page.round_summary_label):
+        assert label.text() == "", "开关开着、配着：没有要说的"
+    board = page.grenade_combos["hegrenade"].parentWidget().parentWidget()
+    assert board.columns() == 3
 
     page._on_threshold_changed(25)
     page._on_round_volume_changed(40)
     page._on_c4_enabled_toggled(True)
 
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert any(text.startswith("功能 · 4/4") for text in chips)
     page.tab_widget.setCurrentIndex(
         [page.tab_widget.tabText(i) for i in range(page.tab_widget.count())].index("回合"))
     page._refresh_status_badge()
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert any("40%" in text for text in chips), chips
-    assert "已选 1/3 项" in page.c4_summary_label.text()
-    assert "功能已开启" in page.c4_summary_label.text()
-    assert "阈值 25 · 当前风格：warning · 功能已开启" in page.health_summary_label.text()
-    assert f"音量 40% · 已选 4/{_ROUND_EVENT_COUNT} · 功能已开启" in page.round_summary_label.text()
-    assert "阈值 25" in page.summary_label.toolTip()
-    assert "音量 40%" in page.status_card.toolTip()
+    tip = page.status_card.toolTip()
+    assert "C4：已启用，已选 1/3" in tip
+    assert page.c4_summary_label.text() == "", "开关打开了，那句话该撤"
+    assert "阈值 25" in tip
+    assert "音量 40%" in tip
+    assert "阈值 25" in page.status_card.toolTip()
 
-    page.resize(980, 960)
+    # 窄了就少排几列（现在停在「回合」，这一块才有宽度）
+    board = page.round_combos[next(iter(page.round_combos))].parentWidget().parentWidget()
+    assert board.columns() == 3
+    page.resize(600, 960)
     qapp.processEvents()
-    grenade_index = page.grenade_grid.indexOf(page.grenade_cards[2])
-    grenade_row, grenade_col, _, _ = page.grenade_grid.getItemPosition(grenade_index)
-    assert (grenade_row, grenade_col) == (1, 0)
-    round_index = page.round_grid.indexOf(page.round_cards[2])
-    round_row, round_col, _, _ = page.round_grid.getItemPosition(round_index)
-    assert (round_row, round_col) == (1, 0)
+    assert board.columns() < 3
 
     page.deleteLater()
     qapp.processEvents()
@@ -1318,36 +1271,26 @@ def test_kill_sound_page_status_card_tracks_tab_scope(qapp, monkeypatch):
 
     page = kill_sound_page_module.KillSoundPage()
 
-    assert page.summary_label.isHidden() is True
     assert dummy.load_calls == []
     assert page.action_bar.secondary_btn.isHidden() is False
     assert page.action_bar.primary_btn.isHidden() is False
-    assert "当前分类" in page.action_bar.message_label.text()
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
-    assert len(chips) == 4
+    # 批 146：分类页签去掉了，状态只说全页
+    assert "已配置 2/39" in page.action_bar.message_label.text()
+    chips = _status_badge_texts(page.status_badge_label)
+    assert len(chips) == 3
     assert any(text.startswith("开关 · 已开启") for text in chips)
     assert any(text.startswith("已配置 · 2") for text in chips)
-    assert "当前分类：手枪" in page.status_card.toolTip()
-    assert "当前分类已配置：1/10" in page.status_card.toolTip()
-    assert page.category_overview_title_label.text() == "当前分类 · 手枪"
-    assert "本分类已配置 1/10" in page.category_overview_meta_label.text()
+    assert "全部武器已配置：2/39" in page.status_card.toolTip()
+    assert page.weapon_count_label.text() == "已配置 2 / 39"
     assert "已配置示例" in page.category_overview_hint_label.text()
 
-    page.tab_widget.setCurrentIndex(page.tab_widget.indexOf(page.tab_widget.widget(2)))
-    qapp.processEvents()
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
-    assert any("步枪 1/7" in text for text in chips)
-    assert page.category_overview_title_label.text() == "当前分类 · 步枪"
-
-    page.tab_widget.setCurrentIndex(page.tab_widget.indexOf(page.tab_widget.widget(3)))
-    qapp.processEvents()
     page.weapon_rows["weapon_awp"].style_combo.setCurrentText("sniper")
 
     assert config.weapon_kill_sounds["weapon_awp"] == "sniper"
     assert dummy.load_calls[-1] == ("weapon_awp", "sniper", True)
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert any(text.startswith("已配置 · 3") for text in chips)
-    assert any("狙击枪 1/4" in text for text in chips)
+    assert page.weapon_count_label.text() == "已配置 3 / 39"
 
     page.deleteLater()
     qapp.processEvents()
@@ -1439,35 +1382,25 @@ def test_kill_voice_page_status_card_tracks_tab_scope(qapp, monkeypatch):
 
     page = kill_voice_page_module.KillVoicePage()
 
-    assert page.summary_label.isHidden() is True
-    assert page.category_overview_title_label.text() == "当前分类 · 手枪"
-    assert "本分类已配置 1/10" in page.category_overview_meta_label.text()
     assert "已配置示例" in page.category_overview_hint_label.text()
     assert dummy.load_calls == []
     assert page.action_bar.secondary_btn.isHidden() is False
     assert page.action_bar.primary_btn.isHidden() is False
-    assert "当前分类" in page.action_bar.message_label.text()
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
-    assert len(chips) == 4
+    assert "已配置 2/39" in page.action_bar.message_label.text()
+    chips = _status_badge_texts(page.status_badge_label)
+    assert len(chips) == 3
     assert any(text.startswith("开关 · 已开启") for text in chips)
     assert any(text.startswith("已配置 · 2") for text in chips)
-    assert "当前分类：手枪" in page.status_card.toolTip()
     assert "试听策略" in page.status_card.toolTip()
+    assert page.weapon_count_label.text() == "已配置 2 / 39"
 
-    page.tab_widget.setCurrentIndex(page.tab_widget.indexOf(page.tab_widget.widget(2)))
-    qapp.processEvents()
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
-    assert any("步枪 1/7" in text for text in chips)
-
-    page.tab_widget.setCurrentIndex(page.tab_widget.indexOf(page.tab_widget.widget(3)))
-    qapp.processEvents()
     page.weapon_rows["weapon_awp"].style_combo.setCurrentText("sniper-voice")
 
     assert config.weapon_kill_voices["weapon_awp"] == "sniper-voice"
     assert dummy.load_calls[-1] == ("weapon_awp", "sniper-voice")
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert any(text.startswith("已配置 · 3") for text in chips)
-    assert any("狙击枪 1/4" in text for text in chips)
+    assert page.weapon_count_label.text() == "已配置 3 / 39"
 
     page.deleteLater()
     qapp.processEvents()
@@ -1548,42 +1481,31 @@ def test_gun_sound_page_status_card_tracks_category_and_tuning(qapp, monkeypatch
 
     page = gun_sound_page_module.GunSoundPage()
 
-    assert page.summary_label.isHidden() is True
     assert saved == []
     assert page.action_bar.secondary_btn.isHidden() is False
     assert page.action_bar.primary_btn.isHidden() is False
-    assert "当前分类" in page.action_bar.message_label.text()
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
-    assert len(chips) == 4
+    assert "已配置 1/" in page.action_bar.message_label.text()
+    chips = _status_badge_texts(page.status_badge_label)
+    assert len(chips) == 3
     assert any(text.startswith("开关 · 已开启") for text in chips)
     assert any(text.startswith("已配置 · 1") for text in chips)
     assert "原声保留范围" in page.status_card.toolTip()
     assert "静音覆盖范围" in page.status_card.toolTip()
 
-    assert page.weapon_rows["awp"]["style_combo"].sizePolicy().horizontalPolicy() == QSizePolicy.Policy.Expanding
-    assert page.weapon_rows["awp"]["duck_slider"].sizePolicy().horizontalPolicy() == QSizePolicy.Policy.Expanding
-    assert page.weapon_rows["awp"]["duration_slider"].sizePolicy().horizontalPolicy() == QSizePolicy.Policy.Expanding
+    assert page.duck_slider.sizePolicy().horizontalPolicy() == QSizePolicy.Policy.Expanding
+    assert page.duration_slider.sizePolicy().horizontalPolicy() == QSizePolicy.Policy.Expanding
 
-    shotgun_index = next(
-        index for index, (_name, weapons) in enumerate(page._tab_groups) if "xm1014" in weapons
-    )
-    shotgun_total = len(page._tab_groups[shotgun_index][1])
-    page.tab_widget.setCurrentIndex(shotgun_index)
-    qapp.processEvents()
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
-    assert any(text.endswith(f"0/{shotgun_total}") for text in chips)
-
-    page.weapon_rows["xm1014"]["style_combo"].setCurrentIndex(1)
-    page.weapon_rows["xm1014"]["duck_slider"].setValue(35)
-    page.weapon_rows["xm1014"]["duration_slider"].setValue(40)
+    page.weapon_rows["xm1014"].name_button.click()
+    page.weapon_rows["xm1014"].style_combo.setCurrentIndex(1)
+    page.duck_slider.setValue(35)
+    page.duration_slider.setValue(40)
 
     assert config.xm1014_style == "styleXm"
     assert config.xm1014_duck_ratio == pytest.approx(0.35)
     assert config.xm1014_mute_duration == pytest.approx(0.4)
     assert len(saved) >= 3
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert any(text.startswith("已配置 · 2") for text in chips)
-    assert any(text.endswith(f"1/{shotgun_total}") for text in chips)
 
     page._test_gun_sound("xm1014")
     assert ("gun-xm1014-styleXm", "gun_sound") in dummy.play_calls
@@ -1623,13 +1545,13 @@ def test_gun_sound_page_refresh_preserves_current_mapping(qapp, monkeypatch):
 
     page = gun_sound_page_module.GunSoundPage()
 
-    assert page.weapon_rows["awp"]["style_combo"].currentData() == "styleAwp"
+    assert page.weapon_rows["awp"].style_combo.currentData() == "styleAwp"
     page._refresh_style_catalog()
     qapp.processEvents()
 
-    assert page.weapon_rows["awp"]["style_combo"].currentData() == "styleAwp"
-    assert page.weapon_rows["awp"]["style_combo"].findData("styleAlt") >= 0
-    assert "当前分类" in page.action_bar.message_label.text()
+    assert page.weapon_rows["awp"].style_combo.currentData() == "styleAwp"
+    assert page.weapon_rows["awp"].style_combo.findData("styleAlt") >= 0
+    assert "已配置" in page.action_bar.message_label.text()
 
     page.deleteLater()
     qapp.processEvents()
@@ -1679,34 +1601,25 @@ def test_reload_sound_page_status_card_tracks_category_scope(qapp, monkeypatch):
 
     page = reload_sound_page_module.ReloadSoundPage()
 
-    assert page.summary_label.isHidden() is True
     assert saved == []
     assert page.action_bar.secondary_btn.isHidden() is False
     assert page.action_bar.primary_btn.isHidden() is False
-    assert "当前分类" in page.action_bar.message_label.text()
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
-    assert len(chips) == 4
+    assert "已配置 1/34" in page.action_bar.message_label.text()
+    chips = _status_badge_texts(page.status_badge_label)
+    assert len(chips) == 3
     assert any(text.startswith("开关 · 已开启") for text in chips)
     assert any(text.startswith("已配置 · 1") for text in chips)
     assert "测试策略" in page.status_card.toolTip()
-    assert page.category_overview_title_label.text() == "当前分类 · 手枪"
-    assert "本分类已配置 0/10" in page.category_overview_meta_label.text()
     assert "已配置示例" in page.category_overview_hint_label.text()
-
-    page.tab_widget.setCurrentIndex(3)
-    qapp.processEvents()
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
-    assert any(text.endswith("0/4") for text in chips)
-    assert page.category_overview_title_label.text() == "当前分类 · 狙击枪"
+    assert page.weapon_count_label.text() == "已配置 1 / 34"
 
     page.weapon_rows["weapon_awp"].style_combo.setCurrentIndex(1)
 
     assert config.weapon_reload_sounds["weapon_awp"] == "styleAwp"
     assert saved == [True]
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert any(text.startswith("已配置 · 2") for text in chips)
-    assert any(text.endswith("1/4") for text in chips)
-    assert "本分类已配置 1/4" in page.category_overview_meta_label.text()
+    assert page.weapon_count_label.text() == "已配置 2 / 34"
     assert "测试会按需加载首个可用音频文件" in page.category_overview_hint_label.text()
 
     page._test_reload_sound("weapon_awp")
@@ -1748,7 +1661,7 @@ def test_reload_sound_page_refresh_preserves_current_mapping(qapp, monkeypatch):
     qapp.processEvents()
 
     assert page.weapon_rows["weapon_ak47"].get_current_style() == "styleReload"
-    assert "当前分类" in page.action_bar.message_label.text()
+    assert "已配置 2/34" in page.action_bar.message_label.text()
 
     page.deleteLater()
     qapp.processEvents()
@@ -1800,33 +1713,25 @@ def test_death_sound_page_status_card_tracks_style_selection(qapp, monkeypatch):
     page.show()
     qapp.processEvents()
 
-    assert page.summary_label.isHidden() is True
     assert saved == []
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert len(chips) == 4
     assert any(text.startswith("开关 · 已开启") for text in chips)
     assert any(text.startswith("风格 · styleDeath") for text in chips)
     assert any(text.startswith("候选 · 2") for text in chips)
     assert "当前风格：styleDeath" in page.status_card.toolTip()
-    assert "测试策略" in page.status_card.toolTip()
-    assert page.style_overview_name_label.text() == "styleDeath"
-    assert "候选 2 个" in page.style_overview_meta_label.text()
-    assert page.top_content_layout.direction() == QBoxLayout.LeftToRight
+    assert page.style_library.brush() == "styleDeath"
 
-    page.style_combo.setCurrentIndex(page.style_combo.findData("styleAlt"))
+    page.style_library.card("styleAlt").click()
     qapp.processEvents()
 
     assert config.death_sound_style == "styleAlt"
     assert saved == [True]
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert any(text.startswith("风格 · styleAlt") for text in chips)
-    assert page.style_overview_name_label.text() == "styleAlt"
+    assert page.style_library.card("styleAlt").meta_label.text() == "正在用"
 
-    page.resize(900, 900)
-    qapp.processEvents()
-    assert page.top_content_layout.direction() == QBoxLayout.TopToBottom
-
-    page._test_sound()
+    page.style_library.card("styleAlt").play_button.click()
     assert any(call[0] == "death-styleAlt" for call in dummy.load_calls)
     assert ("death-styleAlt", "death_sound") in dummy.play_calls
 
@@ -1863,13 +1768,13 @@ def test_death_sound_page_action_bar_refresh_preserves_current_style(qapp, monke
     assert page.action_bar.secondary_btn.isHidden() is False
     assert page.action_bar.primary_btn.isHidden() is False
     assert "当前风格" in page.action_bar.message_label.text()
-    assert page.style_combo.currentData() == "styleAlt"
+    assert page.style_library.brush() == "styleAlt"
 
     page._refresh_style_catalog()
     qapp.processEvents()
 
-    assert page.style_combo.currentData() == "styleAlt"
-    assert page.style_combo.findData("styleNew") >= 0
+    assert page.style_library.brush() == "styleAlt"
+    assert "styleNew" in page.style_library.styles()
     assert "当前风格" in page.action_bar.message_label.text()
 
     page.deleteLater()
@@ -1929,35 +1834,26 @@ def test_switch_weapon_page_status_card_tracks_category_scope(qapp, monkeypatch)
 
     page = switch_weapon_page_module.SwitchWeaponPage()
 
-    assert page.summary_label.isHidden() is True
-    assert page.category_overview_title_label.text() == "当前分类 · 手枪"
-    assert "本分类已配置 0/10" in page.category_overview_meta_label.text()
     assert "已配置示例" in page.category_overview_hint_label.text()
     assert saved == []
     assert page.action_bar.secondary_btn.isHidden() is False
     assert page.action_bar.primary_btn.isHidden() is False
-    assert "当前分类" in page.action_bar.message_label.text()
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
-    assert len(chips) == 4
+    assert "已配置 1/42" in page.action_bar.message_label.text()
+    chips = _status_badge_texts(page.status_badge_label)
+    assert len(chips) == 3
     assert any(text.startswith("开关 · 已开启") for text in chips)
     assert any(text.startswith("已配置 · 1") for text in chips)
-    assert "当前分类：手枪" in page.status_card.toolTip()
     assert "测试策略" in page.status_card.toolTip()
-
-    page.tab_widget.setCurrentIndex(3)
-    qapp.processEvents()
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
-    assert any(text.endswith("0/4") for text in chips)
+    assert page.weapon_count_label.text() == "已配置 1 / 42"
 
     page.weapon_rows["weapon_awp"].style_combo.setCurrentIndex(1)
 
     assert config.weapon_switch_sounds["weapon_awp"] == "styleAwp"
     assert saved == [True]
-    assert "本分类已配置 1/4" in page.category_overview_meta_label.text()
+    assert page.weapon_count_label.text() == "已配置 2 / 42"
     assert "测试会按需加载首个可用音频文件" in page.category_overview_hint_label.text()
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert any(text.startswith("已配置 · 2") for text in chips)
-    assert any(text.endswith("1/4") for text in chips)
 
     page._test_switch_sound("weapon_awp")
     assert any(call[0] == "switch-weapon_awp-styleAwp" for call in dummy.load_calls)
@@ -2003,7 +1899,7 @@ def test_switch_weapon_page_refresh_preserves_current_mapping(qapp, monkeypatch)
     qapp.processEvents()
 
     assert page.weapon_rows["weapon_ak47"].get_current_style() == "styleSwitch"
-    assert "当前分类" in page.action_bar.message_label.text()
+    assert "已配置 2/42" in page.action_bar.message_label.text()
 
     page.deleteLater()
     qapp.processEvents()
@@ -2145,18 +2041,13 @@ def test_music_page_status_cards_track_link_mode_and_playlist(qapp, monkeypatch)
     #   所以按真名搜的没找到、按全等名搜的棘轮也没找到。
     #   **同一个别名，让两条按名字找的判据先后看漏了同一个控件。**
     assert not hasattr(page, "summary_label")
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert len(chips) == 5
     assert "联动 · 已启用" in chips
     assert "模式 · 列表循环" in chips
     assert "列表 · 默认" in chips
     assert "曲目 · 3 首" in chips
     assert "播放 · 已就绪" in chips
-    assert "当前策略：联动已启用" in page.link_policy_label.text()
-    assert "阵亡后自动开始/继续播放" in page.death_summary_label.text()
-    assert "存活时自动降低到 40%" in page.alive_summary_label.text()
-    assert "当前曲目：Inferno Pulse" in page.playlist_meta_label.text()
-    assert "来源 本地 2 / URL 1" in page.playlist_meta_label.text()
     assert page.playlist_widget.maximumHeight() == 320
     assert page.action_bar.secondary_btn.text() == "刷新列表"
     assert page.action_bar.primary_btn.text() == "添加音乐"
@@ -2177,9 +2068,8 @@ def test_music_page_status_cards_track_link_mode_and_playlist(qapp, monkeypatch)
     monkeypatch.setattr(config, "music_enabled", False, raising=False)
     page._sync_overview_status()
     qapp.processEvents()
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert "联动 · 已关闭" in chips
-    assert "联动已关闭" in page.link_policy_label.text()
     assert page.link_content_frame.isEnabled() is True, (
         "总开关关着时联动卡被禁用了 —— 那正是 RN-421 改判为不做的那件事"
     )
@@ -2210,8 +2100,6 @@ def test_music_page_compact_top_section_avoids_horizontal_clipping(qapp, monkeyp
     page.show()
     qapp.processEvents()
 
-    assert page.top_settings_row.direction() == QBoxLayout.TopToBottom
-    assert page.link_content_layout.direction() == QBoxLayout.TopToBottom
     assert page.settings_scroll.horizontalScrollBar().maximum() == 0
 
     page.deleteLater()
@@ -2269,23 +2157,20 @@ def test_voice_output_page_status_card_tracks_runtime_and_forwarding(qapp, monke
 
     page = voice_output_page_module.VoiceOutputPage()
 
-    assert page.summary_label.isHidden() is True
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert len(chips) == 4
     assert any(text.startswith("驱动 · 已就绪") for text in chips)
     assert any(text.startswith("模式 · 覆盖") for text in chips)
     assert any(text.startswith("槽位 · 1/5") for text in chips)
     assert any(text.startswith("转发 · 3/8") for text in chips)
     assert "虚拟驱动已就绪" in page.driver_hint_label.text()
-    assert "当前路由：覆盖" in page.routing_summary_label.text()
-    assert "当前麦克风：USB Mic" in page.config_summary_label.text()
     assert "主音量：65%" in page.status_card.toolTip()
     assert "PTT：V · 已启用" in page.status_card.toolTip()
     assert "中断键：F8" in page.status_card.toolTip()
     # ⚠ 2026-08-30（RN-448·批 29）：「最近操作：就绪」已改。
     #   「就绪」是建出来就写死的初始占位符，而同一屏上徽章写着「驱动 · 待安装」；
     #   「最近状态」这个词又同时能读成「现在是否就绪」。外审 S4 13 处提及。
-    assert "最近操作：还没有操作" in page.summary_label.toolTip()
+    assert "最近操作：还没有操作" in page.status_card.toolTip()
     # ⭐ RN-452（批 31）：底栏次位原来是「使用说明」，而「驱动与说明」卡里
     #   紧挨着「安装驱动」还有一颗一模一样的 —— 外审窗口图 8 发 8/8 报的就是这一对，
     #   而两颗都是 `secondaryButton`（**一颗紫的都不是**）。说明归那张卡，底栏空着。
@@ -2307,16 +2192,17 @@ def test_voice_output_page_status_card_tracks_runtime_and_forwarding(qapp, monke
 
     page._set_status_text("▶ 播放: Demo Clip")
     assert "最近操作：▶ 播放: Demo Clip" in page.status_card.toolTip()
-    assert "最近操作：▶ 播放: Demo Clip" in page.action_bar.message_label.text()
+    assert "▶ 播放: Demo Clip" in page.action_bar.message_label.text()
 
     page._update_volume(40)
     assert "主音量：40%" in page.status_card.toolTip()
 
     page._update_sfx_forwarding(Qt.CheckState.Unchecked)
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert any(text == "转发 · 未启用" for text in chips)
     assert "音效转发：未启用（3/8）" in page.status_card.toolTip()
-    assert "转发未启用 3/8" in page.action_bar.message_label.text()
+    # 批 150：有过操作之后底栏只说这次操作，转发的状态看徽章（上面两行）
+    assert "▶ 播放: Demo Clip" in page.action_bar.message_label.text()
 
     monkeypatch.setattr(
         config,
@@ -2361,8 +2247,6 @@ def test_voice_output_page_compact_toolbar_layout_stays_visible(qapp, monkeypatc
     page.show()
     qapp.processEvents()
 
-    assert page.control_frame.height() >= page.control_frame.layout().sizeHint().height()
-    assert page.soundboard_tools_frame.height() >= page.soundboard_tools_frame.layout().sizeHint().height()
     assert page.stop_key_button.y() == page.ptt_key_button.y()
     assert abs(page.stop_key_button.geometry().center().y() - page.ptt_enabled_check.geometry().center().y()) <= 8
 
@@ -2457,11 +2341,7 @@ def test_flash_page_status_card_tracks_media_and_preview(qapp, tmp_path, monkeyp
     # ⚠ RN-009：同上 —— 原来这一行要求死控件存在且隐藏。
     # 本用例下面已经在断言 `status_card.toolTip()` 里有那几行详情，覆盖没丢。
     assert not hasattr(page, "summary_label")
-    assert page.basic_top_layout.direction() == QBoxLayout.LeftToRight
-    assert page.basic_overview_title_label.text() == "红色背景 · 75%"
-    assert page.basic_overview_meta_label.text() == "模糊 · 图像+音频 · 淡入开 / 淡出关"
-    assert page.basic_overview_hint_label.text() == "图片 poster · 音频 beep · 状态 就绪 · 运行 已启动"
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert len(chips) == 5
     assert any(text.startswith("效果 · 已开启") for text in chips)
     assert any(text.startswith("样式 · 模糊") for text in chips)
@@ -2479,33 +2359,27 @@ def test_flash_page_status_card_tracks_media_and_preview(qapp, tmp_path, monkeyp
 
     page.tab_widget.setCurrentIndex(3)
     qapp.processEvents()
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert any(text.startswith("页面 · 音频设置") for text in chips)
     assert page.action_bar.secondary_btn.text() == "刷新音频列表"
     assert page.action_bar.primary_btn.text() == "打开音频文件夹"
     assert "当前页面：音频设置" in page.action_bar.message_label.text()
 
     page._on_audio_enabled_toggled(False)
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert any(text.startswith("媒体 · 图像") for text in chips)
     assert "音频：未启用 · beep · 轮换 sequence · 音量 60%" in page.status_card.toolTip()
-    assert "音频 关闭" in page.basic_overview_hint_label.text()
 
     page.tab_widget.setCurrentIndex(4)
     qapp.processEvents()
-    assert page.action_bar.secondary_btn.text() == "50%预览"
+    assert page.action_bar.secondary_btn.isHidden() is True
     assert page.action_bar.primary_btn.text() == "自定义强度预览"
 
     page._do_preview(0.5)
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert any(text.startswith("运行 · 预览中") for text in chips)
     assert ("preview", 0.5, page.preview_duration) in page.process_manager.calls
     assert "当前页面：效果预览" in page.action_bar.message_label.text()
-    assert "状态 预览中... (50%, 3秒)" in page.basic_overview_hint_label.text()
-
-    page.resize(980, 960)
-    qapp.processEvents()
-    assert page.basic_top_layout.direction() == QBoxLayout.TopToBottom
 
     page.cleanup()
     page.deleteLater()
@@ -2566,8 +2440,7 @@ def test_magnifier_page_status_card_tracks_runtime_and_weapon_scope(qapp, monkey
 
     page = magnifier_page_module.MagnifierPage(config)
 
-    assert page.summary_label.isHidden() is True
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert len(chips) == 5
     assert any(text.startswith("开关 · 已开启") for text in chips)
     assert any(text.startswith("倍率 · 2.0x") for text in chips)
@@ -2577,9 +2450,6 @@ def test_magnifier_page_status_card_tracks_runtime_and_weapon_scope(qapp, monkey
     assert page.base_sensitivity_input.isEnabled() is True
     assert page.sensitivity_multiplier_input.isEnabled() is True
     assert "预设开镜灵敏度" in page.sensitivity_preview_label.text()
-    assert "当前档位：2.0x" in page.zoom_profile_label.text()
-    assert "当前触发：长按触发" in page.trigger_summary_label.text()
-    assert "当前记录：X 0 / Y 0" in page.offset_profile_label.text()
     assert "当前状态：开镜放大已启用" in page.status_card.toolTip()
     assert "当前武器：未识别" in page.status_card.toolTip()
     assert "主武器热键：右键 · 手枪热键：右键" in page.status_card.toolTip()
@@ -2632,7 +2502,7 @@ def test_magnifier_page_status_card_tracks_runtime_and_weapon_scope(qapp, monkey
 
     page.weapon_tabview.setCurrentIndex(3)
     qapp.processEvents()
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert any(text.startswith("分类 · 狙击枪") for text in chips)
     assert "当前分类：狙击枪" in page.status_card.toolTip()
 
@@ -2645,7 +2515,7 @@ def test_magnifier_page_status_card_tracks_runtime_and_weapon_scope(qapp, monkey
 
     page.trigger_mode_combo.setCurrentText("单击切换")
     qapp.processEvents()
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert any(text.startswith("触发 · 切换") for text in chips)
     assert "触发方式：单击切换" in page.status_card.toolTip()
 

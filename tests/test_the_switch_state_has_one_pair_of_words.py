@@ -20,7 +20,6 @@ import sys
 from pathlib import Path
 
 import pytest
-from PySide6.QtWidgets import QLabel
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -49,9 +48,7 @@ def test_every_switch_state_line_uses_the_switch_rows_words():
 
 
 def _chips(bar) -> list[str]:
-    layout = bar.layout()
-    return [w.text() for w in (layout.itemAt(i).widget() for i in range(layout.count() if layout else 0))
-            if isinstance(w, QLabel) and w.objectName() == "audioStatusChip" and not w.isHidden()]
+    return bar.badge_texts()
 
 
 @pytest.mark.parametrize("page_id, module, cls, key, head", [

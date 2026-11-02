@@ -49,9 +49,9 @@ def test_render_badges_reuses_chip_widgets_and_sets_level(qapp):
     render_badges(
         bar,
         [
-            ("success", "开关: 已启用"),
-            ("info", "已配置样式: 4"),
-            ("danger", "资源目录: 异常 1"),
+            ("warn", "素材 · 有空目录"),
+            ("error", "结果 · 失败"),
+            ("danger", "资源 · 异常 1"),
         ],
         detail_tooltip="缺失目录: resources/audio/gun_sounds",
     )
@@ -59,23 +59,23 @@ def test_render_badges_reuses_chip_widgets_and_sets_level(qapp):
     chips = _visible_chip_widgets(bar)
     assert len(chips) == 3
     first_round_ids = [id(chip) for chip in chips]
-    assert chips[0].property("level") == "success"
-    assert chips[1].property("level") == "info"
+    assert chips[0].property("level") == "warn"
+    assert chips[1].property("level") == "error"
     assert chips[2].property("level") == "danger"
     assert chips[2].toolTip() == "缺失目录: resources/audio/gun_sounds"
 
     render_badges(
         bar,
         [
-            ("warn", "开关: 未启用"),
-            ("info", "已配置样式: 0"),
-            ("success", "资源目录: 正常"),
+            ("danger", "素材 · 全没了"),
+            ("warn", "结果 · 跳过"),
+            ("warn", "资源 · 有疑问"),
         ],
     )
     chips_after = _visible_chip_widgets(bar)
     assert len(chips_after) == 3
     assert [id(chip) for chip in chips_after] == first_round_ids
-    assert chips_after[0].property("level") == "warn"
+    assert chips_after[0].property("level") == "danger"
     assert chips_after[2].toolTip() == ""
 
     bar.deleteLater()

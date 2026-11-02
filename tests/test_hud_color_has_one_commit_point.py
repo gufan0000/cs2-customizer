@@ -370,7 +370,9 @@ def test_no_page_says_no_button_needed_while_showing_a_button(main_window, qapp)
         #   而这条判据守的恰恰是**这一页的设计**（底栏说「不用点任何按钮」
         #   却摆着一颗提交按钮）。⭐ 收窄分母不会有任何东西报。
         buttons = [b.text().strip() for b in page.findChildren(QPushButton)
-                   if (b.isVisibleTo(page) or b.property("fp_pending") is not None)
+                   if (b.isVisibleTo(page) or b.property("fp_pending") is not None
+                       # 批 145：空库时这一行不出现，而判据环境恰好是空库（回退验证逮到）
+                       or b is getattr(page, "apply_all_btn", None))
                    and b.text()
                    and any(w in b.text() for w in commit_words)]
         # ⚠⚠ 批 50：这几个词认的是**字面**，不是事实。「应用到全部武器」

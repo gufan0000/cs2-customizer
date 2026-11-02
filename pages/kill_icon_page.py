@@ -53,7 +53,9 @@ from widgets.page_header import PageHeader
 from widgets.master_switch_effect import mark_ungoverned_by_master
 from widgets.page_action_bar import PageActionBar
 from widgets.settings_card import SettingsCard
+from widgets.settings_row import plain_row
 from widgets.overlay_requirement import make_overlay_requirement_label
+from widgets.status_strip import StatusStrip
 
 #: RN-429：击杀图标由 `kill_icon_player` 画在游戏画面上。⚠ 本页与那个模块之间**没有任何 import 关系**（页面只配置，播放由 GSI 事件链驱动）—— 所以这条只能靠本页自己声明，任何 import 分母都够不着它。
 DRAWS_OVER_THE_GAME = True
@@ -158,10 +160,9 @@ class KillIconPage(QWidget):
         main_layout.addWidget(header)
         install_help_panel(header.title_row, header.body, PAGE_HELP_TEXTS["kill_icon"])
 
-        self.status_card = QFrame()
-        self.status_card.setObjectName("card")
+        self.status_card = StatusStrip()
         status_card_layout = QVBoxLayout(self.status_card)
-        status_card_layout.setContentsMargins(14, 12, 14, 12)
+        status_card_layout.setContentsMargins(0, 0, 0, 0)
         status_card_layout.setSpacing(8)
 
         # RN-155 + RN-144 升级版（第二稿）：总开关**独占卡片第一行、贴左边**。
@@ -171,13 +172,9 @@ class KillIconPage(QWidget):
 
         self.master_switch_row = make_master_switch_row(
             self, "kill_icon_enabled", "击杀图标")
-        status_card_layout.addWidget(self.master_switch_row)
 
         status_row = QHBoxLayout()
         status_row.setSpacing(10)
-        status_title = QLabel("当前状态")
-        status_title.setObjectName("statusLabel")
-        status_row.addWidget(status_title)
         self.status_badge_label = create_badge_label()
         status_row.addWidget(self.status_badge_label, 1)
         status_row.addStretch()
@@ -187,11 +184,6 @@ class KillIconPage(QWidget):
         # ⚠ 这一页原来**全仓零命中** —— 任何地方都没提过这个前提。
         status_card_layout.addWidget(make_overlay_requirement_label("击杀图标"))
 
-        self.summary_label = QLabel("")
-        self.summary_label.setObjectName("hintLabel")
-        self.summary_label.setWordWrap(True)
-        self.summary_label.hide()
-        status_card_layout.addWidget(self.summary_label)
         main_layout.addWidget(self.status_card)
 
         scroll = QScrollArea()
@@ -213,8 +205,6 @@ class KillIconPage(QWidget):
         main_layout.addWidget(scroll, 1)
 
         self.action_bar = PageActionBar(self)
-        self.action_bar.secondary_btn.setMinimumWidth(124)
-        self.action_bar.primary_btn.setMinimumWidth(140)
         main_layout.addWidget(self.action_bar, 0)
 
         # 拖一个动图、一个帧序列文件夹、或者一整个 zip 图标包进来就能导入
@@ -227,10 +217,7 @@ class KillIconPage(QWidget):
 
     def _create_hero_card(self):
         """当前用的这一套长什么样、在屏幕哪儿、开没开。"""
-        card, card_layout = SettingsCard.make(
-            "当前图标",
-            "左边就是击杀时会看到的样子。位置不顺眼点「调整位置和大小」。",
-        )
+        card, card_layout = SettingsCard.make("当前图标")
 
         self.style_summary_label = QLabel("")
         self.style_summary_label.setObjectName("hintLabel")
@@ -286,9 +273,6 @@ class KillIconPage(QWidget):
 
         self.test_btn = QPushButton(NORMAL_PRIMARY_TEXT)
         self.test_btn.setObjectName("actionButton")
-        self.test_btn.setFixedHeight(34)
-        # 写下限不写死宽：中文文案 + 字号缩放 = 截断（UP-094 的教训）。
-        self.test_btn.setMinimumWidth(140)
         self.test_btn.setToolTip("按当前设置在屏幕上真播一次，位置和大小所见即所得")
         # RN-145：空库时这颗按钮换成「去拿一套图标包」。文案与可用性在
         # `_sync_status_strip` 里同步，接线只在这儿做一次（见 `_on_primary_clicked`）。
@@ -297,8 +281,6 @@ class KillIconPage(QWidget):
 
         self.adjust_toggle_btn = QPushButton("调整位置和大小 ⌄")
         self.adjust_toggle_btn.setObjectName("secondaryButton")
-        self.adjust_toggle_btn.setFixedHeight(34)
-        self.adjust_toggle_btn.setMinimumWidth(150)
         self.adjust_toggle_btn.setCheckable(True)
         self.adjust_toggle_btn.toggled.connect(self._on_adjust_toggled)
         button_row.addWidget(self.adjust_toggle_btn)
@@ -316,7 +298,7 @@ class KillIconPage(QWidget):
         return card
 
     def _create_adjust_frame(self):
-        """位置/大小三滑条 + 示意图。默认折叠——绝大多数人一次都不会动它。"""
+        """位置/大小滑条 + 示意图。默认折叠——绝大多数人一次都不会动它。"""
         frame = QFrame()
         layout = QVBoxLayout(frame)
         layout.setContentsMargins(0, 6, 0, 0)
@@ -328,43 +310,42 @@ class KillIconPage(QWidget):
         layout.addWidget(self.adjust_summary_label)
 
         body = QHBoxLayout()
-        body.setSpacing(12)
+        body.setSpacing(24)
 
         sliders = QVBoxLayout()
-        sliders.setSpacing(6)
+        sliders.setSpacing(8)
 
         self.x_slider, self.x_value_label = self._make_slider_row(
-            sliders, "水平位置:", -200, 200, int(getattr(config, "kill_icon_offset_x", 0)),
+            sliders, "水平位置", -200, 200, int(getattr(config, "kill_icon_offset_x", 0)),
             self._on_x_position_changed, f"{getattr(config, 'kill_icon_offset_x', 0)} px")
         self.y_slider, self.y_value_label = self._make_slider_row(
-            sliders, "垂直位置:", -200, 200, int(getattr(config, "kill_icon_offset_y", 0)),
+            sliders, "垂直位置", -200, 200, int(getattr(config, "kill_icon_offset_y", 0)),
             self._on_y_position_changed, f"{getattr(config, 'kill_icon_offset_y', 0)} px")
         self.scale_slider, self.scale_value_label = self._make_slider_row(
-            sliders, "图标大小:", 50, 200, int(getattr(config, "kill_icon_scale", 1.0) * 100),
+            sliders, "图标大小", 50, 200, int(getattr(config, "kill_icon_scale", 1.0) * 100),
             self._on_scale_changed, format_percent(getattr(config, "kill_icon_scale", 1.0), hi=2.0))
         # 批 118：素材是用户导的，做得太亮太实会挡视线，而以前唯一能调的只有大小
         opacity = int(round(float(getattr(config, "kill_icon_opacity", 1.0)) * 100))
         self.opacity_slider, self.opacity_value_label = self._make_slider_row(
-            sliders, "不透明度:", 30, 100, opacity, self._on_opacity_changed, f"{opacity}%")
+            sliders, "不透明度", 30, 100, opacity, self._on_opacity_changed, f"{opacity}%")
 
         reset_btn = QPushButton("重置位置和大小")
         reset_btn.setObjectName("secondaryButton")
-        reset_btn.setFixedHeight(32)
-        # UP-094: 写死宽度 + 中文文案 + 字号缩放 = 截断。只写下限。
-        reset_btn.setMinimumWidth(146)
         reset_btn.clicked.connect(self._reset_position_and_scale)
         reset_row = QHBoxLayout()
         reset_row.setContentsMargins(0, 4, 0, 0)
         reset_row.addWidget(reset_btn)
         reset_row.addStretch()
         sliders.addLayout(reset_row)
+        sliders.addStretch()
 
-        body.addLayout(sliders, 1)
+        body.addLayout(sliders)
 
         self.position_map = KillIconPositionMap()
         self.position_map.setMinimumWidth(180)
         self.position_map.position_changed.connect(self._on_map_dragged)
         body.addWidget(self.position_map, 0)
+        body.addStretch()
 
         layout.addLayout(body)
         self._sync_position_map()
@@ -372,33 +353,22 @@ class KillIconPage(QWidget):
 
     def _make_slider_row(self, parent_layout, title, minimum, maximum, value,
                          handler, value_text):
-        row = QFrame()
-        row_layout = QHBoxLayout(row)
-        row_layout.setContentsMargins(0, 0, 0, 0)
-        row_layout.setSpacing(8)
-
-        label = QLabel(title)
-        label.setFixedWidth(80)
-        row_layout.addWidget(label)
-
         slider = QSlider(Qt.Horizontal)
         slider.setMinimum(minimum)
         slider.setMaximum(maximum)
         slider.setValue(value)
         slider.valueChanged.connect(handler)
-        row_layout.addWidget(slider)
 
         value_label = QLabel(value_text)
         value_label.setFixedWidth(60)
-        row_layout.addWidget(value_label)
 
-        parent_layout.addWidget(row)
+        parent_layout.addWidget(plain_row(title, slider, value_label))
         return slider, value_label
 
     def _create_style_card(self):
         card, card_layout = SettingsCard.make(
             "风格库",
-            "点一张卡就换。一个 zip 图标包就是一整套风格，拖进来即可。",
+            "点一张卡就换。把图标包（.zip）、动图、图片或视频拖到这一页上就能导入。",
         )
 
         self.style_strip = KillIconStyleStrip()
@@ -412,13 +382,9 @@ class KillIconPage(QWidget):
         strip_scroll.setFrameShape(QFrame.NoFrame)
         strip_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         # 滚动区默认自己画一层底色，卡片右边会多出一大块深色矩形，看着像
-        # "这里还应该有东西"。透明掉，让卡片直接落在卡片底色上。
-        # ⚠ 这条 QSS 里**不许出现颜色**：`background: transparent` 是"别画"，
-        # 不是"画成某个色"——本项目 QSS 正文的 #RRGGBB 字面量数为 0，
-        # 8 个主题全靠 token，写死一个颜色就有 7 个主题会错。
+        # "这里还应该有东西"。透明掉（规则在主题里），让卡片直接落在卡片底色上。
+        strip_scroll.setObjectName("styleStripScroll")
         strip_scroll.viewport().setAutoFillBackground(False)
-        strip_scroll.setStyleSheet("QScrollArea, QScrollArea > QWidget "
-                                   "{ background: transparent; }")
         self.style_strip.setAutoFillBackground(False)
         strip_scroll.setWidget(self.style_strip)
         strip_scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -426,19 +392,15 @@ class KillIconPage(QWidget):
         self._sync_strip_height()
         card_layout.addWidget(strip_scroll)
 
-        drop_hint = QLabel(
-            "把图标包(.zip)、动图、图片或视频拖到这一页上就能导入；"
-            "推荐 WebP 动图 / APNG / PNG 帧序列——边缘干净，GIF 的透明是 1-bit 的，会有硬白边。"
-        )
+        drop_hint = QLabel("动图推荐 WebP、APNG 或 PNG 帧序列：GIF 的透明只有 1 位，边缘会有硬白边。")
         drop_hint.setObjectName("hintLabel")
         drop_hint.setWordWrap(True)
         card_layout.addWidget(drop_hint)
 
         # ---- 页内提示条（取代弹窗）
         self.notice_frame = QFrame()
-        self.notice_frame.setObjectName("card")
         notice_layout = QHBoxLayout(self.notice_frame)
-        notice_layout.setContentsMargins(10, 6, 10, 6)
+        notice_layout.setContentsMargins(0, 0, 0, 0)
         notice_layout.setSpacing(8)
         self.notice_label = QLabel("")
         self.notice_label.setObjectName("hintLabel")
@@ -520,16 +482,13 @@ class KillIconPage(QWidget):
     def _create_workshop_card(self):
         card, card_layout = SettingsCard.make(
             "自己做一套",
-            "逐个等级换素材、调节奏、抠背景、导出分享——这些都在工坊里，"
-            "平时不用管它。",
+            "逐个等级换素材、调节奏、抠背景、导出分享。",
         )
 
         row = QHBoxLayout()
         row.setSpacing(8)
         self.workshop_btn = QPushButton("打开素材工坊")
         self.workshop_btn.setObjectName("secondaryButton")
-        self.workshop_btn.setFixedHeight(34)
-        self.workshop_btn.setMinimumWidth(140)
         self.workshop_btn.clicked.connect(self._open_workshop)
         row.addWidget(self.workshop_btn)
         row.addStretch()
@@ -723,11 +682,12 @@ class KillIconPage(QWidget):
             # 两者不再复述同一个词。⭐ 同屏重复不只是啰嗦，它让人以为是两件事。
             ("positive" if enabled else "warning", f"显示 · {'已开启' if enabled else '未开启'}"),
             (
-                "positive" if (not empty and self._current_style() not in ("", "0"))
+                "info" if empty
+                else "positive" if self._current_style() not in ("", "0")
                 else "warning",
                 f"风格 · {style_text}",
             ),
-            ("positive" if len(ready_levels) == len(LEVELS) else "warning",
+            ("info" if empty else "positive" if len(ready_levels) == len(LEVELS) else "warning",
              f"素材 · {len(ready_levels)}/{len(LEVELS)}"),
             ("info", f"位置 · {position_text} · {scale_text}"),
         ]
@@ -744,8 +704,6 @@ class KillIconPage(QWidget):
             f"预览组件：{'已连接' if player_ready else '未连接'}"
         )
         render_badges(self.status_badge_label, badges, detail_tooltip=detail_text)
-        self.summary_label.setText(detail_text)
-        self.summary_label.setToolTip(detail_text)
         self.status_card.setToolTip(detail_text)
 
         if hasattr(self, "style_summary_label"):
@@ -763,6 +721,7 @@ class KillIconPage(QWidget):
                 f" · 共 {len(self.available_icon_styles)} 套可选"
             )
             self.style_summary_label.setToolTip(detail_text)
+            self.style_summary_label.setVisible(not empty)
 
         if hasattr(self, "adjust_summary_label"):
             self.adjust_summary_label.setText(
@@ -811,6 +770,8 @@ class KillIconPage(QWidget):
             self.page_lead_label.setText(
                 self._empty_lead_text() if self._library_is_empty() else NORMAL_LEAD_TEXT
             )
+            # 批 145：平时的说明在「?」里；空库时这一句是第一步，要摆出来
+            self.page_lead_label.setVisible(self._library_is_empty())
 
         if hasattr(self, "style_strip"):
             for name in self.available_icon_styles:
@@ -1419,4 +1380,3 @@ class KillIconPage(QWidget):
         else:
             self.kill_icon_player.preview_position_and_scale(level, 3)
             self.logger.info("当前风格没有素材，改为预览落点")
-

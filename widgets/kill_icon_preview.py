@@ -54,6 +54,7 @@ class KillIconPreview(QWidget):
         self.setMinimumSize(box[0], box[1])
 
         self._timer = QTimer(self)
+        self._timer_requested = False
         self._timer.setInterval(max(1, int(round(1000 / TICK_HZ))))
         self._timer.timeout.connect(self._tick)
 
@@ -78,6 +79,7 @@ class KillIconPreview(QWidget):
             self._placeholder = placeholder
         if animation is None or not animation.frames:
             self._frames = ()
+            self._timer_requested = False
             self._timer.stop()
             self.update()
             return
@@ -100,12 +102,23 @@ class KillIconPreview(QWidget):
     def restart(self):
         self._elapsed = 0.0
         self._index = 0
-        if self._frames:
+        self._timer_requested = bool(self._frames)
+        if self._frames and self.isVisible():
             self._timer.start()
         self.update()
 
     def stop(self):
+        self._timer_requested = False
         self._timer.stop()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if self._frames and self._timer_requested:
+            self._timer.start()
+
+    def hideEvent(self, event):
+        self._timer.stop()
+        super().hideEvent(event)
 
     @property
     def has_frames(self) -> bool:

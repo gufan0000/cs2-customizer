@@ -83,20 +83,16 @@ def test_preview_without_overlay_manager_says_something_specific(effects_page, q
 
 def test_trigger_tip_does_not_promise_what_the_code_undoes(effects_page, qapp):
     """文案与行为必须一致：勾选框一取消，预览按钮就没了，文案不能说"会保留"。"""
-    from PySide6.QtWidgets import QLabel
-
     effects_page.enable_edge_flash_checkbox.setChecked(False)
     qapp.processEvents()
     # 先确认行为确实是"按钮被禁用"，否则下面查文案就是无的放矢
     assert not effects_page.action_bar.primary_btn.isEnabled(), (
         "取消勾选后预览按钮居然还是可用的，这条判据的前提不成立")
 
-    tips = [w.text() for w in effects_page.findChildren(QLabel)
-            if w.objectName() == "hintLabel" and "预览" in w.text()]
-    assert tips, "找不到那句关于预览的提示文案，判据在空转"
-    for text in tips:
-        assert "保留" not in text, (
-            f"文案仍在承诺预览「会保留」，而实际会被禁用：{text!r}")
+    # 批 150：这句话只在底栏说（屏幕特效页原来说三遍）
+    text = effects_page.action_bar.message_label.text()
+    assert "预览" in text, "找不到那句关于预览的提示文案，判据在空转"
+    assert "保留" not in text, f"文案仍在承诺预览「会保留」，而实际会被禁用：{text!r}"
 
 
 # ------------------------------------------------------------------ 击杀语音页

@@ -40,7 +40,8 @@ sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(REPO / "scripts"))
 
 #: 通用那句话的**逐字**样子。改它要连同 RN-429 的裁定一起改，不许顺手改。
-GENERIC_HEAD = "⚠ 先去 CS2 把显示模式选成「无边框窗口化」"
+#: 批 145（RN-734）：常驻 7 页，减成一行；语序仍是动作在前、后果在后。
+GENERIC_HEAD = "⚠ CS2 显示模式要选「无边框窗口化」"
 
 
 @pytest.fixture

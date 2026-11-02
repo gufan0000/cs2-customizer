@@ -269,6 +269,43 @@ def collect_audio_resource_health() -> Dict[str, object]:
     }
 
 
+def count_stale_styles() -> Dict[str, int]:
+    """总览用：每个功能配的风格有几项已经不在了。键是总开关的 id，特殊音效是 `special_sound`。
+
+    ⚠ 和上面的体检报告分开数：报告里的项「一键修复」会清零，而风格没了配置要留着（RN-033：
+    回来了还接得上）。所以这里只数不动。
+    """
+    from core.feature_summary import WEAPON_TABLES, style_is_picked
+    from core.gun_sound_profiles import SUPPORTED_GUN_SOUND_WEAPON_TYPES
+
+    root = ResourceManager.get_app_data_path("resources/audio")
+
+    def gone(table, path_of) -> int:
+        return sum(1 for owner, style in table.items()
+                   if style_is_picked(style) and not _style_dir_has_audio(path_of(str(owner), str(style))))
+
+    def table_of(switch_id):
+        return getattr(config, WEAPON_TABLES[switch_id], None) or {}
+
+    guns = {gun: getattr(config, f"{gun}_style", "0") for gun in SUPPORTED_GUN_SOUND_WEAPON_TYPES}
+    events = {event.key: getattr(config, event.config_attr, "0") for event in SOUND_EVENTS}
+    by_key = {event.key: event for event in SOUND_EVENTS}
+    death = getattr(config, "death_sound_style", "0")
+    return {
+        "kill_sound": gone(table_of("kill_sound"), lambda w, s: _resolve_kill_style_dir(root, w, s)),
+        "kill_voice": gone(table_of("kill_voice"), lambda w, s: _resolve_kill_style_dir(root, w, s, voice=True)),
+        "switch_weapon": gone(table_of("switch_weapon"), lambda w, s: os.path.join(root, "switch_weapons", w, s)),
+        "reload_sound": gone(table_of("reload_sound"), lambda w, s: os.path.join(root, "reload_sounds", w, s)),
+        "gun_sound": gone(guns, lambda g, s: os.path.join(root, "gun_sounds", g, s)),
+        "death_sound": int(style_is_picked(death) and not find_audio_by_stem(
+            os.path.join(root, "death"), str(death), extensions=DEFAULT_AUDIO_EXTENSIONS)),
+        "special_sound": (
+            gone(getattr(config, "grenade_sound_styles", None) or {},
+                 lambda g, s: os.path.join(root, "grenade_sounds", g, s))
+            + gone(events, lambda k, s: os.path.join(root, *style_dir_parts(by_key[k], s)))),
+    }
+
+
 def _set_config_ref_to_zero(config_key: str) -> bool:
     """
     Reset a config key path to \"0\".
@@ -406,6 +443,8 @@ def format_audio_resource_health(report: Dict[str, object]) -> str:
     gsi_cfg = report.get("gsi_cfg", {}) or {}
     if gsi_cfg.get("status") not in ("ok", None, ""):
         lines.append(f"  游戏数据接入（GSI）：{gsi_cfg.get('detail', '') or gsi_cfg.get('status')}")
+        if gsi_cfg.get("status") in ("missing", "not_configured"):
+            lines.append("    去「高级设置」选一次 CS2 目录就会写好；一键修复管不到它。")
 
     if len(lines) == 2:
         lines.append("  没有发现问题。")

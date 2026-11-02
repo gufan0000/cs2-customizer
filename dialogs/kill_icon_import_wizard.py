@@ -61,7 +61,8 @@ def describe_probe(probe) -> str:
     if frames <= 1:
         hold = float(getattr(probe, "hold_seconds", 0.0) or 0.0)
         timing = f"定格 {hold:.1f} 秒" if hold else "单帧"
-        return f"认出来了：{kind} · 静态图 · {width}x{height} · {timing}"
+        # 批 146（外审 S4）：一张图不说「动图 · 静态图」，那两个词是互斥的
+        return f"认出来了：静态图 · {width}x{height} · {timing}"
     return (f"认出来了：{kind} · {frames} 帧 · {width}x{height} · "
             f"约 {getattr(probe, 'duration', 0.0):.1f} 秒")
 

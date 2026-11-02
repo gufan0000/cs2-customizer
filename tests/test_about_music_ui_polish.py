@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import pytest
-from PySide6.QtWidgets import QApplication, QLabel
+from PySide6.QtWidgets import QApplication
 
 from config import VERSION, config
 import pages.about_page as about_page_module
@@ -17,21 +17,8 @@ def qapp():
     return app
 
 
-def _visible_audio_status_chip_texts(status_bar) -> list[str]:
-    layout = status_bar.layout()
-    if layout is None:
-        return []
-    texts: list[str] = []
-    for idx in range(layout.count()):
-        item = layout.itemAt(idx)
-        widget = item.widget() if item else None
-        if (
-            isinstance(widget, QLabel)
-            and widget.objectName() == "audioStatusChip"
-            and not widget.isHidden()
-        ):
-            texts.append(widget.text())
-    return texts
+def _status_badge_texts(status_bar) -> list[str]:
+    return status_bar.badge_texts()
 
 
 class _DummyPlayer:
@@ -65,15 +52,13 @@ def test_about_page_uses_lead_and_badges(qapp):
     page = about_page_module.AboutPage()
 
     assert page.page_lead_label.objectName() == "pageLeadLabel"
-    assert page.summary_label.isHidden() is True
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     # 开源版没有账号体系，原来那枚「账号 · 联动已接入」换成了许可证徽标。
     # 数量仍然写死：少一枚说明状态条被人顺手删空了，那是缺陷不是简化。
     assert len(chips) == 3
     assert f"版本 · v{VERSION}" in chips
     assert "渠道 · 桌面工具" in chips
     assert f"许可证 · {about_page_module.PROJECT_LICENSE}" in chips
-    assert about_page_module.PROJECT_REPO_URL in page.summary_label.toolTip()
     assert about_page_module.PROJECT_REPO_URL in page.status_card.toolTip()
     assert about_page_module.PROJECT_LICENSE in page.info_label.text()
     assert page.action_bar.secondary_btn.text() == "打开项目仓库"
@@ -112,14 +97,14 @@ def test_music_page_overview_badges_sync(qapp, monkeypatch):
     page = music_page_module.MusicPage()
 
     assert page.page_lead_label.objectName() == "pageLeadLabel"
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert len(chips) == 5
     assert any(text == "联动 · 已启用" for text in chips)
     assert any(text == "模式 · 随机播放" for text in chips)
     assert any(text == "列表 · 默认列表" for text in chips)
     assert any(text == "曲目 · 1 首" for text in chips)
     assert any(text == "播放 · 播放中" for text in chips)
-    play_mode_chips = _visible_audio_status_chip_texts(page.play_mode_badge_label)
+    play_mode_chips = _status_badge_texts(page.play_mode_badge_label)
     assert play_mode_chips == ["当前 · 随机播放", "范围 · 底部播放器"]
     # ⚠ RN-458（批 32）：这几行原来断言的是 `music_summary_label` ——
     #   一个建出来就 hide()、全仓 0 处 show() 的死控件（RN-009 族）。
@@ -133,9 +118,9 @@ def test_music_page_overview_badges_sync(qapp, monkeypatch):
 
     page.play_mode_group.button(3).click()
     assert dummy_player.play_mode_calls[-1] == "repeat_all"
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert any(text == "模式 · 列表循环" for text in chips)
-    play_mode_chips = _visible_audio_status_chip_texts(page.play_mode_badge_label)
+    play_mode_chips = _status_badge_texts(page.play_mode_badge_label)
     assert play_mode_chips == ["当前 · 列表循环", "范围 · 底部播放器"]
     assert "播放模式：列表循环" in page.status_card.toolTip()
 
@@ -145,7 +130,7 @@ def test_music_page_overview_badges_sync(qapp, monkeypatch):
     assert not hasattr(page, "game_link_checkbox")
     monkeypatch.setattr(config, "music_enabled", False, raising=False)
     page._sync_overview_status()
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert any(text == "联动 · 已关闭" for text in chips)
     assert "游戏联动：已关闭" in page.status_card.toolTip()
 

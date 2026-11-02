@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import pytest
-from PySide6.QtWidgets import QApplication, QLabel
+from PySide6.QtWidgets import QApplication
 
 from config import config
 import pages.crosshair_page as crosshair_page_module
@@ -16,21 +16,8 @@ def qapp():
     return app
 
 
-def _visible_audio_status_chip_texts(status_bar) -> list[str]:
-    layout = status_bar.layout()
-    if layout is None:
-        return []
-    texts: list[str] = []
-    for idx in range(layout.count()):
-        item = layout.itemAt(idx)
-        widget = item.widget() if item else None
-        if (
-            isinstance(widget, QLabel)
-            and widget.objectName() == "audioStatusChip"
-            and not widget.isHidden()
-        ):
-            texts.append(widget.text())
-    return texts
+def _status_badge_texts(status_bar) -> list[str]:
+    return status_bar.badge_texts()
 
 
 def test_crosshair_page_overview_badges_sync(qapp, monkeypatch):
@@ -47,7 +34,7 @@ def test_crosshair_page_overview_badges_sync(qapp, monkeypatch):
     page = crosshair_page_module.CrosshairPage()
 
     assert page.page_lead_label.objectName() == "pageLeadLabel"
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert len(chips) == 6
     assert any(text == "显示 · 已开启" for text in chips)
     assert any(text == "样式 · 圆圈" for text in chips)
@@ -55,25 +42,21 @@ def test_crosshair_page_overview_badges_sync(qapp, monkeypatch):
     assert any(text == "大小 · 28 / 4" for text in chips)
     assert any(text == "动效 · 脉冲效果" for text in chips)
     assert any(text == "联动 · X形闪烁" for text in chips)
-    assert page.crosshair_summary_label.text() == "圆圈 · 黄色 · 28/4 · X形闪烁 · 脉冲效果"
-    assert "击杀联动为“X形闪烁”" in page.crosshair_summary_label.toolTip()
     assert "击杀联动为“X形闪烁”" in page.status_card.toolTip()
 
     monkeypatch.setattr(config, "crosshair_enabled", False, raising=False)
     page._sync_overview_status()
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert any(text == "显示 · 未开启" for text in chips)
-    assert page.crosshair_summary_label.text().startswith("显示关闭 ·")
 
     page._on_style_changed("custom")
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert any(text == "样式 · 自定义" for text in chips)
-    assert "自定义 3 点" in page.crosshair_summary_label.text()
-    assert "已保存 3 个自定义像素点" in page.crosshair_summary_label.toolTip()
+    assert "已保存 3 个自定义像素点" in page.status_card.toolTip()
 
     none_index = page.animation_combo.findText("无动画")
     page.animation_combo.setCurrentIndex(none_index)
-    chips = _visible_audio_status_chip_texts(page.status_badge_label)
+    chips = _status_badge_texts(page.status_badge_label)
     assert any(text == "动效 · 无动画" for text in chips)
 
     page.deleteLater()

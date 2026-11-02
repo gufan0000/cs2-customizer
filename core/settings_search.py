@@ -323,8 +323,8 @@ def text_matches(query: str, text: str) -> bool:
 # 关键词包含：功能词 + 口语/俗称 + 常见问法(甚至"症状"式的模糊说法)，
 # 让"声音太大""看不见准星""变声""太吵了"这类模糊查询也能命中对应页。
 SEARCH_INDEX: List[Tuple[str, str, List[str]]] = [
-    ("basic", "基础设置", [
-        "总开关", "功能开关", "全部开关", "关闭功能", "音量", "主音量", "总音量", "声音", "声音大小",
+    ("basic", "总览", [
+        "基础设置", "首页", "总开关", "功能开关", "全部开关", "关闭功能", "音量", "主音量", "总音量", "声音", "声音大小",
         "音量调节", "太吵", "太响", "声音大", "声音小", "游戏模式", "死斗", "竞技", "娱乐", "玩家ID",
         "steamid", "身份", "观战静音", "观战不响", "别人视角", "刷新状态", "载入音频", "重载音频",
         "没声音重载", "日志", "关掉所有声音", "全部静音", "一键关闭", "一键全关",
@@ -392,7 +392,7 @@ SEARCH_INDEX: List[Tuple[str, str, List[str]]] = [
         "aseprite", "图集行列", "切图", "mp4", "视频",
     ]),
     ("viewmodel", "局内视角", [
-        "视角", "局内视角", "viewmodel", "手模", "持枪视角", "枪的位置", "手臂位置", "FOV", "视野",
+        "视角", "局内视角", "viewmodel", "手模", "持枪视角", "枪的位置", "手臂位置", "FOV", "视野", "同步CFG", "写入CFG",
         "自动切换", "循环视角", "视角预设", "手模位置", "第一视角", "view model", "field of view", "拉近", "拉远", "枪往前", "枪往后",
         "准心回正", "快速回正", "准星跟随", "跟随后坐力", "开火键", "副开火键", "改了开火键",
         "仅自己可见", "队友看不到", "录像看不到",
@@ -772,6 +772,7 @@ def search_items(query: str) -> List[dict]:
     if not tokens or not items:
         return []
 
+    whole_query = str(query or "").strip().lower()
     scored = []
     for it in items:
         total = 0.0
@@ -790,7 +791,9 @@ def search_items(query: str) -> List[dict]:
         if hit_count == 0:
             continue
         coverage = hit_count / len(tokens)
-        scored.append((total * coverage, best, it))
+        # 整条查询就是这一项的名字：每个词都算精确命中。「C4 拆除」拆开算只有 78 + 58，排不过页级关键词
+        score = 100.0 * len(tokens) if it["text"].lower() == whole_query else total * coverage
+        scored.append((score, best, it))
 
     scored.sort(key=lambda t: (-t[0], t[2]["text"]))
 

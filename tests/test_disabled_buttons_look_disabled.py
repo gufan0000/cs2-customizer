@@ -109,6 +109,46 @@ def _threshold() -> float:
     return neutral + SATURATION_HEADROOM
 
 
+def _sample_button(btn, qapp):
+    was, idle = btn.isEnabled(), btn.property("fp_idle")
+    try:
+        # 空素材行另用 fp_idle 表示不可试听。强制启用时也要退出这个空库态，
+        # 否则测到的是同一种禁用语义的两张图；不改任何产品样式或豁免名单。
+        if idle is not None:
+            btn.setProperty("fp_idle", "")
+            btn.style().unpolish(btn)
+            btn.style().polish(btn)
+        btn.setEnabled(True)
+        qapp.processEvents()
+        assert btn.isEnabled(), f"{btn.objectName()} 的父控件仍禁用，无法取启用态"
+        on, on_px = _fill_rgb(btn), _pixels(btn)
+        btn.setEnabled(False)
+        qapp.processEvents()
+        return on, _fill_rgb(btn), on_px, _pixels(btn)
+    finally:
+        btn.setEnabled(was)
+        if idle is not None:
+            btn.setProperty("fp_idle", idle)
+            btn.style().unpolish(btn)
+            btn.style().polish(btn)
+        qapp.processEvents()
+
+
+def test_sampling_an_idle_button_measures_both_states_and_restores_it(qapp):
+    btn = QPushButton("试听")
+    btn.setProperty("fp_idle", "true")
+    btn.setEnabled(False)
+    btn.setStyleSheet('QPushButton { color: white; background: black; } '
+                     'QPushButton[fp_idle="true"], QPushButton:disabled { color: gray; }')
+    _on, _off, on_px, off_px = _sample_button(btn, qapp)
+    assert on_px != off_px
+    assert not btn.isEnabled() and btn.property("fp_idle") == "true"
+    # 阳性对照：状态真的没有变化时，取样器不能凭空制造差异。
+    btn.setStyleSheet('QPushButton { color: white; background: black; }')
+    _on, _off, on_px, off_px = _sample_button(btn, qapp)
+    assert on_px == off_px
+
+
 def _sweep(main_window, qapp):
     """把每一页每一颗可见按钮**强制禁用**，记下它的填充色。
 
@@ -130,15 +170,7 @@ def _sweep(main_window, qapp):
         for btn in page.findChildren(QPushButton):
             if not btn.isVisibleTo(page):
                 continue
-            was = btn.isEnabled()
-            btn.setEnabled(True)
-            qapp.processEvents()
-            on, on_px = _fill_rgb(btn), _pixels(btn)
-            btn.setEnabled(False)
-            qapp.processEvents()
-            off, off_px = _fill_rgb(btn), _pixels(btn)
-            btn.setEnabled(was)
-            qapp.processEvents()
+            on, off, on_px, off_px = _sample_button(btn, qapp)
             if on is None or off is None:
                 continue
             out.append((page_id, btn.objectName() or "(无 objectName)",
@@ -158,7 +190,8 @@ def test_the_sweep_actually_sees_the_buttons(swept):
     那时只有 1 页加载过 —— **量到 7 颗按钮，而全站有 247 颗**，
     而它不报错。⭐ 一个算错分母的扫描器，长得和「这份界面很干净」一模一样。
     """
-    assert len(swept) >= 200, (
+    # 批 147：被击杀页去掉了那一颗测试，枪声页去掉了页签里 18 张卡（实测 189）
+    assert len(swept) >= 180, (
         f"只量到 {len(swept)} 颗按钮 —— 分母塌了。"
         "页面名单的真源是 `win._page_names`，别用 `win.pages`（那只有加载过的）。"
     )

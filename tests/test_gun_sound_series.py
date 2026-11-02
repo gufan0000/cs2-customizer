@@ -197,7 +197,8 @@ def test_the_dropdown_says_how_many_guns_each_series_covers(qapp, series_on_disk
         assert page.apply_all_combo.itemText(0) == page.APPLY_ALL_PLACEHOLDER
         assert page.apply_all_combo.currentIndex() == 0
         assert not page.apply_all_btn.isEnabled()
-        assert "不点按钮不会写入" in page.apply_all_hint.text(), page.apply_all_hint.text()
+        # 批 147：原来写「不点按钮不会写入」，和页头「改动自动保存」打架（外审 S4）
+        assert page.apply_all_btn.text() in page.apply_all_hint.text(), page.apply_all_hint.text()
         items.pop(None, None)
         # 名字不同的一套写「系列」；名字全同的（试PUBGAWM 只有一把）不写
         assert items.get("试离子") == "试离子 系列 · 3 把", items
@@ -230,15 +231,10 @@ def test_the_hint_names_who_gets_which_style(qapp, series_on_disk):
         assert "自动保存" not in bar_text.split("——")[0], bar_text
         assert "AK-47→试离子AK" in hint and "AWP→试离子大狙" in hint, hint
         assert "其余 32 把" in hint and "保持原样" in hint, hint
-        # 当前页签（手枪）里的枪先举：Desert Eagle 排在 AK-47 前
+        # 按板上的顺序举：手枪在前，Desert Eagle 排在 AK-47 前
         assert hint.index("Desert Eagle→") < hint.index("AK-47→"), hint
         # 完整映射在 tooltip 里
         assert "Desert Eagle → 试离子正义" in page.apply_all_hint.toolTip()
-        # 切到步枪页签 ⇒ AK-47 先举（看步枪的人要看得到 AK）
-        rifle_tab = [i for i, (name, _w) in enumerate(page._tab_groups) if name == "步枪"][0]
-        page.tab_widget.setCurrentIndex(rifle_tab)
-        qapp.processEvents()
-        assert page.apply_all_hint.text().startswith("还没配上。点「应用到全部武器」会给 3 把配上：AK-47→试离子AK"), page.apply_all_hint.text()
         # 例子里名字不重复：造一套三把同名 + 一把异名，三个例子必须把异名那把带上
         from core.gun_sound_series import StyleSeries
 

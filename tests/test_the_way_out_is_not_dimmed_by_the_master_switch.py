@@ -284,14 +284,16 @@ def test_the_things_the_switch_really_governs_still_dim(swept):
     而那正是批 16~20 五批要解决的问题（43 发里 39 发报
     「所有控件均为高亮紫色激活态 ⇒ 以为功能正在运行」）。
 
-    ⚠ 这一条的分母**只有 2**，而且是量出来的不是拍出来的：
+    ⚠ 这一条的分母**只有 1**，而且是量出来的不是拍出来的：
     空库时大多数页把参数控件一起收掉了（RN-179：可点却没反应是另一条缺陷），
-    于是「同屏还剩一个受支配的勾选/滑块」的页只有 `gun_sound` 与 `kill_icon`。
+    于是「同屏还剩一个受支配的勾选/滑块」的页只有 `kill_icon`。
+    （批 147 之前还有 `gun_sound`；它的滑条收进微调栏，空库时一起藏。有素材时的降权
+    由 `test_the_other_sound_pages_use_the_board.py` 量。）
     ⭐ 我第一版按上面那条判据的分母 6 抄了过来，**而两条判据数的根本不是同一批东西**
     —— 抄分母和抄结论一样危险。主按钮那一档的对照在下一条里，分母另算。
     """
     measured = [r for r in swept if r["ref"] is not None]
-    assert len(measured) >= 2, (
+    assert len(measured) >= 1, (
         f"只有 {len(measured)} 页找到了受支配的参照控件 —— 对照组塌了")
     dead = [
         f"{r['page']} · 参照 {r['ref']}：两态整块像素逐字节相同"

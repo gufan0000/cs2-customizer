@@ -23,7 +23,6 @@ from PySide6.QtWidgets import (
     QScrollArea, QSpinBox, QVBoxLayout, QWidget
 )
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont
 import os
 
 from core.kill_icon_import import (
@@ -82,22 +81,21 @@ class SpriteSheetMaker(QDialog):
         layout.setContentsMargins(16, 16, 16, 16)
 
         title = QLabel("击杀图标高级导入")
-        title_font = QFont()
-        title_font.setPointSize(18)
-        title_font.setBold(True)
-        title.setFont(title_font)
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        # 手写的粗体 QFont 被全局字号压回 13 px，八个字挤成一团（批 150 外审 3/3）
+        title.setObjectName("titleLabel")
         layout.addWidget(title)
 
+        # 这几块原来用系统默认内边距，另外几行是 0：左缘差出 12 px（批 145 外审 S3）
         info_frame = QFrame()
-        info_frame.setFrameShape(QFrame.Shape.StyledPanel)
         info_layout = QVBoxLayout(info_frame)
+        info_layout.setContentsMargins(0, 0, 0, 0)
         info_text = QLabel(
             "日常导入直接把素材拖到设置页的等级格子上就行；这里管的是四件"
-            "页面上做不了的事：抠背景色、裁透明边、手填图集行列、按 1~5 批量导入。\n\n"
+            "页面上做不了的事：抠背景色、裁透明边、手填图集行列、按 1~5 批量导入。\n"
             "支持 GIF / WebP 动图 / APNG / AVIF / PNG / JPG / BMP，"
             "或者一个装着帧序列的文件夹、一份图集配置（含 Aseprite 导出）。"
         )
+        info_text.setObjectName("hintLabel")
         info_text.setWordWrap(True)
         info_layout.addWidget(info_text)
         layout.addWidget(info_frame)
@@ -183,8 +181,8 @@ class SpriteSheetMaker(QDialog):
 
         # ---------------- 自动修正
         fix_frame = QFrame()
-        fix_frame.setFrameShape(QFrame.Shape.StyledPanel)
         fix_layout = QVBoxLayout(fix_frame)
+        fix_layout.setContentsMargins(0, 0, 0, 0)
         fix_layout.setSpacing(6)
         fix_layout.addWidget(QLabel("自动修正:"))
 
@@ -232,16 +230,16 @@ class SpriteSheetMaker(QDialog):
 
         # ---------------- 预览
         preview_frame = QFrame()
-        preview_frame.setFrameShape(QFrame.Shape.StyledPanel)
         preview_layout = QVBoxLayout(preview_frame)
+        preview_layout.setContentsMargins(0, 0, 0, 0)
         preview_layout.addWidget(QLabel("素材信息:"))
 
         self.preview_label = QLabel("请先选择素材")
-        self.preview_label.setMinimumHeight(96)
         self.preview_label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         self.preview_label.setWordWrap(True)
         self.preview_label.setObjectName("previewLabel")
         preview_layout.addWidget(self.preview_label)
+        preview_layout.addStretch(1)
 
         layout.addWidget(preview_frame, 1)
 
@@ -262,16 +260,12 @@ class SpriteSheetMaker(QDialog):
         button_layout.setContentsMargins(16, 0, 16, 16)
 
         self.generate_btn = QPushButton("导入到风格库")
-        self.generate_btn.setFixedHeight(36)
-        self.generate_btn.setMinimumWidth(150)
         self.generate_btn.setObjectName("primaryButton")
         self.generate_btn.clicked.connect(self._import_to_library)
         button_layout.addWidget(self.generate_btn)
 
         batch_btn = QPushButton("批量处理")
         batch_btn.setObjectName("actionButton")
-        batch_btn.setFixedHeight(36)
-        batch_btn.setMinimumWidth(120)
         batch_btn.setToolTip(
             "选一个根目录，里面按 1~5 命名的子文件夹或文件会分别导入对应的击杀等级。\n"
             "也认 ace / kill1 / 三杀 / 4hs 这类写法。"
@@ -281,8 +275,6 @@ class SpriteSheetMaker(QDialog):
 
         export_btn = QPushButton("另存为图集...")
         export_btn.setObjectName("secondaryButton")
-        export_btn.setFixedHeight(36)
-        export_btn.setMinimumWidth(130)
         export_btn.clicked.connect(self._export_to_file)
         button_layout.addWidget(export_btn)
 
@@ -290,8 +282,6 @@ class SpriteSheetMaker(QDialog):
 
         close_btn = QPushButton("关闭")
         close_btn.setObjectName("secondaryButton")
-        close_btn.setFixedHeight(36)
-        close_btn.setMinimumWidth(90)
         close_btn.clicked.connect(self.reject)
         button_layout.addWidget(close_btn)
 

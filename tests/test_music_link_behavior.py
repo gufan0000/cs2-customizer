@@ -331,6 +331,10 @@ def test_music_page_radio_changes_persist_to_config(monkeypatch):
     assert config.music_revive_action == "keep"
     assert config.music_death_volume_custom is True
     assert not page.alive_volume_slider.isEnabled()
+    # 批 150：不收的话页面和控制栏留给退出前那次 gc 一起回收，堆会坏（0xC0000374）。
+    # 和改动无关：改前多碰一个 Qt 类（QSpinBox、QTextEdit）一样崩，换的只是堆布局。
+    page.deleteLater()
+    qapp().processEvents()
 
 
 

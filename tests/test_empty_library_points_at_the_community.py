@@ -360,6 +360,7 @@ def test_a_build_without_the_community_falls_back_to_a_real_path(
     """
     monkeypatch.setattr("config.config.save_config", lambda: None, raising=False)
     monkeypatch.setattr(lib, "COMMUNITY_CATEGORY_URLS", {})
+    monkeypatch.setattr("config.config.reload_sound_enabled", True, raising=False)
     from pages.reload_sound_page import ReloadSoundPage
 
     page = ReloadSoundPage()
@@ -378,7 +379,20 @@ def test_a_build_without_the_community_falls_back_to_a_real_path(
         assert page.empty_callout.frame.isHidden(), (
             f"没有社区站，引导卡却亮着「{page.empty_callout.button.text()}」—— "
             "那颗按钮指向一个空地址，比没有按钮更糟（RN-157）")
+        # 批 152：没有引导卡时，只剩风格库那句提示能说「库是空的、下一步做什么」，
+        # 开关开着也不能再说「当场生效」—— 开源版换成武器板后两句都丢过。
+        from PySide6.QtCore import Qt
+
+        assert page.master_switch_row.is_checked(), "夹具没把开关打开，下一句会恒绿"
+        page.setAttribute(Qt.WA_DontShowOnScreen, True)
+        page.show()
+        page._sync_community_guidance()
+        qapp.processEvents()
+        assert "还没有风格" in page.library_hint.text(), page.library_hint.text()
+        assert page.library_hint.isVisibleTo(page)
+        assert page.master_switch_row.saved_hint.isHidden(), "空库还在说「当场生效」"
     finally:
+        page.hide()
         page.deleteLater()
         qapp.processEvents()
 

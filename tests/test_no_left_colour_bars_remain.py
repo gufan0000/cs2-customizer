@@ -11,8 +11,9 @@ infoBox / warningBox、semantic warning / danger 卡、selected 卡。⭐ 批 16
 
 ## 怎么验
 
-生成每个主题的样式表，找所有 `border-left: Npx solid <色>` 且 N ≥ 2 的规则：颜色必须等于该主题的 `bg_card`
-（占位保留、颜色同底），否则就是一根还在的色条。1px 的分隔线（底栏、表头、分裂按钮）不在此列 —— 那是分隔，不是装饰。
+生成每个主题的样式表，找所有 `border-left: Npx solid <色>` 且 N ≥ 2 的规则：颜色必须等于该主题的 `bg_card`，
+否则就是一根还在的色条（批 145 起卡片的 3px 占位也删了，现在一根都不该有）。
+1px 的分隔线（底栏、表头、分裂按钮）不在此列 —— 那是分隔，不是装饰。
 """
 from __future__ import annotations
 
@@ -44,8 +45,10 @@ def test_every_thick_left_border_is_the_card_colour(theme):
 
 
 def test_the_denominator_is_not_empty():
-    """反面：占位那根 3px（`QFrame#card`）必须还在 —— 分母为 0 时上面那条什么都没查。"""
-    from theme_manager import get_theme_manager
-    t = get_theme_manager().themes["dark"]
-    bars = _rules_with_left_bar(t.generate_stylesheet())
-    assert any(sel.startswith("QFrame#card") and w == 3 for sel, w, _ in bars), "卡片那根 3px 占位不见了 —— 卡内子控件的 x 会跳 2px（见 R7/D-03 注释）"
+    """反面：造一根色条，上面那个扫描器要认得出来 —— 分母为 0 时上面那条什么都没查。
+
+    批 145 把卡片那根 3px 占位也删了，样式表里已经没有「合法的粗左边框」可以拿来当分母，
+    所以改成喂一段造出来的样式。
+    """
+    bars = _rules_with_left_bar("QFrame#x { border-left: 3px solid #ff0000; }\nQLabel#y { border-left: 1px solid #00ff00; }")
+    assert bars == [("QFrame#x", 3, "#ff0000")], f"扫描器认不出色条了：{bars}"

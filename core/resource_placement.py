@@ -59,8 +59,8 @@ NEEDS_STYLE_NAME = (
 #:   而猜错了用户是在游戏里才发现的。⇒ 引导他手动放，别假装能自动。
 _UNSUPPORTED_AUTO = {
     "utility_guides": "道具瞄点按「地图 / 分组」两层存放，这两层没法从文件名看出来。"
-                      "请点「打开资源目录」，按 `utility_guides/<地图>/<分组>/` 自己放一次。",
-    "crosshair": "准心文件直接放在 `crosshair/` 下即可，不需要归类。",
+                      "请点「打开资源目录」，按 utility_guides/<地图>/<分组>/ 自己放一次。",
+    "crosshair": "准心文件直接放在 crosshair/ 下即可，不需要归类。",
 }
 
 #: 需要「这是哪把武器 / 哪种投掷物 / 哪个回合事件」的类：目标结构里还有一层分类。
@@ -378,7 +378,7 @@ def plan_placements(
         if missing:
             plan.warnings.append(
                 "这套素材里认不出「" + "」「".join(missing) + "」那一声："
-                "C4 靠**文件名里的关键词**分辨三个事件，认不出来的那一档进游戏不会响。"
+                "C4 靠文件名里的关键词分辨三个事件，认不出来的那一档进游戏不会响。"
                 "可以先导入，再把对应文件改名（比如带上「拆除」两个字）。"
             )
 
@@ -520,7 +520,7 @@ def _kill_icon_caveats(paths):
             f"打到那几个等级时不会有图标弹出来。")
     if loose:
         lines.append(
-            f"包里有 {len(loose)} 个不是 `1.png`/`1.json` 这种标准条目的文件"
+            f"包里有 {len(loose)} 个不是 1.png、1.json 这种标准条目的文件"
             f"（{'、'.join(loose[:3])}{'…' if len(loose) > 3 else ''}）。"
             f"这个页面只会原样搬运，不会替你打图集 —— "
             f"这类包请改用「击杀图标」页里的素材导入，那条路会做格式转换。")
@@ -550,5 +550,5 @@ def _warn_if_two_files_land_on_one(plan):
         first = clashes[0]
         plan.warnings.append(
             f"有 {len(clashes)} 组文件会落到同一个位置（例如 "
-            f"`{first[0]}` 和 `{first[1]}` 都落到 `{first[2]}`），"
+            f"「{first[0]}」和「{first[1]}」都落到「{first[2]}」），"
             f"后一个会盖掉前一个。请先把它们改成不同的文件名。")

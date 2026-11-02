@@ -232,7 +232,7 @@ def _not_an_asset_message(extension: str) -> str:
         return (f"这是一个 {name} 文件，软件播不了它。"
                 f"请先用转换工具转成 mp3 / wav / ogg，再拖进来。")
     shown = extension or "（没有扩展名）"
-    return (f"`{shown}` 不是软件认得的素材格式，导进去也不会生效。"
+    return (f"「{shown}」不是软件认得的素材格式，导进去也不会生效。"
             f"支持的是：{supported}。")
 
 
@@ -504,7 +504,7 @@ def _open_archive(
             if collisions:
                 raise ImportSourceError(
                     f"这个包里有 {len(collisions)} 组文件重名"
-                    f"（例如 `{collisions[0][0]}` 与 `{collisions[0][1]}`）。"
+                    f"（例如「{collisions[0][0]}」与「{collisions[0][1]}」）。"
                     f"Windows 不分大小写，装进去会互相覆盖 —— "
                     f"请先把它们改成不同的名字再打包。")
             stripped = [s for s in stripped if s.casefold() in written]

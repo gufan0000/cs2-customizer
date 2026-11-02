@@ -7,6 +7,7 @@ CS2 Customizer 2.0 - Widget版本
 """
 
 import time as _boot_time
+from core.utils.app_fonts import load_ui_fonts
 
 _BOOT_T0 = _boot_time.perf_counter()  # 启动相位计时起点(必须先于一切重 import)
 
@@ -636,6 +637,7 @@ def main():
     # 尽早接管 Qt 消息：捕获 window.show() 首次渲染时可能的 qFatal(abort) 原因
     _install_qt_message_handler(logger)
     _boot_phase("QApplication")
+    load_ui_fonts()  # 首启、更新这些弹窗走在主窗前面，也要用这套字体
 
     # R1-1: 界面字号缩放——必须在 MainWindow 构建/主题首次应用前生效
     try:

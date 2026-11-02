@@ -393,7 +393,7 @@ def _guess_for_shape(
     style_count = len({p.split("/")[0] for p in items if "/" in p})
     evidence_common = [f"共 {len(items)} 个文件"]
     if group.common_dir:
-        evidence_common.append(f"都在 `{group.common_dir}/` 下")
+        evidence_common.append(f"都在「{group.common_dir}/」下")
     if style_count > 1:
         evidence_common.append(f"分成 {style_count} 个子目录")
 

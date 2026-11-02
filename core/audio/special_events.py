@@ -42,13 +42,13 @@ class SoundEvent:
     """一个特殊音效事件的全部信息。"""
 
     key: str
-    """内部标识，也是音效键里的那一段（如 round-<style>-**start**）。"""
+    """内部标识，也是音效键里的那一段（如 round-<style>-start 的 start）。"""
 
     label: str
     """UI 上的中文名。"""
 
     config_attr: str
-    """config 上的样式字段名。**已存在的键不许改**。"""
+    """config 上的样式字段名。已存在的键不许改。"""
 
     group: str
     """归组，决定它出现在页面的哪个页签：round / c4 / health。"""

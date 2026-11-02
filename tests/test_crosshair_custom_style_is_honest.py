@@ -50,7 +50,7 @@ import os
 import sys
 
 import pytest
-from PySide6.QtWidgets import QApplication, QLabel
+from PySide6.QtWidgets import QApplication
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -94,12 +94,8 @@ def make_page(qapp, monkeypatch):
 
 
 def _chips(page) -> list[tuple[str, str]]:
-    """状态卡那排徽章 —— (level, text)，只取真在场的。"""
-    return [
-        (str(chip.property("level") or ""), chip.text().strip())
-        for chip in page.findChildren(QLabel)
-        if chip.objectName() == "audioStatusChip" and not chip.isHidden()
-    ]
+    """这一页算出来的那排徽章 —— (level, text)。屏幕上只显示其中的问题（RN-734）。"""
+    return [(level, text.strip()) for level, text in page.status_badge_label.badges()]
 
 
 # --------------------------------------------------------------------- 事实
@@ -178,49 +174,25 @@ def test_no_other_style_is_ever_accused_of_being_undrawn(make_page, style):
         f"样式 {style} 被判成「未绘制」了：{level!r} / {text!r}")
 
 
-# --------------------------------------------------------------- 紧凑档摘要
+# ----------------------------------------------------------------- 参数栏那一句
 
-def test_the_compact_summary_does_not_go_quiet_exactly_when_it_matters(make_page):
-    """⭐⭐ 原状是 `if style_value == "custom" and custom_points:` ——
-
-    **有点时才说「自定义 N 点」，0 点时整句消失。**
-    ⭐ 一个在最需要说话的时候恰好闭嘴的提示，比没有这个提示更糟：
-    它让「一切正常」和「什么都画不出来」在紧凑档里长得一模一样。
-    """
-    page = make_page("custom", 0)
-    summary = page.crosshair_summary_label.text()
-    assert NOT_DRAWN in summary, (
-        f"紧凑摘要在 0 点时没提未绘制：{summary!r}")
-
-
-def test_the_compact_summary_is_not_crying_wolf(make_page):
-    """反向 + 空转守卫：有数据时不许出现那个词，且两种状态确实不同。"""
-    empty = make_page("custom", 0).crosshair_summary_label.text()
-    drawn = make_page("custom", 3).crosshair_summary_label.text()
-    assert NOT_DRAWN not in drawn, f"画过之后紧凑摘要还在报警：{drawn!r}"
-    assert empty != drawn, (
-        "两种状态的紧凑摘要一模一样 —— 说明页面根本没读 crosshair_custom_data，"
-        "上面几条是空转的")
-
-
-# ----------------------------------------------------------------- 样式卡自己
-
-def test_the_style_card_says_what_is_on_screen_right_now(make_page):
-    """他**刚点的那张卡**要当场回答「所以现在屏幕上是什么」。
+def test_the_panel_says_what_is_on_screen_right_now(make_page):
+    """他刚点完「自定义」，参数栏要当场回答「所以现在屏幕上是什么」。
 
     ⚠ 这不是「补一句指路」（批 10 刚证过指路无效）——
     主句是**后果**：屏幕上不会出现准心。
     """
-    text = make_page("custom", 0).style_summary_label.text()
+    label = make_page("custom", 0).custom_summary_label
+    assert not label.isHidden()
+    text = label.text()
     assert "不" in text and ("显示" in text or "出现" in text), (
-        f"样式卡副文案没说清后果：{text!r}")
+        f"参数栏那句话没说清后果：{text!r}")
 
 
-def test_the_style_card_is_quiet_when_there_is_nothing_wrong(make_page):
-    """反向：正常状态下这张卡不许说这种话。"""
-    text = make_page("crosshair", 0).style_summary_label.text()
-    assert not ("不显示" in text or "不会出现" in text), (
-        f"样式是十字，样式卡却说不显示：{text!r}")
+def test_the_panel_is_quiet_when_there_is_nothing_wrong(make_page):
+    """反向：样式是十字、也没画过时什么都不用说（批 146）。"""
+    label = make_page("crosshair", 0).custom_summary_label
+    assert label.isHidden(), f"正常状态下参数栏还在说话：{label.text()!r}"
 
 
 # --------------------------------------------------------------- 自定义卡自己

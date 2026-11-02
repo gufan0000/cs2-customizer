@@ -50,7 +50,7 @@ def test_help_texts_explain_resource_or_config_locations():
         "kill_sound": ["resources/audio/kill_sounds/风格名/", "resources/audio/weapon_kill_sounds/武器名/风格名/"],
         "kill_voice": ["resources/audio/kill_voices/风格名/", "resources/audio/weapon_kill_voices/武器名/风格名/"],
         "kill_icon": ["AppData/Local/CS2Customizer/resources/kill_icons/风格名/", "1.png + 1.json"],
-        "death_sound": ["AppData/Local/CS2Customizer/resources/audio/death/", "按文件名识别风格"],
+        "death_sound": ["AppData/Local/CS2Customizer/resources/audio/death/", "风格名就是文件名"],
         "gun_sound": ["resources/audio/gun_sounds/武器名/风格名/"],
         "switch_weapon": ["resources/audio/switch_weapons/武器名/风格名/"],
         "reload_sound": ["resources/audio/reload_sounds/武器名/风格名/"],

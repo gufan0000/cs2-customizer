@@ -49,35 +49,17 @@ def test_sound_category_is_declared(module_name):
 
 @pytest.mark.parametrize("module_name", sorted(CLUSTER))
 def test_shared_methods_come_from_base_not_copies(module_name):
-    """这五个方法必须只剩基类一份——留着副本等于没抽。"""
+    """这几个方法必须只剩基类一份——留着副本等于没抽。"""
     from pages import sound_page_base
 
     cls_name, _ = CLUSTER[module_name]
     cls = _page_class(module_name, cls_name)
-    for name in ("_compact_text", "_open_audio_resource_root",
+    for name in ("_open_audio_resource_root",
                  "_on_audio_files_dropped", "_open_style_creator", "showEvent"):
         owner = inspect.getsourcefile(getattr(cls, name))
         assert owner == sound_page_base.__file__, (
             f"{cls_name}.{name} 仍定义在 {owner}，没有真正合并到基类"
         )
-
-
-def test_compact_text_matches_every_original_call_site():
-    """合并前四页的默认值不同（未设置/12 与 未分组/8），必须确认没改到行为。
-
-    核对结论：四页各调一次，**实际参数完全一致**（都是 '未分组', 8），
-    只是两页显式传参、两页靠默认值。所以基类取后者那套默认值，行为不变。
-    """
-    from pages.sound_page_base import SoundPageBase
-
-    compact = SoundPageBase._compact_text
-    # 默认值就是原 switch_weapon / reload_sound 的那套
-    assert compact("") == "未分组"
-    assert compact("一二三四五六七八九") == "一二三四五六七…"
-    assert len(compact("一二三四五六七八九")) == 8
-    # 显式传参路径（原 kill_sound / kill_voice 的调用形态）结果相同
-    assert compact("一二三四五六七八九", "未分组", 8) == "一二三四五六七…"
-    assert compact("短", "未分组", 8) == "短"
 
 
 def test_reload_sound_keeps_its_preselect_weapon():

@@ -117,6 +117,8 @@ def test_qa001_build_gate_rejects_a_leaked_config(tmp_path):
     # 于是 match="config.json" 对不上 —— 量的就不是它要量的东西了。
     (internal / "core").mkdir()
     (internal / "core" / "search_index.json").write_text("{}", encoding="utf-8")
+    (internal / "fonts").mkdir()
+    (internal / "fonts" / "SailSansSC-Medium.ttf").write_bytes(b"x")
     (internal / "config.json").write_text("{}", encoding="utf-8")
 
     with pytest.raises(RuntimeError, match="config.json"):

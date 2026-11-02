@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import pytest
-from PySide6.QtWidgets import QApplication, QLabel
+from PySide6.QtWidgets import QApplication
 
 from config import config
 import pages.music_page as music_page_module
@@ -16,21 +16,8 @@ def qapp():
     return app
 
 
-def _visible_audio_status_chip_texts(status_bar) -> list[str]:
-    layout = status_bar.layout()
-    if layout is None:
-        return []
-    texts: list[str] = []
-    for idx in range(layout.count()):
-        item = layout.itemAt(idx)
-        widget = item.widget() if item else None
-        if (
-            isinstance(widget, QLabel)
-            and widget.objectName() == "audioStatusChip"
-            and not widget.isHidden()
-        ):
-            texts.append(widget.text())
-    return texts
+def _status_badge_texts(status_bar) -> list[str]:
+    return status_bar.badge_texts()
 
 
 class _DummyPlayer:
@@ -81,7 +68,7 @@ def test_music_page_playlist_panel_and_action_bar_sync(qapp, monkeypatch):
     assert page.action_bar.primary_btn.text() == "添加音乐"
     assert page.action_bar.secondary_btn.text() == "刷新列表"
 
-    chips = _visible_audio_status_chip_texts(page.playlist_status_badge_label)
+    chips = _status_badge_texts(page.playlist_status_badge_label)
     assert len(chips) == 4
     assert any(text == "曲目 · 2 首" for text in chips)
     assert any(text == "选中 · 0 首" for text in chips)
@@ -90,7 +77,7 @@ def test_music_page_playlist_panel_and_action_bar_sync(qapp, monkeypatch):
     page.playlist_widget.item(0).setSelected(True)
     qapp.processEvents()
 
-    chips = _visible_audio_status_chip_texts(page.playlist_status_badge_label)
+    chips = _status_badge_texts(page.playlist_status_badge_label)
     assert any(text == "选中 · 1 首" for text in chips)
     assert "已选 1 首" in page.action_bar.message_label.text()
 
@@ -98,7 +85,7 @@ def test_music_page_playlist_panel_and_action_bar_sync(qapp, monkeypatch):
     qapp.processEvents()
 
     assert page.playlist_widget.item(0).isSelected() is True
-    chips = _visible_audio_status_chip_texts(page.playlist_status_badge_label)
+    chips = _status_badge_texts(page.playlist_status_badge_label)
     assert any(text == "选中 · 1 首" for text in chips)
 
     page.death_volume_group.button(1).click()

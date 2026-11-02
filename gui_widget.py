@@ -6,6 +6,7 @@ CS2 Customizer 2.0 - Widget版本
 主窗口类
 """
 
+# 注释来历：docs/notes/代码注释的来历_gui_widget.md
 import os
 import threading
 
@@ -15,17 +16,16 @@ from PySide6.QtWidgets import (
     QSlider, QComboBox, QStackedWidget,
     QSpinBox, QDoubleSpinBox, QSizePolicy, QCheckBox
 )
-from PySide6.QtCore import Qt, QEvent, QSize, Signal, Slot, QEasingCurve, QSequentialAnimationGroup, QVariantAnimation
+from PySide6.QtCore import Qt, QEvent, QSize, Signal, Slot
 from PySide6.QtGui import QFont, QColor
 
 from config import config, VERSION
 from core.utils.logger import get_logger
 from theme_manager import get_theme_manager, get_stylesheet
 from ui_design_system import get_design_system
-from ui_style_applier import apply_unified_styles
+from ui_style_applier import apply_unified_styles, keep_single_line
 from ui_animations import get_animation_manager
 from ui_transitions import create_page_transition
-from ui_effects import get_effects_manager
 from ui_toast import get_toast_manager
 from ui_ripple_effect import add_ripple_effect
 from ui_shimmer import add_shimmer_on_hover
@@ -35,8 +35,8 @@ from core.audio.audio_resource_health import collect_audio_resource_health
 from core.gun_sound_profiles import sync_legacy_gun_sound_flags
 from core.page_traits import DEVICE_OWNING_PAGES
 from core.runtime.system_status_service import GSI_LINK_TEXT, collect_runtime_status
-from pages.audio_status_badge import create_badge_label, render_badges
 from source_backup_manager import run_startup_source_backup
+from core.utils.app_fonts import UI_FONT_FAMILY
 
 
 class NavGroupWidget(QWidget):
@@ -65,13 +65,13 @@ class NavGroupWidget(QWidget):
         # 子项容器
         self.content = QWidget()
         self.content_layout = QVBoxLayout(self.content)
-        self.content_layout.setContentsMargins(0, 2, 0, 0)
-        self.content_layout.setSpacing(1)
+        self.content_layout.setContentsMargins(0, 0, 0, 0)
+        self.content_layout.setSpacing(0)
         main_layout.addWidget(self.content)
 
     def _update_header_text(self):
-        arrow = "▾" if self._expanded else "▸"
-        self.header.setText(f"  {arrow}  {self._title}")
+        # 展开是常态，仅在收起时显示箭头。
+        self.header.setText(self._title if self._expanded else f"▸ {self._title}")
 
     def add_button(self, btn):
         self.content_layout.addWidget(btn)
@@ -90,32 +90,14 @@ class NavGroupWidget(QWidget):
             self.content.setVisible(self._expanded)
 
 
-class ClickableLabel(QLabel):
-    """轻量可点击标签，用于首页功能名跳转。"""
-
-    clicked = Signal()
-
-    def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton:
-            self.clicked.emit()
-            event.accept()
-            return
-        super().mousePressEvent(event)
-
-
 class MainWindow(QMainWindow):
     """主窗口"""
 
     # 线程安全的 Toast 信号，可从任何线程 emit
     _toast_signal = Signal(str, str, int)  # (message, toast_type, duration)
-    # UP-035: 配置被整体改写（应用预设 / 恢复快照 / 导入分享）时收到广播。
-    # 必须走 Signal 而不是直接回调——`core/presets/map_rules.py` 的按地图自动切预设
-    # 是 GSI 事件驱动的、跑在**后台线程**上，在那儿直接碰 Qt 控件会崩。
-    # Signal 的自动连接在跨线程时会排队到 GUI 线程，正是我们要的。
+    # UP-035：配置重载可能来自 GSI 后台线程，必须经 Signal 排队到 GUI 线程操作控件。
     _config_reloaded_signal = Signal(str)
-    # RN-195: 本会话第一次真的放起音乐时叫醒主窗，把控制条建出来。
-    # 必须走 Signal：自动续播的通知跑在**加载线程/结束检测线程**上，
-    # 在那儿直接建控件会崩（同 `_config_reloaded_signal` 那条的理由）。
+    # RN-195：首播通知可能来自加载/结束检测线程，必须经 Signal 在 GUI 线程建控制条。
     _music_playback_started_signal = Signal()
 
     def __init__(self, auto_background_preload=True):
@@ -135,9 +117,7 @@ class MainWindow(QMainWindow):
 
         # 后台自动创建源码快照，避免文件损坏时无法回退
         self.config = config
-        # UP-055: 这里原本直接 get_runtime_audio_manager()，把 pygame(约 400ms)
-        # 拖进窗口显示前的主线程。实测本窗口只在两处用到它——音量设置与退出清理，
-        # 两处都在 show 之后；各音效页面另有自己的引用。改为惰性属性，见下方 property。
+        # UP-055：音频只在显示后使用，惰性属性避免把 pygame 导入放进首屏路径。
         self._audio_manager = None
         _sub_phase("音频运行时管理器(延后)")
         self.theme_manager = get_theme_manager()  # 主题管理器
@@ -146,7 +126,6 @@ class MainWindow(QMainWindow):
         
         # 初始化动画和效果管理器
         self.animation_manager = get_animation_manager()
-        self.effects_manager = get_effects_manager()
         self.page_transition = None  # 页面过渡管理器，稍后初始化
         self.toast_manager = get_toast_manager()  # Toast通知管理器
 
@@ -188,9 +167,7 @@ class MainWindow(QMainWindow):
         self._loaded_pages = set()  # 已加载的页面ID
         self._pages_need_theme_refresh = set()  # 需要主题刷新的页面ID
         self._search_hit_target = None  # R4/UP-024: 当前被搜索高亮的控件
-        #: 每次搜索跳转 +1。⭐ RN-557：高亮的三档定时器原来只认「目标是不是同一个」——
-        #: 而两次搜索**落在同一个控件上**时那句守卫就形同虚设，上一次排的「撤销」
-        #: 到点会把这一次的高亮撤掉。定时器改成认代次，谁排的谁负责。
+        # RN-557：定时器按搜索代次撤销高亮，避免同一控件的旧定时器撤掉新高亮。
         self._search_hit_gen = 0
         self._is_closing = False  # 关闭流程标记，防止延迟任务继续触发副作用
         # 构造即起热键/线程/子进程/设备的页，不适合启动阶段静默预加载。
@@ -212,10 +189,7 @@ class MainWindow(QMainWindow):
         from kill_icon_player import KillIconPlayer
         self.kill_icon_player = KillIconPlayer(self)
         
-        # 创建准心动画系统（R8b/UP-054：两套渲染器并存一个发布周期）
-        # 老实现把窗口建在主线程、却在工作线程刷新，违反 Win32 窗口线程亲和性，
-        # 是「原生崩溃只能靠兼容模式跳过准心」的根因。Qt 版天生没有这条路
-        # （QWidget 只能在主线程碰）。默认值与翻默认的前置条件见 config.crosshair_renderer。
+        # QWidget 必须在主线程操作；渲染器默认值和切换前提见 config.crosshair_renderer。
         self.crosshair_animation = self._create_crosshair_renderer(config)
 
         # 屏幕特效管理器（与页面解耦，页面未打开也能触发）
@@ -230,12 +204,7 @@ class MainWindow(QMainWindow):
         self._create_ui()
         _sub_phase("UI构建(导航+首页)")
 
-        # 首页系统状态条定时刷新
-        # UP-009: 原先每 2 秒在 GUI 线程做一次全量音频资源磁盘体检 + 读 CS2 目录下的
-        # cfg 文件(实测 9~20ms/次),而且托盘隐藏后照跑不误——用户根本看不见状态条,
-        # 却一直在为它付主线程 I/O。现在:间隔 2s→15s,且不可见时跳过整次刷新。
-        # 状态条本就是"慢变量"(GSI 在跑没在跑、音频健不健康),15 秒粒度完全够用;
-        # 真正需要即时反馈的地方另有 toast / action bar。
+        # UP-009：状态条是慢变量，每 15 秒刷新；窗口不可见时跳过磁盘 I/O。
         from PySide6.QtCore import QTimer
         self._system_status_timer = QTimer(self)
         self._system_status_timer.timeout.connect(self._tick_system_status_strip)
@@ -254,49 +223,24 @@ class MainWindow(QMainWindow):
         self._force_exit = False
         self._init_system_tray()
         
-        # 如果准心在启动时是启用状态，自动显示
-        # 兼容(自愈)模式跳过 pygame 准心：faulthandler 实证——准心 pygame/SDL 与 Qt
-        # 在个别机器(尤其缩放屏，SDL 与 Qt 的 DPI 感知不一致)上于 window.show() 并发
-        # 抢视频资源，触发原生 abort(ucrtbase 0xc0000409，进程静默消失)。跳过 pygame
-        # 准心后，window.show() 不再有并发冲突，用户至少能进入软件正常使用其余功能。
-        # UP-010: 准心 pygame 窗口的创建实测占 344ms,原先在 MainWindow.__init__ 里
-        # 同步做,把"窗口出现"整整推迟了这么久——而用户这时候连界面都还没看到。
-        # 改为主窗显示后延迟创建:准心是覆盖在游戏上的东西,晚 1.2 秒出现没有任何影响,
-        # 但首屏快 344ms 是实打实能感知的。
-        # 注意:CrosshairPage 构造时并不会自己调 show_crosshair()(已核实),所以这条
-        # 延迟路径是准心的唯一自动显示入口,不能因为"用户可能先切到准心页"就省掉。
-        # _auto_show_crosshair_deferred 里做了幂等与"期间用户关掉了准心"的判断。
+        # UP-010：pygame/SDL 与 Qt 同时建窗可能触发原生崩溃，兼容模式跳过准心。
+        # 准心的唯一自动显示入口延至主窗显示后，并检查幂等及期间关闭的情况。
         if self.config.crosshair_enabled:
             if os.environ.get("CS2C_SAFE_MODE_ACTIVE") == "1":
                 self.logger.warning("兼容模式：已跳过 pygame 准心自动显示（规避与主窗渲染并发冲突导致的原生崩溃）")
             else:
-                # UP-079: R8a 把 pygame 移出了 show 前路径，但它没有凭空消失——
-                # 谁第一个碰它谁付这 400ms。准心的自动显示定时器恰好是那个倒霉蛋：
-                # show 后 1200ms 在**主线程**首次触碰，实测冻结 426ms。
-                # 那比"启动慢 400ms"更刺眼：窗口已经可交互了才卡住。
-                # 下面几行的音乐控制栏早就用了同一招（等工作线程把 pygame import 热了
-                # 再在主线程用，二次 import 是纯查表），这里照做。
+                # UP-079：先在工作线程预热 pygame，避免延迟显示准心时首次导入卡住 GUI。
                 self._prewarm_pygame_async()
                 QTimer.singleShot(1200, self._auto_show_crosshair_deferred)
         
         _sub_phase("定时器/托盘/准心收尾")
         self.logger.info("GUI初始化完成")
 
-        # 延迟创建音乐控制栏（含 pygame 导入,实测主线程卡 ~320ms）
-        # 2.2.0 卡顿治理:推迟到后台音频阶段(stage2,工作线程已把 pygame import 热了)
-        # 之后创建——主线程二次 import 同模块为零成本,卡顿消失。
-        # 兜底:若 8s 后后台阶段仍未触发(异常路径),仍强制创建,保证控制栏必然出现。
-        # RN-195: 这里改成**放过音乐才建**。原来是无条件建,一出现就永久吃掉
-        # 内容区 42px(实测完整档 750→708、紧凑档 650→608),而全新用户从没
-        # 放过音乐、也没有任何理由要一条播放控制栏。
+        # RN-195：仅在实际播放过音乐后建常驻控制栏，避免空占内容区高度。
         from PySide6.QtCore import QTimer
         QTimer.singleShot(8000, self._create_music_control_bar_if_played)
 
-        # 延迟刷新所有已加载页面的主题（修复首次启动时主题加载问题）
-        # 使用500ms延迟确保Qt样式系统完全初始化，避免与页面加载撞车
-        # 2.2.0 卡顿治理:初始主题刷新默认跳过——它对全树 unpolish/polish+递归重绘,
-        # 实测制造 ~500ms 冻结+全屏闪烁(用户长期反馈的"闪一下");页面在全局 QSS
-        # 就绪后构建,样式本就正确。万一某环境首屏样式异常,开 config.theme_refresh_on_start。
+        # 全局 QSS 就绪后建页，默认不做全树重刷；异常环境可启用 theme_refresh_on_start。
         if bool(getattr(config, "theme_refresh_on_start", False)):
             QTimer.singleShot(500, self._initial_theme_refresh)
 
@@ -314,16 +258,7 @@ class MainWindow(QMainWindow):
 
     @property
     def audio_manager(self):
-        """音频运行时管理器 —— 首次真正用到时才建（UP-055）。
-
-        为什么值得延后：拿到它要先 `import pygame`，本机实测约 400ms
-        （pkg_resources 219 + numpy 113），而这 400ms 原本落在窗口显示**之前**
-        的主线程上。本窗口对它的全部用途是「音量设置」和「退出清理」，
-        没有一处发生在 show 之前。
-
-        注意退出清理不能走这个属性——那会为了 cleanup 反而把整套 pygame
-        拉起来。退出链路改用 `peek_runtime_audio_manager()`。
-        """
+        """UP-055：首次使用才创建音频管理器；退出清理必须用 peek，避免为清理触发导入。"""
         if self._audio_manager is None:
             from core.audio.runtime_audio import get_runtime_audio_manager
 
@@ -331,16 +266,7 @@ class MainWindow(QMainWindow):
         return self._audio_manager
 
     def _prewarm_pygame_async(self):
-        """在工作线程里把 pygame 的 import 热掉（UP-079）。
-
-        R8a 让 pygame 不再进 show 前的关键路径，代价是把「谁第一个碰它谁付 400ms」
-        推给了后面的某个调用点。实测那个点就是准心自动显示定时器，而它跑在**主线程**
-        ——10ms 心跳探针量到整段启动期唯一一次 >60ms 的间隔就是它，426.8ms。
-
-        Python 的 import 有全局缓存、且导入机制自身带锁，工作线程先导一遍之后，
-        主线程那次 `import pygame` 只是查 `sys.modules`，成本为零。
-        失败也不要紧：主线程届时会自己导入，只是慢回原样。
-        """
+        """UP-079：后台预热 pygame，让主线程复用导入缓存；失败则由使用点正常导入。"""
         import threading
 
         def _warm():
@@ -409,11 +335,7 @@ class MainWindow(QMainWindow):
             self.logger.warning(f"[AudioHealth] check failed: {e}")
 
     def _create_crosshair_renderer(self, config):
-        """按 `config.crosshair_renderer` 选渲染器，两套接口逐个方法对齐。
-
-        Qt 路径失败**必须能退回老实现**——准心是打开就用的功能，
-        新渲染器万一在某台机器上建不起来，用户至少还有原来那套可用。
-        """
+        """按配置选渲染器；Qt 创建失败须能回退旧实现，保持准心可用。"""
         renderer = str(getattr(config, "crosshair_renderer", "pygame") or "pygame").lower()
         if renderer == "qt":
             try:
@@ -430,7 +352,7 @@ class MainWindow(QMainWindow):
         return CrosshairAnimation(config, self)
 
     def _auto_show_crosshair_deferred(self):
-        """UP-010: 主窗显示后再创建准心窗口（原先在 __init__ 里同步做，占 344ms）。"""
+        """UP-010：准心窗口延至主窗显示后创建，避免阻塞首屏。"""
         try:
             if getattr(self, "_is_closing", False):
                 return
@@ -443,11 +365,7 @@ class MainWindow(QMainWindow):
             self.logger.warning(f"准心延迟显示失败: {exc}")
 
     def showEvent(self, event):
-        """UP-009: 从托盘/最小化恢复时立刻补一次状态刷新。
-
-        定时刷新在不可见时会跳过，若不在这里补一次，用户重新打开窗口会先看到
-        一份最长 15 秒前的旧状态。延迟 0ms 入队，不占本次显示帧。
-        """
+        """UP-009：隐藏期间跳过了定时刷新，恢复显示时入队补刷，避免展示旧状态。"""
         super().showEvent(event)
         try:
             from PySide6.QtCore import QTimer
@@ -456,11 +374,7 @@ class MainWindow(QMainWindow):
             pass
 
     def _tick_system_status_strip(self):
-        """定时器入口（UP-009）：不可见时直接跳过，不做任何磁盘 I/O。
-
-        收进托盘 / 最小化时用户看不到状态条，没有任何理由为它付主线程 I/O。
-        重新显示时由 showEvent 立刻补一次刷新，用户不会看到过期数据。
-        """
+        """UP-009：不可见时跳过磁盘 I/O，重新显示由 showEvent 补刷。"""
         try:
             if getattr(self, "_is_closing", False):
                 return
@@ -472,100 +386,106 @@ class MainWindow(QMainWindow):
             return
         self._refresh_system_status_strip()
 
+    def _sync_sidebar_link(self, link, word, level, tooltip):
+        """侧栏底部那行：游戏连上没有。值变了才动，这条路每隔几秒就走一次。"""
+        label = getattr(self, "_sidebar_link_label", None)
+        dot = getattr(self, "_sidebar_link_dot", None)
+        if label is None or dot is None:
+            return
+        text = f"CS2 {word}"
+        if label.text() != text:
+            label.setText(text)
+        label.setToolTip(tooltip)
+        dot.setToolTip(tooltip)
+        if dot.property("level") != level:
+            dot.setProperty("level", level)
+            dot.style().unpolish(dot)
+            dot.style().polish(dot)
+
     def _refresh_system_status_strip(self):
+        # ⚠ 就地 import，理由见 `_master_switch_page_id`（开源补丁盯着模块顶部那一整块）
+        from core.cs2_video_mode import detect_display_mode
+        from core.runtime.system_status_service import ReadinessView, readiness_view
+
         status_label = getattr(self, "system_status_label", None)
-        gsi_badge = getattr(self, "basic_gsi_badge", None)
-        audio_badge = getattr(self, "basic_audio_badge", None)
-        config_badge = getattr(self, "basic_config_badge", None)
-        if status_label is None and gsi_badge is None and audio_badge is None and config_badge is None:
+        if status_label is None:
             return
         try:
             status = collect_runtime_status(self)
-            gsi = status.gsi or {}
-            audio = status.audio_health or {}
-            gsi_running = bool(gsi.get("running"))
-            audio_issue_count = int(audio.get("missing_directories", 0) or 0) + int(
-                audio.get("invalid_config_refs", 0) or 0
-            )
-            audio_ok = bool(audio.get("ok"))
-            config_dirty = bool(status.config_dirty)
-
-            # 批 116：徽章说的是「断在哪一环」，不再是「处理线程活着」（那句和游戏推没推数据无关）
-            gsi_link = str(getattr(status, "gsi_link", "") or ("no_game" if gsi_running else "stopped"))
+            # 就绪状态按 GSI 数据链路判断，处理线程存活不等于游戏已推送数据。
+            gsi_link = str(getattr(status, "gsi_link", "") or "stopped")
             link_word, link_level, link_fix = GSI_LINK_TEXT.get(gsi_link, GSI_LINK_TEXT["stopped"])
-            gsi_error = str(gsi.get("startup_error") or "")
-            if gsi_badge is not None:
-                self._set_badge_label_state(gsi_badge, f"GSI · {link_word}", link_level)
-                # 对标修缮：GSI 启动失败（如端口被占）必须可见且带原因
-                gsi_badge.setToolTip(
-                    f"{gsi_error}\n处理后在高级设置重选 CS2 目录或重启软件即可恢复。" if gsi_error else link_fix)
-
-            if audio_badge is not None:
-                audio_text = "音频 · 正常" if audio_ok else (
-                    f"音频 · 需检查{audio_issue_count}" if audio_issue_count else "音频 · 需检查"
-                )
-                self._set_badge_label_state(
-                    audio_badge,
-                    audio_text,
-                    "positive" if audio_ok else "warning",
-                )
-
-            if config_badge is not None:
-                self._set_badge_label_state(
-                    config_badge,
-                    "配置 · 已保存" if not config_dirty else "配置 · 未保存",
-                    "positive" if not config_dirty else "warning",
-                )
-
-            if status.level == "error" and status.last_error:
-                runtime_summary = f"系统状态异常：{status.last_error}。"
-            elif gsi_link in ("silent", "cfg_missing", "cfg_port"):
-                runtime_summary = link_fix
-            elif not audio_ok:
-                # ⭐⭐ RN-531（批 59）：原先只报数不说去哪 ——
-                #   外审 6 发以上反复是同一句「开屏即告警却无一键修复入口，
-                #   玩家会误以为软件损坏」。⚠ 而这一页上**确实有**能修它的按钮
-                #   （载入音频 / 自定义目录），只是那句告警从不提它们。
-                #   ⭐ 缺的不是一颗按钮，是**把告警和那颗按钮连起来的一句话**。
-                #   ⛔ 不指向「资源体检」页：它是专家页，普通模式下没有入口（RN-134）。
-                fix_hint = "点下面的「载入音频」补齐，或用「自定义目录」指到你自己的音频文件夹。"
-                if audio_issue_count:
-                    runtime_summary = (
-                        f"音频资源需要检查，当前发现 {audio_issue_count} 项异常 —— {fix_hint}")
-                else:
-                    runtime_summary = f"音频资源需要检查 —— {fix_hint}"
-            elif config_dirty:
-                runtime_summary = "检测到未保存的配置修改，确认无误后记得保存。"
-            else:
-                # 旧句「未进入游戏时 GSI 未运行属于正常情况」把软件自己的服务和游戏混成一件事
-                runtime_summary = link_fix or "系统状态正常。"
-
-            detail_text = " | ".join(
-                [
-                    f"GSI: {link_word}",
-                    "音频: 正常" if audio_ok else (
-                        f"音频: 异常{audio_issue_count}" if audio_issue_count else "音频: 异常"
-                    ),
-                    "配置: 未保存" if config_dirty else "配置: 已保存",
-                    f"最近异常: {status.last_error or '无'}",
-                ]
-            )
-            self._basic_runtime_summary = runtime_summary
-            self._basic_runtime_status_detail = detail_text
-            self._basic_runtime_level = str(getattr(status, "level", "ok") or "ok").lower()
-            self._update_basic_status_summary_label()
+            gsi_error = str((status.gsi or {}).get("startup_error") or "")
+            self._sync_sidebar_link(gsi_link, link_word, link_level, gsi_error or link_fix)
+            # 这些页都写着「独占全屏会把它整个盖住」（`make_overlay_requirement_label` 的调用方）
+            overlay_on = any(self.switches[switch_id].isChecked() for switch_id in (
+                "crosshair", "flash", "kill_icon", "screen_effects", "fun_afterlife"))
+            self._sync_home_readiness(readiness_view(status, detect_display_mode(), overlay_on=overlay_on))
+            self._refresh_home_cards()
             self.logger.debug(f"[SystemStatus] level={status.level} err={status.last_error}")
         except Exception as exc:
-            self._basic_runtime_summary = f"状态刷新失败：{exc}"
-            self._basic_runtime_status_detail = self._basic_runtime_summary
-            self._basic_runtime_level = "error"
-            if gsi_badge is not None:
-                self._set_badge_label_state(gsi_badge, "GSI · 刷新失败", "danger")
-            if audio_badge is not None:
-                self._set_badge_label_state(audio_badge, "音频 · 刷新失败", "danger")
-            if config_badge is not None:
-                self._set_badge_label_state(config_badge, "配置 · 刷新失败", "danger")
-            self._update_basic_status_summary_label()
+            self._sync_home_readiness(ReadinessView("error", "状态刷新失败", str(exc), needs_setup=False))
+
+    def _refresh_home_cards(self):
+        """重新数失效的风格，再把卡片和侧栏的点刷一遍。只看目录在不在，回到总览时走一遍也不重。"""
+        from core.audio.audio_resource_health import count_stale_styles
+
+        self._home_stale_counts = count_stale_styles()
+        self._sync_feature_cards()
+
+    def _sync_home_readiness(self, view):
+        """把算好的结论摆到总览状态条上。"""
+        self._home_readiness = view
+        strip = getattr(self, "basic_status_card", None)
+        if strip is not None:
+            strip.set_state(view.level, view.headline)
+            strip.set_checks(view.checks)
+            button = self.basic_onboarding_btn
+            # RN-139：主按钮指向还没做的下一步。都做完了它就退成普通按钮，入口还在。
+            wanted = "primaryButton" if view.needs_setup else "secondaryButton"
+            if button.objectName() != wanted:
+                button.setObjectName(wanted)
+                button.style().unpolish(button)
+                button.style().polish(button)
+        self._sync_home_status_line()
+
+    def _sync_home_status_line(self):
+        """大字下面那一句：有事说修法；没事说开了几个，有风格失效再加一条去处理的链接。"""
+        import html
+
+        status_label = getattr(self, "system_status_label", None)
+        view = getattr(self, "_home_readiness", None)
+        if status_label is None or view is None:
+            return
+        if view.detail:
+            status_label.setText(html.escape(view.detail))
+            return
+        parts = []
+        switches = getattr(self, "switches", None) or {}
+        if switches:
+            parts.append(f"已开 {sum(t.isChecked() for t in switches.values())} / {len(switches)} 个功能")
+        target = self._first_stale_feature()
+        if target is not None:
+            page_id, name, count = target
+            parts.append(f'<a href="{page_id}">{html.escape(name)}有 {count} 项风格失效了，去处理</a>')
+        status_label.setText(" · ".join(parts))
+
+    def _first_stale_feature(self):
+        """第一张「开着、但配的风格没了」的卡：(页面 id, 显示名, 项数)。"""
+        stale = getattr(self, "_home_stale_counts", None) or {}
+        for switch_id, card in (getattr(self, "feature_cards", None) or {}).items():
+            count = stale.get(switch_id, 0)
+            if count and self.switches[switch_id].isChecked():
+                return self._get_home_switch_target_page(switch_id), card.accessibleName(), count
+        count = stale.get("special_sound", 0)
+        if count and self._special_sound_is_on():
+            return "special_sound", "特殊音效", count
+        return None
+
+    def _special_sound_is_on(self):
+        """特殊音效没有总开关，四类开了任何一类就算开着。"""
+        return any(getattr(self.config, key, False) for key in (
+            "grenade_sound_enabled", "c4_sound_enabled", "health_warning_enabled", "round_sound_enabled"))
 
     def _run_audio_health_from_home(self):
         self._run_audio_health_check()
@@ -583,87 +503,14 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             self.logger.warning(f"Open log dir failed: {exc}")
 
-    def _set_badge_label_state(self, label, text, tone="info"):
-        if label is None:
-            return
-        label.setText(text)
-        label.setProperty("tone", tone)
-        label.style().unpolish(label)
-        label.style().polish(label)
-        label.update()
-
-    def _update_basic_status_summary_label(self):
-        status_label = getattr(self, "system_status_label", None)
-        if status_label is None:
-            return
-        runtime_summary = str(getattr(self, "_basic_runtime_summary", "") or "").strip()
-        if not runtime_summary:
-            runtime_summary = "状态会在这里同步更新。"
-        status_label.setText(runtime_summary)
-        detail_text = str(getattr(self, "_basic_runtime_status_detail", "") or "").strip()
-        status_label.setToolTip(detail_text or runtime_summary)
-        status_card = getattr(self, "basic_status_card", None)
-        if status_card is not None:
-            status_card.setToolTip(detail_text or runtime_summary)
-        status_badge_bar = getattr(self, "basic_status_badge_label", None)
-        if status_badge_bar is not None:
-            badges = []
-            # ⭐⭐ RN-532（批 59）：顺序原先是「主题 / 界面 / 账号 / GSI / 音频 / 配置」——
-            #   **外观偏好排在最前**，把 GSI 与音频这两条真正决定「能不能用」的挤到后面
-            #   （外审 3 发）。⇒ 改成先说能不能用，再说长什么样。
-            #   ⚠ 这一排是**从左往右读**的，第一格拿走的是最多的注意力。
-            for attr_name in (
-                "basic_gsi_badge",
-                "basic_audio_badge",
-                "basic_config_badge",
-                "basic_theme_badge",
-                "basic_mode_badge",
-            ):
-                label = getattr(self, attr_name, None)
-                if label is None:
-                    continue
-                text = str(label.text() or "").strip()
-                if not text:
-                    continue
-                badges.append((str(label.property("tone") or "info"), text))
-            render_badges(status_badge_bar, badges, detail_tooltip=detail_text or runtime_summary)
-        level = str(getattr(self, "_basic_runtime_level", "ok") or "ok").lower()
-        status_label.setHidden(level not in {"warn", "error"})
-
-    def _sync_basic_page_overview(self):
-        theme_badge = getattr(self, "basic_theme_badge", None)
-        if theme_badge is not None:
-            theme_text = self.theme_combo.currentText().strip() if hasattr(self, "theme_combo") else ""
-            if not theme_text:
-                theme_text = getattr(self.config, "ui_theme", "dark")
-            self._set_badge_label_state(theme_badge, f"主题 · {theme_text}", "info")
-
-        mode_badge = getattr(self, "basic_mode_badge", None)
-        if mode_badge is not None:
-            is_expert = bool(getattr(self.config, "ui_expert_mode", False))
-            mode_text = "专家模式" if is_expert else "普通模式"
-            mode_tone = "warning" if is_expert else "positive"
-            self._set_badge_label_state(mode_badge, f"界面 · {mode_text}", mode_tone)
-
-        self._update_basic_status_summary_label()
 
     # ---------------- P4.1: 首次使用引导 ----------------
 
     def _show_onboarding_dialog(self):
-        """打开三步上手引导（选目录 → 写 GSI 配置 → 去试听）。
-
-        ⚠ RN-110：这个引导一直都在，但**一辈子只弹一次** —— 关掉就再也找不回来了。
-        对用户而言「没有首次引导」和「引导等于没有」是同一件事，外审报的就是后者。
-        所以基础设置页的引导条走的是**这个入口**，而不是另抄一套三步文案 ——
-        抄第二份的下场见 RN-002（同一份设备页名单被抄了 9 遍、3 份已经漂了）。
-        """
+        """RN-110：首启与手动重入共用三步引导，避免复制流程后内容漂移。"""
         from dialogs.onboarding_dialog import OnboardingDialog
 
-        # 已经开着就抬起来，不再造第二个。
-        # ⚠ 实测这个窗是 ApplicationModal，正常点按钮开不出第二个 —— 但入口现在有三处
-        # （首启自动、基础设置页、关于页），而 `self._onboarding_dialog = dialog` 这一手
-        # **会把上一个的唯一引用覆盖掉**。真出现两个的那天，被覆盖的那个随时可能被 GC，
-        # 而它还显示在屏幕上。外审提的机制不成立（模态挡住了），但这处脆弱是真的。
+        # 复用已打开的模态窗，避免覆盖唯一引用后旧窗被回收。
         existing = getattr(self, "_onboarding_dialog", None)
         if existing is not None and existing.isVisible():
             existing.raise_()
@@ -777,37 +624,35 @@ class MainWindow(QMainWindow):
         threading.Thread(target=_worker, name="CrashReportSender", daemon=True).start()
 
     def _make_nav_button(self, page_id, text):
-        """建一个侧栏导航按钮。
-
-        ⚠ **这段原先抄了两份**（主分组循环一份、「常用」分组一份，各 16 行几乎逐字相同）。
-        两份的代价不是重复本身，而是**改一份忘一份不会报错**：图标尺寸、最小高度、
-        objectName 任何一处漂了，两批按钮就会长得不一样，而且只有肉眼能看出来。
-        —— 同 RN-002 那份被抄了 9 遍的设备页名单，是同一类问题。
-        """
+        """主分组与常用分组共用导航按钮构造，保持尺寸、图标和样式一致。"""
         from widgets.icon_provider import get_page_icon
+        from widgets.nav_button import NavButton
 
-        btn = QPushButton(f"  {text}")
+        btn = NavButton(f" {text}")
         btn.setObjectName("navButton")
         btn.setCheckable(True)
-        btn.setMinimumHeight(36)
         btn.setFocusPolicy(Qt.TabFocus)   # RN-640：点选不留焦点环，Tab 上去才有（RN-546 只要键盘可见）
-        icon = get_page_icon(page_id, role="secondary", size=16)
+        icon = get_page_icon(page_id, role="secondary", size=14)
         if not icon.isNull():
             btn.setIcon(icon)
-            btn.setIconSize(QSize(16, 16))
-        # ⭐ RN-025：把 page_id 挂在按钮上。在此之前，「这颗按钮通向哪一页」
-        #   只有 `nav_buttons` / `_frequent_buttons` 两张反查表知道，
-        #   而「常用」组的按钮只在后一张里 ⇒ 任何走前一张的代码都看不见它。
+            btn.setIconSize(QSize(14, 14))
+        # RN-025：把 page_id 存在按钮本身，兼容不在 nav_buttons 表里的常用按钮。
         btn.setProperty("fp_page_id", page_id)
         btn.clicked.connect(lambda checked, pid=page_id: self.show_page(pid))
         return btn
 
-    def _apply_expert_mode_visibility(self):
+    def _sync_expert_nav_buttons(self):
+        """普通模式临时露出已打开的专家页入口，保证侧栏始终能指示当前位置。"""
         is_expert = bool(getattr(self.config, "ui_expert_mode", False))
+        current = getattr(self, "_current_page_id", None)
         for page_id in self._expert_only_pages:
             btn = self.nav_buttons.get(page_id) if hasattr(self, "nav_buttons") else None
             if btn is not None:
-                btn.setVisible(is_expert)
+                btn.setVisible(is_expert or page_id == current)
+
+    def _apply_expert_mode_visibility(self):
+        is_expert = bool(getattr(self.config, "ui_expert_mode", False))
+        self._sync_expert_nav_buttons()
         if hasattr(self, "system_status_health_btn"):
             self.system_status_health_btn.setVisible(is_expert)
         if hasattr(self, "system_status_open_health_btn"):
@@ -816,8 +661,6 @@ class MainWindow(QMainWindow):
             self.audio_task_panel_quick_btn.setVisible(is_expert)
         if hasattr(self, "_sync_home_tool_rows"):
             self._sync_home_tool_rows()
-        if hasattr(self, "_sync_basic_page_overview"):
-            self._sync_basic_page_overview()
 
     def _on_ui_mode_changed(self, _index):
         is_expert = bool(self.ui_mode_combo.currentData())
@@ -913,31 +756,8 @@ class MainWindow(QMainWindow):
         self.logger.info("已禁用滚轮调整UI控件")
     
     def eventFilter(self, watched, event):
-        """
-        事件过滤器：
-        1. 拦截滚轮事件，防止意外修改控件值——但把滚动转发给最近的可滚动祖先，
-           否则光标停在下拉框/滑块上时整页都滚不动。
-
-        R4/UP-025：这里原本还有第二套"卡片悬停阴影"控制器，已删除。
-        `SettingsCard` 自己的 enterEvent/leaveEvent 已经在管这枚阴影
-        （md_blur 24 ↔ lg_blur 40），两套控制器抢同一个 QGraphicsDropShadowEffect：
-        eventFilter 先于控件自身的事件处理跑，Leave 时把 alpha 直接写成 30，
-        而 SettingsCard 的动画只回滚 blur、不回滚 alpha。默认 md_alpha 是 120，
-        于是鼠标**扫过一次**卡片，阴影就永久变成原来的 1/4，再也回不来。
-        阴影所有权归 SettingsCard 唯一持有。
-        """
-        # 侧栏内容高度变了、**或者视口自己变矮了** → 上一次"滚进可视区"的计算作废，重算。
-        # 事件驱动而不是定时器：什么时候真的变完，这两个事件说了算。
-        #
-        # ⚠⚠ **视口那一半是 RN-008 的根因，别再只盯内容**（2026-08-17，CI 连红五轮）：
-        # 底部音乐控制条 `musicControlBar` 高 42px，它是**滚完之后**才出现的，
-        # 主窗把这 42px 从侧栏身上扣走，侧栏视口跟着矮 42px ——
-        # 刚刚滚好的那一项正好被挤到视口外。而**内容高度一点没变**，
-        # 所以只监听 nav_container 的话这个事件根本不发生，没人来补救。
-        # 这解释了那个诡异的不变量：`y = V滚动 − 24 − 42 = V断言 − 24`，
-        # 于是不管视口多高，判据带回来的 y 永远正好等于「视口 − 24」。
-        # 我一度把它误判成"按钮高度被当成 0"（那个算式也能凑出同一个数）——
-        # **两种机制在数值上完全同解，只靠一个数字分不出来**，是外审提示了第二个解才回头查的。
+        """拦截误改数值的滚轮并转发滚动；卡片阴影仅由 SettingsCard 持有。"""
+        # RN-008：内容和视口的尺寸变化都需重算滚动；音乐条出现只会缩小视口。
         _scroll = getattr(self, "_sidebar_scroll", None)
         if (event.type() == QEvent.Resize
                 and (watched is getattr(self, "_sidebar_nav_container", None)
@@ -945,7 +765,8 @@ class MainWindow(QMainWindow):
             page_id = getattr(self, "_current_page_id", None)
             # 重入保护：校正里会 activate() 布局，那有可能再发一次 Resize。
             if (page_id and not getattr(self, "_is_closing", False)
-                    and not getattr(self, "_ensuring_nav_visible", False)):
+                    and not getattr(self, "_ensuring_nav_visible", False)
+                    and self._nav_natural_geometry_changed(_scroll)):
                 self._ensuring_nav_visible = True
                 try:
                     self._ensure_nav_button_visible(page_id)
@@ -968,12 +789,7 @@ class MainWindow(QMainWindow):
         return super().eventFilter(watched, event)
 
     def _forward_wheel_to_scroll_area(self, widget, event):
-        """把控件上的滚轮事件转发给最近的可滚动祖先。
-
-        作用：滚轮不会误改下拉框/数字框/滑块的值，但页面照常滚动。
-        逐级向上找 QAbstractScrollArea，把同一个 Wheel 事件发给它的 viewport。
-        任何异常都静默吞掉——转发失败最多是"滚不动"，绝不能阻塞 UI。
-        """
+        """向最近可滚动祖先的 viewport 转发滚轮，兼顾防误改与页面滚动；失败不阻塞 UI。"""
         try:
             from PySide6.QtWidgets import QAbstractScrollArea, QApplication
         except Exception:
@@ -1026,46 +842,39 @@ class MainWindow(QMainWindow):
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(0)
 
-        # 紧凑模式顶栏（汉堡菜单按钮）
+        # 紧凑档的顶栏：侧栏藏起来之后，搜索、账号、切档都住这儿。完整档没有这一条。
         self._compact_header = QWidget()
-        self._compact_header.setFixedHeight(50)
+        self._compact_header.setFixedHeight(48)
         self._compact_header.setObjectName("compactHeader")
         compact_header_layout = QHBoxLayout(self._compact_header)
-        compact_header_layout.setContentsMargins(ds.spacing.lg, 6, ds.spacing.lg, 6)
-        compact_header_layout.setSpacing(10)
+        compact_header_layout.setContentsMargins(ds.spacing.lg, 8, ds.spacing.lg, 8)
+        compact_header_layout.setSpacing(8)
+        self._compact_header_layout = compact_header_layout
 
-        self._hamburger_btn = QPushButton("☰")
+        self._hamburger_btn = QPushButton()
         self._hamburger_btn.setObjectName("hamburgerButton")
-        self._hamburger_btn.setFixedSize(38, 38)
+        self._hamburger_btn.setFixedSize(32, 32)
+        self._hamburger_btn.setIconSize(QSize(18, 18))
+        self._hamburger_btn.setToolTip("显示导航")
+        self._hamburger_btn.setAccessibleName("显示导航")
+        self._refresh_hamburger_icon()
         self._hamburger_btn.setCursor(Qt.PointingHandCursor)
         self._hamburger_btn.clicked.connect(self._toggle_sidebar_overlay)
         compact_header_layout.addWidget(self._hamburger_btn)
 
-        self._compact_title = QLabel("基础设置")
-        self._compact_title.setObjectName("compactTitle")
-        self._compact_title.setFont(QFont("Microsoft YaHei", 14, QFont.Bold))
-        compact_header_layout.addWidget(self._compact_title)
-        compact_header_layout.addStretch()
-
-        # 对标主流：顶栏设置搜索（27页/389项配置不再靠记忆翻页）；Ctrl+F 聚焦
+        # 对标主流：设置搜索（27页/389项配置不再靠记忆翻页）；Ctrl+F 聚焦。
+        # 只有一个框，跟着档位搬家（`_dock_search_box`）
         self._create_settings_search_box()
         compact_header_layout.addWidget(self.settings_search_box)
+        compact_header_layout.addStretch()
 
-        # 窗口模式切换按钮（两种模式都显示）
-        # ⭐⭐ RN-541（批 60）：它原来只有一个「⇔」图标。
-        #   外审在 4 张图上共 **5 发**报「无法识别其具体功能用途」——
-        #   ⚠ 而它**是有 tooltip 的**（「切换紧凑/完整模式」）。
-        #   ⭐⭐⭐ **一个只靠悬停才说话的控件，在任何一张静态截图上都是哑的** ——
-        #     而用户第一眼看到的也正是那一张「截图」。
-        #   ⇒ 把话写到按钮上，并且说**点下去会怎样**（不是说它现在是什么）。
-        self._mode_toggle_btn = QPushButton("⇔ 紧凑")
+        # RN-541：按钮直接说明切换结果，避免仅靠图标和悬停提示传达功能。
+        self._mode_toggle_btn = QPushButton("⇔ 紧凑界面")
         # 与侧栏底部那个「紧凑模式 «」**不能共用 objectName**：那是宽文字按钮，
         # 这是方形图标按钮，两者的盒模型约束正好相反（见 _icon_button_qss）。
         self._mode_toggle_btn.setObjectName("modeToggleIconButton")
-        # 40 而不是 38：QSS 里的 min/max-width 是**内容盒**（38），外面还有 1px 边框。
-        # 写 38 的话 QSS 算出的最小值 40 会顶掉 setFixedSize 的最大值 38
-        # （Qt 在 min > max 时取 min），又回到形变那条老路。
-        self._mode_toggle_btn.setMinimumHeight(40)
+        # 32：QSS 里的 min/max-height 是**内容盒**（30），外面还有 1px 边框。
+        self._mode_toggle_btn.setFixedHeight(32)
         self._mode_toggle_btn.setCursor(Qt.PointingHandCursor)
         self._mode_toggle_btn.setToolTip("切换紧凑/完整模式")
         self._mode_toggle_btn.clicked.connect(self._toggle_compact_mode)
@@ -1155,31 +964,36 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         
-        # 顶部固定区域（标题和版本）— v2.2 紧凑化：高度 96 → 76
+        # 搜索框位于品牌下方，页面标题作为内容区首行。
         header_widget = QWidget()
         header_widget.setObjectName("sidebarBrand")
-        header_layout = QVBoxLayout(header_widget)
-        header_layout.setContentsMargins(14, 16, 14, 10)
-        header_layout.setSpacing(2)
+        header_layout = QHBoxLayout(header_widget)
+        header_layout.setContentsMargins(12, 12, 12, 8)
+        header_layout.setSpacing(6)
 
         # 标题
         title = QLabel("CS2 Customizer")
         title.setObjectName("sidebarTitleLabel")
-        title.setFont(QFont("Microsoft YaHei", 18, QFont.Bold))
-        title.setAlignment(Qt.AlignCenter)
+        title.setFont(QFont(UI_FONT_FAMILY, 16, QFont.Bold))
         header_layout.addWidget(title)
 
         # 版本
         version = QLabel(f"v{VERSION}")
         version.setObjectName("sidebarVersionLabel")
-        version.setFont(QFont("Microsoft YaHei", 9))
-        version.setAlignment(Qt.AlignCenter)
-        header_layout.addWidget(version)
+        version.setFont(QFont(UI_FONT_FAMILY, 9))
+        header_layout.addWidget(version, 0, Qt.AlignBottom)
+        header_layout.addStretch()
 
-        header_layout.addSpacing(6)
-        
         layout.addWidget(header_widget)
-        
+
+        # 搜索框的家。框只有一个，完整档住这里（`_dock_search_box`）
+        search_host = QWidget()
+        search_host.setObjectName("sidebarSearch")
+        self._sidebar_search_layout = QVBoxLayout(search_host)
+        self._sidebar_search_layout.setContentsMargins(8, 0, 8, 4)
+        self._sidebar_search_layout.setSpacing(0)
+        layout.addWidget(search_host)
+
         # 可滚动的导航区域
         scroll_area = QScrollArea()
         scroll_area.setObjectName("sidebarScroll")  # 避免与外层sidebar重名
@@ -1192,19 +1006,15 @@ class MainWindow(QMainWindow):
         # 导航按钮容器
         nav_container = QWidget()
         nav_layout = QVBoxLayout(nav_container)
-        nav_layout.setContentsMargins(10, 10, 10, 10)
-        nav_layout.setSpacing(5)
+        # 普通模式可临时多出一个专家页入口，需为其留出高度，避免挤出末项。
+        nav_layout.setContentsMargins(8, 0, 8, 4)
+        nav_layout.setSpacing(0)
         
         # 导航按钮 - 可折叠分组
         nav_groups = [
-            # ⚠ RN-108：「基础设置」原先挂在**「音效设置」组**下面。
-            # 而准心、屏幕特效、换枪音效这些页的总开关都写在它里面，各页只提示
-            # 「请去基础设置开启」—— 于是**找准心的开关得先去音效菜单里翻**。
-            # 用户裁定 A：把它挪出来单独置顶。单独成组（而不是做成一个不属于任何组
-            # 的悬空按钮）是有原因的：紧凑模式浮层、Alt+N 跳组、展开当前组
-            # 这三处都是**按组遍历**的，悬空按钮会从浮层里整个消失。
+            # RN-108：全局入口单独置顶成组，保证浮层、Alt 分组跳转和展开逻辑均能遍历。
             ("开始", [
-                ("basic", "基础设置"),
+                ("basic", "总览"),
                 # ⭐⭐⭐ RN-673：原先排在最后一组，y=765 而侧栏视口只有 0~650 —— 看不见。
                 ("audio_import_wizard", "导入资源"),
             ]),
@@ -1248,9 +1058,7 @@ class MainWindow(QMainWindow):
         #: ⚠ **只装静态分组**，不含「常用」（它是 `insertWidget(0)` 插进布局的）。
         #:   要「侧栏里真实的分组顺序」请用 `_nav_groups_in_view()`（RN-025）。
         self.nav_groups = []
-        #: 侧栏那个纵向布局本身 —— `_nav_groups_in_view()` 从它现算顺序。
-        #: ⭐ 存的是**那个真东西的句柄**，不是第二份清单（同 `_sync_master_switch_rows`
-        #:   刻意不建注册表的理由：第二份状态就要维护生命周期）。
+        # 保存布局句柄，真实分组顺序由 _nav_groups_in_view 现算，避免维护第二份清单。
         self._nav_layout = nav_layout
         self._page_to_group = {}  # page_id -> NavGroupWidget 映射
         self._page_names = {}  # page_id -> 显示名称
@@ -1270,7 +1078,7 @@ class MainWindow(QMainWindow):
         self._frequent_buttons = {}
         self.frequent_group = None
         try:
-            if bool(getattr(self.config, "nav_frequent_enabled", True)):
+            if bool(getattr(self.config, "nav_frequent_enabled", False)):
                 from core.page_usage_tracker import top_pages
 
                 frequent_ids = top_pages(4, known_pages=self._page_names.keys())
@@ -1292,26 +1100,32 @@ class MainWindow(QMainWindow):
         nav_layout.addStretch()
         
         scroll_area.setWidget(nav_container)
-        # 侧栏内容的高度会在切页之后才变（分组展开/收起、图标换色、字体度量），
-        # 而"把当前项滚进可视区"是在切页那一刻算的 —— 内容一变，那次计算就作废了。
-        # 盯住内容的 Resize 事件重算一次，比在切页时赌"布局已经落定"可靠得多：
-        # 赌时序在本机怎么都对，2026-08-17 CI 上连红三次（hud_color / audio_health /
-        # crosshair，滚动条才 61/998，明明有的是空间可滚，就是没人去滚）。
+        # 分组和字体变化会在切页后改变内容高度，监听 Resize 重算，不能假定切页时布局已定。
         self._sidebar_nav_container = nav_container
         nav_container.installEventFilter(self)
-        # ⚠ **视口也要盯**：内容没变而视口变矮，同样能把当前项挤出可视区 ——
-        # 底部音乐条出现时就是这样（RN-008 根因，详见 eventFilter 里的注释）。
+        # RN-008：音乐条可能只缩小视口，视口 Resize 也必须触发重算。
         scroll_area.viewport().installEventFilter(self)
         layout.addWidget(scroll_area, 1)
 
-        # 侧边栏底部：紧凑模式切换按钮
+        # 侧边栏底部：游戏连上没有 + 切到紧凑档
         sidebar_footer = QWidget()
         sidebar_footer.setObjectName("sidebarFooter")
         sidebar_footer_layout = QHBoxLayout(sidebar_footer)
-        sidebar_footer_layout.setContentsMargins(12, 10, 12, 12)
-        self._sidebar_mode_btn = QPushButton("紧凑模式  «")
+        sidebar_footer_layout.setContentsMargins(12, 6, 8, 8)
+        sidebar_footer_layout.setSpacing(6)
+        self._sidebar_link_dot = QLabel()
+        self._sidebar_link_dot.setObjectName("sidebarLinkDot")
+        self._sidebar_link_dot.setFixedSize(8, 8)
+        sidebar_footer_layout.addWidget(self._sidebar_link_dot)
+        self._sidebar_link_label = QLabel("CS2 等游戏")
+        self._sidebar_link_label.setObjectName("sidebarLinkLabel")
+        self._sidebar_link_label.setProperty("fp_index_skip", True)
+        sidebar_footer_layout.addWidget(self._sidebar_link_label)
+        sidebar_footer_layout.addStretch()
+        self._sidebar_mode_btn = QPushButton("紧凑界面")
         self._sidebar_mode_btn.setObjectName("modeToggleButton")
-        self._sidebar_mode_btn.setFixedHeight(36)
+        self._sidebar_mode_btn.setToolTip("切换到紧凑模式")
+        self._sidebar_mode_btn.setFixedSize(64, 24)
         self._sidebar_mode_btn.setCursor(Qt.PointingHandCursor)
         self._sidebar_mode_btn.clicked.connect(self._toggle_compact_mode)
         sidebar_footer_layout.addWidget(self._sidebar_mode_btn)
@@ -1343,23 +1157,30 @@ class MainWindow(QMainWindow):
         """保守统一页面根层与卡片节奏，不触碰业务布局结构。"""
         root_margin_map = {
             # 底部音乐栏常驻时，去掉页面底部冗余留白，避免出现一条突兀的暗色缝隙。
-            (20, 20, 20, 20): (24, 20, 24, 0),
-            (24, 20, 24, 20): (24, 20, 24, 0),
-            (24, 20, 24, 24): (24, 20, 24, 0),
+            (16, 16, 16, 16): (20, 16, 20, 0),
+            (16, 16, 16, 0): (20, 16, 20, 0),
+            (20, 20, 20, 20): (20, 16, 20, 0),
+            (24, 20, 24, 20): (20, 16, 20, 0),
+            (24, 20, 24, 24): (20, 16, 20, 0),
         }
         root_spacing_map = {
-            15: 16,
+            10: 12,
+            15: 12,
+            16: 12,
+            20: 16,
         }
         card_margin_map = {
-            (20, 20, 20, 20): (18, 18, 18, 18),
-            (16, 14, 16, 14): (18, 18, 18, 18),
-            (15, 15, 15, 15): (18, 18, 18, 18),
-            (25, 25, 25, 25): (18, 18, 18, 18),
+            (14, 12, 14, 12): (16, 12, 16, 12),
+            (20, 20, 20, 20): (16, 12, 16, 12),
+            (16, 14, 16, 14): (16, 12, 16, 12),
+            (15, 15, 15, 15): (16, 12, 16, 12),
+            (25, 25, 25, 25): (16, 12, 16, 12),
         }
         card_spacing_map = {
-            10: 12,
-            15: 14,
-            20: 16,
+            10: 8,
+            12: 8,
+            15: 12,
+            20: 12,
         }
 
         self._normalize_layout_metrics(page.layout(), root_margin_map, root_spacing_map)
@@ -1372,6 +1193,21 @@ class MainWindow(QMainWindow):
         for card in page.findChildren(QFrame):
             if card.objectName() == "card":
                 self._normalize_layout_metrics(card.layout(), card_margin_map, card_spacing_map)
+
+        # 内容全在滚动区里的页，根布局没有左右边距，底栏的按钮和分隔线会贴着窗口边
+        from widgets.page_action_bar import PageActionBar
+
+        root = page.layout()
+        for bar in page.findChildren(PageActionBar):
+            index = root.indexOf(bar) if root is not None else -1
+            if index >= 0 and root.contentsMargins().left() == 0:
+                holder = QWidget(page)
+                holder_layout = QVBoxLayout(holder)
+                holder_layout.setContentsMargins(20, 0, 20, 0)
+                holder_layout.setSpacing(0)
+                root.removeWidget(bar)
+                holder_layout.addWidget(bar)
+                root.insertWidget(index, holder)
     
     def _create_pages(self):
         """创建页面（懒加载模式：只初始化 basic 页面）"""
@@ -1383,8 +1219,7 @@ class MainWindow(QMainWindow):
         self._harmonize_page_chrome(self.pages["basic"])
         self.content_stack.addWidget(self.pages["basic"])
         self._loaded_pages.add("basic")
-        # RN-442：basic 是唯一不走 `_load_page` 的页（内联同步构建），
-        # 那个钩子照不到它 —— 实测 125 颗清到只剩这一页的「重置ID」。
+        # RN-442：basic 内联构建，不经过 _load_page，须在此补同一钩子。
         try:
             from PySide6.QtCore import QTimer as _QTimer
             from ui_style_applier import apply_compact_density, mark_compact_buttons
@@ -1393,9 +1228,7 @@ class MainWindow(QMainWindow):
             apply_compact_density(self.pages["basic"], self._compact_mode)
         except Exception:
             self.logger.debug("[RN-442] 紧凑按钮标记失败(basic)", exc_info=True)
-        # 用与 _load_page 相同的日志格式:basic 是启动关键路径上唯一同步构建的页
-        # (落在 [启动相位] 主窗构建 那 1.9~5.0s 里),原先没这行,ui_perf_probe 的
-        # 建页耗时排行会整条漏掉它——而它恰恰是最该优化的那一页。
+        # basic 是同步构建的首页，也需记录同格式耗时，避免性能排行漏掉首屏。
         self.logger.info(
             f"[懒加载] 页面 basic 加载完成 ({(_ct.perf_counter() - _t0) * 1000:.0f}ms)"
         )
@@ -1506,22 +1339,22 @@ class MainWindow(QMainWindow):
             # 设置自动填充背景（确保背景色正确显示）
             page.setAutoFillBackground(True)
             self._harmonize_page_chrome(page)
+            # 内容页标题与侧栏选中项使用同名，保持当前位置一致。
+            from widgets.page_header import PageHeader
+            page_header = page.findChild(PageHeader)
+            if page_header is not None and page_id in self._page_names:
+                page_header.set_title(self._page_names[page_id])
             
             # 添加页面到堆栈
             self.content_stack.addWidget(page)
             self.pages[page_id] = page
             self._loaded_pages.add(page_id)
-            # ⭐ RN-442（批 62）：页面建完了，调用点的 setFixedWidth 都已经跑过，
-            #   这时才看得出「谁把宽度限死到比规范还窄」。一个动作一个入口。
-            # ⚠ 推迟一拍：页面刚 addWidget，样式表的 min-width/min-height
-            #   还没 polish 上去，这时打标记会被随后的 polish 覆盖回去。
+            # RN-442：样式表的最小尺寸须等 polish 后才生效，紧凑标记推迟一拍以免被覆盖。
             try:
                 from PySide6.QtCore import QTimer as _QTimer
                 from ui_style_applier import apply_compact_density, mark_compact_buttons
                 _QTimer.singleShot(0, lambda p=page: mark_compact_buttons(p))
-                # ⭐ RN-548（批 65）：密度这一档**不用推迟** —— 样式表管不着
-                #   layout 的 spacing/margins，没有「随后一次 polish 会盖回去」
-                #   这件事（那正是 RN-547 里按钮标记非推迟不可的原因）。
+                # RN-548：布局 spacing/margins 不受 QSS polish 覆盖，密度调整无需推迟。
                 apply_compact_density(page, self._compact_mode)
             except Exception:
                 self.logger.debug("[RN-442] 紧凑按钮标记失败", exc_info=True)
@@ -1577,15 +1410,7 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(50, self._preload_next)
 
     def _create_music_control_bar_if_played(self):
-        """RN-195：**放过音乐才建**这条常驻栏 —— 不是建了再 hide，是不建。
-
-        ⚠ 「建了再 hide」在本仓有前科（RN-009 那个建出来就 hide 的死控件）：
-        藏起来的控件照样占内存、照样被主题刷新遍历、照样有人往里写文案，
-        而且照样骗过"它不在屏幕上"这类判据。
-
-        走到这里时 pygame 已经被工作线程 import 热过（stage2 完成 / 8 秒兜底），
-        所以此刻 `import music_player` 是查表，不是那 320ms。
-        """
+        """RN-195：播放后才构造控制栏，避免隐藏控件仍占资源；pygame 此时已后台预热。"""
         try:
             import music_player as _mp
         except Exception:
@@ -1605,14 +1430,7 @@ class MainWindow(QMainWindow):
         self._create_music_control_bar()
 
     def _arm_music_playback_watch(self, music_player_module):
-        """让「第一次按下播放」能把控制条叫出来（幂等）。
-
-        这一半路**不能省**：`pages/music_page.py` 自己一个播放控件都没有
-        （第 31 行原话「播放控制栏已移至全局」），用户唯一的播放入口是双击曲目，
-        而暂停 / 下一首 / 音量全在这条栏上。
-        ⇒ 首播时它要是不出现，用户连暂停都点不到 ——
-        **一个把用户扔进没有出口的状态的"收窄"，不是收窄，是新缺陷。**
-        """
+        """首播时必须建控制栏；音乐页只提供双击播放，暂停、下一首和音量均依赖此栏。"""
         if getattr(self, "_music_playback_watch_armed", False):
             return
         self._music_playback_started_signal.connect(
@@ -1719,15 +1537,7 @@ class MainWindow(QMainWindow):
             self.logger.warning(f"递归刷新组件失败: {e}")
     
     def ensure_page_loaded(self, page_id):
-        """确保页面已加载（提供给BackgroundLoader调用）。
-
-        返回 True=已就绪/本次已建；False=当前不宜构建，调用方稍后重试。
-
-        UP-015: `_show_page_skeleton` 里的 processEvents 只挡用户输入，挡不住
-        定时器回调——预载定时器会在"用户切页正在建骨架"的当口插进来同步建一整页，
-        把用户那次切页硬生生再拖 200~600ms。这里统一把关：正在为用户建页时，
-        所有后台预载一律让路。
-        """
+        """用户切页建骨架期间返回 False 让预载稍后重试，避免 processEvents 引入重入建页。"""
         if getattr(self, "_is_closing", False):
             return False
         if page_id in self._loaded_pages:
@@ -1744,11 +1554,7 @@ class MainWindow(QMainWindow):
     # ---------------- 2.2.0: 空闲预构建高频页(切页零等待) ----------------
 
     def start_idle_preload(self):
-        """后台资源就绪后调用:按使用频次预构建高频页,主线程切片不卡交互。
-
-        90% 的切页发生在少数几页上(page_usage 实证)——空闲时每 250ms
-        建一页,用户真正点过去时页面已就绪,骨架屏只兜冷门页的底。
-        """
+        """后台资源就绪后按使用频次切片预建页面，缩短高频页的首次切换等待。"""
         if getattr(self, "_idle_preload_started", False):
             return
         self._idle_preload_started = True
@@ -1794,9 +1600,7 @@ class MainWindow(QMainWindow):
             self.logger.info("[空闲预构建] 全部完成")
             return
 
-        # UP-005: 这条链是 2.2.0 就有的,不在 R2 新写的调度器里,原先没有任何
-        # 空闲门控——用户正在操作时它照样每 250ms 同步建一页。既然本轮的目标就是
-        # "别在用户操作时干这个",这里也一起接上让路逻辑。
+        # UP-005：空闲预载也需让开用户交互，不能在操作期间同步建页。
         try:
             from core.utils.idle_watcher import get_idle_watcher
             watcher = get_idle_watcher()
@@ -1812,9 +1616,7 @@ class MainWindow(QMainWindow):
 
             t0 = _t.perf_counter()
             try:
-                # UP-015: 用户正在切页时 ensure_page_loaded 返回 False。
-                # 原先忽略返回值 + 已 pop 出队 → 这一页被永久丢弃,
-                # 而日志还谎报"就绪"。让路重试,页留在队首。
+                # UP-015：False 表示正在为用户建页；保留队首稍后重试，不能当成已就绪丢弃。
                 if self.ensure_page_loaded(pid) is False:
                     QTimer.singleShot(300, self._preload_next_page)
                     return
@@ -1891,53 +1693,314 @@ class MainWindow(QMainWindow):
             pass
     
     def _create_basic_page(self):
-        """创建基础设置页面"""
-        ds = get_design_system()
+        """总览优先展示游戏就绪状态、功能开关与主音量。"""
         page = QWidget()
         page.setObjectName("contentPage")  # 设置objectName以应用主题背景色
         page.setAutoFillBackground(True)  # 设置自动填充背景
         layout = QVBoxLayout(page)
-        # UP-045: 与其余 19 页对齐到内容左边界 216px。原为 (24,20,24,0),
-        # 叠上 scroll_layout 未设边距时 Qt 默认的 9px,实测左边界 233px——
-        # 全站唯一偏得最多的一页,切到基础设置时内容会横向跳 17px。
+        # UP-045: 与其余页对齐到内容左边界。
         layout.setContentsMargins(16, 16, 16, 0)
 
-        # 滚动区域
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
 
         scroll_content = QWidget()
         scroll_layout = QVBoxLayout(scroll_content)
-        scroll_layout.setContentsMargins(0, 0, 0, 0)
-        scroll_layout.setSpacing(ds.spacing.lg)
-        
-        # 页面标题行（标题说明 + 主题选择）
+        scroll_layout.setContentsMargins(0, 0, 0, 16)
+        scroll_layout.setSpacing(12)
+
         header_row = QHBoxLayout()
-        header_row.setSpacing(ds.spacing.lg)
-
-        title_column = QVBoxLayout()
-        title_column.setSpacing(6)
-
-        title = QLabel("基础设置")
+        title = QLabel("总览")
         title.setObjectName("titleLabel")
-        title.setFont(QFont("Microsoft YaHei", 20, QFont.Bold))
-        title_column.addWidget(title)
+        title.setProperty("fp_search_text", "总览 基础设置")
+        header_row.addWidget(title)
+        header_row.addStretch()
+        scroll_layout.addLayout(header_row)
 
-        lead_label = QLabel("把常用开关、状态确认和基础维护收在同一页，日常使用尽量像工具面板一样直接。")
-        lead_label.setObjectName("pageLeadLabel")
-        lead_label.setWordWrap(True)
-        title_column.addWidget(lead_label)
-        header_row.addLayout(title_column, 1)
+        from ui_help_panel import install_help_panel, PAGE_HELP_TEXTS
+        install_help_panel(header_row, scroll_layout, PAGE_HELP_TEXTS["basic"])
 
-        header_controls = QHBoxLayout()
-        header_controls.setSpacing(8)
-        theme_label = QLabel("主题")
-        theme_label.setObjectName("hintLabel")
-        header_controls.addWidget(theme_label, 0, Qt.AlignVCenter)
+        self._build_home_readiness(scroll_layout)
+        self._build_home_features(scroll_layout)
+        self._build_home_volume(scroll_layout)
+        self._build_home_category_volumes(scroll_layout)
+        self._build_home_other_settings(scroll_layout)
+        scroll_layout.addStretch()
+
+        scroll.setWidget(scroll_content)
+        layout.addWidget(scroll)
+
+        self._apply_expert_mode_visibility()
+        self._sync_home_tool_rows()
+        self._refresh_system_status_strip()
+
+        return page
+
+    def _build_home_readiness(self, parent_layout):
+        from widgets.home_overview import ReadinessStrip
+
+        self.basic_onboarding_btn = self._create_home_tool_button(
+            # 不叫「重新上手引导」：对第一次用的人来说「重新」是个反向暗示。
+            "打开上手引导",
+            self._reopen_onboarding_guide,
+            primary=True,
+            tooltip="走一遍三步上手：选 CS2 安装目录 → 写入 GSI 配置 → 试听验证",
+        )
+        strip = ReadinessStrip(self.basic_onboarding_btn)
+        self.basic_status_card = strip
+        self.system_status_label = strip.detail_label
+        self.system_status_label.linkActivated.connect(self.show_page)
+        parent_layout.addWidget(strip)
+
+    def _build_home_features(self, parent_layout):
+        """三组功能卡。开关还是这 17 颗，拨它走的还是 `_on_switch_changed`。"""
+        from ui_toggle_switch import ToggleSwitch
+        from widgets.home_overview import FeatureCard, FeatureGrid
+        from widgets.icon_provider import PAGE_ICON_MAP
+
+        switch_configs = [
+            ("kill_sound", "击杀音效", "kill_sound_enabled"),
+            ("kill_voice", "击杀语音", "kill_voice_enabled"),
+            ("kill_icon", "击杀图标", "kill_icon_enabled"),
+            ("gun_sound", "枪声替换", "gun_sound_enabled"),
+            ("death_sound", "被击杀音效", "death_sound_enabled"),
+            ("switch_weapon", "切枪音效", "switch_weapon_sound_enabled"),
+            ("reload_sound", "换弹音效", "reload_sound_enabled"),
+            ("crosshair", "准心", "crosshair_enabled"),
+            ("magnifier", "开镜放大", "magnifier_enabled"),
+            ("flash", "自定闪光", "flash_enabled"),
+            ("dynamic_hud", "HUD颜色", "hud_rules_enabled"),
+            ("screen_effects", "屏幕特效", "screen_effects_enabled"),
+            ("music", "音乐播放", "music_enabled"),
+            ("utility", "道具瞄点", "utility_guide_enabled"),
+            ("voice_output", "语音输出", "voice_output_enabled"),
+            ("fun_afterlife", "死亡刷短视频", "fun_afterlife_enabled"),
+            ("spectator", "观战静音", "spectator_mode_mute"),
+        ]
+        by_id = {switch_id: (text, key) for switch_id, text, key in switch_configs}
+        groups = (
+            ("声音", ("kill_sound", "kill_voice", "gun_sound", "death_sound", "switch_weapon", "reload_sound")),
+            ("画面", ("crosshair", "kill_icon", "magnifier", "flash", "dynamic_hud", "screen_effects")),
+            ("媒体与工具", ("music", "voice_output", "fun_afterlife", "utility", "spectator")),
+        )
+
+        self.switches = {}
+        self.feature_cards = {}
+        self._feature_group_labels = []
+        self._switch_id_by_config_key: dict[str, str] = {}
+        for title, switch_ids in groups:
+            head = QHBoxLayout()
+            head.setSpacing(8)
+            title_label = QLabel(title)
+            title_label.setObjectName("panelSectionTitle")
+            head.addWidget(title_label)
+            count_label = keep_single_line(QLabel(""))
+            count_label.setObjectName("hintLabel")
+            count_label.setProperty("fp_index_skip", True)  # 当前值：索引随包发布（RN-568）
+            head.addWidget(count_label)
+            head.addStretch()
+            parent_layout.addLayout(head)
+            self._feature_group_labels.append((count_label, switch_ids))
+
+            grid = FeatureGrid()
+            for switch_id in switch_ids:
+                text, config_key = by_id[switch_id]
+                toggle = ToggleSwitch(checked=getattr(self.config, config_key, False))
+                toggle.setAccessibleName(text)
+                toggle.toggled.connect(
+                    lambda checked, key=config_key: self._on_switch_changed(key, checked)
+                )
+                target_page = MainWindow._get_home_switch_target_page(switch_id)
+                card = FeatureCard(
+                    text, toggle,
+                    icon_name=PAGE_ICON_MAP.get(target_page, "mdi.volume-off"),
+                    has_page=bool(target_page),
+                )
+                if target_page:
+                    card.setToolTip(f"点击进入：{self._page_names.get(target_page, text)}")
+                    card.clicked.connect(lambda _checked=False, pid=target_page: self.show_page(pid))
+                grid.add_card(card)
+                self.feature_cards[switch_id] = card
+                # ⚠ RN-089：`self.switches` 的真读者是 `sync_feature_switch`：配置从别处被改时
+                # 靠它把开关拨回来。同时记下 config_key → switch_id 的反查。
+                self.switches[switch_id] = toggle
+                self._switch_id_by_config_key[config_key] = switch_id
+            parent_layout.addWidget(grid)
+        self._sync_feature_cards()
+
+    def _sync_feature_cards(self):
+        """卡片、分组计数、状态条那句「已开」、侧栏小点都从开关现算。开关一动、状态一刷就走一遍。"""
+        from core.feature_summary import feature_summary
+
+        if not hasattr(self, "feature_cards"):
+            return
+        stale = getattr(self, "_home_stale_counts", None) or {}
+        for switch_id, card in self.feature_cards.items():
+            toggle = self.switches[switch_id]
+            on = toggle.isChecked()
+            self._update_switch_label_color(card.name_label, on)
+            summary, tone = feature_summary(switch_id, self.config, stale.get(switch_id, 0)) if on else ("已关闭", "")
+            card.set_state(on, summary, tone)
+        for count_label, switch_ids in self._feature_group_labels:
+            opened = sum(self.switches[switch_id].isChecked() for switch_id in switch_ids)
+            count_label.setText(f"已开 {opened} / {len(switch_ids)}")
+        self._sync_home_status_line()
+        self.sync_nav_dots()
+
+    def sync_nav_dots(self):
+        """侧栏每项后面的小点：开着是绿的，开着但配的风格没了是黄的，关着没有点。"""
+        from widgets.nav_button import DOT_NONE, DOT_ON, DOT_WARN
+
+        if not hasattr(self, "switches") or not hasattr(self, "nav_buttons"):
+            return
+        stale = getattr(self, "_home_stale_counts", None) or {}
+
+        def dot(on, stale_count):
+            if not on:
+                return DOT_NONE
+            return DOT_WARN if stale_count else DOT_ON
+
+        states = {"special_sound": dot(self._special_sound_is_on(), stale.get("special_sound", 0))}
+        for switch_id, toggle in self.switches.items():
+            target_page = self._get_home_switch_target_page(switch_id)
+            if target_page:
+                states[target_page] = dot(toggle.isChecked(), stale.get(switch_id, 0))
+        for group in (self.nav_buttons, getattr(self, "_frequent_buttons", {})):
+            for page_id, button in (group or {}).items():
+                button.set_status_dot(states.get(page_id, DOT_NONE))
+
+    def _refresh_home_icons(self):
+        """换主题：图标都是位图，要按新颜色重画一遍。"""
+        for card in (getattr(self, "feature_cards", None) or {}).values():
+            card.refresh_icon()
+        strip = getattr(self, "basic_status_card", None)
+        if strip is not None:
+            strip.refresh_icons()
+
+    def _build_home_volume(self, parent_layout):
+        row = QHBoxLayout()
+        row.setSpacing(12)
+        volume_label = QLabel("主音量")
+        volume_label.setObjectName("switchLabelOn")
+        row.addWidget(volume_label)
+        self.volume_slider = QSlider(Qt.Horizontal)
+        self.volume_slider.setMinimum(0)
+        self.volume_slider.setMaximum(100)
+        self.volume_slider.setValue(int(self.config.volume * 100))
+        self.volume_slider.setMaximumWidth(420)
+        self.volume_slider.valueChanged.connect(self._on_volume_changed)
+        row.addWidget(self.volume_slider, 1)
+
+        self.volume_value_label = QLabel(f"{int(self.config.volume * 100)}%")
+        self.volume_value_label.setMinimumWidth(45)
+        self.volume_value_label.setAlignment(Qt.AlignCenter)
+        row.addWidget(self.volume_value_label)
+
+        # 只有两头才说话（`_refresh_volume_hint`）
+        self.volume_hint_label = keep_single_line(QLabel())
+        self.volume_hint_label.setObjectName("hintLabel")
+        self._refresh_volume_hint()
+        row.addWidget(self.volume_hint_label)
+        row.addStretch()
+        parent_layout.addSpacing(4)
+        parent_layout.addLayout(row)
+
+    def _build_home_category_volumes(self, parent_layout):
+        """每类音效独立音量（相对主音量的倍率）+ 响度归一。"""
+        from PySide6.QtWidgets import QGridLayout
+
+        parent_layout.addSpacing(12)
+        title = QLabel("分类音量")
+        title.setObjectName("panelSectionTitle")
+        title.setToolTip("为每类音效单独设音量（相对主音量的倍率）。例如把切枪声调小、击杀声保持最大，互不影响。")
+        parent_layout.addWidget(title)
+
+        self.category_volume_sliders = {}
+        self.category_volume_labels = {}
+        category_defs = [
+            ("kill_sound", "击杀音效"),
+            ("kill_voice", "击杀语音"),
+            ("gun_sound", "枪声替换"),
+            ("switch_weapon", "切枪音效"),
+            ("reload_sound", "换弹音效"),
+            ("death_sound", "被击杀音效"),
+            ("special_sound", "特殊音效"),
+        ]
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(4)
+        cat_vols = getattr(self.config, "category_volumes", {}) or {}
+        for index, (cat_key, cat_text) in enumerate(category_defs):
+            row, block = index // 2, (index % 2) * 4
+            cat_name = QLabel(cat_text)
+            cat_name.setFixedWidth(72)
+            grid.addWidget(cat_name, row, block)
+
+            cat_slider = QSlider(Qt.Horizontal)
+            cat_slider.setMinimum(0)
+            cat_slider.setMaximum(100)
+            try:
+                cat_init = int(round(float(cat_vols.get(cat_key, 1.0)) * 100))
+            except (TypeError, ValueError):
+                cat_init = 100
+            cat_slider.setValue(max(0, min(100, cat_init)))
+            cat_slider.valueChanged.connect(
+                lambda value, k=cat_key: self._on_category_volume_changed(k, value)
+            )
+            grid.addWidget(cat_slider, row, block + 1)
+
+            cat_value = QLabel(f"{cat_slider.value()}%")
+            cat_value.setMinimumWidth(45)
+            cat_value.setAlignment(Qt.AlignCenter)
+            grid.addWidget(cat_value, row, block + 2)
+
+            self.category_volume_sliders[cat_key] = cat_slider
+            self.category_volume_labels[cat_key] = cat_value
+        grid.setColumnStretch(1, 1)
+        grid.setColumnStretch(5, 1)
+        grid.setColumnMinimumWidth(3, 16)
+
+        # 响度归一开关（默认关闭；对之后加载的音效生效）
+        self.loudness_norm_check = QCheckBox("响度归一")
+        self.loudness_norm_check.setToolTip("拉平不同素材的音量差（开启后对之后加载的音效生效）")
+        self.loudness_norm_check.setChecked(bool(getattr(self.config, "audio_loudness_normalize_enabled", False)))
+        self.loudness_norm_check.stateChanged.connect(self._on_loudness_normalize_toggled)
+        grid.addWidget(self.loudness_norm_check, len(category_defs) // 2, 4, 1, 3)
+        parent_layout.addLayout(grid)
+
+    def _build_home_other_settings(self, parent_layout):
+        """其余全局设置：游戏模式、界面、主题、玩家 ID、维护工具。"""
+        parent_layout.addSpacing(12)
+        title = QLabel("其它")
+        title.setObjectName("panelSectionTitle")
+        parent_layout.addWidget(title)
+
+        combos = QHBoxLayout()
+        combos.setSpacing(8)
+
+        def add_combo(text, combo):
+            label = keep_single_line(QLabel(text))
+            combos.addWidget(label)
+            combo.setFixedWidth(130)
+            combos.addWidget(combo)
+            combos.addSpacing(16)
+
+        self.mode_combo = QComboBox()
+        self.mode_combo.addItems(["1. 官匹竞技", "2. aim rush", "3. 死斗模式"])
+        self.mode_combo.setCurrentText(self.config.mode)
+        self.mode_combo.currentTextChanged.connect(self._on_mode_changed)
+        add_combo("游戏模式", self.mode_combo)
+
+        self.ui_mode_combo = QComboBox()
+        self.ui_mode_combo.addItem("普通模式", False)
+        self.ui_mode_combo.addItem("专家模式", True)
+        current_expert = bool(getattr(self.config, "ui_expert_mode", False))
+        self.ui_mode_combo.setCurrentIndex(1 if current_expert else 0)
+        self.ui_mode_combo.currentIndexChanged.connect(self._on_ui_mode_changed)
+        add_combo("界面", self.ui_mode_combo)
 
         self.theme_combo = QComboBox()
-        self.theme_combo.setFixedWidth(130)
         theme_items = [
             ("深色", "dark"), ("浅色", "light"),
             ("墨绿", "green"), ("紫夜", "purple"),
@@ -1953,93 +2016,32 @@ class MainWindow(QMainWindow):
         if idx >= 0:
             self.theme_combo.setCurrentIndex(idx)
         self.theme_combo.currentIndexChanged.connect(self._on_theme_combo_changed)
-        header_controls.addWidget(self.theme_combo)
-        header_row.addLayout(header_controls)
+        add_combo("主题", self.theme_combo)
+        combos.addStretch()
+        parent_layout.addLayout(combos)
 
-        scroll_layout.addLayout(header_row)
+        player_row = QHBoxLayout()
+        player_row.setSpacing(8)
+        self.player_label = QLabel()
+        self.player_label.setWordWrap(False)
+        self.player_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        self.player_label.setMaximumWidth(280)
+        player_row.addWidget(self.player_label, 1)
 
-        # 帮助面板
-        from ui_help_panel import install_help_panel, PAGE_HELP_TEXTS
-        install_help_panel(header_row, scroll_layout, PAGE_HELP_TEXTS["basic"])
+        reset_btn = QPushButton("重置ID")
+        reset_btn.setObjectName("secondaryButton")
+        reset_btn.setMaximumWidth(100)
+        reset_btn.clicked.connect(self._reset_player_id)
+        player_row.addWidget(reset_btn, 0, Qt.AlignVCenter)
 
-        # RN-110（轻档）：新用户打开只看到左边十几项细分设置，不知道从哪儿开始。
-        # 一行引导条 + 一个按钮，把已有的三步引导重新打开 —— 见 _show_onboarding_dialog。
-        guide_row = QHBoxLayout()
-        guide_row.setSpacing(10)
-        # ⚠ 第一版文案写的是「三步上手：① 选好 CS2 安装目录 → ②…」，
-        # 外审两发独立指出同一件事：**这一页上根本没有选 CS2 目录的入口**，
-        # 用户读完第 ① 步会在这一页找一圈（「自定义目录」开的是音频素材目录，不是它）。
-        # ⇒ 文案必须自己说清「第 ① 步在哪做」，而不是靠按钮的 tooltip。
-        self.basic_onboarding_hint = QLabel(
-            "第一次用？点右边的按钮走一遍三步上手：选 CS2 安装目录 → 写入 GSI 配置 → 试听验证。"
-            "各功能的总开关就在下面。")
-        self.basic_onboarding_hint.setObjectName("hintLabel")
-        self.basic_onboarding_hint.setWordWrap(True)
-        guide_row.addWidget(self.basic_onboarding_hint, 1)
-        self.basic_onboarding_btn = self._create_home_tool_button(
-            # 不叫「重新上手引导」：对第一次用的人来说「重新」是个反向暗示。
-            "打开上手引导",
-            self._reopen_onboarding_guide,
-            # RN-139：这一页**唯一**的紫色主按钮就是它。
-            # 原来那颗紫的是「载入音频」——外审 advanced 6/6、basic 5/6 票一致说
-            # "新手会卡在这里 / 第一步就走错"：首次使用必需的「CS2 目录」被埋在
-            # 侧栏倒数第二项「高级设置」里，而首屏最抢眼的按钮指向的是一个
-            # **装完就已经做过了**的动作（音频在启动时就载入了）。
-            # ⭐ 主按钮该指向"还没做的下一步"，不是"随时可以再做一次的动作"。
-            # 用户裁定（2026-08-21）：只换首屏主按钮，不动导航顺序。
-            primary=True,
-            tooltip="重新打开首次启动时的三步引导：选 CS2 目录 / 写入 GSI 配置 / 去试听",
-        )
-        # ⚠ 必须带 AlignRight：`secondaryButton` 的水平策略是 Minimum（**可以长大**），
-        # 只写 addWidget 的话它会把行里剩下的空间全吃掉 —— 实测被撑到 312px，
-        # 而 sizeHint 只有 118px，和同页「刷新状态」那排（118px）差了快 3 倍。
-        # 排版审计量的是「有没有溢出/截断」，2.6 倍宽既不溢出也不截断，**一路绿灯**。
-        guide_row.addWidget(self.basic_onboarding_btn, 0, Qt.AlignRight | Qt.AlignVCenter)
-        scroll_layout.addLayout(guide_row)
-
-        status_card = self._create_card("运行面板")
-        self.basic_status_card = status_card
-        status_layout = status_card.layout()
-        status_layout.setSpacing(10)
-
-        status_top = QHBoxLayout()
-        status_top.setSpacing(10)
-        status_title = QLabel("当前状态")
-        status_title.setObjectName("statusLabel")
-        status_top.addWidget(status_title)
-        status_top.addStretch()
-        status_layout.addLayout(status_top)
-
-        self.basic_status_badge_label = create_badge_label()
-        status_layout.addWidget(self.basic_status_badge_label)
-
-        self.basic_theme_badge = QLabel()
-        self.basic_theme_badge.setObjectName("badgeLabel")
-        self.basic_theme_badge.hide()
-
-        self.basic_mode_badge = QLabel()
-        self.basic_mode_badge.setObjectName("badgeLabel")
-        self.basic_mode_badge.hide()
-
-        self.basic_gsi_badge = QLabel()
-        self.basic_gsi_badge.setObjectName("badgeLabel")
-        self._set_badge_label_state(self.basic_gsi_badge, "GSI · 待刷新", "info")
-        self.basic_gsi_badge.hide()
-
-        self.basic_audio_badge = QLabel()
-        self.basic_audio_badge.setObjectName("badgeLabel")
-        self._set_badge_label_state(self.basic_audio_badge, "音频 · 待刷新", "info")
-        self.basic_audio_badge.hide()
-
-        self.basic_config_badge = QLabel()
-        self.basic_config_badge.setObjectName("badgeLabel")
-        self._set_badge_label_state(self.basic_config_badge, "配置 · 待刷新", "info")
-        self.basic_config_badge.hide()
-
-        self.system_status_label = QLabel("状态会在这里同步更新。")
-        self.system_status_label.setObjectName("hintLabel")
-        self.system_status_label.setWordWrap(True)
-        status_layout.addWidget(self.system_status_label)
+        # 玩家 ID 自动获取，无需手填。
+        player_hint = keep_single_line(QLabel("进过一次游戏后自动记上，不用手填。"))
+        player_hint.setObjectName("hintLabel")
+        player_hint.setToolTip("靠 GSI 联动读到。ID 只用于本地配置识别；重置会清除当前关联的设置。")
+        player_row.addWidget(player_hint)
+        player_row.addStretch()
+        parent_layout.addLayout(player_row)
+        self._refresh_home_player_label()
 
         self.home_primary_tools_row = QWidget()
         primary_tools_layout = QHBoxLayout(self.home_primary_tools_row)
@@ -2049,15 +2051,13 @@ class MainWindow(QMainWindow):
         self.system_status_refresh_btn = self._create_home_tool_button(
             "刷新状态",
             self._refresh_system_status_strip,
-            tooltip="立即刷新首页系统状态",
+            tooltip="立即刷新总览的状态",
         )
         primary_tools_layout.addWidget(self.system_status_refresh_btn)
 
         self.home_reload_audio_btn = self._create_home_tool_button(
             "载入音频",
             self._reload_audio,
-            # RN-139：从主按钮降为普通按钮。**功能一点没动** ——
-            # 换的只是"这一页最想让你点哪一颗"。
             tooltip="重新载入音频资源与配置",
         )
         primary_tools_layout.addWidget(self.home_reload_audio_btn)
@@ -2076,7 +2076,7 @@ class MainWindow(QMainWindow):
         )
         primary_tools_layout.addWidget(self.system_status_logs_btn)
         primary_tools_layout.addStretch()
-        status_layout.addWidget(self.home_primary_tools_row)
+        parent_layout.addWidget(self.home_primary_tools_row)
 
         self.home_expert_tools_row = QWidget()
         expert_tools_layout = QHBoxLayout(self.home_expert_tools_row)
@@ -2104,299 +2104,7 @@ class MainWindow(QMainWindow):
         )
         expert_tools_layout.addWidget(self.audio_task_panel_quick_btn)
         expert_tools_layout.addStretch()
-        status_layout.addWidget(self.home_expert_tools_row)
-        scroll_layout.addWidget(status_card)
-
-        # 功能开关卡片（桌面端使用更紧凑的3列布局）
-        switches_card = self._create_card("功能开关")
-        switches_layout = switches_card.layout()
-
-        # ⭐⭐⭐ RN-235（批 60 认错重开）：这 17 个功能名**本来就是可点的**
-        #   （`_create_home_switch_label` 给有对应页的做成 `ClickableLabel`，
-        #   点了直接切过去）—— 而屏幕上**没有任何东西说它可点**，
-        #   那件事只写在 tooltip 里。
-        #   ⚠ 我批 60 一度把这条判成「实测后不成立」，依据是各功能页上那句
-        #     「这一颗和首页那颗是同一个」—— ⭐⭐ **而那句话在别的页上，
-        #     不在这一页上**。外审同一轮 3 发独立报「密集平铺 17 个开关却无法
-        #     点击深入配置，与左侧菜单割裂」，把我这个错判顶了回来。
-        #   ⭐ 同 RN-541：**只靠悬停才说话的能力，在屏幕上等于不存在。**
-        switches_hint = QLabel("这里是每个功能的总开关。点功能名可以进到那一页，调素材和细节。")
-        switches_hint.setObjectName("hintLabel")
-        switches_hint.setWordWrap(True)
-        switches_layout.addWidget(switches_hint)
-
-        # 创建网格布局来实现自适应多列
-        from PySide6.QtWidgets import QGridLayout
-        from ui_toggle_switch import ToggleSwitch
-        grid_layout = QGridLayout()
-        grid_layout.setHorizontalSpacing(14)
-        grid_layout.setVerticalSpacing(6)
-        grid_layout.setColumnStretch(0, 1)
-        grid_layout.setColumnStretch(1, 1)
-        grid_layout.setColumnStretch(2, 1)
-
-        # 功能开关
-        self.switches = {}
-        self._switch_id_by_config_key: dict[str, str] = {}
-        switch_configs = [
-            ("kill_sound", "击杀音效", "kill_sound_enabled"),
-            ("kill_voice", "击杀语音", "kill_voice_enabled"),
-            ("kill_icon", "击杀图标", "kill_icon_enabled"),
-            ("gun_sound", "枪声替换", "gun_sound_enabled"),
-            ("death_sound", "被击杀修改", "death_sound_enabled"),
-            ("switch_weapon", "切枪音效", "switch_weapon_sound_enabled"),
-            ("reload_sound", "换弹音效", "reload_sound_enabled"),
-            ("crosshair", "准心", "crosshair_enabled"),
-            ("magnifier", "开镜放大", "magnifier_enabled"),
-            ("flash", "自定闪光", "flash_enabled"),
-            ("dynamic_hud", "动态HUD", "hud_rules_enabled"),
-            ("screen_effects", "屏幕特效", "screen_effects_enabled"),
-            ("music", "音乐联动", "music_enabled"),
-            ("utility", "道具瞄点", "utility_guide_enabled"),
-            ("voice_output", "语音播放", "voice_output_enabled"),
-            ("fun_afterlife", "死亡刷短视频", "fun_afterlife_enabled"),
-            ("spectator", "观战静音", "spectator_mode_mute"),
-        ]
-
-        # ⭐ RN-530 复跑补刀：标签统一到同一个宽度，让三列的开关重新纵向对齐。
-        #   ⚠ 改完复跑外审 **6/6 发**报「开关参差错位」—— 那是把弹簧挪到开关后面
-        #     换来的代价（标签字数 2~6 不等，开关就跟着长短跑）。
-        #   ⇒ 统一宽度之后两件事都成立：开关仍紧跟**自己的**标签（最远也就一个字距），
-        #     而列与列之间隔着弹簧 + 列距，远得一眼能分开。
-        switch_labels = []
-        for index, (switch_id, text, config_key) in enumerate(switch_configs):
-            # 每个开关：标签 + 弹簧 + ToggleSwitch
-            row_widget = QWidget()
-            row_layout = QHBoxLayout(row_widget)
-            row_layout.setContentsMargins(2, 1, 2, 1)
-            row_layout.setSpacing(6)
-
-            label = self._create_home_switch_label(switch_id, text)
-            switch_labels.append(label)
-            row_layout.addWidget(label)
-
-            toggle = ToggleSwitch(checked=getattr(self.config, config_key, False))
-            toggle.setAccessibleName(text)
-            toggle.toggled.connect(
-                lambda checked, key=config_key: self._on_switch_changed(key, checked)
-            )
-            # 开关标签联动：打开时文字变 accent 色
-            toggle._label = label
-            toggle.toggled.connect(lambda checked, lbl=label: self._update_switch_label_color(lbl, checked))
-            self._update_switch_label_color(label, toggle.isChecked())
-            row_layout.addWidget(toggle)
-            # ⭐⭐ RN-530（S2）：弹簧原先在**标签和开关之间** ⇒ 三列网格里每颗开关
-            #   被推到离自己的标签 217px（完整档）/ 190px（紧凑档）远的地方，
-            #   而右边那一列的标签只有 **18px**：17 颗里 11 颗如此。
-            #   站在「击杀语音」四个字前面往左看，18px 外那颗开关其实是「击杀音效」的。
-            #   ⚠ 光调列间距**不可能**翻转 —— 差距是 12 倍，列距要拉到 >217px。
-            #   ⇒ 弹簧挪到开关**后面**：标签和它自己的开关贴在一起（6px），
-            #     下一列的标签隔着弹簧 + 列距，远得一眼能分开。
-            row_layout.addStretch()
-
-            row = index // 3
-            col = index % 3
-            grid_layout.addWidget(row_widget, row, col)
-
-            self.switches[switch_id] = toggle
-            # ⚠ RN-089：`self.switches` 以前是**写了从来没读过的字典**（AST 实测：
-            # 1 处 Store、1 处下标赋值、**0 个真读者**）。也就是说配置一旦从别处被改，
-            # 这 17 个开关不会跟着动 —— 没人发现是因为以前只有这里能改它们。
-            # RN-079 要让 `flash` 页自己开总开关，所以必须先有一条回写通路，
-            # 见 `sync_feature_switch()`。同时记下 config_key → switch_id 的反查。
-            self._switch_id_by_config_key[config_key] = switch_id
-
-        if switch_labels:
-            uniform = max(lb.sizeHint().width() for lb in switch_labels)
-            for lb in switch_labels:
-                lb.setMinimumWidth(uniform)
-
-        switches_layout.addLayout(grid_layout)
-        scroll_layout.addWidget(switches_card)
-        
-        # 将音量、玩家信息、游戏模式三个卡片横向排列（自适应）
-        controls_row = QHBoxLayout()
-        controls_row.setSpacing(12)
-        
-        # 音量控制卡片
-        volume_card = self._create_card("音量控制")
-        self._configure_home_compact_card(volume_card, spacing=6)
-        volume_layout = volume_card.layout()
-
-        volume_slider_row = QHBoxLayout()
-        volume_slider_row.setSpacing(6)
-        volume_label = QLabel("音量")
-        volume_label.setFixedWidth(36)
-        volume_slider_row.addWidget(volume_label)
-        self.volume_slider = QSlider(Qt.Horizontal)
-        self.volume_slider.setMinimum(0)
-        self.volume_slider.setMaximum(100)
-        self.volume_slider.setValue(int(self.config.volume * 100))
-        self.volume_slider.valueChanged.connect(self._on_volume_changed)
-        volume_slider_row.addWidget(self.volume_slider, 1)
-        
-        self.volume_value_label = QLabel(f"{int(self.config.volume * 100)}%")
-        self.volume_value_label.setMinimumWidth(45)
-        self.volume_value_label.setAlignment(Qt.AlignCenter)
-        volume_slider_row.addWidget(self.volume_value_label)
-        
-        volume_layout.addLayout(volume_slider_row)
-
-        # 音量提示行（实时反映等级）
-        self.volume_hint_label = QLabel()
-        self.volume_hint_label.setObjectName("hintLabel")
-        self.volume_hint_label.setWordWrap(True)
-        self._refresh_volume_hint()
-        volume_layout.addWidget(self.volume_hint_label)
-
-        controls_row.addWidget(volume_card, 2)
-
-        # 玩家信息卡片
-        player_card = self._create_card("玩家信息")
-        self._configure_home_compact_card(player_card, spacing=6)
-        player_layout = player_card.layout()
-
-        player_inner = QHBoxLayout()
-        player_inner.setSpacing(8)
-        self.player_label = QLabel()
-        self.player_label.setWordWrap(False)
-        self.player_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
-        self.player_label.setFixedHeight(28)
-        player_inner.addWidget(self.player_label, 1)
-
-        reset_btn = QPushButton("重置ID")
-        reset_btn.setObjectName("secondaryButton")
-        reset_btn.setFixedHeight(28)
-        reset_btn.setMaximumWidth(100)
-        reset_btn.clicked.connect(self._reset_player_id)
-        player_inner.addWidget(reset_btn, 0, Qt.AlignVCenter)
-
-        player_layout.addLayout(player_inner)
-
-        # 玩家信息提示行
-        # ⭐ 批 60 外审 3 发（中/低）：「显示『ID · 未记录』却只给一颗『重置ID』，
-        #   缺乏录入入口，玩家困惑是否必须先绑定 Steam 才能用」。
-        #   ⚠ 实情是它**不用手填** —— 进过一次游戏、GSI 联动读到就自动记上。
-        #   ⭐ 缺的不是入口，是**一句说清它会自己来的话**。
-        player_hint = QLabel(
-            "进过一次游戏后会自动记上（靠 GSI 联动读到），不用手填。"
-            "ID 只用于本地配置识别；重置会清除当前关联的设置。")
-        player_hint.setObjectName("hintLabel")
-        player_hint.setWordWrap(True)
-        player_layout.addWidget(player_hint)
-
-        self._refresh_home_player_label()
-        controls_row.addWidget(player_card, 2)
-        
-        # 游戏模式卡片
-        mode_card = self._create_card("游戏模式")
-        self._configure_home_compact_card(mode_card, spacing=6)
-        mode_layout = mode_card.layout()
-
-        mode_inner = QVBoxLayout()
-        mode_inner.setSpacing(6)
-
-        mode_select_row = QHBoxLayout()
-        mode_select_row.setSpacing(6)
-        mode_label = QLabel("模式")
-        mode_label.setFixedWidth(36)
-        mode_select_row.addWidget(mode_label)
-
-        self.mode_combo = QComboBox()
-        self.mode_combo.addItems(["1. 官匹竞技", "2. aim rush", "3. 死斗模式"])
-        self.mode_combo.setCurrentText(self.config.mode)
-        self.mode_combo.currentTextChanged.connect(self._on_mode_changed)
-        mode_select_row.addWidget(self.mode_combo, 1)
-        mode_inner.addLayout(mode_select_row)
-
-        ui_mode_row = QHBoxLayout()
-        ui_mode_row.setSpacing(6)
-        ui_mode_label = QLabel("界面")
-        ui_mode_label.setFixedWidth(36)
-        ui_mode_row.addWidget(ui_mode_label)
-        self.ui_mode_combo = QComboBox()
-        self.ui_mode_combo.addItem("普通模式", False)
-        self.ui_mode_combo.addItem("专家模式", True)
-        current_expert = bool(getattr(self.config, "ui_expert_mode", False))
-        self.ui_mode_combo.setCurrentIndex(1 if current_expert else 0)
-        self.ui_mode_combo.currentIndexChanged.connect(self._on_ui_mode_changed)
-        ui_mode_row.addWidget(self.ui_mode_combo, 1)
-        mode_inner.addLayout(ui_mode_row)
-        
-        mode_layout.addLayout(mode_inner)
-        controls_row.addWidget(mode_card, 2)
-        
-        scroll_layout.addLayout(controls_row)
-
-        # 分类音量卡片：每类音效独立音量 + 响度归一开关
-        category_card = self._create_card("分类音量")
-        category_layout = category_card.layout()
-
-        cat_hint = QLabel("为每类音效单独设音量（相对主音量的倍率）。例如把切枪声调小、击杀声保持最大，互不影响。")
-        cat_hint.setObjectName("hintLabel")
-        cat_hint.setWordWrap(True)
-        category_layout.addWidget(cat_hint)
-
-        self.category_volume_sliders = {}
-        self.category_volume_labels = {}
-        category_defs = [
-            ("kill_sound", "击杀音效"),
-            ("kill_voice", "击杀语音"),
-            ("gun_sound", "枪声替换"),
-            ("switch_weapon", "切枪音效"),
-            ("reload_sound", "换弹音效"),
-            ("death_sound", "被击杀音效"),
-            ("special_sound", "特殊音效"),
-        ]
-        cat_vols = getattr(self.config, "category_volumes", {}) or {}
-        for cat_key, cat_text in category_defs:
-            cat_row = QHBoxLayout()
-            cat_row.setSpacing(6)
-            cat_name = QLabel(cat_text)
-            cat_name.setFixedWidth(72)
-            cat_row.addWidget(cat_name)
-
-            cat_slider = QSlider(Qt.Horizontal)
-            cat_slider.setMinimum(0)
-            cat_slider.setMaximum(100)
-            try:
-                cat_init = int(round(float(cat_vols.get(cat_key, 1.0)) * 100))
-            except (TypeError, ValueError):
-                cat_init = 100
-            cat_slider.setValue(max(0, min(100, cat_init)))
-            cat_slider.valueChanged.connect(
-                lambda value, k=cat_key: self._on_category_volume_changed(k, value)
-            )
-            cat_row.addWidget(cat_slider, 1)
-
-            cat_value = QLabel(f"{cat_slider.value()}%")
-            cat_value.setMinimumWidth(45)
-            cat_value.setAlignment(Qt.AlignCenter)
-            cat_row.addWidget(cat_value)
-
-            self.category_volume_sliders[cat_key] = cat_slider
-            self.category_volume_labels[cat_key] = cat_value
-            category_layout.addLayout(cat_row)
-
-        # 响度归一开关（默认关闭；对之后加载的音效生效）
-        self.loudness_norm_check = QCheckBox("响度归一：拉平不同素材的音量差（开启后对之后加载的音效生效）")
-        self.loudness_norm_check.setChecked(bool(getattr(self.config, "audio_loudness_normalize_enabled", False)))
-        self.loudness_norm_check.stateChanged.connect(self._on_loudness_normalize_toggled)
-        category_layout.addWidget(self.loudness_norm_check)
-
-        scroll_layout.addWidget(category_card)
-
-        scroll_layout.addStretch()
-
-        scroll.setWidget(scroll_content)
-        layout.addWidget(scroll)
-
-        self._apply_expert_mode_visibility()
-        self._sync_home_tool_rows()
-        self._sync_basic_page_overview()
-        self._refresh_system_status_strip()
-        
-        return page
+        parent_layout.addWidget(self.home_expert_tools_row)
 
     @staticmethod
     def _get_home_switch_target_page(switch_id):
@@ -2420,30 +2128,10 @@ class MainWindow(QMainWindow):
         }
         return page_map.get(switch_id)
 
-    def _create_home_switch_label(self, switch_id, text):
-        target_page = MainWindow._get_home_switch_target_page(switch_id)
-        # ⭐⭐⭐ RN-235 复跑补刀（批 60）：光在卡片上写一句「点功能名可以进那一页」不够 ——
-        #   外审复跑 **5 发**独立说「功能名本身毫无链接或箭头等交互线索，
-        #   不读说明的玩家只会把它当成纯标签」。
-        #   ⚠ 它原来的可点信号只有两样：**悬停变手型**和 **tooltip** ——
-        #     两样在静态画面上都不存在（同 RN-541）。
-        #   ⇒ 给它一个**静态就看得见**的记号。有对应页的才带，没有的不带 ——
-        #     记号本身就是「这个能点、那个不能」的分界。
-        label = (ClickableLabel(f"{text} ›") if target_page else QLabel(text))
-        label.setFont(QFont("Microsoft YaHei", 11))
-
-        if target_page and isinstance(label, ClickableLabel):
-            target_name = self._page_names.get(target_page, text)
-            label.setCursor(Qt.PointingHandCursor)
-            label.setToolTip(f"点击进入：{target_name}")
-            label.clicked.connect(lambda pid=target_page: self.show_page(pid))
-
-        return label
-
     def _create_home_tool_button(self, text, callback, *, primary=False, tooltip=None, minimum_width=112):
         button = QPushButton(text)
         button.setObjectName("primaryButton" if primary else "secondaryButton")
-        button.setMinimumHeight(34)
+        button.setMinimumHeight(32)
         button.setMinimumWidth(minimum_width)
         if tooltip:
             button.setToolTip(tooltip)
@@ -2461,58 +2149,8 @@ class MainWindow(QMainWindow):
             )
             row_widget.setVisible(has_visible_button)
     
-    def _create_card(self, title):
-        """创建卡片容器.
-
-        v5 Phase 8: 统一用 SettingsCard,让 basic 页 5 张卡跟进 v5 视觉骨架
-        (semantic 色条 + elevation md + 后续 token 改动一改穿透).
-        保留 v4 的视觉特化:
-          - padding 24 (而非 SettingsCard 默认 14)
-          - spacing 14 (而非默认 8)
-          - title 用 cardTitle objectName + Microsoft YaHei 12 DemiBold
-          - eventFilter 用于 hover shadow 增强
-        """
-        from widgets.settings_card import SettingsCard
-        ds = get_design_system()
-        card = SettingsCard(
-            title=title,
-            margins=(ds.container.card_padding,) * 4,
-            spacing=14,
-            semantic="config",  # v5 violet 色条
-        )
-        # v4 兼容:title_label 用 cardTitle 命名 + 自定义字体
-        if card.title_label is not None:
-            card.title_label.setObjectName("cardTitle")
-            f = QFont("Microsoft YaHei", 12)
-            f.setWeight(QFont.DemiBold)
-            f.setLetterSpacing(QFont.PercentageSpacing, 98)
-            card.title_label.setFont(f)
-            # objectName 改了要重新触发 QSS 匹配
-            card.title_label.style().unpolish(card.title_label)
-            card.title_label.style().polish(card.title_label)
-
-        # R4/UP-025: 不再给卡片装第二套 hover 阴影控制器（见 eventFilter 注释）。
-        # SettingsCard 自己就管 hover 阴影，装了只会互相打架。
-        return card
-
-    def _configure_home_compact_card(self, card, *, spacing=8):
-        layout = card.layout()
-        if layout is None:
-            return
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(spacing)
-
     def _home_player_label_text(self, player_id=None):
-        """⭐⭐ RN-403（批 59）：原文是「当前玩家ID: 未记录」，紧凑档里被
-        **中间省略**成「当前玩…未记录」—— 一句话里最要紧的两个词中间那截没了。
-
-        两条一起改：
-        ① 文案缩短。这张卡的标题已经是「玩家信息」，前缀「当前玩家ID:」是同一件事
-           说第二遍（RN-183 族）⇒ 只留「ID · <值>」。
-        ② 省略方向从 `ElideMiddle` 改成 `ElideRight`（见 `_refresh_home_player_label`）——
-           真要切，切掉的该是一长串数字的尾巴，不是「未记录」这三个字。
-        ⚠ 判据不能问「装得下吗」：省略**已经发生**了，所以量宽度永远答「装得下」。
-        """
+        """RN-403：缩短 ID 前缀并保留未记录状态，避免中间省略吃掉关键语义。"""
         value = str(player_id or "").strip() or "未记录"
         return f"ID · {value}"
 
@@ -2521,10 +2159,7 @@ class MainWindow(QMainWindow):
             return
 
         full_text = self._home_player_label_text(getattr(self.config, "player_steamid", ""))
-        # ⭐⭐ RN-403 补刀（批 59，基线 diff 逮到）：只改省略方向还不够 ——
-        #   窄容器里 `ElideRight` 会把**值**整个丢掉（实测基线里只剩「ID…」），
-        #   而原来的中间省略至少留住了「未记录」。⇒ 给它一条不许被压过的下限：
-        #   至少要装得下「未记录」这一档。长 steamid 仍可从右边截（全文在 tooltip）。
+        # RN-403：最小宽度需容纳未记录状态；长 ID 可右省略，全文放 tooltip。
         floor = self.player_label.fontMetrics().horizontalAdvance(
             self._home_player_label_text("未记录")) + 6
         if self.player_label.minimumWidth() < floor:
@@ -2540,101 +2175,19 @@ class MainWindow(QMainWindow):
         self.player_label.setText(display_text)
         self.player_label.setToolTip(full_text)
 
-    def _flash_card_border(self, widget):
-        """设置变更时，所在卡片左边框闪烁 accent 色；总开关关着时不闪（RN-639）"""
-        from ui_motion import decorative_motion_enabled
-        if not decorative_motion_enabled():
-            return   # ⚠ 要在碰 self 之前返回：判据拿 self=None 调它
-        # 向上查找最近的 card QFrame
-        card = widget
-        while card and not (isinstance(card, QFrame) and card.objectName() == "card"):
-            card = card.parentWidget()
-        if not card:
-            return
-
-        # 创建或复用左边框 overlay
-        if not hasattr(card, '_flash_overlay'):
-            overlay = QWidget(card)
-            overlay.setAttribute(Qt.WA_TransparentForMouseEvents)
-            overlay.setFixedWidth(3)
-            overlay.move(0, 0)
-            overlay.resize(3, card.height())
-            overlay.hide()
-            card._flash_overlay = overlay
-            card._flash_anim = None
-
-        overlay = card._flash_overlay
-        overlay.resize(3, card.height())
-
-        colors = self.theme_manager.current_theme.colors
-        accent = QColor(colors.accent_primary)
-
-        # 用 QVariantAnimation 控制透明度
-        if card._flash_anim and card._flash_anim.state() == QVariantAnimation.Running:
-            card._flash_anim.stop()
-
-        def set_alpha(alpha):
-            c = QColor(accent)
-            c.setAlpha(int(alpha))
-            overlay.setStyleSheet(f"background-color: rgba({c.red()},{c.green()},{c.blue()},{c.alpha()});border-radius: 2px;")
-            if alpha > 0 and not overlay.isVisible():
-                overlay.show()
-                overlay.raise_()
-            elif alpha <= 0 and overlay.isVisible():
-                overlay.hide()
-
-        # 淡入
-        fade_in = QVariantAnimation()
-        fade_in.setStartValue(0.0)
-        fade_in.setEndValue(255.0)
-        fade_in.setDuration(200)
-        fade_in.setEasingCurve(QEasingCurve.OutCubic)
-        fade_in.valueChanged.connect(set_alpha)
-
-        # 淡出
-        fade_out = QVariantAnimation()
-        fade_out.setStartValue(255.0)
-        fade_out.setEndValue(0.0)
-        fade_out.setDuration(200)
-        fade_out.setEasingCurve(QEasingCurve.InCubic)
-        fade_out.valueChanged.connect(set_alpha)
-
-        group = QSequentialAnimationGroup()
-        group.addAnimation(fade_in)
-        group.addPause(300)
-        group.addAnimation(fade_out)
-        group.start()
-
-        card._flash_anim = group
 
     def show_page(self, page_id, animated=True, force=False):
-        """
-        显示指定页面
-
-        Args:
-            page_id: 页面ID
-            animated: 是否使用动画切换（默认True）
-            force: 忽略"专家模式专属页在普通模式下不可达"这条门禁（UP-034）。
-                   只给"用户明确要去那儿"的入口用——目前只有搜索跳转。
-        """
+        """切换页面；force 仅供用户明确选择的入口绕过专家页门禁，animated 控制切换动画。"""
         if (
             page_id in self._expert_only_pages
             and not bool(getattr(self.config, "ui_expert_mode", False))
             and not force
         ):
-            # UP-034/D-17: 普通模式下这 6 个页面没有导航入口。**但静默 return 是最差的结果**
-            # ——搜索能命中它们，用户点了却什么都不发生，看起来就是软件坏了。
-            # 调用方传 force=True 表示"我知道它被隐藏了，临时打开"（见 _goto_search_result）。
+            # UP-034：搜索可命中隐藏页，用户明确跳转时允许 force 临时打开。
             self.logger.info(f"普通模式下页面 {page_id} 已隐藏，未切换")
             return
 
-        # UP-029: 未保存修改守卫必须跑在**骨架屏之前**。
-        # 原先它在下面的"切换到页面"分支里,而 `_show_page_skeleton()` 已经先一步
-        # `setCurrentWidget(skeleton)` 把当前页换掉了——等守卫执行时,
-        # `content_stack.currentWidget()` 拿到的是骨架屏,它没有 `can_leave_page`,
-        # 于是守卫静默失效。表现:在 hud_color / preset_center 改了东西没保存,
-        # 切到一个**从没打开过**的页,不但不提示,编辑直接丢失
-        # (切到已加载过的页反而正常,因为那条路径不走骨架屏——这也是它一直没被发现的原因)。
+        # UP-029：离开守卫必须早于骨架屏，否则 currentWidget 已被替换，原页守卫将失效。
         leaving = self.content_stack.currentWidget() if hasattr(self, 'content_stack') else None
         if leaving is not None and self.pages.get(page_id) is not leaving:
             can_leave = getattr(leaving, 'can_leave_page', None)
@@ -2663,10 +2216,8 @@ class MainWindow(QMainWindow):
         # 切换到页面
         if page_id in self.pages:
             new_widget = self.pages[page_id]
-            # ⭐ RN-547（批 63）：**标记要落在最后一次 polish 之后。**
-            #   懒建的控件（帮助面板等）在 `_load_page` 那一刻还没被样式表
-            #   polish 过，标记会被随后的 min-height 覆盖回去；切页这一刻它
-            #   一定已经 polish 过了。只扫这一页，不扫整窗（切页是被计时的路径）。
+            # RN-547：懒建控件须在最后一次 polish 后打标记，否则 QSS min-height 会盖回去。
+            # 切页路径只扫描当前页，避免整窗开销。
             try:
                 from ui_style_applier import apply_compact_density, mark_compact_buttons
                 mark_compact_buttons(new_widget)
@@ -2703,6 +2254,10 @@ class MainWindow(QMainWindow):
             # R7/D-08: 选中态图标跟着换色（setChecked 只影响 QSS 的文字色，
             # QIcon 是位图、不受 QSS color 影响）
             self._current_page_id = page_id
+            self._sync_expert_nav_buttons()
+            if page_id == "basic":
+                # 别的页刚配过枪、删过风格，回来这一屏得是新的
+                self._refresh_home_cards()
             self._refresh_nav_icons(page_id)
             self._ensure_nav_button_visible(page_id)
             try:
@@ -2722,10 +2277,6 @@ class MainWindow(QMainWindow):
             if page_id in self._page_to_group:
                 self._page_to_group[page_id].set_expanded(True)
 
-            # 更新紧凑模式顶栏标题
-            if hasattr(self, '_compact_title') and page_id in self._page_names:
-                self._compact_title.setText(self._page_names[page_id])
-
             # 紧凑模式下点击导航后关闭浮层
             if self._compact_mode and self._sidebar_overlay and self._sidebar_overlay.isVisible():
                 self._hide_sidebar_overlay()
@@ -2733,26 +2284,13 @@ class MainWindow(QMainWindow):
             self.logger.info(f"切换到页面: {page_id}")
 
     def _ensure_nav_button_visible(self, page_id):
-        """把当前页的导航按钮滚进可视区。
-
-        ⚠ 不做这件事的后果比想象中大：完整模式默认 1280×800 下，侧栏视口只有
-        657px 而内容要 1403px —— **28 页里 15 页在折叠线外**（HUD颜色、屏幕特效、
-        音乐播放、账号中心、高级设置、配置快照、关于软件…）。切过去之后滚动条
-        仍停在 0，那一项既看不见也没高亮，**用户彻底失去「我在哪一页」的指示**，
-        看起来就像点了没反应。搜索跳转过去更是如此。
-        """
+        """切页或搜索跳转后保证当前导航项可见，维持当前位置指示。"""
         scroll = getattr(self, "_sidebar_scroll", None)
         btn = getattr(self, "nav_buttons", {}).get(page_id)
         if scroll is None or btn is None or not btn.isVisible():
             return
 
-        # ⚠ **按钮还没被布局定高时，这一整套计算都是错的，别算，等下一轮。**
-        # Qt 的 `ensureWidgetVisible` 内部拿的是 `child->size()`：高度为 0 时
-        # 它只保证左上角那个点可见，按钮整个身子留在视口外。位置同理 ——
-        # 这时候量到的 y 也不是最终值（下面的按钮还会跟着往下挪）。
-        # 2026-08-17 CI 连红四次，判据带回来的数每次都是 `y=599 视口=623`，
-        # 而 599 正好等于 623−24（24 是 ymargin）——**高度被当成了 0 的指纹**。
-        # 本机永远复现不出：这台机器上布局在调用前就已经落定了。
+        # 按钮尚未布局定高时不要计算：ensureWidgetVisible 会只保证左上角点可见。
         if btn.height() <= 0:
             from PySide6.QtCore import QTimer
             QTimer.singleShot(0, lambda pid=page_id: self._ensure_nav_button_visible(pid))
@@ -2762,39 +2300,33 @@ class MainWindow(QMainWindow):
             scroll.ensureWidgetVisible(btn, 0, 24)
 
             self._nudge_nav_button_fully_into_view(scroll, btn)
-            # ⚠ 还要**再补一次、而且要等布局落定之后**。
-            # 上面那两步（`ensureWidgetVisible` 和第一次校正）都在**同一瞬间**测量，
-            # 于是它们看到的是同一份可能还没落定的布局 —— 布局没落定时两者都以为
-            # "已经在视口里"，谁都不动，那一项就留在了视口外。
-            # 这正是 2026-08-17 CI 上连红两次的样子（先 hud_color 后 audio_health，
-            # 两次都停在 y=599，本机各种窗高都复现不出）：同一瞬间量两遍，
-            # 量的还是同一份陈旧几何，补一万次也没用。
-            # 0ms 的 singleShot 会排到本轮布局之后，那时量到的才是最终位置。
+            # ⚠ 还要**再补一次、而且要等布局落定之后**：上面两步在同一瞬间量的是同一份
+            # 可能还没落定的几何，补一万次也没用；0ms 的 singleShot 排到本轮布局之后。
             from PySide6.QtCore import QTimer
             QTimer.singleShot(
                 0, lambda s=scroll, b=btn: self._nudge_nav_button_fully_into_view(s, b))
         except Exception as e:
-            # warning 而不是 debug：这条链路 2026-08-17 在 CI 上连红四次，
-            # 而异常被 debug 级别吞掉的话，日志里什么都看不到，只能靠猜。
-            # 用户看不见这条日志，代价是零；下次再红时它就是第一手证据。
+            # warning 而不是 debug：用户看不见这条日志，下次再红时它就是第一手证据
             self.logger.warning(f"导航项滚动定位失败: {e}")
+
+    def _nav_natural_geometry_changed(self, scroll) -> bool:
+        """这次 Resize 是外界真变了，还是校正自己切底边距引起的（RN-732：不拦就自激）。
+        「视口高 + 底边距」才是外界给的高度，边距怎么切它都不变。"""
+        if scroll is None:
+            return True
+        content = scroll.widget()
+        geometry = (
+            scroll.viewport().height() + scroll.viewportMargins().bottom(),
+            content.height() if content is not None else 0,
+        )
+        if geometry == getattr(self, "_nav_natural_geometry", None):
+            return False
+        self._nav_natural_geometry = geometry
+        return True
 
     @staticmethod
     def _nudge_nav_button_fully_into_view(scroll, btn):
-        """滚完再量一次，还露在外面就自己补上。
-
-        ⚠ `ensureWidgetVisible` 按**调用那一刻**的布局算，布局若还没落定就会
-        少滚一截；而它少滚了**不会报错**，只是那一项静静地留在视口外 ——
-        正是调用方要防的事。
-
-        实测余量本来就薄：完整模式 1280×800 下，侧栏下半部十几页都恰好停在
-        「离视口底 24px」（就是那个 ymargin），最后一项因为已到滚动极限只剩 10px。
-        字体度量稍有不同就压线 —— 2026-08-17 CI 上 `hud_color` 就是这么红的，
-        而本机怎么跑都绿。这是用户看得见的东西，不能停在"尽力而为"。
-
-        单独成一个静态方法是为了**能被确定性地测**：判据可以先把滚动条按到一个
-        故意不对的位置，再调它，不必去复现"布局恰好没落定"那一瞬。
-        """
+        """布局未落定会使 ensureWidgetVisible 少滚一截，滚后复测并补足当前项的可见范围。"""
         from PySide6.QtCore import QPoint
 
         viewport = scroll.viewport()
@@ -2808,12 +2340,7 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
         y = btn.mapTo(viewport, QPoint(0, 0)).y()
-        # ⚠ **高度要取 max(当前高, sizeHint 高)**，不能只信 `height()`。
-        # 布局还没给按钮定高时 `height()` 会很小甚至是 0，这时算出来的
-        # "没超出"是假的 —— 2026-08-17 CI 连红三次，判据带回来的数每次都是
-        # `y=599 高=42 视口=623`：**599 正好等于 623 − 24**，也就是滚动只保证了
-        # 按钮左上角那个点可见（留 24px 边距），按钮自己的 42px 高度被当成了 0。
-        # 三个不同的页面、三次红，y 一模一样，说明这不是偶发而是算式漏了高度。
+        # 高度取 max(height, sizeHint)，避免布局未定高时误把左上角可见当成整项可见。
         height = max(btn.height(), btn.sizeHint().height())
         overflow = (y + height) - viewport.height()
         if overflow > 0:
@@ -2825,52 +2352,7 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def _snap_nav_scroll_to_item_boundary(scroll, keep_visible=None):
-        """把侧栏滚动值对齐到**导航项的顶边**，别让视口上边缘落在某一项中间。
-
-        RN-060。实测（2026-08-17，1280×800 完整模式，逐页量）：
-
-            侧栏视口 657px，内容 1449px，项高约 43px
-            滚动值依次是 26 / 69 / 112 / 155 / 244 / 287 / …（差值正好 43）
-            ⇒ **28 页里 16 页**的视口上边缘落在某一项中间，
-              顶部被切 13~20px、底部被切 19~21px —— 项高的近一半
-
-        用户看到的是**残缺的导航文字**（「基础设置」只剩下半截、「HUD颜色」只剩
-        上半截）。外审 8 发独立报这一条，跨 4 个页面的 7 张截图。
-
-        ⚠ 为什么排版审计一直是绿的：侧栏是 QScrollArea，"露半行"在几何上不算溢出
-        （同 RN-045 的病根）。判据看不见的东西，只有眼睛能看见。
-
-        ⚠ 为什么这条到今天才被发现：滚动值为 0 的前 11 页和滚到底的 `about`
-        恰好都对齐，而**截图覆盖面以前只有那些页**。
-        `flash` / `music` / `voice_output` 这些在导航列表靠后的页正是
-        RN-005 盲区里的四页 —— 解除盲区的第一轮外审就撞上了它。
-
-        对齐后若把 `keep_visible` 挤出视口，就放弃对齐 ——
-        「当前项必须可见」（RN-008）优先级高于「边缘对齐」。
-
-        ⚠⚠ **RN-178：这里原来只对齐上边缘，理由写的是"下边缘露出的半项是
-        『下面还有内容』的自然提示"。那句话是错的，而且错得有数**（逐页实测，
-        1280×800 完整模式）：
-
-            上边被切  **0 / 28 页**   ← 本方法确实生效了
-            下边被切  **27 / 28 页**   ← 唯一的例外是滚到底的 `about`
-            露出的量  **2 ~ 10px**（项高 40~42）—— `fun_afterlife` 只剩 2px
-
-        2px 不是"下面还有内容"的提示，是一条**发丝宽的残渣**；用户读到的是
-        「这一栏画坏了」。而且那个提示是**多余的**：侧栏的竖滚动条本来就在
-        （`ScrollBarAsNeeded`，实测可见、宽 6px），"下面还有内容"已经说过一遍了。
-        ⭐ **两个机制盖同一件事时，先坏的那个不会报警**（同 RN-060 盖住微调算式）。
-
-        ⭐⭐ 更要紧的是根因：**这是数学上的必然，不是没写好。**
-        视口 657px，而项高 40/42 混着、间距 5 —— 657 **不可能**是整数个项。
-        于是「对齐一端」就等于「保证另一端永远切在项中间」，
-        换成对齐下边只会把同一条残渣搬到上边去。
-        ⇒ 所以修法不是"再对齐一次"，是**把余数吃掉**：对齐上边之后，
-        用 `setViewportMargins` 把跨在下边缘上的那一项整个挡在视口外
-        （见 `_trim_nav_viewport_to_item_boundary`）。两端于是都落在项边界上。
-
-        ⭐ 教训：**当一个缺陷是几何上必然的，去调参数就是在两个错误之间搬家。**
-        """
+        """RN-060/178：对齐项顶边后裁掉底部余数；当前项可见性优先于边缘对齐。"""
         from PySide6.QtCore import QPoint
 
         # 每次都从"没有底边距"的状态重新量 —— 否则上一次吃掉的余数会进入这一次的
@@ -2901,19 +2383,7 @@ class MainWindow(QMainWindow):
             MainWindow._trim_nav_viewport_to_item_boundary(scroll, keep_visible)
             return
 
-        # ⚠ RN-100：**按距离就近对齐，两个方向都试。**
-        # 原来只往上退（`max(t for t in tops if t <= current)`），理由写的是
-        # "不会把当前项推出视口"。在闭源版看不出问题——那里项高恰好统一 43px，
-        # 滚动值天然落在边界上，`target == current` 直接返回，这条路根本没走过。
-        #
-        # 开源版少一个账号页，项高变成 42 / 43 / 47 混着（分组标题比普通项高），
-        # 于是 `ensureWidgetVisible` 算出的值**偏离边界 4px**：实测滚动值
-        # 48 / 91 / 134 / 177…，而项顶边在 52 / 99 / 141…。
-        # 这时"只往上退"的唯一候选是 10 —— 往上跳 38px，当前项被挤出视口 ⇒ 撤销
-        # ⇒ 停在 48 ⇒ **顶上那一项被切掉 38 的 40**，只剩 2px。开源版 14 页中招。
-        #
-        # ⭐ 同一段代码在两边表现完全不同，差别只是"项高是否恰好整齐"。
-        #   一个只在整齐时正确的算法，在它正确的那个环境里是**看不出来**的。
+        # RN-100：按距离同时尝试上下边界；项高不齐时只往上退可能把当前项挤出视口。
         below = [t for t in tops if t <= current]
         above = [t for t in tops if t > current]
         targets = []
@@ -2942,16 +2412,7 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def _trim_nav_viewport_to_item_boundary(scroll, keep_visible=None):
-        """把跨在侧栏视口**下**边缘上的那一项整个挡出去（RN-178）。
-
-        为什么是"挡出去"而不是"再滚一点"：视口高不是整数个项（657px vs 40/42+5），
-        滚动只能决定余数出现在**哪一端**，消不掉它。把余数变成视口的底边距，
-        余数就不再画任何东西 —— 两端同时落在项边界上，这是滚动做不到的。
-
-        `keep_visible`（当前页那一项）若正好是跨边缘的那一项就放弃，
-        「当前项必须可见」优先（RN-008）。正常情况下轮不到：`_ensure_nav_button_visible`
-        已经先把当前项完整滚进视口了，跨边缘的只可能是它**下面**那一项。
-        """
+        """RN-178：用底边距隐藏跨底边项，消除非整项视口的余数；不得隐藏当前项。"""
         from PySide6.QtCore import QPoint
         from PySide6.QtWidgets import QAbstractButton
 
@@ -2998,8 +2459,6 @@ class MainWindow(QMainWindow):
                 for btn in btns:
                     btn.setChecked(btn_id == current_page_id)
 
-        if hasattr(self, '_compact_title') and current_page_id in self._page_names:
-            self._compact_title.setText(self._page_names[current_page_id])
 
     # ========== 紧凑模式 ==========
 
@@ -3013,8 +2472,7 @@ class MainWindow(QMainWindow):
 
     def _apply_compact_mode(self, compact, animate=False):
         """应用紧凑或完整模式"""
-        # ⭐ RN-548（批 65）：紧凑档不只是窗口小一圈，**版面密度也要跟着收**。
-        #   收和还都走同一个入口，否则拨回完整档会留下一套收过的间距。
+        # RN-548：紧凑与完整档的间距调整共用入口，保证切回完整档时恢复原密度。
         try:
             from ui_style_applier import apply_compact_density
             apply_compact_density(self, bool(compact))
@@ -3023,9 +2481,10 @@ class MainWindow(QMainWindow):
         if compact:
             # 紧凑模式：隐藏侧边栏，显示全局顶栏和汉堡入口
             self.sidebar.setVisible(False)
+            self._dock_search_box(True)
             self._compact_header.setVisible(True)
             self._hamburger_btn.setVisible(True)
-            self._mode_toggle_btn.setText("⇔ 完整")
+            self._mode_toggle_btn.setText("⇔ 完整界面")
             self._mode_toggle_btn.setToolTip("切换到完整模式")
             self.setMinimumSize(860, 640)
             if animate:
@@ -3035,9 +2494,10 @@ class MainWindow(QMainWindow):
         else:
             # 完整模式：显示侧边栏，保留顶栏用于设置搜索入口，但隐藏汉堡按钮
             self.sidebar.setVisible(True)
-            self._compact_header.setVisible(True)
+            self._dock_search_box(False)
+            self._compact_header.setVisible(False)
             self._hamburger_btn.setVisible(False)
-            self._mode_toggle_btn.setText("⇔ 紧凑")
+            self._mode_toggle_btn.setText("⇔ 紧凑界面")
             self._mode_toggle_btn.setToolTip("切换到紧凑模式")
             self.setMinimumSize(1200, 800)
             if animate:
@@ -3046,6 +2506,16 @@ class MainWindow(QMainWindow):
                 self._setup_window_size()
             # 关闭浮层（如果有）
             self._hide_sidebar_overlay()
+
+    def _dock_search_box(self, compact):
+        """搜索框只有一个，跟着档位搬家：下拉、最近搜索、Ctrl+F 都挂在这一个身上。"""
+        box = self.settings_search_box
+        if compact:
+            self._sidebar_search_layout.removeWidget(box)
+            self._compact_header_layout.insertWidget(1, box)
+        else:
+            self._compact_header_layout.removeWidget(box)
+            self._sidebar_search_layout.addWidget(box)
 
     def _resize_window_centered(self, w, h):
         """调整窗口大小并保持居中"""
@@ -3108,42 +2578,36 @@ class MainWindow(QMainWindow):
 
             # 标题
             overlay_title = QLabel("CS2 Customizer")
-            overlay_title.setFont(QFont("Microsoft YaHei", 16, QFont.Bold))
+            overlay_title.setFont(QFont(UI_FONT_FAMILY, 16, QFont.Bold))
             overlay_title.setAlignment(Qt.AlignCenter)
             overlay_nav_layout.addWidget(overlay_title)
             overlay_nav_layout.addSpacing(10)
 
             # 为每个导航按钮创建镜像按钮
             self._overlay_buttons = {}
-            # ⭐⭐ RN-539（批 59）：原先遍历 `self.nav_groups` —— 那张表**不含「常用」**
-            #   （它是 `insertWidget(0)` 插进侧栏布局的）⇒ 紧凑档下用户最常去的那几页
-            #   **在抽屉里根本没有**。这是 RN-025 的同根第二处。
+            # RN-025/539：按真实布局遍历，静态 nav_groups 不含后来插入的常用组。
             for group_widget in self._nav_groups_in_view():
                 # 分组标题
                 group_header = QLabel(group_widget._title)
                 group_header.setObjectName("overlayGroupHeader")
-                group_header.setFont(QFont("Microsoft YaHei", 10, QFont.Bold))
+                group_header.setFont(QFont(UI_FONT_FAMILY, 10, QFont.Bold))
                 group_header.setContentsMargins(10, 8, 0, 2)
                 overlay_nav_layout.addWidget(group_header)
 
-                # 按顺序遍历该分组下的页面（问组自己要，别问反查表 ——
-                # 常用组的按钮不在 `_page_to_group` 里，那正是 RN-025/539 的病根）
+                # 页面顺序问分组本身；常用按钮不在 _page_to_group 反查表里。
                 for page_id in self._pages_of_group(group_widget):
                     if page_id not in self.nav_buttons:
                         continue
                     overlay_btn = QPushButton(f"    {self._page_names[page_id]}")
                     overlay_btn.setObjectName("navButton")
                     overlay_btn.setCheckable(True)
-                    overlay_btn.setMinimumHeight(36)
                     overlay_btn.setFocusPolicy(Qt.TabFocus)   # RN-640，同上
                     overlay_btn.setChecked(self.nav_buttons[page_id].isChecked())
                     overlay_btn.clicked.connect(
                         lambda checked, pid=page_id: self.show_page(pid)
                     )
                     overlay_nav_layout.addWidget(overlay_btn)
-                    # ⚠ 一个 page_id 可能有**两颗**镜像按钮（常用组一颗、它自己的组一颗）——
-                    #   侧栏本来就是这样，抽屉照抄才可预测。存字典会**只留最后一颗**，
-                    #   于是前一颗永远同步不到选中态。
+                    # 一个 page_id 可有常用组和本组两颗镜像按钮，须全部同步，不能用字典覆盖。
                     self._overlay_buttons.setdefault(page_id, []).append(overlay_btn)
 
             overlay_nav_layout.addStretch()
@@ -3180,54 +2644,23 @@ class MainWindow(QMainWindow):
 
     def _update_switch_label_color(self, label, checked):
         """开关标签颜色联动（通过 objectName 切换 QSS 规则）"""
-        label.setObjectName("switchLabelOn" if checked else "switchLabelOff")
+        name = "switchLabelOn" if checked else "switchLabelOff"
+        if label.objectName() == name:
+            return      # 状态条每 15 秒刷一遍，没变就不重新 polish
+        label.setObjectName(name)
         label.style().unpolish(label)
         label.style().polish(label)
 
     def _find_feature_switch(self, config_key: str):
-        """按 config 键找首页「功能开关」卡里那颗开关；找不到回 None。
-
-        RN-144 把这段查表从 `sync_feature_switch` 里抽出来单独成名 ——
-        「跳过去指给他看」那条路要问同一个问题。⭐ 一段查表只要有第二处要用它，
-        它就得有名字；抄一份的即时代价是 **RN-089 那条 AST 判据的锚点从
-        1 处变成 2 处、当场失效**（`revert_verify --stale-only` 逮住的）。
-        ⇒ **复制粘贴不只是重复，它还会悄悄把看着这段代码的判据弄瞎。**
-
-        ⚠ 这里刻意**不写** `getattr(self, "switches", {})` —— 那样写虽然更防御，
-        但读操作就变成了一个字符串，AST 判据看不见它，
-        「switches 有没有真读者」这条判据会退化成查子串（RN-073 那条假绿的写法）。
-        存在性用 hasattr 单独守，读本身保持成真正的属性访问。
-        """
+        """按配置键查首页开关；显式访问 switches 属性，保持 AST 判据可见，避免复制查表。"""
         if not hasattr(self, "switches") or not hasattr(self, "_switch_id_by_config_key"):
             return None
         switch_id = self._switch_id_by_config_key.get(config_key)
         return self.switches.get(switch_id) if switch_id else None
 
     def set_feature_enabled(self, config_key: str, enabled: bool) -> bool:
-        """从功能页**就地**开/关一个功能（RN-144 升级版）。
-
-        ⭐ **要害：它不自己写 config，而是去拨首页那颗开关。**
-
-        `_on_switch_changed` 上挂着一长串副作用 —— 准心的 pywin32 前置检查与显隐、
-        开镜放大的启停、死亡刷短视频的预热/收尾、屏幕特效的叠加层同步、
-        `sync_legacy_gun_sound_flags`、`save_config`、卡片边框闪烁。
-        自己 `setattr` 一个都拿不到，得到的是"界面显示已开、功能根本没起"，
-        而这件事**不会有任何一处报错**（RN-107 族的最恶形态）。
-
-        ⭐ **同一件事只能有一条链路；第二条链路一定会缺东西，而缺的那部分不报错。**
-
-        ⚠ 这里刻意**不** `blockSignals` —— 与 `sync_feature_switch` 正相反：
-        那个是"只同步显示"，这个是"真的去开"。信号必须发出去。
-
-        ⚠⚠ **必须用 `toggle()` 而不是 `setChecked()`。** `ToggleSwitch` 的文件头
-        写着"与 QCheckBox API 兼容"，**那句话在这一点上是错的**：
-        它的 `setChecked()` 只改样子、**不发 `toggled`**，只有 `toggle()`
-        （鼠标点击走的那条）才发。写成 `setChecked` 的话这个方法会
-        **安静地什么都不做** —— 开关的样子变了、副作用一条没跑。
-        ⭐ "API 兼容"是个关于方法名的说法，不是关于**信号语义**的保证。
-
-        回报 True 表示真的找到并拨动了那颗开关（调用方据此判断有没有空转）。
-        """
+        """经首页开关统一触发配置与副作用；必须 toggle 发信号，不能 setChecked 或 blockSignals。
+        找到并拨动开关返回 True。"""
         self.ensure_page_loaded(self._master_switch_page_id())
         toggle = self._find_feature_switch(config_key)
         if toggle is None:
@@ -3237,23 +2670,13 @@ class MainWindow(QMainWindow):
         return True
 
     def _master_switch_page_id(self) -> str:
-        """总开关住在哪一页。单一真源在 `widgets/master_switch_link`。
-
-        ⚠ 就地 import，**不放模块顶部**：开源同步管道对本文件的整块 import
-        打了一个语义补丁，往那个区间里插一行会让补丁上下文当场对不上
-        （RN-156 刚踩过）。
-        """
+        """总开关位置取 master_switch_link；就地导入以保留开源同步对顶部 import 块的补丁。"""
         from widgets.master_switch_link import MASTER_SWITCH_PAGE_ID
 
         return MASTER_SWITCH_PAGE_ID
 
     def _sync_master_switch_rows(self, config_key: str) -> int:
-        """总开关变了，把所有页内那一行同步过去。回报同步了几个。
-
-        ⭐ 刻意**不建注册表**：注册表要管生命周期（页面删了要摘掉，
-        摘漏了就是野指针）。这里直接遍历已加载页面找 `master_switch_row` ——
-        页面没了它自然就不在，**没有需要维护的第二份状态**。
-        """
+        """遍历已加载页同步总开关行并返回数量，避免额外注册表的生命周期维护。"""
         synced = 0
         for page in getattr(self, "pages", {}).values():
             row = getattr(page, "master_switch_row", None)
@@ -3263,16 +2686,7 @@ class MainWindow(QMainWindow):
         return synced
 
     def sync_feature_switch(self, config_key: str) -> bool:
-        """把 `config.<config_key>` 的当前值回写到首页那个开关上。
-
-        RN-079：`flash` 页新增的「打开并启动」会自己写 `flash_enabled`，
-        而首页「功能开关」卡里那颗开关**不会自动跟着动** ——
-        `self.switches` 在 RN-089 之前是个写了从没读过的字典（0 个真读者）。
-        少了这一步就会出现「首页显示关、实际已开」的三态不一致，
-        而且下一次 `save_config` 会把谁的值落盘取决于谁最后碰过它。
-
-        回报 True 表示真的找到并同步了那颗开关（调用方可以据此判断有没有空转）。
-        """
+        """将配置值同步到首页开关，避免页面与首页状态分叉；找到并同步返回 True。"""
         toggle = self._find_feature_switch(config_key)
         if toggle is None:
             return False
@@ -3281,8 +2695,7 @@ class MainWindow(QMainWindow):
             toggle.blockSignals(True)          # 只同步显示，别再走一轮 _on_switch_changed
             toggle.setChecked(value)
             toggle.blockSignals(False)
-        if getattr(toggle, "_label", None) is not None:
-            self._update_switch_label_color(toggle._label, value)
+        self._sync_feature_cards()
         return True
 
     def _on_switch_changed(self, config_key, checked):
@@ -3298,18 +2711,12 @@ class MainWindow(QMainWindow):
             if checked:
                 if not getattr(self, "_crosshair_win32_available", False):
                     self.logger.error("准心功能需要pywin32库支持")
-                    # 回滚内存值：方法开头已 setattr 为 True，若不回滚，
-                    # 后续任何一次 save_config 会把"开"落盘，下次启动 UI 显示
-                    # 已开但实际不生效（config/UI/磁盘三态不一致）
+                    # 前面已把内存配置置 True，失败时需回滚，避免之后 save_config 持久化无效启用态。
                     self.config.crosshair_enabled = False
                     from PySide6.QtWidgets import QMessageBox
                     QMessageBox.warning(self, "提示", "准心功能需要额外组件(pywin32)才能使用。\n请重新安装 CS2 Customizer 以获取完整功能。")
-                    # 恢复复选框状态
-                    sender = self.sender()
-                    if sender:
-                        sender.blockSignals(True)
-                        sender.setChecked(False)
-                        sender.blockSignals(False)
+                    # lambda 调用下 sender() 为 None，必须按 switch_id 找回并复位开关。
+                    self.sync_feature_switch(config_key)
                     # ⚠ 这条分支**提前 return**，跑不到函数末尾那次广播。
                     # 页内那一行必须也跟着弹回去，否则它会停在"开"的位置，
                     # 而功能其实没起（RN-144 升级版的判据专门盯这一条）。
@@ -3326,23 +2733,14 @@ class MainWindow(QMainWindow):
                     self.logger.info("正在隐藏准心...")
                     self.crosshair_animation.hide_crosshair()
         
-        # 闪光总开关拨关：正白着的那层当场清掉（批 136 进游戏逮到：以前只改配置，
-        # GSI 那边不再转发 ⇒ 子进程按最后一个值一直画，直到 10 秒断流看门狗）
+        # 关闪光时须主动清叠加层；停止 GSI 转发只会让子进程停在最后一帧直至看门狗超时。
         if config_key == "flash_enabled" and not checked:
             pm = getattr(self.pages.get("flash"), "process_manager", None)
             if pm is not None and getattr(pm, "current_flash_value", 0):
                 pm.force_clear_flash()
                 pm.current_flash_value = 0
 
-        # 特殊处理：开镜放大开关
-        # 2.2.0 丝滑化:建页/启停挪出点击帧——复选框即时回弹,重活下一拍做
-        # ⚠⚠ RN-454（批 33）：这一段原来**只挂在音乐页那颗子开关上**。
-        # 而真正决定联动跑不跑的是总开关（`process_data` 第一行就 return），
-        # 于是「关掉总开关」这条路只能等 GSI 断流看门狗 **15 秒**才恢复 ——
-        # 那 15 秒里音乐停在被暂停 / 被压低的状态，页面一个字都不说。
-        # ⭐⭐⭐ **一条为了防止「卡在联动态」而写的恢复链路，
-        #   挂在了一颗不决定联动跑不跑的开关上。**
-        # ⇒ 撤掉子开关时它必须跟着搬过来，否则就是「撤掉副本，把动作也撤了」。
+        # RN-454：关闭总开关须立即恢复音乐联动态，不能等 GSI 断流看门狗兜底。
         if config_key == "music_enabled" and not checked:
             try:
                 from gsi_handler_music import get_music_gsi_handler
@@ -3357,17 +2755,13 @@ class MainWindow(QMainWindow):
             from PySide6.QtCore import QTimer
             QTimer.singleShot(0, lambda: self._apply_magnifier_toggle(checked))
 
-        # （Phase1-1.4：hud_color_enabled 已是 hud_rules_enabled 的 property 别名，
-        #   原"兼容旧字段"手工镜像不再需要）
-        # ⛔ 关掉动态 HUD 要当场写回默认色：cs2customizer.cfg 不重编 ⇒ 移动/开火键仍在 exec 运行时 cfg，
-        #    里面停着关之前那一帧（低血量红 / 击杀闪色）⇒ HUD 卡在那个色直到退出。断点 `--only SWEEP`。
+        # 关动态 HUD 时须重编默认色；移动/开火仍会 exec 运行时 cfg，否则停在最后一帧。
         if config_key == "hud_rules_enabled" and not checked:
             hud_handler = (getattr(self, "gsi_handlers", None) or {}).get("hud_color")
             if hud_handler is not None and hasattr(hud_handler, "stop"):
                 hud_handler.stop()
 
-        # 特殊处理：道具瞄点总开关（批 129）。以前**只写 config**：关掉之后热键监听和键盘钩子照跑、
-        # 进游戏按键照样弹菜单；启动时关着、中途打开则一直不生效，要重启软件。
+        # 道具瞄点总开关需同步热键监听与键盘钩子，仅写 config 不能启停运行链路。
         if config_key == "utility_guide_enabled":
             utility_handler = (getattr(self, "gsi_handlers", None) or {}).get("utility")
             if utility_handler is not None:
@@ -3395,14 +2789,7 @@ class MainWindow(QMainWindow):
             if page and hasattr(page, "_load_settings"):
                 page._load_settings()
 
-        # 特殊处理：击杀图标总开关（预热素材 / 立刻收掉正在播的那张）
-        # ⚠ **这一段是补上来的，补的是一个既有的不对称**：击杀图标页上那颗
-        # 「开启击杀图标」复选框一直会调 `enable_kill_icons()` / `disable_kill_icons()`，
-        # 而首页「功能开关」里那颗**同名的总开关只写 config**。
-        # ⇒ 同一个开关，从两个地方拨的效果不一样：首页开完素材没预热，
-        # 首页关掉时正在播的那张图标不会停。谁都不会报错。
-        # ⭐ **同一件事有两条链路时，短的那条一定缺东西** —— 这次是 RN-155
-        # 要把页内那颗复选框并进总开关行才发现的。
+        # 击杀图标总开关必须预热/收掉素材，与页内开关走相同副作用链路。
         if config_key == "kill_icon_enabled":
             player = getattr(self, "kill_icon_player", None)
             if player is not None:
@@ -3423,16 +2810,10 @@ class MainWindow(QMainWindow):
         self.config.save_config()
         self.logger.info(f"配置已保存: {config_key} = {checked}")
 
-        # RN-144 升级版：功能页上那一行「总开关」跟着动。
-        # ⭐ 这一下是**双向同步的另一半** —— 页内拨动那半靠 `set_feature_enabled`
-        # 走回这里，首页拨动这半靠这里广播出去。少了它，用户在首页关掉之后
-        # 切回功能页会看到一颗停在"开"的开关。
+        # RN-144：首页拨动后广播到页内总开关行，与 set_feature_enabled 组成双向同步。
         self._sync_master_switch_rows(config_key)
+        self._sync_feature_cards()
 
-        # 卡片边框闪烁反馈
-        sender = self.sender()
-        if sender:
-            self._flash_card_border(sender)
     
     def _apply_magnifier_toggle(self, checked):
         """开镜放大的实际启停(点击帧之外执行,保证开关即时回弹)。"""
@@ -3486,22 +2867,19 @@ class MainWindow(QMainWindow):
             self.logger.error(f"切换响度归一失败: {e}")
 
     def _refresh_volume_hint(self):
-        """根据音量给出语义提示"""
+        """音量听不清才说话。默认就是 100%，那一头再说就成了每个人都看见的废话。"""
         label = getattr(self, "volume_hint_label", None)
         if label is None:
             return
         v = int(getattr(self.config, "volume", 0) * 100)
         if v == 0:
-            tip = "已静音 · 拖动滑块可恢复"
+            tip = "已静音，拖动滑块可恢复"
         elif v < 25:
-            tip = f"{v}% · 偏低，可能在游戏中难以听清"
-        elif v < 60:
-            tip = f"{v}% · 适中，推荐用于多数场景"
-        elif v < 90:
-            tip = f"{v}% · 偏大，注意与游戏内音量配合"
+            tip = "偏低，可能在游戏中难以听清"
         else:
-            tip = f"{v}% · 接近最大，建议同步降低系统音量"
+            tip = ""
         label.setText(tip)
+        label.setVisible(bool(tip))
     
     def _on_mode_changed(self, mode):
         """游戏模式改变"""
@@ -3514,10 +2892,7 @@ class MainWindow(QMainWindow):
         theme_key = self.theme_combo.itemData(index)
         if not theme_key:
             return
-        # R4/UP-030: 这里原本还有一句 `self._apply_style()`。
-        # `set_theme()` 会同步触发 `_on_theme_changed` 回调，那里已经 apply 过一次，
-        # 于是 42KB 的 QSS 被整表应用两遍——切主题的卡顿直接翻倍。
-        # 高级设置页的同名处理器一直是只调 set_theme 的，首页这份属于漏改。
+        # set_theme 已同步触发 _on_theme_changed 应用样式，此处再刷会重复整树 polish。
         self.theme_manager.set_theme(theme_key)
         self.config.ui_theme = theme_key
         self.config.save_config()
@@ -3531,8 +2906,6 @@ class MainWindow(QMainWindow):
             if adv_idx >= 0:
                 adv_page.theme_combo.setCurrentIndex(adv_idx)
             adv_page.theme_combo.blockSignals(False)
-        if hasattr(self, "_sync_basic_page_overview"):
-            self._sync_basic_page_overview()
     
     def _reset_player_id(self):
         """重置玩家ID"""
@@ -3551,10 +2924,7 @@ class MainWindow(QMainWindow):
     
     def _update_player_id_display(self):
         """更新玩家ID显示"""
-        # ⚠ RN-403（批 59）：这里原先**从显示文案里反解 ID**
-        #   （`text.replace("当前玩家ID: ", "")`）—— 于是改一句文案就会把它弄坏，
-        #   而弄坏的样子是「ID 永远刷不新」，屏幕上看不出来。
-        #   ⭐ 显示是配置的投影，不是它的存储；要比就跟**配置**比。
+        # RN-403：与配置中的 ID 比较，不能从可变的显示文案反解。
         config_id = self.config.player_steamid if self.config.player_steamid else "未记录"
         if self._home_player_label_text(self.config.player_steamid) != (
                 self.player_label.toolTip() or ""):
@@ -3598,12 +2968,7 @@ class MainWindow(QMainWindow):
             self.logger.error(f"打开文件夹失败: {e}")
     
     def _apply_style(self):
-        """应用主题样式
-
-        R4/UP-030: 加一道幂等闸。整表 setStyleSheet 会让 Qt 对整棵控件树重新
-        解析 + polish，实测这是切主题时的主要开销；同一份 QSS 应用两遍纯属白花。
-        字号档位变化会让 QSS 文本本身变化，所以这道闸不会挡住真正需要的重刷。
-        """
+        """QSS 相同则跳过整树 polish；字号变化会改变 QSS，仍会触发需要的重刷。"""
         # 从主题管理器获取样式表
         stylesheet = get_stylesheet()
 
@@ -3628,10 +2993,7 @@ class MainWindow(QMainWindow):
             self._applied_stylesheet = stylesheet
             # 正常主题：应用样式表
             self.setStyleSheet(stylesheet)
-            # ⭐ RN-442（批 62）：样式表刚落地，`min-width` 这一刻才生效 ——
-            #   在这之前问 `minimumWidth()` 拿到的是 0，看不出「调用点把宽度
-            #   限得比规范还窄」。⇒ 紧凑标记要在这之后再跑一遍整窗。
-            #   （`_load_page` 那处照样留着：它管的是**样式表落地之后**才建的页。）
+            # RN-442：QSS 落地后最小尺寸才有效，此时重扫紧凑标记；后建页面另由 _load_page 处理。
             try:
                 from ui_style_applier import mark_compact_buttons
                 mark_compact_buttons(self)
@@ -3646,8 +3008,7 @@ class MainWindow(QMainWindow):
 
         # 重新应用主题样式到主窗口
         self._apply_style()
-        if hasattr(self, "_sync_basic_page_overview"):
-            self._sync_basic_page_overview()
+        self._refresh_home_icons()
 
         # 只刷新当前可见页面，其他页面标记为需要刷新（切换时再刷新）
         if hasattr(self, 'pages') and hasattr(self, 'content_stack'):
@@ -3671,10 +3032,7 @@ class MainWindow(QMainWindow):
         # v5 Phase 5+: 主题切换后重新生成 nav button icon 颜色
         # IconProvider 缓存按 (name, color) key,新颜色会触发 cache miss 自动用新色
         if hasattr(self, 'nav_buttons'):
-            # R7/D-08: 换主题这条路原本一律刷成 secondary —— 会把当前选中项的图标
-            # 刷回未选中色；而且只遍历 nav_buttons、漏了「常用」分组（既有缺陷）。
-            # 走统一入口一并修掉。注意要先清掉幂等记账，否则颜色变了但 role 没变，
-            # apply_nav_icon 会直接 return，图标停在旧主题的颜色上。
+            # 换主题先清图标幂等记账，再统一刷新选中态与常用分组，避免 role 不变时沿用旧色。
             for group in (self.nav_buttons, getattr(self, "_frequent_buttons", {})):
                 for btn in (group or {}).values():
                     try:
@@ -3682,6 +3040,7 @@ class MainWindow(QMainWindow):
                     except RuntimeError:
                         continue
             self._refresh_nav_icons()
+        self._refresh_hamburger_icon()
         
         # R13: 搜索结果面板是独立顶层窗口，接不到这份 QSS，必须单独换一次调色板
         if hasattr(self, "_settings_search_completer"):
@@ -3731,11 +3090,9 @@ class MainWindow(QMainWindow):
 
         box = QLineEdit()
         box.setObjectName("settingsSearchBox")
-        box.setPlaceholderText("搜索设置 / 功能…  (Ctrl+F)")
-        box.setFixedHeight(34)
-        # 原来是 setFixedWidth(220)。紧凑模式窗口只有 860 宽，顶栏还要塞
-        # 汉堡键 + 标题 + 方形按钮，钉死 220 会把标题挤没。
-        # 改成弹性区间，让布局按剩余空间分配。
+        box.setPlaceholderText("搜索设置（Ctrl+F）")
+        box.setFixedHeight(32)
+        # 搜索框使用弹性宽度，为紧凑档顶栏的其余控件留空间。
         box.setMinimumWidth(170)
         box.setMaximumWidth(320)
         box.setClearButtonEnabled(True)
@@ -3748,6 +3105,8 @@ class MainWindow(QMainWindow):
         completer.setMaxVisibleItems(8)
         completer.popup().setItemDelegate(SearchResultDelegate(completer.popup()))
         completer.popup().setUniformItemSizes(True)
+        # 完整档框在侧栏里只有 184 宽，下拉不能跟着窄：一行要放下项名和所在页
+        completer.popup().setMinimumWidth(380)
         # 用 QModelIndex 重载：显示文案会重名（"准心大小"在准心设置和预设中心都有），
         # 只有 index 才能带出 page_id / 页签，靠字符串反解一定会串。
         completer.activated[QModelIndex].connect(self._on_search_row_activated)
@@ -3761,13 +3120,7 @@ class MainWindow(QMainWindow):
         box.installEventFilter(self)    # 空框聚焦时给"最近搜索/常去页面"
         self._apply_search_popup_theme()
 
-        # 把"项级索引装上了没有"写进每一份日志（实测 9ms，一次性）。
-        #
-        # 为什么值这 9ms：索引缺失时搜索会**静默降级**成只有页级——功能还能用、
-        # 不报错、开发机上永远复现不出来（QA-001 就是这个形状：产物里少/多一个文件，
-        # 只有真实用户机器上才暴露）。懒加载又意味着"日志里没有降级告警"证明不了
-        # 任何事，用户不搜索就永远不会触发。所以这里主动问一次，把它变成
-        # **每份日志都查得到的事实**，而不是等出事了再去猜。
+        # 启动即记录索引加载状态：懒搜索未触发时，没有降级告警也不能证明项级索引存在。
         try:
             from core.settings_search import item_index_available
 
@@ -3797,36 +3150,18 @@ class MainWindow(QMainWindow):
             pass
 
     def _apply_search_popup_theme(self):
-        """让结果面板跟着主题走。
-
-        ⚠ 离屏渲染实测：深色主题下这块 popup 仍然是**纯白**的。
-        原因有两层，缺一不可：
-          1. QSS 是 `self.setStyleSheet()` 打在 MainWindow 上的，而 completer 的
-             popup 是个带 `Qt::Popup` 标志的独立顶层 QListView，不在那棵样式树里；
-          2. 就算够得着，整份 QSS 里也**没有一条**针对裸 QListView 的规则
-             （只有 `QComboBox QAbstractItemView`，那是给下拉框的）。
-        所以直接改 palette，而不是再往 QSS 里加一条选择器 ——
-        自绘 delegate 读的就是 `option.palette`，改这里才是改到点子上。
-        深色 UI 上闪出一块白板，比没有结果面板还难受。
-        """
+        """独立 Qt::Popup 不在主窗 QSS 树内，且裸 QListView 无配色规则；直接设置 delegate 读取的 palette。"""
         try:
             from PySide6.QtGui import QPalette
 
             from theme_manager import get_current_theme
 
-            # ⚠ `current_theme` 是 property 不是方法，manager 上也没有
-            # `get_current_theme()` —— 写错了会被下面的 except 静默吞掉，
-            # 表现就是"深色主题下面板还是白的"，而日志里一个字都没有。
+            # current_theme 是 property；错误调用会被兜底吞掉并留下错误配色。
             colors = get_current_theme().colors
             popup = self._settings_search_completer.popup()
             base = QColor(getattr(colors, "bg_card", None) or colors.bg_secondary)
 
-            # ⚠ 顺序和分工都不能改，这两条都是渲染实测出来的：
-            #   1. QSS **只管边框**，颜色一律走 palette。第一版把 background 也写进
-            #      QSS，结果浅色主题下背景跟着主题变白、而文字仍是深色主题那套浅灰
-            #      —— 白字白底，整块面板几乎看不见。原因是 setStyleSheet 会触发
-            #      re-polish，把我刚设进去的 palette 条目又冲掉一部分。
-            #   2. 所以 setStyleSheet 要在 setPalette **之前**，让 palette 是最后一手。
+            # QSS 仅管边框且先于 setPalette；re-polish 会覆盖部分 palette，颜色必须最后设。
             popup.setStyleSheet(
                 f"QListView{{border:1px solid {colors.border_primary};"
                 f"border-radius:6px;outline:0;}}"
@@ -3840,19 +3175,13 @@ class MainWindow(QMainWindow):
             pal.setColor(QPalette.HighlightedText, QColor(colors.bg_primary))
             popup.setPalette(pal)
         except Exception:
-            # 主题取不到就用系统默认色，搜索本身照常能用。
-            # 但**必须留痕**：第一版这里写的是 debug，而我把取主题的 API 写错了
-            # （`manager.get_current_theme()` 根本不存在），于是深色主题下面板一直是白的、
-            # 日志里一个字都没有 —— 又一次静默失败。用 warning。
+            # 取主题失败时保留系统默认色，并以 warning 留下可见诊断。
             self.logger.warning("搜索结果面板取主题色失败，沿用默认调色板", exc_info=True)
 
     # ---- 结果面板的数据供给 ----
 
     def _search_suggestion_rows(self, query=""):
-        """空态/无结果时的出路：最近搜过什么 + 平时常去哪儿。
-
-        搜不到东西时只弹一句"没有匹配"是把用户扔在原地。这里至少给几个能点的。
-        """
+        """无查询或无结果时给出最近搜索和常去页面，避免只有不可操作的空态。"""
         rows = []
         try:
             from core.search_history import recent
@@ -3899,7 +3228,7 @@ class MainWindow(QMainWindow):
             pass
 
     def _on_search_text_edited(self, text):
-        """每次按键重建候选。实测 search_detailed 单次 0.2~2.6ms，够快。"""
+        """每次编辑重建候选，保持结果与当前查询一致。"""
         from core.settings_search import search_detailed
 
         query = str(text or "").strip()
@@ -3918,20 +3247,8 @@ class MainWindow(QMainWindow):
             pass
 
     def _search_box_focus_in(self, watched, event):
-        """搜索框上"把结果面板重新打开"的三个入口。
-
-        面板是 `Qt::Popup`，点窗口里任何别的地方它都会关掉——这是 Qt 的语义，
-        改不了也不该改（否则它会一直浮在界面上挡东西）。真正的缺陷是**关了回不来**：
-        原来只在"聚焦且框是空的"时弹一次，于是用户输入 → 点别处看一眼 → 点回搜索框，
-        面板不回来，**必须把字删了重打**。这三个入口把它补上：
-
-          FocusIn           点回搜索框
-          MouseButtonPress  焦点没走、只是面板被关掉了（此时不会有 FocusIn）
-          KeyPress ↓/↑      键盘用户的标准动作
-
-        ⚠ 这段**必须挂在既有的 `eventFilter` 里**，不能另写一个同名方法：
-        Python 后定义的会把先定义的整个覆盖掉，滚轮拦截那一整套就没了。
-        """
+        """Qt::Popup 点外部就关闭，需由聚焦、点击或方向键重新打开。
+        入口挂在既有 eventFilter，另定义同名方法会覆盖滚轮拦截。"""
         from PySide6.QtCore import QTimer as _QTimer
 
         if watched is not getattr(self, "settings_search_box", None):
@@ -3953,12 +3270,7 @@ class MainWindow(QMainWindow):
             return False
 
     def _reopen_search_popup(self):
-        """按框里**当前**的文字重新出结果面板；空框则给「最近搜索 / 常去页面」。
-
-        重新跑一遍搜索而不是把上次的行直接弹回来：中间可能已经换了主题、
-        用过别的页（「常去」会变），拿旧行糊上去就是给用户看一份过期结果。
-        实测单次 1~2ms。
-        """
+        """按当前查询重建面板，避免主题或常用页变化后复用旧结果；空框显示历史和常用页。"""
         box = getattr(self, "settings_search_box", None)
         if box is None or not box.hasFocus():
             # 这 0ms 里焦点可能已经跑了（比如用户点的是清除按钮又立刻点了别处），
@@ -3975,13 +3287,7 @@ class MainWindow(QMainWindow):
         from PySide6.QtGui import QKeySequence, QShortcut
 
         self._app_shortcuts = []
-        # 用 Alt+N 而非 Ctrl+N:音板槽位热键默认就是 ctrl+数字(keyboard 全局钩子),
-        # 应用聚焦时 Ctrl+N 会双触发(切组+播放音板)——审计中实测发现的冲突。
-        # ⚠ 上限原先写死 4，正好等于当时的分组数;RN-108 加了「开始」组之后
-        # 最后一组就悄悄没了快捷键。改成按实际分组数发，只受 Alt+1..9 这九个键限制。
-        # ⚠ 分母是**侧栏里真实的分组数**（含「常用」），不是 `nav_groups`（RN-025）：
-        #   用后者时最后一组永远拿不到快捷键，而那件事在没有使用数据的机器上
-        #   （比如 CI 和干净安装）**复现不出来** —— 同 RN-516。
+        # Alt+数字避开音板 Ctrl+数字全局热键；按真实布局分组数分配，包含常用组，上限 9。
         for idx in range(min(9, len(self._nav_groups_in_view()))):
             sc = QShortcut(QKeySequence(f"Alt+{idx + 1}"), self)
             sc.activated.connect(lambda i=idx: self._goto_nav_group(i))
@@ -3996,17 +3302,7 @@ class MainWindow(QMainWindow):
         self._app_shortcuts.append(sc_esc)
 
     def _nav_groups_in_view(self):
-        """侧栏里**真实的分组顺序**，含「常用」。
-
-        ⭐⭐ RN-025：`self.nav_groups` 只装静态分组，而「常用」是
-        `nav_layout.insertWidget(0, ...)` 插在**视觉最上面**的、从不进那张表 ⇒
-        每一处遍历 `nav_groups` 的代码都漏了它：`Alt+1` 跳到屏幕上的**第二**组，
-        最后一组则根本没有快捷键（因为只发了 `len(nav_groups)` 个）。
-
-        ⇒ 顺序**从布局现算**，不存第二份清单：布局就是那个真源，
-        别人往里插一组，这里立刻看得见（同 `_sync_master_switch_rows`
-        刻意不建注册表的理由）。
-        """
+        """RN-025：顺序从侧栏布局现算，包含不在静态 nav_groups 表里的常用组。"""
         layout = getattr(self, "_nav_layout", None)
         if layout is None:
             return list(getattr(self, "nav_groups", []))
@@ -4020,11 +3316,7 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def _pages_of_group(group):
-        """一个分组里的页面，按它在侧栏里的实际顺序。
-
-        ⭐ 问按钮自己（`fp_page_id`），不问 `_page_to_group` ——
-        「常用」组的按钮从不进那张反查表（RN-025 / RN-539 的共同病根）。
-        """
+        """按分组内按钮的 fp_page_id 取真实顺序，兼容不在反查表里的常用组。"""
         layout = getattr(group, "content_layout", None)
         if layout is None:
             return []
@@ -4177,11 +3469,7 @@ class MainWindow(QMainWindow):
             self.logger.exception(f"搜索跳转失败: {page_id}")
 
     def _offer_pin_hidden_page(self, page_id):
-        """告诉用户「这页平时是藏着的」，并给一个一键固定显示的出路（D-17）。
-
-        不解释的话用户下次还是找不到它——搜索能搜到、导航里却没有，
-        那种"时有时无"比彻底藏起来更让人困惑。
-        """
+        """D-17：搜索打开隐藏页后提供固定入口，避免用户下次仍无法从导航找到它。"""
         try:
             from ui_toast import get_toast_manager
 
@@ -4218,10 +3506,7 @@ class MainWindow(QMainWindow):
             pass
 
     def _config_reload_bridge(self, reason, changed_keys=()):
-        """总线回调 → Signal。**可能在后台线程被调用**，这里只做转发。
-
-        （地图规则的按地图自动切预设走 GSI 事件线程；在那儿直接刷控件会崩。）
-        """
+        """配置总线可能在 GSI 后台线程回调，只经 Signal 转发至 GUI 线程。"""
         try:
             self._config_reloaded_signal.emit(str(reason or ""))
         except RuntimeError:
@@ -4229,12 +3514,7 @@ class MainWindow(QMainWindow):
             pass
 
     def _on_config_reloaded(self, reason):
-        """UP-035：配置被整体改写，让已加载的页面重读一遍。
-
-        只刷**已加载**的页：没加载过的页下次构造时自然会读到新配置。
-        每页独立 try/except——一个页面刷新失败不能让其余页面停在旧值上，
-        那样反而制造出"一半新一半旧"的更糟状态。
-        """
+        """仅刷新已加载页，未加载页构造时自读新配置；逐页隔离异常，避免一页失败阻断其余页。"""
         refreshed, failed = 0, []
         changed_switches = []
         for key in getattr(self, "_switch_id_by_config_key", {}):
@@ -4275,8 +3555,8 @@ class MainWindow(QMainWindow):
         crosshair = getattr(self, "crosshair_animation", None)
         if crosshair is not None:
             crosshair.reload_settings()
-        # 首页概览与状态条也读配置,一并同步
-        for hook in ("_sync_basic_page_overview", "_tick_system_status_strip"):
+        # 总览的卡片和状态条也读配置,一并同步
+        for hook in ("_sync_feature_cards", "_tick_system_status_strip"):
             fn = getattr(self, hook, None)
             if callable(fn):
                 try:
@@ -4284,70 +3564,72 @@ class MainWindow(QMainWindow):
                 except Exception:
                     pass
 
-    def _find_setting_row(self, page, query):
-        """UP-041: 在页面里找文案匹配 query 的**具体设置项**，返回它所在的行容器。
-
-        匹配对象是用户真正看得见的文字：复选框/单选框的标签、字段名 QLabel。
-        找到之后向上找一层"行"——单独高亮一个 QLabel 太细，用户看不出范围；
-        高亮整行（label + 控件）才是"这就是你要的那一项"。
-
-        返回 None 表示没命中，调用方退回卡片级定位（即改动前的行为）。
-        """
+    def _find_setting_row(self, page, query, buttons=False):
+        """按可见文案定位设置行；RN-744：按钮精确匹配同等，模糊匹配需 buttons=True；未中返回 None。"""
         try:
-            from PySide6.QtWidgets import QCheckBox, QLabel, QRadioButton, QWidget
+            from PySide6.QtWidgets import (
+                QCheckBox,
+                QLabel,
+                QPushButton,
+                QRadioButton,
+                QStackedWidget,
+                QWidget,
+            )
 
             from core.settings_search import text_matches
             from widgets.settings_card import SettingsCard
         except Exception:
             return None
 
-        # PySide6 的 findChildren 不接受类型元组，只能取全部 QWidget 再筛。
-        # 顺带好处：findChildren(QWidget) 的顺序就是控件树顺序，
-        # 于是"第一个命中"天然是页面上**最靠前**的那一项。
-        wanted = (QCheckBox, QRadioButton, QLabel)
+        # PySide6 findChildren 不接受类型元组，取全部 QWidget 后筛；遍历顺序保留页面控件次序。
+        wanted = (QCheckBox, QRadioButton, QLabel, QPushButton)
+        exact = str(query or "").strip().lower()
         best = None
         for widget in page.findChildren(QWidget):
             if not isinstance(widget, wanted):
                 continue
             try:
-                # 用 isVisibleTo(page) 而不是 isVisible()：后者要求整个窗口已显示，
-                # 在"切页后还没画出来"的一拍里会把所有控件都当成不可见、直接全落空。
-                # isVisibleTo 只看它到 page 这一段有没有被 hide()——
-                # 正好能排掉折叠着的帮助面板内容，又不依赖窗口状态。
+                # isVisibleTo(page) 排除折叠内容且不依赖主窗已显示，切页未绘制时也能定位。
                 if not widget.isVisibleTo(page):
                     continue
-                text = widget.text().strip()
+                text = str(widget.property("fp_search_text") or widget.text()).strip()
             except Exception:
                 continue
             # 太短的文案（"："、"开"）匹配上多半是噪声；标题类留给卡片级去处理
             if len(text) < 2 or widget.objectName() in ("titleLabel", "cardTitle", "statusLabel"):
                 continue
-            if text_matches(query, text):
+            if text.lower() == exact:
                 best = widget
                 break
+            if best is None and isinstance(widget, QPushButton) == buttons and text_matches(query, text):
+                best = widget
         if best is None:
             return None
 
-        # 向上找到"行"：停在卡片之前的最后一级容器。
-        # **最多两级**——不设上限的话，控件直接挂在滚动内容上时会一路走到顶，
-        # 把整块内容区当成"行"高亮，那还不如不定位。
+        def is_whole_area(node):
+            # 视口、滚动内容、页签层、页签页：高亮它们等于没定位
+            parent = node.parentWidget()
+            return (isinstance(node, QStackedWidget) or isinstance(parent, QStackedWidget)
+                    or node.objectName() == "qt_scrollarea_viewport"
+                    or (parent is not None and parent.objectName() == "qt_scrollarea_viewport"))
+
+        # 行容器最多上溯两级并停在卡片前，避免把整块滚动内容误当成一行高亮。
         row, node, depth = best, best.parentWidget(), 0
-        while node is not None and depth < 2:
-            if node is page or isinstance(node, SettingsCard):
+        # 页面可以自己说「这就是一行」（`fp_setting_row`）：没有卡片的页面往上走两级就是整个页签。
+        while node is not None and depth < 2 and not row.property("fp_setting_row"):
+            if node is page or isinstance(node, SettingsCard) or is_whole_area(node):
                 break
             row, node = node, node.parentWidget()
             depth += 1
         return row
 
+    def _refresh_hamburger_icon(self):
+        from widgets.icon_provider import get_themed_icon
+
+        self._hamburger_btn.setIcon(get_themed_icon("mdi.menu", role="secondary", size=18))
+
     def _refresh_nav_icons(self, page_id=None):
-        """R7/D-08(UP-051): 让导航图标跟着选中态变色。
-
-        原状：选中态只有 QSS 的 `color`（作用于文字）和 Python 的 setChecked，
-        **没有任何一处换 icon** —— 文字变紫、图标还是灰的，选中项看着像半选。
-
-        三条路都要覆盖：切页 / 切页被 dirty 守卫拦下回滚 / 换主题重建图标。
-        「常用」分组的按钮是另一批对象，必须一起刷（换主题那条路今天就漏了它）。
-        """
+        """切页、守卫回滚和换主题均须同步图标选中态，且包含常用分组的镜像按钮。"""
         try:
             from widgets.icon_provider import apply_nav_icon
         except Exception:
@@ -4378,11 +3660,7 @@ class MainWindow(QMainWindow):
             pass
 
     def _step_search_highlight(self, target, state, gen=None):
-        """搜索高亮的一步：state ∈ {"true"(强), "fade"(弱), None(撤)}。
-
-        ⭐ RN-557：`gen` 是排这一步时的搜索代次。只比目标不够 ——
-        两次搜索落在同一个控件上时，上一次的「撤销」会把这一次的高亮撤掉。
-        """
+        """RN-557：高亮步骤按搜索代次执行，避免旧定时器撤销同一目标上的新高亮。"""
         if gen is not None and gen != getattr(self, "_search_hit_gen", None):
             return  # 这一步是上一次搜索排的，已经过期
         if target is not getattr(self, "_search_hit_target", None):
@@ -4398,12 +3676,7 @@ class MainWindow(QMainWindow):
             self._search_hit_target = None
 
     def _activate_page_tab(self, page, tab_text):
-        """把页面切到指定页签。
-
-        项级索引里有 15 条落在页签里（比如特殊音效页的「C4」「回合」）。
-        不先切页签，`_find_setting_row` 用 `isVisibleTo(page)` 过滤时
-        非当前页签里的控件全是不可见的——搜到了却定位不到，比搜不到更费解。
-        """
+        """先激活目标页签，使 isVisibleTo(page) 能找到其内的设置项。"""
         if not tab_text:
             return
         try:
@@ -4418,18 +3691,7 @@ class MainWindow(QMainWindow):
             pass
 
     def _highlight_search_target(self, page_id, query, tab_text=""):
-        """R1-2: 跳转后定位反馈——命中卡片标题则滚动到该卡并高亮,否则高亮页头。
-
-        R4/UP-024：原实现用 `apply_glow()` 给目标装一个发光 QGraphicsDropShadowEffect，
-        1.6 秒后 `setGraphicsEffect(None)`。两个后果：
-          1. 卡片本来就有 elevation 阴影，`setGraphicsEffect` 会把它**顶掉并析构**；
-             1.6 秒后又置 None，于是这张卡的阴影**永久消失**，切页也回不来。
-          2. `SettingsCard._shadow` 仍指向那个已被 Qt 析构的 C++ 对象，
-             之后每次 hover 都在 `_animate_shadow_blur` 里抛 RuntimeError。
-        改法：完全不碰 graphicsEffect，改用动态属性 `searchHit` + QSS 边框高亮。
-        分「强 1.2s → 弱 0.4s → 撤」三档，观感上是渐隐，但零动画开销
-        （红线禁重动效）。边框只换颜色不换宽度，所以不会引起重排跳动。
-        """
+        """用 searchHit 属性分强、弱、撤三档高亮；仅换边框颜色，避免动画和重排。"""
         try:
             from core.settings_search import text_matches
             from widgets.settings_card import SettingsCard
@@ -4443,12 +3705,7 @@ class MainWindow(QMainWindow):
             target = None
             q = str(query or "").strip()
             if q:
-                # UP-041: 先试**控件行**级定位。原来只能定位到「页面 + 卡片标题」，
-                # 389 项具体开关搜不到——用户搜"观战静音"只会被丢到基础设置页顶部，
-                # 还得自己在一屏设置里找。
-                # 这里不建 389 项的手工索引（维护成本高、写错了比没有更糟），
-                # 而是在**已经建好的页面上**按控件文案就地匹配：命中就精确定位，
-                # 命不中就退回下面的卡片级定位——也就是今天的行为，不会更差。
+                # 直接在已建页面匹配控件文案，命中则定位行，未中再退回卡片定位，避免维护第二份索引。
                 target = self._find_setting_row(page, q)
             if target is None and q:
                 for card in page.findChildren(SettingsCard):
@@ -4461,6 +3718,8 @@ class MainWindow(QMainWindow):
                     if title and text_matches(q, title):
                         target = card
                         break
+            if target is None and q:
+                target = self._find_setting_row(page, q, buttons=True)
             if target is None:
                 from widgets.page_header import PageHeader
 
@@ -4473,24 +3732,19 @@ class MainWindow(QMainWindow):
             pass
 
     def _reveal_widget(self, page, target):
-        """把 `target` 滚进视口并走一遍「强 → 弱 → 撤」的高亮（UP-041 那一套）。
-
-        RN-144 把这一段从 `_highlight_search_target` 里抽出来单独成名：
-        「跳过去并指给他看」现在有**第二个**调用方（功能页上那颗「去总开关」），
-        而那一路**不该**再走一次按文案模糊匹配 —— 它手上有的是控件对象本身。
-        ⭐ 一段行为只要有第二处要用它，它就得有名字（RN-138 的教训）；
-        抄一份的代价这里特别具体：高亮的三档时序、`WA_StyledBackground`、
-        以及"先撤上一次"这条，抄漏任何一条都是**不报错的**退化。
-        """
+        """RN-144：按控件对象统一滚动与高亮，供搜索和总开关跳转复用，不再二次模糊匹配。"""
         from PySide6.QtCore import QTimer
 
         # 滚动到目标(若在滚动区内)
         try:
             from PySide6.QtWidgets import QScrollArea
 
-            scroll = page.findChild(QScrollArea)
-            if scroll is not None and target is not page:
-                scroll.ensureWidgetVisible(target, 0, 48)
+            # 一页可以有好几个滚动区（每个页签一个），不含目标的那个滚不动它（RN-744）
+            node = target.parentWidget() if target is not page else None
+            while node is not None:
+                if isinstance(node, QScrollArea):
+                    node.ensureWidgetVisible(target, 0, 48)
+                node = node.parentWidget()
         except Exception:
             pass
 
@@ -4750,11 +4004,7 @@ class MainWindow(QMainWindow):
             manager.shutdown()
 
     def _run_shutdown_steps(self):
-        """按表执行退出清理：每步独立 try + 计时，慢步骤（>1s)记 warning。
-
-        v2.2.1: 增加硬超时看门狗——任一步骤阻塞导致整体清理超过 15s 时，
-        先尽力落盘配置，然后 os._exit 强制退出，杜绝"关不掉"挂死。
-        """
+        """逐步隔离异常并计时；15 秒看门狗须先尽力落盘，再强制退出以免挂死。"""
         import os as _os
         import threading as _threading
         import time as _time
@@ -4764,8 +4014,7 @@ class MainWindow(QMainWindow):
                 self.logger.error("退出清理超时(15s)，触发看门狗强制退出")
             except Exception:
                 pass
-            # ⭐⭐ RN-657：和落盘配置同一类 —— 这一刀之后没有任何代码还会跑，
-            #   而漏掉它的代价不在本进程内：整块屏幕留在放大状态。
+            # RN-657：强制退出后再无清理机会，须先复位会留在本进程之外的全屏放大。
             try:
                 self._reset_screen_magnification()
             except Exception:
@@ -4775,10 +4024,7 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
             try:
-                # ⭐⭐⭐ RN-624：这里**不能**用 `save_config_now()`。
-                #   RN-622 之后它失败时是「排一个 1 秒后的 daemon Timer」，
-                #   而下一行就是 `os._exit(0)` —— 那一刀连 atexit 都不跑，
-                #   排好的重试连同线程一起蒸发。⇒ 换成在本线程里把重试做完的那一版。
+                # RN-624：下一步 os._exit 不跑 atexit，写盘重试须在当前线程完成，不能排 daemon Timer。
                 self.config.save_config_on_exit()
             except Exception:
                 pass
@@ -4789,23 +4035,16 @@ class MainWindow(QMainWindow):
         watchdog.start()
 
         steps = [
-            # UP-035: 先退订配置重载广播。总线是模块级的、活得比窗口久,
-            # 不退订的话它会一直握着这个已析构窗口的方法引用——
-            # 之后任何一次 apply_bundle() 都会往死对象上打,抛 RuntimeError。
+            # UP-035：总线活得比窗口久，先退订，避免后续广播调用已析构的 Qt 对象。
             ("退订配置重载广播", self._unsubscribe_config_reload),
-            # ⭐⭐ RN-657：整张表里唯一一个「不做就会在**本进程之外**留下副作用」的步骤
-            # （系统级全屏放大变换），一次 Win32 调用、快到不计时。原来埋在第 10 位，
-            # 前面隔着关外部进程这类会卡的步骤 —— 15s 看门狗一开火就 os._exit(0)，跑不到。
-            # ⭐ 退出清理的顺序该按「漏掉的代价」排，不是按模块归属排。叙事见登记册 RN-657。
+            # RN-657：先复位系统放大，避免后续慢清理触发看门狗后把屏幕留在放大态。
             ("复位屏幕放大", self._reset_screen_magnification),
             # 漏掉的代价：游戏里麦一直开着（os._exit 之后没人再发抬起）。断点 `--only VOX`。
             ("松开语音开麦键", self._release_voice_output_on_close),
             ("保存音乐进度", self._save_music_progress_on_close),
             ("停止GSI服务器", lambda: self.gsi_server.stop() if getattr(self, 'gsi_server', None) else None),
             ("恢复GSI游戏内状态", self._cleanup_gsi_handlers_on_close),
-            # UP-055: 不能走 self.audio_manager —— 那是惰性属性，本次运行若从没
-            # 碰过音频，这一步会为了"清理"反而把 pygame 整套拉起来，把退出拖慢。
-            # peek 只看已存在的实例（可能是 GSI 线程建的，不限于本窗口建的）。
+            # UP-055：清理只 peek 已存在实例，不能通过惰性属性为清理创建整套音频运行时。
             ("停止音频维护任务", self._stop_audio_tasks_on_close),
             ("清理音频管理器", self._cleanup_audio_manager),
             ("清理击杀图标播放器", lambda: self.kill_icon_player.cleanup() if hasattr(self, 'kill_icon_player') else None),
@@ -4824,14 +4063,12 @@ class MainWindow(QMainWindow):
             ("注销语音输出热键", lambda: self._cleanup_page_on_close('voice_output')),
             ("停止闪光进程", lambda: self._cleanup_page_on_close('flash')),
             ("清理动画管理器", lambda: self.animation_manager.cleanup() if hasattr(self, 'animation_manager') else None),
-            ("清理效果管理器", lambda: self.effects_manager.cleanup() if hasattr(self, 'effects_manager') else None),
             ("清理页面过渡", lambda: self.page_transition.cleanup()
                 if getattr(self, 'page_transition', None) else None),
             # RN-624: 退出路径上写盘失败要**当场**重试，不许排定时器 ——
             # 排了也等不到（看门狗的 os._exit 不跑 atexit）。预算见 config._EXIT_SAVE_*。
             ("落盘配置", lambda: self.config.save_config_on_exit()),
-            # UP-016: 页面频次统计改为去抖落盘,退出时兜底 flush 一次,
-            # 否则最后几次切页的统计会丢(影响下次启动的「常用」分组与预载顺序)。
+            # UP-016：退出兜底落盘去抖统计，避免丢失最后几次切页而影响常用分组和预载顺序。
             ("落盘页面统计", self._flush_page_usage),
         ]
         total_start = _time.perf_counter()

@@ -1,15 +1,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QBoxLayout,
     QCheckBox,
     QComboBox,
     QFrame,
-    QGridLayout,
     QHBoxLayout,
     QLabel,
     QScrollArea,
-    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -23,6 +20,8 @@ from widgets.page_action_bar import PageActionBar
 from widgets.settings_card import SettingsCard
 from widgets.page_header import PageHeader
 from widgets.overlay_requirement import make_overlay_requirement_label
+from widgets.settings_row import plain_row
+from widgets.status_strip import StatusStrip
 
 #: RN-429：边缘特效由 `screen_effect_overlay` 画在游戏画面上。
 DRAWS_OVER_THE_GAME = True
@@ -88,7 +87,7 @@ class ScreenEffectsPage(QWidget):
         from ui_help_panel import PAGE_HELP_TEXTS, install_help_panel
         header = PageHeader(
             "屏幕特效",
-            description="击杀或爆头时在屏幕边缘播放一段特效，增强反馈。点右上角「?」看用法。",
+            description="击杀或爆头时在屏幕边缘播放一段特效，增强反馈。",
             title_font_size=None,
             spacing=12,
         )
@@ -96,23 +95,20 @@ class ScreenEffectsPage(QWidget):
         layout.addWidget(header)
         install_help_panel(header.title_row, header.body, PAGE_HELP_TEXTS["screen_effects"])
 
-        self.status_card = QFrame()
-        self.status_card.setObjectName("card")
+        self.status_card = StatusStrip()
         status_card_layout = QVBoxLayout(self.status_card)
-        status_card_layout.setContentsMargins(14, 12, 14, 12)
+        status_card_layout.setContentsMargins(0, 0, 0, 0)
         status_card_layout.setSpacing(8)
 
         # RN-144 升级版（第二稿）：总开关**独占卡片第一行、贴左边**。
         # 第一稿塞在状态行右端，外审 84 发里 12 发说"藏在角落"、15 发说"极易漏开"。
         self.master_switch_row = make_master_switch_row(
-            self, "screen_effects_enabled", "屏幕特效")
-        status_card_layout.addWidget(self.master_switch_row)
+            self, "screen_effects_enabled", "屏幕特效", header=header)
+        # ⚠ 通用那句「可以先调好」在这一页是假话：关着时控件是真禁用的（RN-421，见 `_sync_enabled_state`）
+        self.master_switch_row.effect_notice.setText("打开之后才能调这一页的设置")
 
         status_row = QHBoxLayout()
         status_row.setSpacing(10)
-        status_title = QLabel("当前状态")
-        status_title.setObjectName("statusLabel")
-        status_row.addWidget(status_title)
 
         self.status_badge_label = create_badge_label()
         status_row.addWidget(self.status_badge_label, 1)
@@ -130,120 +126,33 @@ class ScreenEffectsPage(QWidget):
         # 它想给的信息已经由状态胶囊的 tooltip 和整张卡片的 tooltip 给出了。
         layout.addWidget(self.status_card)
 
-        overview_card, overview_layout = SettingsCard.make(
-            "快速控制台",
-            "在这儿开关边缘特效，并确认当前用的是哪套方案。",
-        )
-
-        self.top_overview_layout = QBoxLayout(QBoxLayout.LeftToRight)
-        self.top_overview_layout.setSpacing(16)
-
-        trigger_column = QVBoxLayout()
-        trigger_column.setSpacing(8)
-
-        trigger_title = QLabel("触发开关")
-        trigger_title.setObjectName("statusLabel")
-        trigger_column.addWidget(trigger_title)
-
-        self.master_state_label = QLabel()
-        self.master_state_label.setObjectName("hintLabel")
-        self.master_state_label.setWordWrap(True)
-        self.master_state_label.hide()
-        trigger_column.addWidget(self.master_state_label)
+        # 批 150：原来是「快速控制台」「预设与演出」两张卡，说的是同一件事。
+        card, card_layout = SettingsCard.make("边缘特效")
 
         self.enable_edge_flash_checkbox = QCheckBox("击杀触发屏幕边缘特效")
-        trigger_column.addWidget(self.enable_edge_flash_checkbox)
+        card_layout.addWidget(self.enable_edge_flash_checkbox)
 
-        # ⚠ RN-011：原文写的是「底部工具栏**会保留**普通击杀和爆头预览」，
-        # 而实际上这个勾选框一取消，两个预览按钮就一起被禁用了（见 `_sync_enabled_state`）。
-        # 文案承诺了一件代码不做的事 —— 用户照着做完发现按钮是灰的，只会以为是 bug。
-        # ⚠⚠ RN-150 顺出：这句原来写的是「**勾选后**可用底部工具栏的两个预览按钮」——
-        # 而真实条件是 `edge_enabled = master_enabled and 勾选`（:365），
-        # 总开关关着时**勾了也用不了**。文案承诺了代码不做的事（RN-011 族）。
-        # ⭐⭐ 它一直是假的，只是**以前看不出来**：主按钮那时是紫色填充块，
-        #   看着就像能点，于是没人觉得这句话和屏幕矛盾。本批把禁用态退成中性之后，
-        #   两颗预览按钮同时灰下去，这句承诺当场露馅 —— 外审 4 发判高。
-        # ⭐ **一条修法会让另一条既有缺陷第一次变得可见。**
-        # ⚠ 措辞被 RN-401 那条**方位词判据**改过一次：第一版写的是
-        #   「…可用**底部工具栏**的两个预览按钮…」，而同一句里出现了「总开关」，
-        #   判据当场报「这句话在描述总开关的位置」。⭐ 它的规矩是
-        #   **说它管什么，别说它在哪儿** —— 控件一挪，这类话同时作废且没人会报错。
-        trigger_tip = QLabel(
-            "打开总开关并勾选后，两个预览按钮才能用来直接验证观感；"
-            "总开关关着或取消勾选时，预览会一并停用。")
-        trigger_tip.setObjectName("hintLabel")
-        trigger_tip.setWordWrap(True)
-        trigger_column.addWidget(trigger_tip)
-        trigger_column.addStretch(1)
-        self.top_overview_layout.addLayout(trigger_column, 4)
-
-        summary_column = QVBoxLayout()
-        summary_column.setSpacing(8)
-
-        summary_title = QLabel("当前方案概况")
-        summary_title.setObjectName("statusLabel")
-        summary_column.addWidget(summary_title)
-
-        self.preset_summary_name_label = QLabel("")
-        self.preset_summary_name_label.setObjectName("statusLabel")
-        summary_column.addWidget(self.preset_summary_name_label)
-
-        self.preset_summary_meta_label = QLabel("")
-        self.preset_summary_meta_label.setObjectName("hintLabel")
-        self.preset_summary_meta_label.setWordWrap(True)
-        summary_column.addWidget(self.preset_summary_meta_label)
-
-        self.preset_summary_hint_label = QLabel("")
-        self.preset_summary_hint_label.setObjectName("hintLabel")
-        self.preset_summary_hint_label.setWordWrap(True)
-        summary_column.addWidget(self.preset_summary_hint_label)
-        summary_column.addStretch(1)
-        self.top_overview_layout.addLayout(summary_column, 5)
-
-        overview_layout.addLayout(self.top_overview_layout)
-        overview_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
-        layout.addWidget(overview_card)
-
-        card, card_layout = SettingsCard.make(
-            "预设与演出",
-            "预设负责整体风格，演出模式负责触发节奏；修改后会自动保存，可直接用底部工具栏预览。",
-        )
-
-        controls_grid = QGridLayout()
-        controls_grid.setHorizontalSpacing(12)
-        controls_grid.setVerticalSpacing(8)
-
-        preset_label = QLabel("特效预设:")
-        controls_grid.addWidget(preset_label, 0, 0)
         self.preset_combo = QComboBox()
-        self.preset_combo.setMinimumWidth(220)
-        self.preset_combo.setMaximumWidth(280)
-        self.preset_combo.setMinimumHeight(34)
-        self.preset_combo.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         for key in PRESET_ORDER:
             preset = SCREEN_EFFECT_PRESETS.get(key, {})
             label = preset.get("label", key)
             self.preset_combo.addItem(label, key)
-        controls_grid.addWidget(self.preset_combo, 0, 1)
+        card_layout.addWidget(plain_row("特效预设", self.preset_combo))
 
-        mode_label = QLabel("演出模式:")
-        controls_grid.addWidget(mode_label, 0, 2)
         self.play_mode_combo = QComboBox()
-        self.play_mode_combo.setMinimumWidth(220)
-        self.play_mode_combo.setMaximumWidth(280)
-        self.play_mode_combo.setMinimumHeight(34)
-        self.play_mode_combo.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         for label, value in PLAY_MODE_OPTIONS:
             self.play_mode_combo.addItem(label, value)
-        controls_grid.addWidget(self.play_mode_combo, 0, 3)
-        controls_grid.setColumnStretch(4, 1)
-        card_layout.addLayout(controls_grid)
+        card_layout.addWidget(plain_row("演出模式", self.play_mode_combo))
 
-        tip = QLabel("说明：动画仅在触发时渲染，优先保证反馈清晰和性能稳定，不再单独暴露零碎参数。")
-        tip.setObjectName("hintLabel")
-        tip.setWordWrap(True)
-        card_layout.addWidget(tip)
-        card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+        self.preset_summary_meta_label = QLabel("")
+        self.preset_summary_meta_label.setObjectName("hintLabel")
+        self.preset_summary_meta_label.setWordWrap(True)
+        card_layout.addWidget(self.preset_summary_meta_label)
+
+        self.preset_summary_hint_label = QLabel("")
+        self.preset_summary_hint_label.setObjectName("hintLabel")
+        self.preset_summary_hint_label.setWordWrap(True)
+        card_layout.addWidget(self.preset_summary_hint_label)
 
         layout.addWidget(card)
         layout.addStretch()
@@ -255,14 +164,11 @@ class ScreenEffectsPage(QWidget):
         self.action_bar.set_message("本页修改自动保存。")
         self.action_bar.configure_secondary("预览击杀", self._preview_normal, visible=True)
         self.action_bar.configure_primary("预览爆头", self._preview_headshot, visible=True)
-        self.action_bar.primary_btn.setMinimumWidth(150)
-        self.action_bar.secondary_btn.setMinimumWidth(150)
         root.addWidget(self.action_bar, 0)
 
         self.enable_edge_flash_checkbox.toggled.connect(self._on_setting_changed)
         self.preset_combo.currentIndexChanged.connect(self._on_setting_changed)
         self.play_mode_combo.currentIndexChanged.connect(self._on_setting_changed)
-        self._update_compact_layout()
 
     def _compact_text(self, text, fallback="-", max_length=16):
         value = str(text or "").strip() or fallback
@@ -302,13 +208,6 @@ class ScreenEffectsPage(QWidget):
         self.status_card.setToolTip(detail_text)
         self._refresh_preset_overview()
 
-    def _update_compact_layout(self):
-        if not hasattr(self, "top_overview_layout"):
-            return
-        direction = QBoxLayout.TopToBottom if self.width() < 1080 else QBoxLayout.LeftToRight
-        if self.top_overview_layout.direction() != direction:
-            self.top_overview_layout.setDirection(direction)
-
     def _current_preset_config(self):
         preset_key = self.preset_combo.currentData() if hasattr(self, "preset_combo") else None
         return SCREEN_EFFECT_PRESETS.get(preset_key or DEFAULT_SCREEN_EFFECT_PRESET, {})
@@ -319,10 +218,9 @@ class ScreenEffectsPage(QWidget):
         return str(self.play_mode_combo.currentData() or "streak")
 
     def _refresh_preset_overview(self):
-        if not hasattr(self, "preset_summary_name_label"):
+        if not hasattr(self, "preset_summary_meta_label"):
             return
 
-        preset_label = self.preset_combo.currentText() if hasattr(self, "preset_combo") else "未设置"
         preset_cfg = self._current_preset_config()
         spawn_mode = SPAWN_MODE_LABELS.get(str(preset_cfg.get("spawn_mode", "edges")), "自适应")
         duration = int(preset_cfg.get("duration_ms", 0))
@@ -331,7 +229,6 @@ class ScreenEffectsPage(QWidget):
         headshot_scale = int(round((float(preset_cfg.get("headshot_particle_scale", 1.0)) - 1.0) * 100))
         mode_value = self._current_mode_value()
 
-        self.preset_summary_name_label.setText(preset_label)
         self.preset_summary_meta_label.setText(
             f"时长 {duration}ms · 粒子 {particle_count} · 覆盖 {edge_ratio}% · 生成 {spawn_mode}"
         )
@@ -378,24 +275,13 @@ class ScreenEffectsPage(QWidget):
         master_enabled = bool(getattr(config, "screen_effects_enabled", False))
         edge_enabled = master_enabled and self.enable_edge_flash_checkbox.isChecked()
 
+        # 批 150：这里原来还有一条同样内容的说明，和下面底栏那句、勾选框那句一起说三遍。
+        # RN-151 量过：旁边那句说明买 0 票，勾选框身上那句才买票。
         if not master_enabled:
-            # ⭐⭐⭐ RN-151（批 82）：原文是「总开关已关闭 —— 一拨就生效。」——
-            #   它说的是**总开关自己**的状态，而玩家的困惑在**下面那个勾**上：
-            #   勾选框画着勾（默认 True）却被禁用，读起来就是「这个功能开着」，
-            #   而同屏芯片写着「边缘特效 · 关闭」。⇒ 这句话要**点名那颗勾**。
-            # ⛔ 不许动 `setEnabled`：RN-421 实测「可调但不生效」判高 139→144 没降，
-            #   已改判接受禁用（RN-420：「这两页是对的，错的是那条规矩」）。
-            self.master_state_label.setText(
-                "总开关已关闭 —— 下面这些勾选**暂时都不生效**，"
-                "勾还留着，一拨总开关就全部恢复。")
-            self.master_state_label.show()
             self.action_bar.set_message("总开关已关闭，当前页面设置不会生效。")
         elif not self.enable_edge_flash_checkbox.isChecked():
-            self.master_state_label.setText("边缘特效已关闭，底部预览按钮当前不可用。")
-            self.master_state_label.show()
             self.action_bar.set_message("边缘特效已关闭，可重新勾选后再预览。")
         else:
-            self.master_state_label.hide()
             self.action_bar.set_message("本页修改自动保存。")
 
         # ⭐⭐⭐ RN-151（批 82 定案）：**标记放进勾选框自己的文案。**
@@ -457,7 +343,7 @@ class ScreenEffectsPage(QWidget):
             target = _pr.page_route("advanced", _pr.page_label(self, "advanced"))
             self.action_bar.set_message(
                 "屏幕特效组件没能启动，预览不可用；重启软件仍不行的话，"
-                f"请到{target}里导出日志反馈。", rich=True)
+                f"请到{target}里导出日志反馈。", rich=True, important=True)
             self.logger.warning("预览请求被跳过：overlay_manager 为 None")
             return
         try:
@@ -465,8 +351,4 @@ class ScreenEffectsPage(QWidget):
         except Exception:
             # 同上：预览炸了也得让用户看见，别只留在日志里。
             self.logger.exception("屏幕特效预览失败")
-            self.action_bar.set_message("预览播放失败，详情见日志。")
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        self._update_compact_layout()
+            self.action_bar.set_message("预览播放失败，详情见日志。", important=True)

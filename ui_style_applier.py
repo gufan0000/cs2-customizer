@@ -341,7 +341,8 @@ class StyleApplier:
 
             # 设置最小宽度（文字宽度 + padding）
             if not self._width_is_fixed(widget):
-                min_width = max(min_width_spec, text_width + padding_horizontal * 2 + 20)
+                # 批 145：余量从 20 收成边框的 2：两个字的按钮回到下限那堵墙（64），不再各宽各的
+                min_width = max(min_width_spec, text_width + padding_horizontal * 2 + 2)
                 if widget.minimumWidth() < min_width:
                     # RN-442：同上，只设了 max 的也要认。
                     widget.setMinimumWidth(min(min_width, widget.maximumWidth()))
@@ -413,13 +414,13 @@ class StyleApplier:
             widget: 要清除样式的组件
             clear_root: 是否清除根组件的样式（默认True）
         """
-        # 清除当前widget的样式（可选）
-        if clear_root and not widget.property(self.KEEP_STYLE_PROPERTY):
+        # P3：空的不再设一遍——setStyleSheet("") 不短路、每次重算样式（首开中位 117 → 60 ms）
+        if clear_root and widget.styleSheet() and not widget.property(self.KEEP_STYLE_PROPERTY):
             widget.setStyleSheet("")
 
         # 递归清除子组件样式
         for child in widget.findChildren(QWidget):
-            if child.property(self.KEEP_STYLE_PROPERTY):
+            if not child.styleSheet() or child.property(self.KEEP_STYLE_PROPERTY):
                 continue
             child.setStyleSheet("")
     

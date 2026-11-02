@@ -176,29 +176,30 @@ def clear_cache() -> None:
 # ========== 27 页侧栏 icon 映射 ==========
 
 PAGE_ICON_MAP: dict[str, str] = {
-    "basic":                "mdi.cog-outline",
+    # 批 145：统一成线性（outline）。只有 pistol 没有线性版本
+    "basic":                "mdi.view-dashboard-outline",
     "kill_sound":           "mdi.target",
-    "kill_voice":           "mdi.account-voice",
+    "kill_voice":           "mdi.account-tie-voice-outline",
     "death_sound":          "mdi.skull-outline",
     "gun_sound":            "mdi.pistol",
     "switch_weapon":        "mdi.swap-horizontal",
     "reload_sound":         "mdi.reload",
-    "special_sound":        "mdi.music-circle",
+    "special_sound":        "mdi.music-circle-outline",
     "crosshair":            "mdi.crosshairs",
     "kill_icon":            "mdi.image-multiple-outline",
     "viewmodel":            "mdi.eye-outline",
     "magnifier":            "mdi.magnify",
-    "flash":                "mdi.flash",
+    "flash":                "mdi.flash-outline",
     "hud_color":            "mdi.palette-outline",
     "screen_effects":       "mdi.monitor-screenshot",
-    "music":                "mdi.music",
-    "voice_output":         "mdi.microphone",
+    "music":                "mdi.music-note-outline",
+    "voice_output":         "mdi.microphone-outline",
     # V-007（2026-08-16）：这一条**漏了很久**。`get_page_icon` 查不到就静默
     # 返回空 QIcon——不报错、不打日志，只是这一项在侧栏里没有图标，
     # 文字起始位置比同组其它项左移一截，看着像没对齐。
     # 判据见 tests/test_ui_visual_r1_fixes.py::test_every_nav_page_has_an_icon。
     "fun_afterlife":        "mdi.cellphone-play",
-    "utility":              "mdi.tools",
+    "utility":              "mdi.toolbox-outline",
     "advanced":             "mdi.cog-transfer-outline",
     "audio_health":         "mdi.heart-pulse",
     "audio_import_wizard":  "mdi.import",

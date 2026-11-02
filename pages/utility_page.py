@@ -8,10 +8,10 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QSlider, QTabWidget, QScrollArea, QFrame, QLineEdit,
-    QRadioButton, QButtonGroup, QTextEdit, QGridLayout, QSizePolicy
+    QRadioButton, QButtonGroup, QTextEdit
 )
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont, QIntValidator
+from PySide6.QtGui import QIntValidator
 
 import os
 import subprocess
@@ -23,54 +23,16 @@ from config import config
 from core.utils.logger import get_logger
 from core.utils.format_utils import format_percent
 from pages.audio_status_badge import create_badge_label, render_badges
-from theme_manager import get_theme_manager
 from resource_manager import ResourceManager
 from ui_help_panel import install_help_panel, PAGE_HELP_TEXTS
-from ui_style_applier import keep_inline_style
+from page_theme_helper import style_as_secondary_button
+from ui_style_applier import keep_single_line
+from widgets.flow_layout import make_flow_container
 from widgets.page_header import PageHeader
 from widgets.page_action_bar import PageActionBar
-
-
-
-def _utility_button_style() -> str:
-    """`utility` 页那几颗按钮的样式。
-
-    ⚠ RN-435 同族（批 64）：这段原来在本文件里**写了两遍**（一字不差），
-    而且**没有 `:focus`** —— 实测「预览」「打开道具文件夹」「刷新道具列表」
-    三颗的聚焦像素差都是 **0**。
-    ⭐ 一个自带样式表的控件，等于把自己从「所有还没写的」全站规则里摘了出去
-      （RN-453 账号按钮 → RN-546 焦点环 → RN-435 magnifier 箭头 → 这里）。
-    """
-    from theme_manager import get_color
-
-    return f"""
-            QPushButton {{
-                background-color: {get_color('bg_secondary')};
-                color: {get_color('text_primary')};
-                border: 1px solid {get_color('border_primary')};
-                border-radius: 8px;
-                padding: 8px 12px;
-                text-align: center;
-                font-weight: 600;
-                min-height: 38px;
-            }}
-            QPushButton:hover {{
-                background-color: {get_color('accent_hover')};
-                border-color: {get_color('accent_primary')};
-            }}
-            QPushButton:pressed {{
-                background-color: {get_color('accent_pressed')};
-                border-color: {get_color('accent_primary')};
-            }}
-            QPushButton:focus {{
-                border: 2px solid {get_color('border_focus')};
-            }}
-            QPushButton:disabled {{
-                background-color: {get_color('bg_tertiary')};
-                color: {get_color('text_tertiary')};
-                border-color: {get_color('border_primary')};
-            }}
-    """
+from widgets.settings_card import SettingsCard
+from widgets.settings_row import plain_row
+from widgets.status_strip import StatusStrip
 
 
 class UtilityPage(QWidget):
@@ -98,7 +60,6 @@ class UtilityPage(QWidget):
         # 当前地图和阵营
         self.current_map = None
         self.current_team = None
-        self._themed_buttons = []
         
         self._create_ui()
         self._load_settings()
@@ -132,10 +93,9 @@ class UtilityPage(QWidget):
         layout.addWidget(header)
         install_help_panel(header.title_row, header.body, PAGE_HELP_TEXTS["utility"])
 
-        self.status_card = QFrame()
-        self.status_card.setObjectName("card")
+        self.status_card = StatusStrip()
         status_card_layout = QVBoxLayout(self.status_card)
-        status_card_layout.setContentsMargins(14, 12, 14, 12)
+        status_card_layout.setContentsMargins(0, 0, 0, 0)
         status_card_layout.setSpacing(8)
 
         # RN-189：就地总开关。首页「功能开关」里有「道具瞄点」，而站在这一页上
@@ -146,13 +106,9 @@ class UtilityPage(QWidget):
 
         self.master_switch_row = make_master_switch_row(
             self, "utility_guide_enabled", "道具瞄点")
-        status_card_layout.addWidget(self.master_switch_row)
 
         status_row = QHBoxLayout()
         status_row.setSpacing(10)
-        status_title = QLabel("当前状态")
-        status_title.setObjectName("statusLabel")
-        status_row.addWidget(status_title)
         self.status_badge_label = create_badge_label()
         status_row.addWidget(self.status_badge_label, 1)
         status_row.addStretch()
@@ -176,11 +132,6 @@ class UtilityPage(QWidget):
         wire_page_routes(self.state_hint_label)
         status_card_layout.addWidget(self.state_hint_label)
 
-        self.summary_label = QLabel("")
-        self.summary_label.setObjectName("hintLabel")
-        self.summary_label.setWordWrap(True)
-        self.summary_label.hide()
-        status_card_layout.addWidget(self.summary_label)
         layout.addWidget(self.status_card)
         
         # 创建选项卡
@@ -244,9 +195,9 @@ class UtilityPage(QWidget):
             hint = "如果刚补过素材，可用下方工具栏手动刷新，让列表立即更新。"
         elif not self.current_map:
             title = "等待进入对局"
-            default_message = "未在游戏中\n进入对局后，这里会自动列出当前地图与阵营的道具。"
-            meta = "进入对局后会自动识别当前地图与阵营，这里会切换成对应道具列表。"
-            hint = "也可以先打开道具文件夹，按地图 / T / CT 目录整理素材。"
+            default_message = "进入对局后，这里会自动列出当前地图与阵营的道具。"
+            meta = ""
+            hint = "也可以先整理素材：打开道具文件夹的按钮在第一个页签，按地图 / T / CT 分目录。"
         elif self.current_team:
             title = f"{team_text} 阵营暂未配置道具"
             default_message = f"当前阵营 {team_text} 暂无道具\n请在对应阵营文件夹下添加道具图片。"
@@ -264,6 +215,7 @@ class UtilityPage(QWidget):
             self.empty_utility_list_label.setText(message or default_message)
         if hasattr(self, "empty_utility_meta_label"):
             self.empty_utility_meta_label.setText(meta)
+            self.empty_utility_meta_label.setVisible(bool(meta))
         if hasattr(self, "empty_utility_hint_label"):
             self.empty_utility_hint_label.setText(hint)
 
@@ -448,8 +400,6 @@ class UtilityPage(QWidget):
         )
 
         self._update_empty_utility_state()
-        self.summary_label.setText(detail_text)
-        self.summary_label.setToolTip(detail_text)
         self.status_card.setToolTip(detail_text)
         self._sync_action_bar()
     
@@ -460,103 +410,45 @@ class UtilityPage(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
         scroll.setWidget(tab)
-        
-        layout = QVBoxLayout(tab)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(10)
-        
-        settings_frame = QFrame()
-        settings_frame.setObjectName("card")
-        settings_layout = QVBoxLayout(settings_frame)
-        settings_layout.setContentsMargins(14, 14, 14, 14)
-        settings_layout.setSpacing(8)
 
-        settings_title = QLabel("快捷与模式")
-        settings_title.setObjectName("statusLabel")
-        settings_layout.addWidget(settings_title)
-        # ⚠ RN-077（批 36）：这句原文是「热键和显示模式**放在一起**，改完可以立刻切到
-        # 其他标签继续维护」—— 讲的是**版面决策**，不是这张卡能干什么。
-        # ⭐ RN-077 那条判据（`test_no_layout_self_talk_sitewide`）**看不见它** ——
-        #   它走 AST 认卡片工厂的 `description=` 实参，而这一页的卡是手搓的
-        #   `QFrame(objectName="card")` + 裸 `QLabel`。⇒ 见批 36 那条新的运行期通路。
-        settings_hint = QLabel("设定呼出点位图的按键，以及按住才显示还是按一下常驻。")
-        settings_hint.setObjectName("hintLabel")
-        settings_hint.setWordWrap(True)
-        settings_layout.addWidget(settings_hint)
-        
-        # 快捷键设置
-        hotkey_layout = QHBoxLayout()
-        hotkey_layout.setSpacing(8)
-        hotkey_layout.addWidget(QLabel("快捷键:"), 0)
-        
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(0, 8, 0, 8)
+        layout.setSpacing(12)
+
+        settings_card, settings_layout = SettingsCard.make("快捷与模式")
+
         self.hotkey_button = QPushButton(config.utility_guide_hotkey)
         self.hotkey_button.setFixedWidth(108)
-        self.hotkey_button.setFixedHeight(36)
         self.hotkey_button.clicked.connect(self._set_hotkey)
         self.hotkey_button.setCursor(Qt.PointingHandCursor)
-        hotkey_layout.addWidget(self.hotkey_button, 0)
-        
-        hint = QLabel("(点击设置)")
-        hint.setObjectName("hintLabel")
-        hotkey_layout.addWidget(hint, 0)
-        hotkey_layout.addStretch(1)
-        
-        settings_layout.addLayout(hotkey_layout)
-        
-        # 显示模式
-        mode_layout = QHBoxLayout()
-        mode_layout.setSpacing(8)
-        mode_layout.addWidget(QLabel("显示模式:"), 0)
-        
+        hotkey_hint = keep_single_line(QLabel("点击后按下新键"))
+        hotkey_hint.setObjectName("hintLabel")
+        settings_layout.addWidget(plain_row("快捷键", self.hotkey_button, hotkey_hint, width=None))
+
         self.mode_group = QButtonGroup(self)
-        
+
         self.hold_radio = QRadioButton("长按显示")
         self.hold_radio.setChecked(config.utility_guide_mode == "hold")
         self.hold_radio.toggled.connect(self._update_mode)
         self.mode_group.addButton(self.hold_radio)
-        mode_layout.addWidget(self.hold_radio, 0)
-        
+
         self.toggle_radio = QRadioButton("切换显示")
         self.toggle_radio.setChecked(config.utility_guide_mode == "toggle")
         self.toggle_radio.toggled.connect(self._update_mode)
         self.mode_group.addButton(self.toggle_radio)
-        mode_layout.addWidget(self.toggle_radio, 0)
-        
-        mode_layout.addStretch(1)
-        settings_layout.addLayout(mode_layout)
+        settings_layout.addWidget(plain_row("显示模式", self.hold_radio, self.toggle_radio, width=None))
+        layout.addWidget(settings_card)
 
-        settings_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-
-        button_frame = QFrame()
-        button_frame.setObjectName("card")
-        button_layout = QVBoxLayout(button_frame)
-        button_layout.setContentsMargins(14, 14, 14, 14)
-        button_layout.setSpacing(8)
-        
-        button_title = QLabel("快速操作")
-        button_title.setObjectName("statusLabel")
-        button_layout.addWidget(button_title)
-        button_hint = QLabel("打开存放点位图的文件夹，或让软件重新读一遍里面的图片。")
-        button_hint.setObjectName("hintLabel")
-        button_hint.setWordWrap(True)
-        button_layout.addWidget(button_hint)
-        
-        # 按钮样式（使用主题色，见 ）
-        button_style = _utility_button_style()
-
-        button_grid = QGridLayout()
-        button_grid.setHorizontalSpacing(8)
-        button_grid.setVerticalSpacing(8)
-        button_grid.setColumnStretch(0, 1)
-        button_grid.setColumnStretch(1, 1)
+        button_card, button_layout = SettingsCard.make(
+            "快速操作", "打开存放点位图的文件夹，或让软件重新读一遍里面的图片。")
+        buttons_wrap, buttons_flow = make_flow_container(h_spacing=8, v_spacing=8)
 
         open_folder_btn = QPushButton("打开道具文件夹")
         open_folder_btn.clicked.connect(self._open_utility_folder)
         open_folder_btn.setCursor(Qt.PointingHandCursor)
-        open_folder_btn.setStyleSheet(button_style)
-        self._themed_buttons.append(open_folder_btn)
-        button_grid.addWidget(open_folder_btn, 0, 0)
-        
+        style_as_secondary_button(open_folder_btn)
+        buttons_flow.addWidget(open_folder_btn)
+
         self.open_map_folder_btn = QPushButton("打开当前地图文件夹")
         # ⚠ RN-302（批 36）：这颗按钮在没进对局时是禁用的，而**鼠标停上去什么都不说** ——
         # 外审 6/6 答「有置灰按钮，但画面上没有说为什么」。
@@ -566,57 +458,29 @@ class UtilityPage(QWidget):
         self.open_map_folder_btn.clicked.connect(self._open_current_map_folder)
         self.open_map_folder_btn.setEnabled(False)
         self.open_map_folder_btn.setCursor(Qt.PointingHandCursor)
-        self.open_map_folder_btn.setStyleSheet(button_style)
-        self._themed_buttons.append(self.open_map_folder_btn)
-        button_grid.addWidget(self.open_map_folder_btn, 0, 1)
-        
+        style_as_secondary_button(self.open_map_folder_btn)
+        buttons_flow.addWidget(self.open_map_folder_btn)
+
         self.open_team_folder_btn = QPushButton("打开当前阵营文件夹")
         self.open_team_folder_btn.setToolTip(
             "要先进对局：阵营（T / CT）是进对局之后才知道的。")
         self.open_team_folder_btn.clicked.connect(self._open_current_team_folder)
         self.open_team_folder_btn.setEnabled(False)
         self.open_team_folder_btn.setCursor(Qt.PointingHandCursor)
-        self.open_team_folder_btn.setStyleSheet(button_style)
-        self._themed_buttons.append(self.open_team_folder_btn)
-        button_grid.addWidget(self.open_team_folder_btn, 1, 0)
-        
+        style_as_secondary_button(self.open_team_folder_btn)
+        buttons_flow.addWidget(self.open_team_folder_btn)
+
         # RN-519：状态条那句话要点名它，名字只能有一份。
         self.refresh_utility_btn = QPushButton("刷新道具列表")
-        refresh_btn = self.refresh_utility_btn
-        refresh_btn.clicked.connect(self._refresh_utilities)
-        refresh_btn.setCursor(Qt.PointingHandCursor)
-        refresh_btn.setStyleSheet(button_style)
-        self._themed_buttons.append(refresh_btn)
-        button_grid.addWidget(refresh_btn, 1, 1)
-        button_layout.addLayout(button_grid)
-
-        button_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        top_cards_row = QHBoxLayout()
-        top_cards_row.setSpacing(12)
-        # ⚠ RN-470（批 36）：这两句原来是 `addWidget(..., Qt.AlignTop)` 配上
-        # `QSizePolicy.Maximum` —— **两句各自都正确**（不想让卡无限拉伸、想让它贴顶），
-        # 合在一起才产出「谁内容少谁短一截」：实测 158px vs 192px，**底部差 34px**。
-        # ⭐ 又一次「两条各自正确的规则在交集处出错」（批 25）。
-        # ⇒ 去掉 AlignTop、把纵向策略从 Maximum 放到 Preferred，
-        #   HBox 就会把两张卡都拉到这一排的高度（= 两者中较高的那个）。
-        top_cards_row.addWidget(settings_frame, 3)
-        top_cards_row.addWidget(button_frame, 5)
-        # v2.1.1: 稀疏内容上下夹 stretch 实现垂直居中, 避免底部大片空白
+        self.refresh_utility_btn.clicked.connect(self._refresh_utilities)
+        self.refresh_utility_btn.setCursor(Qt.PointingHandCursor)
+        style_as_secondary_button(self.refresh_utility_btn)
+        buttons_flow.addWidget(self.refresh_utility_btn)
+        button_layout.addWidget(buttons_wrap)
+        layout.addWidget(button_card)
         layout.addStretch(1)
-        layout.addLayout(top_cards_row)
-        layout.addStretch(2)
-        
+
         self.tab_widget.addTab(scroll, "基础设置")
-        
-        # Register theme change callback
-        get_theme_manager().register_theme_changed_callback(self._apply_theme_styles)
-    
-    def _apply_theme_styles(self):
-        """重新应用主题样式到所有按钮"""
-        button_style = _utility_button_style()
-        for btn in self._themed_buttons:
-            keep_inline_style(btn)  # UP-019: 样式由 token 现算,免于统一清理
-            btn.setStyleSheet(button_style)
 
     def _create_display_tab(self):
         """创建显示设置选项卡"""
@@ -625,155 +489,72 @@ class UtilityPage(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
         scroll.setWidget(tab)
-        
+
         layout = QVBoxLayout(tab)
-        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setContentsMargins(0, 8, 0, 8)
         layout.setSpacing(12)
 
-        settings_row = QHBoxLayout()
-        settings_row.setSpacing(12)
+        image_card, image_layout = SettingsCard.make("图片显示")
 
-        image_frame = QFrame()
-        image_frame.setObjectName("card")
-        image_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
-        image_layout = QVBoxLayout(image_frame)
-        image_layout.setContentsMargins(14, 12, 14, 12)
-        image_layout.setSpacing(8)
-
-        image_title = QLabel("图片显示")
-        image_title.setObjectName("statusLabel")
-        image_layout.addWidget(image_title)
-        image_hint = QLabel("透明度和缩放放在同一块，方便先把整体观感调顺。")
-        image_hint.setObjectName("hintLabel")
-        image_hint.setWordWrap(True)
-        image_layout.addWidget(image_hint)
-        
-        opacity_layout = QHBoxLayout()
-        opacity_layout.setSpacing(8)
-        opacity_layout.addWidget(QLabel("图片透明度:"), 0)
         self.opacity_slider = QSlider(Qt.Horizontal)
         self.opacity_slider.setRange(30, 100)
         self.opacity_slider.setValue(int(config.utility_guide_opacity * 100))
         self.opacity_slider.valueChanged.connect(self._update_opacity)
-        opacity_layout.addWidget(self.opacity_slider, 1)
         self.opacity_label = QLabel(format_percent(config.utility_guide_opacity))
         self.opacity_label.setFixedWidth(48)
-        self.opacity_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        opacity_layout.addWidget(self.opacity_label, 0)
-        image_layout.addLayout(opacity_layout)
+        image_layout.addWidget(plain_row("图片透明度", self.opacity_slider, self.opacity_label))
 
-        scale_layout = QHBoxLayout()
-        scale_layout.setSpacing(8)
-        scale_layout.addWidget(QLabel("图片大小:"), 0)
         self.scale_slider = QSlider(Qt.Horizontal)
         self.scale_slider.setRange(50, 200)
         self.scale_slider.setValue(int(config.utility_guide_scale * 100))
         self.scale_slider.valueChanged.connect(self._update_scale)
-        scale_layout.addWidget(self.scale_slider, 1)
         self.scale_label = QLabel(format_percent(config.utility_guide_scale, hi=2.0))
         self.scale_label.setFixedWidth(48)
-        self.scale_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        scale_layout.addWidget(self.scale_label, 0)
-        image_layout.addLayout(scale_layout)
+        image_layout.addWidget(plain_row("图片大小", self.scale_slider, self.scale_label))
+        layout.addWidget(image_card)
 
-        position_frame = QFrame()
-        position_frame.setObjectName("card")
-        position_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
-        position_layout = QVBoxLayout(position_frame)
-        position_layout.setContentsMargins(14, 12, 14, 12)
-        position_layout.setSpacing(8)
+        position_card, position_layout = SettingsCard.make(
+            "定位与预览", "X / Y 是瞄点图相对默认位置的偏移，正值向右、向下，负值往回拉。")
 
-        position_title = QLabel("定位与预览")
-        position_title.setObjectName("statusLabel")
-        position_layout.addWidget(position_title)
-        position_hint = QLabel("X / Y 是瞄点图相对默认位置的偏移，改完可以直接预览效果。")
-        position_hint.setObjectName("hintLabel")
-        position_hint.setWordWrap(True)
-        position_layout.addWidget(position_hint)
-
-        offset_row = QHBoxLayout()
-        offset_row.setSpacing(8)
-        offset_row.addWidget(QLabel("X:"), 0)
         self.x_offset_edit = QLineEdit(str(config.utility_guide_position_x))
-        self.x_offset_edit.setFixedWidth(60)
         self.x_offset_edit.setValidator(QIntValidator(-1000, 1000))
         self.x_offset_edit.textChanged.connect(self._update_position)
-        offset_row.addWidget(self.x_offset_edit, 0)
-        offset_row.addWidget(QLabel("Y:"), 0)
         self.y_offset_edit = QLineEdit(str(config.utility_guide_position_y))
-        self.y_offset_edit.setFixedWidth(60)
+        self.y_offset_edit.setFixedWidth(72)
         self.y_offset_edit.setValidator(QIntValidator(-1000, 1000))
         self.y_offset_edit.textChanged.connect(self._update_position)
-        offset_row.addWidget(self.y_offset_edit, 0)
 
         preview_btn = QPushButton("预览")
-        preview_btn.setFixedWidth(92)
         preview_btn.clicked.connect(self._preview_display)
         preview_btn.setCursor(Qt.PointingHandCursor)
-        offset_row.addWidget(preview_btn, 0)
-        offset_row.addStretch(1)
-        position_layout.addLayout(offset_row)
+        style_as_secondary_button(preview_btn)
+        position_layout.addWidget(
+            plain_row("偏移 X", self.x_offset_edit, QLabel("Y"), self.y_offset_edit, preview_btn, width=72))
+        layout.addWidget(position_card)
 
-        position_tip = QLabel("正值向右 / 向下偏移，负值用于回拉。")
-        position_tip.setObjectName("hintLabel")
-        position_layout.addWidget(position_tip)
-        self._themed_buttons.append(preview_btn)
+        menu_card, menu_layout = SettingsCard.make("菜单显示")
 
-        menu_frame = QFrame()
-        menu_frame.setObjectName("card")
-        menu_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
-        menu_layout = QVBoxLayout(menu_frame)
-        menu_layout.setContentsMargins(14, 12, 14, 12)
-        menu_layout.setSpacing(8)
-
-        menu_title = QLabel("菜单显示")
-        menu_title.setObjectName("statusLabel")
-        menu_layout.addWidget(menu_title)
-        menu_hint = QLabel("菜单层单独控制透明度和停留时长，切换模式下更直观。")
-        menu_hint.setObjectName("hintLabel")
-        menu_hint.setWordWrap(True)
-        menu_layout.addWidget(menu_hint)
-        
-        menu_opacity_layout = QHBoxLayout()
-        menu_opacity_layout.setSpacing(8)
-        menu_opacity_layout.addWidget(QLabel("菜单透明度:"), 0)
         self.menu_opacity_slider = QSlider(Qt.Horizontal)
         self.menu_opacity_slider.setRange(50, 100)
         menu_opacity = getattr(config, 'utility_guide_menu_opacity', 0.8)
         self.menu_opacity_slider.setValue(int(menu_opacity * 100))
         self.menu_opacity_slider.valueChanged.connect(self._update_menu_opacity)
-        menu_opacity_layout.addWidget(self.menu_opacity_slider, 1)
         self.menu_opacity_label = QLabel(format_percent(menu_opacity))
         self.menu_opacity_label.setFixedWidth(48)
-        self.menu_opacity_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        menu_opacity_layout.addWidget(self.menu_opacity_label, 0)
-        menu_layout.addLayout(menu_opacity_layout)
+        menu_layout.addWidget(plain_row("菜单透明度", self.menu_opacity_slider, self.menu_opacity_label))
 
-        duration_layout = QHBoxLayout()
-        duration_layout.setSpacing(8)
-        duration_layout.addWidget(QLabel("图片显示时长:"), 0)
         duration = getattr(config, 'utility_guide_display_duration', 10)
         self.duration_edit = QLineEdit(str(duration))
-        self.duration_edit.setFixedWidth(60)
         self.duration_edit.setValidator(QIntValidator(0, 999))
         self.duration_edit.textChanged.connect(self._update_duration)
-        duration_layout.addWidget(self.duration_edit, 0)
-        duration_hint = QLabel("秒 (切换模式下，0=永久显示)")
+        duration_hint = keep_single_line(QLabel("秒（切换模式下，0 = 永久显示）"))
         duration_hint.setObjectName("hintLabel")
-        duration_hint.setWordWrap(True)
-        duration_layout.addWidget(duration_hint, 0)
-        duration_layout.addStretch(1)
-        menu_layout.addLayout(duration_layout)
-
-        settings_row.addWidget(image_frame, 4, Qt.AlignTop)
-        settings_row.addWidget(position_frame, 3, Qt.AlignTop)
-        settings_row.addWidget(menu_frame, 4, Qt.AlignTop)
-        layout.addLayout(settings_row)
+        menu_layout.addWidget(plain_row("图片显示时长", self.duration_edit, duration_hint, width=72))
+        layout.addWidget(menu_card)
         layout.addStretch(1)
-        self._apply_theme_styles()
 
         self.tab_widget.addTab(scroll, "显示设置")
-    
+
     def _create_manage_tab(self):
         """创建道具管理选项卡"""
         # UP-072: 三个页签里只有这个没套滚动区，实测 1200x800 下最小高超出可视区 30px
@@ -785,112 +566,68 @@ class UtilityPage(QWidget):
         scroll.setWidget(tab)
 
         layout = QVBoxLayout(tab)
-        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setContentsMargins(0, 8, 0, 8)
         layout.setSpacing(12)
 
-        top_row = QHBoxLayout()
-        top_row.setSpacing(12)
-
-        context_frame = QFrame()
-        context_frame.setObjectName("card")
-        context_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
-        context_layout = QVBoxLayout(context_frame)
-        context_layout.setContentsMargins(14, 12, 14, 12)
-        context_layout.setSpacing(8)
-
-        context_title = QLabel("当前上下文")
-        context_title.setObjectName("statusLabel")
-        context_layout.addWidget(context_title)
+        context_card, context_layout = SettingsCard.make("当前对局")
 
         self.manage_context_badge_label = create_badge_label()
         context_layout.addWidget(self.manage_context_badge_label)
 
         self.current_map_label = QLabel("未检测到")
         self.current_team_label = QLabel("未检测到")
-        self.manage_context_label = QLabel("地图和阵营会决定自动加载哪个目录，列表会周期刷新。")
+        self.manage_context_label = QLabel("地图和阵营决定加载哪个目录，列表会自动刷新。")
         self.manage_context_label.setObjectName("hintLabel")
         self.manage_context_label.setWordWrap(True)
         context_layout.addWidget(self.manage_context_label)
-        top_row.addWidget(context_frame, 4, Qt.AlignTop)
 
-        list_frame = QFrame()
-        list_frame.setObjectName("card")
-        list_layout = QVBoxLayout(list_frame)
-        list_layout.setContentsMargins(14, 12, 14, 12)
-        list_layout.setSpacing(8)
-        
-        list_title = QLabel("已加载道具:")
-        list_title.setFont(QFont("Microsoft YaHei", 14, QFont.Bold))
-        list_layout.addWidget(list_title)
-        
+        self.utility_list_card, list_layout = SettingsCard.make("已加载道具")
+
         self.utility_list_text = QTextEdit()
         self.utility_list_text.setReadOnly(True)
         self.utility_list_text.setMinimumHeight(260)
-        self.utility_list_text.hide()
         list_layout.addWidget(self.utility_list_text)
 
         self.empty_utility_state_widget = QWidget()
-        self.empty_utility_state_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        empty_state_outer_layout = QVBoxLayout(self.empty_utility_state_widget)
-        empty_state_outer_layout.setContentsMargins(0, 8, 0, 8)
-        empty_state_outer_layout.setSpacing(0)
-        empty_state_outer_layout.addStretch(1)
-
-        self.empty_utility_state_frame = QFrame()
-        self.empty_utility_state_frame.setObjectName("card")
-        self.empty_utility_state_frame.setMaximumWidth(560)
-        empty_state_layout = QVBoxLayout(self.empty_utility_state_frame)
-        empty_state_layout.setContentsMargins(18, 16, 18, 16)
-        empty_state_layout.setSpacing(8)
+        empty_state_layout = QVBoxLayout(self.empty_utility_state_widget)
+        empty_state_layout.setContentsMargins(0, 0, 0, 0)
+        empty_state_layout.setSpacing(4)
 
         self.empty_utility_title_label = QLabel("等待进入对局")
         self.empty_utility_title_label.setObjectName("statusLabel")
-        empty_state_layout.addWidget(self.empty_utility_title_label, 0, Qt.AlignHCenter)
+        empty_state_layout.addWidget(self.empty_utility_title_label)
 
-        self.empty_utility_list_label = QLabel("未在游戏中\n进入对局后，这里会自动列出当前地图与阵营的道具。")
+        self.empty_utility_list_label = QLabel("进入对局后，这里会自动列出当前地图与阵营的道具。")
         self.empty_utility_list_label.setObjectName("hintLabel")
         self.empty_utility_list_label.setWordWrap(True)
-        self.empty_utility_list_label.setAlignment(Qt.AlignCenter)
         empty_state_layout.addWidget(self.empty_utility_list_label)
 
-        self.empty_utility_meta_label = QLabel("进入对局后会自动识别当前地图与阵营，这里会切换成对应道具列表。")
+        self.empty_utility_meta_label = QLabel("")
         self.empty_utility_meta_label.setObjectName("hintLabel")
         self.empty_utility_meta_label.setWordWrap(True)
-        self.empty_utility_meta_label.setAlignment(Qt.AlignCenter)
+        self.empty_utility_meta_label.hide()
         empty_state_layout.addWidget(self.empty_utility_meta_label)
 
         self.empty_utility_hint_label = QLabel("也可以先打开道具文件夹，按地图 / T / CT 目录整理素材。")
         self.empty_utility_hint_label.setObjectName("hintLabel")
         self.empty_utility_hint_label.setWordWrap(True)
-        self.empty_utility_hint_label.setAlignment(Qt.AlignCenter)
         empty_state_layout.addWidget(self.empty_utility_hint_label)
+        list_layout.addWidget(self.empty_utility_state_widget)
 
-        empty_state_outer_layout.addWidget(self.empty_utility_state_frame, 0, Qt.AlignHCenter)
-        empty_state_outer_layout.addStretch(1)
-        list_layout.addWidget(self.empty_utility_state_widget, 1)
-        
-        tip_frame = QFrame()
-        tip_frame.setObjectName("card")
-        tip_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
-        tip_layout = QVBoxLayout(tip_frame)
-        tip_layout.setContentsMargins(14, 12, 14, 12)
-        tip_layout.setSpacing(8)
+        layout.addWidget(context_card)
+        layout.addWidget(self.utility_list_card)
+        layout.addStretch()
+        self._manage_layout = layout
+        self._show_utility_list(False)
 
-        tip_title = QLabel("自动刷新")
-        tip_title.setObjectName("statusLabel")
-        tip_layout.addWidget(tip_title)
-
-        tip_label = QLabel("系统会自动根据当前阵营加载对应道具，列表会周期刷新。")
-        tip_label.setWordWrap(True)
-        tip_label.setObjectName("hintLabel")
-        tip_layout.addWidget(tip_label)
-        top_row.addWidget(tip_frame, 3, Qt.AlignTop)
-
-        layout.addLayout(top_row)
-        layout.addWidget(list_frame, 1)
-        
         self.tab_widget.addTab(scroll, "道具管理")
     
+    def _show_utility_list(self, has_items: bool):
+        self.utility_list_text.setVisible(has_items)
+        self.empty_utility_state_widget.setVisible(not has_items)
+        # 没有道具时卡片只有几行字高：一整页的空卡片看着像出了问题
+        self._manage_layout.setStretchFactor(self.utility_list_card, 1 if has_items else 0)
+
     def _set_hotkey(self):
         """设置快捷键"""
         if self.setting_hotkey:
@@ -1245,12 +982,11 @@ class UtilityPage(QWidget):
             return
         
         self.utility_list_text.clear()
-        self.utility_list_text.show()
-        self.empty_utility_state_widget.hide()
+        self._show_utility_list(True)
         empty_text = ""
         
         if not self.current_map:
-            empty_text = "未在游戏中\n进入对局后，这里会自动列出当前地图与阵营的道具。"
+            empty_text = "进入对局后，这里会自动列出当前地图与阵营的道具。"
         elif self.utility_display.utility_data:
             if self.current_team:
                 self.utility_list_text.append(f"当前阵营: {self.current_team}\n")
@@ -1267,14 +1003,7 @@ class UtilityPage(QWidget):
                 empty_text = "当前地图暂无道具\n请在对应阵营文件夹下添加道具图片。"
 
         if empty_text:
-            self.utility_list_text.hide()
             self._update_empty_utility_state(empty_text)
-            self.empty_utility_state_widget.show()
+            self._show_utility_list(False)
 
         self._sync_status_strip()
-
-    def deleteLater(self):
-        """清理：注销主题回调"""
-        from theme_manager import get_theme_manager
-        get_theme_manager().unregister_theme_changed_callback(self._apply_theme_styles)
-        super().deleteLater()

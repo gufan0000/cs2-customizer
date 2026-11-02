@@ -63,6 +63,14 @@ def _methods(tree: ast.AST) -> dict[str, ast.FunctionDef]:
     }
 
 
+def _fills_a_scroll(node: ast.FunctionDef) -> bool:
+    """光建一个滚动区不算，内容放进去才算（批 150：把 setWidget 删了这条还绿着）。"""
+    return any(
+        isinstance(c, ast.Call) and isinstance(c.func, ast.Attribute) and c.func.attr == "setWidget"
+        for c in ast.walk(node)
+    )
+
+
 def _scroll_in_chain(node: ast.FunctionDef, methods: dict[str, ast.FunctionDef],
                      seen: set[str] | None = None) -> bool:
     """这个方法**或它委托出去的 `self.xxx()`** 里有没有构造 QScrollArea。
@@ -76,7 +84,7 @@ def _scroll_in_chain(node: ast.FunctionDef, methods: dict[str, ast.FunctionDef],
     if node.name in seen:
         return False
     seen.add(node.name)
-    if _constructs(node, "QScrollArea"):
+    if (_constructs(node, "QScrollArea") or _constructs(node, "BoardScrollArea")) and _fills_a_scroll(node):
         return True
     for sub in ast.walk(node):
         if not (isinstance(sub, ast.Call) and isinstance(sub.func, ast.Attribute)):
@@ -346,7 +354,7 @@ def test_the_button_detector_actually_sees_fixed_widths():
             seen += len(_fixed_width_button_texts(path.name))
         except SyntaxError:  # pragma: no cover
             continue
-    assert seen >= 5, (
+    assert seen >= 3, (
         f"全仓只认出 {seen} 个写死宽度的按钮，探测器多半失灵了"
-        "（R10 实测应有 20 个上下）"
+        "（R10 实测 20 个上下；批 150 换成朴素设置行之后实测 3 个）"
     )

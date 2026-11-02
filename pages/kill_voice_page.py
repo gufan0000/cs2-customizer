@@ -154,30 +154,11 @@ class KillVoicePage(SoundPageBase, QWidget):
         if not hasattr(config, "kill_voice_enabled"):
             config.kill_voice_enabled = False
 
-    def _get_current_category_name(self) -> str:
-        # ⚠ RN-020：原先这里拿 `tab_widget.tabText(index)` 当 `CATEGORIES` 的键。
-        # 页签**文字**和数据键是两回事 —— 哪天给页签加个计数后缀（「手枪 3/10」
-        # 这类很自然的改动），查表就静默返回 `[]`，分类徽章变成 `0/0` 而不报任何错。
-        # 页签是按 `CATEGORIES` 的顺序建的（见基类 `_build_sound_page_ui`），
-        # 所以按下标取键才是可靠的；取不到时才退回读文字。
-        names = list(self.CATEGORIES.keys())
-        if not hasattr(self, "tab_widget") or self.tab_widget.count() == 0:
-            return names[0] if names else "未分组"
-        index = self.tab_widget.currentIndex()
-        if index < 0:
-            index = 0
-        if 0 <= index < len(names):
-            return names[index]
-        return self.tab_widget.tabText(index)
-
-    def _get_current_category_weapons(self) -> list[str]:
-        return list(self.CATEGORIES.get(self._get_current_category_name(), []))
-
     # ------------------------------------------------ R9-D 基类钩子
     PAGE_TITLE = "击杀语音设置"
     # RN-034：原文无条件写「先去「基础设置」打开总开关」，而徽章上同时写着
     # 「开关 · 已启用」—— 自相矛盾。改成陈述总开关在哪。
-    PAGE_LEAD = "击杀时播报一句语音，连杀会递进（Double Kill、Triple Kill）。逐把枪选风格，点「测试」试听；总开关管它开不开。"
+    PAGE_LEAD = "击杀时播报一句语音，连杀会递进（Double Kill、Triple Kill）。选一个风格再点枪名就配上；总开关管它开不开。"
     HELP_KEY = "kill_voice"
     TEST_LEVELS = [1, 2, 3, 4, 5]
     STYLE_TOOLS_MENU = True
@@ -206,8 +187,8 @@ class KillVoicePage(SoundPageBase, QWidget):
                 all_options.append(style)
         return all_options
 
-    def _test_weapon(self, weapon: str, level=None) -> None:
-        self._test_weapon_voice(weapon) if level is None else self._test_weapon_voice(weapon, level)
+    def _test_weapon(self, weapon: str, level=None, style=None) -> None:
+        self._test_weapon_voice(weapon, 1 if level is None else level, style=style)
 
 
     def _get_style_options(self) -> list[str]:
@@ -306,14 +287,14 @@ class KillVoicePage(SoundPageBase, QWidget):
 
         self.logger.info(f"武器 {weapon} 语音更新: {old_style} -> {new_style}")
 
-    def _test_weapon_voice(self, weapon: str, level: int = 1):
+    def _test_weapon_voice(self, weapon: str, level: int = 1, style: str | None = None):
         """试听击杀语音。v2.2.1: level 支持 1-5 连杀档（旧版硬编码只播第 1 连杀）。"""
         weapon_row = self.weapon_rows.get(weapon)
         if weapon_row is None:
             return
 
         level = int(level) if int(level) in (1, 2, 3, 4, 5) else 1
-        style_text = weapon_row.get_current_style()
+        style_text = style or weapon_row.get_current_style()
         if style_text == self.DISABLED_STYLE_TEXT:
             # RN-040：这里原来**只写一行日志就返回** —— 用户看到的是"点了没反应"。
             # 同 UP-037 那一类（其余各页早就改成给提示了，这页漏下了）。
@@ -344,10 +325,10 @@ class KillVoicePage(SoundPageBase, QWidget):
         if not voice_file:
             if level > 1:
                 self.action_bar.set_message(
-                    f"「{style_text}」这套风格里没有 {level} 连杀的语音文件（{level}.mp3），试听未播放。")
+                    f"「{style_text}」这套风格里没有 {level} 连杀的语音文件（{level}.mp3），试听未播放。", important=True)
             else:
                 self.action_bar.set_message(
-                    f"「{style_text}」这套风格的目录里没有可用的语音文件，试听未播放。")
+                    f"「{style_text}」这套风格的目录里没有可用的语音文件，试听未播放。", important=True)
             return
 
         self.logger.info(f"测试语音: {sound_key}")
@@ -362,7 +343,7 @@ class KillVoicePage(SoundPageBase, QWidget):
                 # 同 RN-017：文件在扫描后被删/改名时也别静默，用户得知道为什么没声。
                 self.logger.warning(f"语音文件不存在或不可识别: {voice_dir}")
                 self.action_bar.set_message(
-                    f"「{style_text}」的语音文件读不到了（可能已被移动或删除），试听未播放。")
+                    f"「{style_text}」的语音文件读不到了（可能已被移动或删除），试听未播放。", important=True)
                 return
 
         self.audio_manager.play_voice(sound_key)
@@ -388,9 +369,6 @@ class KillVoicePage(SoundPageBase, QWidget):
         resolved = self._resolved_styles()
         selected_count = self._configured_weapon_count(resolved=resolved)
         stale_count = self._stale_weapon_count(resolved)
-        current_category = self._get_current_category_name()
-        current_weapons = self._get_current_category_weapons()
-        current_selected = self._configured_weapon_count(current_weapons, resolved=resolved)
 
         health = collect_category_health(("kill_voices", "weapon_kill_voices"))
         detail_tooltip = build_health_detail_tooltip(health)
@@ -398,10 +376,6 @@ class KillVoicePage(SoundPageBase, QWidget):
         badges = [
             ("success" if enabled else "warn", f"开关 · {'已开启' if enabled else '未开启'}"),
             self._configured_badge(selected_count, stale_count),
-            (
-                "success" if current_selected else "info",
-                f"分类 · {self._compact_text(current_category, '未分组', 8)} {current_selected}/{len(current_weapons)}",
-            ),
             # RN-035：分级收进 `resource_badge()` 一份（七页原先各抄一遍，
             # 七份都把"素材目录还没建"报成红色异常）。
             resource_badge(health),
@@ -409,8 +383,6 @@ class KillVoicePage(SoundPageBase, QWidget):
 
         detail_lines = [
             f"总开关：{'已开启' if enabled else '未开启'}",
-            f"当前分类：{current_category}",
-            f"当前分类已配置：{current_selected}/{len(current_weapons)}",
             f"全部武器已配置：{selected_count}/{len(self._get_all_weapons())}",
             "试听策略：优先匹配 1.*，找不到时回退到目录首个可用音频",
         ]
@@ -422,16 +394,10 @@ class KillVoicePage(SoundPageBase, QWidget):
 
         summary_text = "\n".join(detail_lines)
         render_badges(self.status_badge_label, badges, detail_tooltip=summary_text)
-        self.summary_label.setText(summary_text)
-        self.summary_label.setToolTip(summary_text)
         self.status_card.setToolTip(summary_text)
         # ⚠ 这里原先又算了一遍 `configured_names`：上面第 391 行已经算过，
         # 两次之间没有任何东西会改变它的输入（`config.weapon_kill_voices` 没动过），
         # 所以两次结果必然逐字相同。删掉的是**纯重复计算**，不是行为。
-        self.category_overview_title_label.setText(f"当前分类 · {current_category}")
-        self.category_overview_meta_label.setText(
-            f"本分类已配置 {current_selected}/{len(current_weapons)} · 全局已配置 {selected_count}/{len(self._get_all_weapons())}"
-        )
         # RN-033/RN-035：优先级 失效项 > 资源状态 > 已配置示例（见 kill_sound 同处注释）
         if stale_count:
             self.category_overview_hint_label.setText(self._stale_style_hint(stale_count))
@@ -440,16 +406,18 @@ class KillVoicePage(SoundPageBase, QWidget):
         elif configured_names:
             self.category_overview_hint_label.setText(f"已配置示例：{', '.join(configured_names)}")
         else:
-            self.category_overview_hint_label.setText("当前还没有启用击杀语音映射，可切分类逐项试听后再配置。")
+            self.category_overview_hint_label.setText("当前还没有启用击杀语音映射，可逐项试听后再配置。")
+        self._sync_category_hint(stale_count, health)
         if hasattr(self, "action_bar"):
             if enabled:
                 action_message = (
-                    f"当前分类：{current_category} · 已配置 {current_selected}/{len(current_weapons)}，"
+                    f"已配置 {selected_count}/{len(self._get_all_weapons())}，"
                     "新增资源后可直接刷新风格列表。"
                 )
             else:
                 action_message = "总开关当前关闭，这里的映射会保留；如新增资源，可先刷新风格列表，再拨开总开关。"
             self.action_bar.set_message(action_message)
+        self._sync_weapon_board(resolved)
         # RN-153：空库时把主按钮换成社区引导（逻辑在基类，只有一份）。
         # ⚠ 必须放在 set_message **之后** —— 它会覆盖上面那句文案。
         self._sync_community_guidance()

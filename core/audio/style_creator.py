@@ -27,7 +27,7 @@ MAX_NUMBERED_SLOTS = 5
 
 # Windows 文件名非法字符 + 路径分隔符；另拦截保留哨兵值
 _ILLEGAL_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
-_RESERVED_NAMES = {"", "0", "none", "off", "disabled", "default", "不启用", "未启用", "con", "prn", "aux", "nul"}
+_RESERVED_NAMES = {"", "0", "none", "off", "disabled", "default", "不启用", "未选风格", "未启用", "con", "prn", "aux", "nul"}
 
 
 @dataclass

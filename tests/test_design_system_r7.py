@@ -40,14 +40,6 @@ def _theme_ids():
 # ---------------------------------------------------- D-01 阴影降配
 
 
-def test_shadow_downgraded():
-    from ui_design_system import get_design_system
-
-    e = get_design_system().elevation
-    assert e.md_blur <= 16, f"卡片阴影 blur 是 {e.md_blur}，D-01 要求降到 16"
-    assert e.md_alpha <= 90, f"卡片阴影 alpha 是 {e.md_alpha}，D-01 要求降到 90"
-
-
 def test_card_hover_animation_removed():
     """hover blur 动画必须整段删掉，不能改成"瞬时切换"。
 
@@ -59,8 +51,10 @@ def test_card_hover_animation_removed():
     assert "enterEvent" not in names, "hover 阴影处理又回来了"
     assert "leaveEvent" not in names
     assert "_animate_shadow_blur" not in names
-    # 阴影本身必须还在（层级感是蓝图要的）
-    assert "_apply_elevation" in names
+    # 批 145：阴影整个退场（用户 2026-11-01 定了「卡片不要阴影」），不许借别的名字回来
+    assert "_apply_elevation" not in names
+    source = (ROOT / "widgets/settings_card.py").read_text(encoding="utf-8")
+    assert "QGraphicsDropShadowEffect" not in source, "卡片又长出阴影了"
 
 
 # ---------------------------------------------------- D-02 卡片标题
@@ -111,17 +105,17 @@ def test_only_warn_and_danger_have_semantic_bars(name):
 
 
 @pytest.mark.parametrize("name", _theme_ids())
-def test_card_base_border_left_is_not_transparent(name):
-    """基础规则的左边框绝不能留 transparent。
+def test_card_base_has_no_left_border_of_its_own(name):
+    """批 145：卡片基础规则不再单写左边框。
 
-    Qt 画圆角边框是描边(pen 居中)，透明描边会露出约 1.5px 的页面底色——
-    28 页每张卡的左缘都会出现一道缝。
+    它原来是「3px 占位、颜色同底」，给 warn/danger 的色条留位，免得子控件跳 2px。
+    RN-643 之后那两张卡只剩淡底色，占位已经没有东西要占，四边统一成 1px。
     """
     theme = dict(_themes())[name]
     qss = theme.generate_stylesheet()
     block = _strip_qss_comments(qss).split("QFrame#card {")[1].split("}")[0]
-    assert "border-left" in block
-    assert "transparent" not in block, "左边框仍是 transparent，卡片左缘会露底色缝"
+    assert "border-left" not in block, f"卡片基础规则又单写了左边框：{block}"
+    assert "transparent" not in block, "卡片边框是 transparent，卡片边缘会露底色缝"
 
 
 @pytest.mark.parametrize("name", _theme_ids())

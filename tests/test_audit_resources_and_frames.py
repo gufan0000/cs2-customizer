@@ -114,13 +114,14 @@ def test_gun_duration_roundtrip_preserves_hundredths(qapp, monkeypatch):
         from ui_style_applier import get_style_applier
         get_style_applier().fix_text_display(page)
         for key, profile in profiles.items():
-            slider = page.weapon_rows[key]["duration_slider"]
+            page._select_tuning_weapon(key)
+            slider = page.duration_slider
             assert slider.value() == 18
             slider.setValue(19)
             slider.setValue(18)
             assert getattr(config, profile.mute_duration_key) == 0.18
-            assert page.weapon_rows[key]["duration_label"].text() == "0.18秒"
-            label = page.weapon_rows[key]["duration_label"]
+            label = page.duration_label
+            assert label.text() == "0.18秒"
             assert not label.wordWrap()
             assert label.minimumSizeHint().width() >= label.fontMetrics().horizontalAdvance(label.text())
     finally:

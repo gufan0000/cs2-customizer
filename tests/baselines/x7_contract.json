@@ -205,6 +205,7 @@
       "apply_conservative_audio_fix",
       "check_gsi_cfg_match_stats",
       "collect_audio_resource_health",
+      "count_stale_styles",
       "format_audio_resource_health"
     ],
     "core.audio.audio_task_runner": [
@@ -254,7 +255,7 @@
       "validate_style_name"
     ]
   },
-  "contract_total": 61,
+  "contract_total": 62,
   "external_use": {
     "core.audio.__init__": {
       "files": [],
@@ -311,6 +312,8 @@
       "files": [
         "audio.py",
         "core/resource_readback.py",
+        "scripts/_audit_seed.py",
+        "scripts/bench_gsi_packet.py",
         "tests/test_audio_fade_channel_owner.py",
         "tests/test_audio_forward_before_load.py",
         "tests/test_audio_manager.py",
@@ -326,12 +329,11 @@
         "tests/test_kill_sound_loss_fixes.py",
         "tests/test_kill_sounds_vary_and_voices_take_turns.py",
         "tests/test_special_sound_events.py",
-        "tests/test_the_things_the_audit_left_open.py",
         "tests/test_voice_ptt_release_and_mix_fallback.py"
       ],
       "names": {
         "AudioInfo": 1,
-        "AudioManager": 28,
+        "AudioManager": 29,
         "GUN_SOUND_CACHE_HEADROOM": 1,
         "_NullChannel": 2,
         "get_audio_manager": 5
@@ -356,21 +358,25 @@
         "gui_widget.py",
         "pages/audio_status_badge.py",
         "tests/test_audio_resource_health.py",
+        "tests/test_home_overview.py",
         "tests/test_no_bundled_assets.py",
-        "tests/test_optimization_lifetimes.py"
+        "tests/test_optimization_lifetimes.py",
+        "tests/test_the_review_of_b148_b150_stays_fixed.py"
       ],
       "names": {
         "KILL_LEVELS": 1,
         "KillIconPlayer": 1,
         "PACKET_RECV_KEY": 1,
         "REQUIRED_AUDIO_DIRS": 1,
+        "ResourceManager": 1,
         "_collect_incomplete_kill_styles": 1,
         "apply_conservative_audio_fix": 2,
         "check_gsi_cfg_match_stats": 2,
         "collect_audio_resource_health": 6,
         "config": 2,
+        "count_stale_styles": 2,
         "flask_app": 3,
-        "format_audio_resource_health": 2
+        "format_audio_resource_health": 3
       }
     },
     "core.audio.audio_task_runner": {
@@ -428,11 +434,12 @@
         "tests/test_audio_resource_health.py",
         "tests/test_gun_sound_series.py",
         "tests/test_runtime_audio.py",
+        "tests/test_the_style_brush.py",
         "tests/test_the_sweep_bugs_stay_fixed.py"
       ],
       "names": {
         "get_legacy_audio_manager": 2,
-        "get_runtime_audio_manager": 20,
+        "get_runtime_audio_manager": 21,
         "peek_runtime_audio_manager": 1
       }
     },
@@ -455,24 +462,27 @@
         "core/health_report_text.py",
         "gsi_handler_special.py",
         "pages/special_sound_page.py",
+        "scripts/_audit_seed.py",
         "tests/test_apply_one_style_to_every_weapon.py",
         "tests/test_gun_special_sound_truth.py",
         "tests/test_health_report_speaks_user_language.py",
+        "tests/test_home_overview.py",
         "tests/test_kill_sounds_vary_and_voices_take_turns.py",
         "tests/test_special_sound_events.py",
+        "tests/test_the_review_of_b146_b147_stays_fixed.py",
         "tests/test_the_special_sound_guide_follows_the_tab.py",
         "tests/test_the_things_the_audit_left_open.py",
         "tests/test_tool_pages_ui_polish.py"
       ],
       "names": {
-        "SOUND_EVENTS": 6,
+        "SOUND_EVENTS": 8,
         "config_defaults": 5,
-        "events_in_group": 9,
+        "events_in_group": 10,
         "get_event": 3,
         "round_event_keys": 1,
         "sound_key": 3,
         "style_dir_parts": 1,
-        "styles_attr": 3
+        "styles_attr": 4
       }
     },
     "core.audio.style_creator": {
@@ -481,6 +491,7 @@
         "dialogs/style_creator_dialog.py",
         "dialogs/style_manager_dialog.py",
         "pages/audio_import_wizard_page.py",
+        "tests/test_the_review_of_b146_b147_stays_fixed.py",
         "tests/test_what_we_write_is_what_the_product_reads.py"
       ],
       "names": {
@@ -491,7 +502,7 @@
         "list_style_files": 1,
         "rename_style": 1,
         "style_exists": 1,
-        "validate_style_name": 2
+        "validate_style_name": 3
       }
     }
   },
@@ -503,7 +514,7 @@
     "core.audio.audio_file_utils": 243,
     "core.audio.audio_manager": 2039,
     "core.audio.audio_playback_policy": 153,
-    "core.audio.audio_resource_health": 412,
+    "core.audio.audio_resource_health": 451,
     "core.audio.audio_task_runner": 285,
     "core.audio.game_audio_ducker": 884,
     "core.audio.runtime_audio": 46,
@@ -605,6 +616,7 @@
         "apply_conservative_audio_fix",
         "check_gsi_cfg_match_stats",
         "collect_audio_resource_health",
+        "count_stale_styles",
         "format_audio_resource_health"
       ]
     },

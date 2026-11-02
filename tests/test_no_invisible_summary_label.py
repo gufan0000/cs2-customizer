@@ -72,7 +72,7 @@ REPO = Path(__file__).resolve().parent.parent
 #:   ⭐⭐ **一个死控件活下来的机制，是有人给它写了判据** —— 这是第三个实例
 #:   （RN-084 → account 两枚徽章 → 这一份），而三次的形态完全一样：
 #:   判据不是拦住了它，是**替它续了命**。
-MAX_REMAINING = 17
+MAX_REMAINING = 1  # C1: only the runtime-status alias remains
 
 
 def _tracked_python_files() -> list[Path]:
