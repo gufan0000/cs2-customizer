@@ -165,6 +165,22 @@ def test_warnings_are_shown_up_front_not_after_the_fact(qapp, tmp_path):
     wizard.deleteLater()
 
 
+def test_a_wrapped_warning_gets_the_height_it_needs(qapp, tmp_path):
+    """批 156：静态图那条提示在大字号下折成三行，窗口按不折行的高度开，第三行被裁掉一半。"""
+    wizard = KillIconImportWizard(_write_png(tmp_path / "3.png"))
+    font = wizard.font()
+    # 测试进程不挂主题样式，裁切要到 1.6 倍才出现（实测 1.3 倍还装得下，1.6 倍 63px 对 85px）
+    font.setPointSizeF(font.pointSizeF() * 1.6)
+    wizard.setFont(font)
+    wizard.show()
+    qapp.processEvents()
+    label = wizard.warning_label
+    need = label.heightForWidth(label.width())
+    assert label.height() >= need, f"提示只给了 {label.height()}px，三行要 {need}px"
+    wizard.hide()
+    wizard.deleteLater()
+
+
 def test_a_clean_source_does_not_show_an_empty_warning_box(qapp, tmp_path):
     """没警告就别留一个空框在那儿——空控件也是复杂度。"""
     path = tmp_path / "5.webp"

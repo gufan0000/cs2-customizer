@@ -117,8 +117,7 @@ class PresetCenterPage(MyPresetsMixin, QWidget):
         # RN-477：范围控制导出、具名预设和地图保存，独立成页级卡。
         scope_card, scope_layout = SettingsCard.make(
             "保存/导出的范围",
-            "导出文件、存为预设、按地图保存，都按这里勾的来。"
-            "读入别人的文件时按文件里写的来，不看这里。",
+            "导出、存预设、按地图保存都按这里勾的来；读别人的文件按文件里的来，不看这里。",
             spacing=10,
         )
         # 七个一行，放不下才折，避免固定分排时列不齐。
@@ -145,11 +144,8 @@ class PresetCenterPage(MyPresetsMixin, QWidget):
         layout.addWidget(scope_card)
 
         # RN-484：导入模式仅在确认文件时有意义，且只在两种模式结果不同时询问。
-        workbench_card, workbench_layout = SettingsCard.make(
-            "和朋友交换配置",
-            "把你这一套存成文件发给朋友；或者打开朋友发来的文件，直接用那一套。",
-            spacing=10
-        )
+        # 批 156：不写说明 —— 两颗按钮「导出成文件发给朋友」「打开一份配置文件」自己就说完了
+        workbench_card, workbench_layout = SettingsCard.make("和朋友交换配置", spacing=10)
         workbench_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
 
         # RN-478：两种文件共用导入/导出入口，容器格式在幕后分派。

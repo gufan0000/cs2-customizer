@@ -213,6 +213,29 @@ class Revert:
 
 
 REVERTS = [
+    Revert("B156", "B156武器格试听又写字", "widgets/weapon_row_widget.py",
+           "        self.test_button.setIconSize(QSize(TEST_ICON_SIZE, TEST_ICON_SIZE))\n",
+           '        self.test_button.setText("试听")\n',
+           "tests/test_the_weapon_cell_plays_with_an_icon.py::"
+           "test_the_cell_shows_an_icon_and_keeps_the_word_for_tips_and_readers",
+           "击杀音效页一屏 31 个「试听」"),
+    Revert("B156", "B156置灰又只认按钮上的字", "widgets/community_library.py",
+           "        if not any(word in btn.text() + btn.accessibleName() for word in _DEAD_BUTTON_WORDS):\n",
+           "        if not any(word in btn.text() for word in _DEAD_BUTTON_WORDS):\n",
+           "tests/test_the_weapon_cell_plays_with_an_icon.py::test_the_dimming_still_finds_the_icon_button",
+           "空库时图标试听可点却没反应（RN-179 回潮）"),
+    Revert("B156", "B156交换卡又把按钮念一遍", "pages/preset_center_page.py",
+           '        workbench_card, workbench_layout = SettingsCard.make("和朋友交换配置", spacing=10)\n',
+           '        workbench_card, workbench_layout = SettingsCard.make(\n'
+           '            "和朋友交换配置", "把你这一套存成文件发给朋友；或者打开朋友发来的文件，直接用那一套。", spacing=10)\n',
+           "tests/test_preset_center_tells_the_truth.py::test_a_card_does_not_read_its_buttons_aloud",
+           "说明把下面两颗按钮的字又念一遍"),
+    Revert("B156", "B156导入框又按不折行的高度开", "dialogs/kill_icon_import_wizard.py",
+           "        self.resize(self.width(), max(self.height(),\n"
+           "                                      self.layout().totalHeightForWidth(self.width())))\n",
+           "        pass\n",
+           "tests/test_kill_icon_wizard_ki7.py::test_a_wrapped_warning_gets_the_height_it_needs",
+           "静态图提示在大字号下第三行被裁掉一半"),
     Revert("B155", "B155关着的功能又写已关闭", "widgets/home_overview.py",
            "        self.meta_label.setVisible(on)\n",
            "        self.meta_label.setVisible(True)\n",

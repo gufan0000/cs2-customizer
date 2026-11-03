@@ -122,6 +122,17 @@ def test_the_fixture_really_built_the_page(page):
 # 主刀
 # --------------------------------------------------------------------------
 
+def test_a_card_does_not_read_its_buttons_aloud(page):
+    """批 156 外审：「和朋友交换配置」那句说明只是把下面两颗按钮的字又念一遍；范围卡两句并一句。"""
+    from widgets.settings_card import SettingsCard
+
+    cards = {card.title_label.text(): card for card in page.findChildren(SettingsCard)
+             if getattr(card, "title_label", None) is not None}
+    assert cards["和朋友交换配置"].description_label is None
+    scope = cards["保存/导出的范围"].description_label.text()
+    assert len(scope) <= 40, f"范围卡说明 {len(scope)} 字：{scope}"
+
+
 def test_this_page_has_no_such_thing_as_an_unsaved_change(page):
     """⭐⭐⭐ 批 40：这一页**结构上**不再有「未保存的修改」这种东西。
 
@@ -1120,7 +1131,8 @@ def test_the_way_to_open_a_friends_file_is_on_the_first_screen(qapp, real_window
     # ⚠ 批 149 第一版读到 1108：多出来的 156 px 是尾巴上的空白（流式容器的策略），
     #   这条守卫当时被我改成了 1108，看图才发现（RN-753）。
     # 批 153（RN-767）1018：正文 13 → 14、卡片内边距 20/16、页面上边距 20，全站换令牌，这一页高 66px。
-    _CONTENT_H = 1018
+    # 批 156 993：「和朋友交换配置」删掉复述两颗按钮的说明、「保存/导出的范围」两句并一句，矮 25px。
+    _CONTENT_H = 993
     actual_h = scroll.widget().height()
     assert abs(actual_h - _CONTENT_H) <= 24, (
         f"这一页在夹具里的内容高是 {actual_h}，而登记的是 {_CONTENT_H}（±24）。\n"

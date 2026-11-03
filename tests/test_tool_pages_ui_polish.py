@@ -1154,7 +1154,9 @@ def test_special_sound_page_status_card_tracks_threshold_and_volume(qapp, monkey
     # 窄了就少排几列（现在停在「回合」，这一块才有宽度）
     board = page.round_combos[next(iter(page.round_combos))].parentWidget().parentWidget()
     assert board.columns() == 3
-    page.resize(600, 960)
+    # 批 156：试听换成图标，格子不再被「试听」二字撑宽，列宽回到 CELL_TAIL_MIN_WIDTH 定的下限；
+    # 实测 600 宽仍是三列、560 起两列
+    page.resize(560, 960)
     qapp.processEvents()
     assert board.columns() < 3
 

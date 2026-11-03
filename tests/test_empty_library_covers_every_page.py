@@ -358,7 +358,7 @@ def _enabled_dead_controls(page):
               if c.isEnabled() and _combo_has_nothing_to_pick(c)]
     buttons = []
     for b in page.findChildren(QAbstractButton):
-        if not b.isEnabled() or not any(w in b.text() for w in DEAD_BUTTON_WORDS):
+        if not b.isEnabled() or not any(w in b.text() + b.accessibleName() for w in DEAD_BUTTON_WORDS):
             continue
         driver = _combo_driving(b, page)
         if driver is not None and _combo_has_nothing_to_pick(driver):

@@ -7,7 +7,7 @@
 样式全在 `theme_manager`（`_weapon_board_qss`）：39 格各调一次 `setStyleSheet` 是建页最慢的那一块。
 """
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QEvent, QSize, Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox, QFrame, QHBoxLayout, QMenu, QPushButton, QSizePolicy, QStyle,
     QStyleOptionComboBox, QStylePainter, QToolButton,
@@ -19,6 +19,8 @@ STATE_STALE = "stale"
 #: 手上有刷子时这一格能不能接（`fp_brush`）。
 BRUSH_CAN = "can"
 BRUSH_CANNOT = "cannot"
+#: 试听按钮的播放图标（批 156）
+TEST_ICON_SIZE = 18
 
 
 def _repolish(widget) -> None:
@@ -112,10 +114,13 @@ class WeaponRowWidget(QFrame):
             self.test_button = QPushButton(self)
             self.test_button.clicked.connect(self.testClicked.emit)
         self.test_button.setObjectName("weaponCellTest")
-        self.test_button.setText("试听")
+        # 批 155 外审：一屏 30 多个「试听」二字。换成和风格卡同一个播放图标，字留给读屏和 tooltip
+        self.test_button.setIconSize(QSize(TEST_ICON_SIZE, TEST_ICON_SIZE))
+        self.test_button.setToolTip("试听")
         self.test_button.setAccessibleName(f"试听 {weapon_name}")
-        # 没配风格时没东西可听：字退后一档，配上了再亮。⚠ 不禁用，点了照样有回应
+        # 没配风格时没东西可听：图标退后一档，配上了再亮。⚠ 不禁用，点了照样有回应
         self.test_button.setProperty("fp_idle", "true")
+        self._refresh_test_icon()
         layout.addWidget(self.test_button)
 
         self._sync_combo_tooltip()
@@ -158,6 +163,20 @@ class WeaponRowWidget(QFrame):
         _repolish(self)
         _repolish(self.style_combo)
         _repolish(self.test_button)
+        self._refresh_test_icon()
+
+    def _refresh_test_icon(self) -> None:
+        """图标是位图，样式表管不到它的颜色：配没配、换主题都要重画。"""
+        from widgets.icon_provider import get_themed_icon
+
+        idle = self.test_button.property("fp_idle") == "true"
+        self.test_button.setIcon(get_themed_icon("mdi.play", role="muted" if idle else "accent",
+                                                 size=TEST_ICON_SIZE))
+
+    def changeEvent(self, event):
+        if event.type() == QEvent.StyleChange and hasattr(self, "test_button"):
+            self._refresh_test_icon()
+        super().changeEvent(event)
 
     def cell_state(self) -> str:
         return self.property("fp_state") or ""

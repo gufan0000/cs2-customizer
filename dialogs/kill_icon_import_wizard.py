@@ -176,6 +176,12 @@ class KillIconImportWizard(QDialog):
         self.buttons.rejected.connect(self.reject)
         layout.addWidget(self.buttons)
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        # 折行标签要多高得按宽度算：静态图那条提示在 1.1 倍字号下折成三行，窗口只给两行高（批 156）
+        self.resize(self.width(), max(self.height(),
+                                      self.layout().totalHeightForWidth(self.width())))
+
     # ------------------------------------------------------------------ 状态
 
     @property

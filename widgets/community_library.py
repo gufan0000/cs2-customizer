@@ -375,7 +375,8 @@ def dim_controls_with_nothing_to_pick(scope, *, reason: str) -> int:
             _set_dim(combo, False, "")
 
     for btn in scope.findChildren(QAbstractButton):
-        if not any(word in btn.text() for word in _DEAD_BUTTON_WORDS):
+        # 只有图标的按钮（武器格的试听，批 156）字在读屏名字里
+        if not any(word in btn.text() + btn.accessibleName() for word in _DEAD_BUTTON_WORDS):
             continue
         driver = _combo_driving(btn, scope)
         if driver is None:
