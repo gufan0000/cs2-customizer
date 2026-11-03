@@ -11,6 +11,8 @@
   生僻字不进子集，由样式表里排在后面的微软雅黑兜底。
 - 私有族名：不和用户电脑上装的 Noto Sans SC 串。OFL 也要求改过的版本不用保留字体名。
 - 行高改成 1.36em 且上下居中。Noto 原值 1.448em、字面偏下 56/1000，按钮里的字看着往下坠。
+- 笔画比档名重一点（批 154）：Regular 取 wght 450、Medium 取 560，字重类仍标 400 / 500。
+  这套字没有 hinting，125% 缩放下 400 的横画只有约一个像素、发虚；样式表照旧写 400 / 500 / 700。
 """
 from __future__ import annotations
 
@@ -27,7 +29,8 @@ from fontTools.varLib import instancer
 REPO = Path(__file__).resolve().parent.parent
 OUT = REPO / "fonts"
 FAMILY = "Sail Sans SC"
-WEIGHTS = (("Regular", 400), ("Medium", 500), ("Bold", 700))
+#: (档名, 字重类, 切片用的 wght)。字重类决定 Qt 把 font-weight 400 / 500 / 700 配给哪个文件。
+WEIGHTS = (("Regular", 400, 450), ("Medium", 500, 560), ("Bold", 700, 700))
 #: 字面中心在基线上方 380/1000，上下各留一半 ⇒ (1060 - 300) / 2 = 380。
 ASCENT, DESCENT = 1060, 300
 SKIP_DIRS = {
@@ -99,8 +102,9 @@ def set_line_metrics(font: TTFont) -> None:
     os2.usWinAscent, os2.usWinDescent = ASCENT, DESCENT
 
 
-def build(source: str, style: str, weight: int, text: str) -> Path:
-    instance = instancer.instantiateVariableFont(TTFont(source), {"wght": weight}, updateFontNames=True)
+def build(source: str, style: str, weight_class: int, wght: int, text: str) -> Path:
+    instance = instancer.instantiateVariableFont(TTFont(source), {"wght": wght})  # 名字表由 rename() 重写
+    instance["OS/2"].usWeightClass = weight_class
     options = subset.Options()
     options.layout_features = ["kern", "liga", "locl", "ccmp", "mark", "mkmk", "vert", "palt"]
     options.name_IDs = ["*"]
@@ -124,8 +128,8 @@ def main() -> int:
     OUT.mkdir(exist_ok=True)
     text = charset()
     print(f"字符数 {len(text)}")
-    for style, weight in WEIGHTS:
-        path = build(args.source, style, weight, text)
+    for style, weight_class, wght in WEIGHTS:
+        path = build(args.source, style, weight_class, wght, text)
         print(path.name, path.stat().st_size // 1024, "KB")
     return 0
 

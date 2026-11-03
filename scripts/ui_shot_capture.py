@@ -65,13 +65,21 @@ enable_audit_mode()   # 必须在 import 产品模块之前
 
 COMPACT_SIZE = (860, 640)
 FULL_SIZE = (1280, 800)
+#: 批 154：`--dpr` 给的缩放。1 = 老口径（灰度抗锯齿、一个逻辑像素一个像素）。
+_DPR = 1.0
 
 
 def _save(widget, path: Path) -> bool:
     from PySide6.QtGui import QImage
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    image = QImage(widget.size(), QImage.Format_ARGB32)
+    if _DPR == 1.0:
+        image = QImage(widget.size(), QImage.Format_ARGB32)
+    else:
+        # 不透明底才走 ClearType，和用户屏幕上看到的一样
+        size = widget.size() * _DPR
+        image = QImage(size, QImage.Format_RGB32)
+        image.setDevicePixelRatio(_DPR)
     image.fill(0xFF14161C)
     widget.render(image)
     if not image.save(str(path)):
@@ -270,8 +278,13 @@ def main() -> int:
                     help="批 153：往干净配置目录造几个假风格（`_audit_seed`，排版审计同一份），"
                          "拍音效页「有内容」的那张脸 —— 空库时武器板和风格卡都不出现。"
                          "基线不给这个开关。")
+    ap.add_argument("--dpr", type=float, default=1.0,
+                    help="批 154：按显示缩放出图（1.25 = 125%%）。字清不清楚只能在这一档看："
+                         "1 倍图是灰度抗锯齿，用户屏幕上是 ClearType 加缩放。基线不给这个开关。")
     _ui_mode.add_expert_argument(ap)
     args = ap.parse_args()
+    global _DPR
+    _DPR = args.dpr
 
     width, height = COMPACT_SIZE if args.compact else FULL_SIZE
 

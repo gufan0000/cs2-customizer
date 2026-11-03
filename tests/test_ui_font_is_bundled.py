@@ -56,6 +56,37 @@ def test_each_weight_the_stylesheet_uses_really_exists(qapp, weight, style):
     assert info.styleName() == style
 
 
+def _stroke(style: str) -> float:
+    """「一」字横画的厚度（字体单位）。"""
+    from fontTools.pens.boundsPen import BoundsPen
+    from fontTools.ttLib import TTFont
+
+    font = TTFont(FONTS / f"SailSansSC-{style}.ttf")
+    glyphs = font.getGlyphSet()
+    pen = BoundsPen(glyphs)
+    glyphs[font.getBestCmap()[ord("一")]].draw(pen)
+    return pen.bounds[3] - pen.bounds[1]
+
+
+def test_body_strokes_are_heavier_than_the_weight_name_says():
+    """批 154：字没有 hinting，用户 125% 缩放下 wght 400 的横画约一个像素，看着发虚。
+
+    Regular 切 450（横画 82 → 93 单位），Medium 跟着到 560，三档之间仍各差约 20。
+    """
+    regular, medium, bold = (_stroke(s) for s in ("Regular", "Medium", "Bold"))
+    assert regular >= 90, f"Regular 横画 {regular}：回到了 wght 400 的 82"
+    assert medium - regular >= 15 and bold - medium >= 15, (regular, medium, bold)
+
+
+def test_the_generator_still_cuts_the_heavier_regular():
+    """字体文件是生成物：脚本改回 400，下次重跑就悄悄回到发虚的那一档，而上一条判据要到那时才红。"""
+    tree = ast.parse((REPO / "build_tools" / "make_ui_fonts.py").read_text(encoding="utf-8"))
+    weights = next(ast.literal_eval(node.value) for node in tree.body
+                   if isinstance(node, ast.Assign) and getattr(node.targets[0], "id", "") == "WEIGHTS")
+    cut = {style: wght for style, _, wght in weights}
+    assert cut["Regular"] >= 450 and cut["Medium"] > 500, weights
+
+
 def test_the_stylesheet_only_asks_for_three_weights():
     """写 600 不会报错，只会悄悄变成 Bold：层级又回到靠粗体。"""
     import re

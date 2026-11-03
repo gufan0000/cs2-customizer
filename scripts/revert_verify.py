@@ -213,6 +213,17 @@ class Revert:
 
 
 REVERTS = [
+    Revert("B154", "B154正文又切回 wght 400", "build_tools/make_ui_fonts.py",
+           'WEIGHTS = (("Regular", 400, 450), ("Medium", 500, 560), ("Bold", 700, 700))\n',
+           'WEIGHTS = (("Regular", 400, 400), ("Medium", 500, 500), ("Bold", 700, 700))\n',
+           "tests/test_ui_font_is_bundled.py::test_the_generator_still_cuts_the_heavier_regular",
+           "下次重跑字体脚本，正文横画回到一个像素，125% 屏上发虚"),
+    Revert("B154", "B154等待态又不说进游戏会怎样", "core/runtime/system_status_service.py",
+           '    "stopped": "起来之前进游戏，击杀音效这些都不会响。一般几秒就好，一直不起就重启本软件。",\n',
+           '    "stopped": "软件启动时会自动起，稍等几秒。",\n',
+           "tests/test_basic_status_strip_says_what_matters.py::"
+           "test_the_waiting_state_says_what_happens_in_game_and_what_to_do",
+           "联动没起来时首页只说「会自己起」，看不出现在能不能进游戏"),
     Revert("B153", "B153侧栏又不分档", "gui_widget.py",
            "        want_dense = roomy_needed > available - (8 if dense else 0)\n",
            "        want_dense = True\n",

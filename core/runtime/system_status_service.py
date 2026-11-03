@@ -137,7 +137,7 @@ READINESS_HEADLINE = {
 }
 #: 大字下面那句，和徽章 tooltip 那句不一样的几种：徽章那句是独立读的，放在大字下面就把大字又念了一遍。
 READINESS_DETAIL = {
-    "stopped": "软件启动时会自动起，稍等几秒。",
+    "stopped": "起来之前进游戏，击杀音效这些都不会响。一般几秒就好，一直不起就重启本软件。",
     "cfg_missing": "去「高级设置」选一次 CS2 目录，软件会把它写进游戏。",
 }
 NO_CS2_DIR_HEADLINE = "还差一步：选 CS2 目录"

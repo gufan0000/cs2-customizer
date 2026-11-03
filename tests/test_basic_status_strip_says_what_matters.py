@@ -97,6 +97,20 @@ def test_an_alarm_says_where_to_go_and_fix_it(app):
         assert view.headline not in view.detail, link
 
 
+def test_the_waiting_state_says_what_happens_in_game_and_what_to_do():
+    """批 154：「联动服务还没起来」下面原来只写「会自动起，稍等几秒」。
+
+    外审改前改后两轮都答「看不出现在能不能进游戏、要做什么」。
+    """
+    from core.runtime.system_status_service import RuntimeStatus, readiness_view
+
+    view = readiness_view(RuntimeStatus(
+        gsi={"startup_error": ""}, audio_health={"ok": True}, config_dirty=False,
+        last_error="", level="warn", gsi_link="stopped", gsi_cfg={"status": "ok"}))
+    assert "进游戏" in view.detail, f"没说进游戏会怎样：{view.detail}"
+    assert "重启" in view.detail, f"没说一直不起怎么办：{view.detail}"
+
+
 @pytest.mark.parametrize("viewport", sorted(VIEWPORTS))
 def test_the_player_line_is_never_elided(app, viewport):
     """⭐⭐ RN-403：那句玩家信息不许被省略。
