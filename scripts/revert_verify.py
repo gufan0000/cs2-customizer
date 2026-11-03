@@ -213,6 +213,16 @@ class Revert:
 
 
 REVERTS = [
+    Revert("B158", "B158切片又留着STAT", "build_tools/make_ui_fonts.py",
+           '    if "STAT" in font:\n        del font["STAT"]\n',
+           '    if "STAT" in font:\n        pass\n',
+           "tests/test_ui_font_is_bundled.py::test_the_generator_drops_the_stat_table_it_inherits",
+           "重跑生成脚本后全站正文又成了 700"),
+    Revert("B158", "B158生成时不改样式位", "build_tools/make_ui_fonts.py",
+           "    set_style_bits(instance, style)\n",
+           "    pass\n",
+           "tests/test_ui_font_is_bundled.py::test_the_generator_drops_the_stat_table_it_inherits",
+           "重跑生成脚本后全站正文又成了 700"),
     Revert("B157", "B157拉宽后内容又摊满整屏", "gui_widget.py",
            "        cap_page(page)\n",
            "        pass\n",

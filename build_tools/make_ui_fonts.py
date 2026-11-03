@@ -13,6 +13,8 @@
 - 行高改成 1.36em 且上下居中。Noto 原值 1.448em、字面偏下 56/1000，按钮里的字看着往下坠。
 - 笔画比档名重一点（批 154）：Regular 取 wght 450、Medium 取 560，字重类仍标 400 / 500。
   这套字没有 hinting，125% 缩放下 400 的横画只有约一个像素、发虚；样式表照旧写 400 / 500 / 700。
+- 切片后删掉可变字体带来的 STAT 表（批 158）。留着它，DirectWrite 把三个文件认成同一个字面，
+  Qt 不管要 400 还是 500 都拿 Bold 文件来画：批 145~157 全站正文其实都是 700。
 """
 from __future__ import annotations
 
@@ -95,6 +97,15 @@ def rename(font: TTFont, style: str) -> None:
         name.setName(f"Sail;SailSansSC-{style}", 3, *platform)
 
 
+def set_style_bits(font: TTFont, style: str) -> None:
+    """STAT 是可变字体的轴描述，静态切片留着它会让 DirectWrite 认错字重；RBIZ 位按档名补齐。"""
+    if "STAT" in font:
+        del font["STAT"]
+    os2 = font["OS/2"]
+    os2.fsSelection = (os2.fsSelection & ~0x61) | {"Regular": 0x40, "Bold": 0x20}.get(style, 0)
+    font["head"].macStyle = 1 if style == "Bold" else 0
+
+
 def set_line_metrics(font: TTFont) -> None:
     hhea, os2 = font["hhea"], font["OS/2"]
     hhea.ascent, hhea.descent, hhea.lineGap = ASCENT, -DESCENT, 0
@@ -115,6 +126,7 @@ def build(source: str, style: str, weight_class: int, wght: int, text: str) -> P
     subsetter.populate(text=text)
     subsetter.subset(instance)
     rename(instance, style)
+    set_style_bits(instance, style)
     set_line_metrics(instance)
     path = OUT / f"SailSansSC-{style}.ttf"
     instance.save(path)
