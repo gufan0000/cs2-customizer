@@ -41,6 +41,7 @@ import json
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -386,19 +387,24 @@ def verify(pages: list[str]) -> int:
             print(f"   ✓ {pid}")
 
     print("② 结构指纹（含几何）")
-    tmp = BASELINE_DIR / "_verify_fp.json"
     merged = {pid: json.loads((BASELINE_DIR / pid / "fingerprint.json")
                               .read_text(encoding="utf-8"))
               for pid in pages if (BASELINE_DIR / pid / "fingerprint.json").exists()}
-    tmp.write_text(json.dumps(merged, ensure_ascii=False), encoding="utf-8")
-    code, out = _run(["scripts/page_fingerprint.py", "--pages", ",".join(pages),
-                      "--compare", str(tmp)])
-    tmp.unlink(missing_ok=True)
-    print("   " + "\n   ".join(out.strip().splitlines()[-6:]))
-    if code == 1:
-        bad += 1
-    elif code == 2:
-        print("   !! 环境不合格（多半是字体库为空），指纹这一腿没验成 —— 不算通过")
+    with tempfile.TemporaryDirectory(prefix="cs2customizer_verify_") as work:
+        tmp = Path(work) / "fingerprint.json"
+        tmp.write_text(json.dumps(merged, ensure_ascii=False), encoding="utf-8")
+        code, out = _run(["scripts/page_fingerprint.py", "--pages", ",".join(pages),
+                          "--compare", str(tmp)])
+    # 保留差异总数和明细，别只留最后六行；成功完成比较时不混入每次
+    # 都不同的启动耗时日志。比较前就失败则保留完整输出供诊断。
+    report_start = out.find("== 指纹")
+    report = out[report_start:] if code in (0, 1) and report_start >= 0 else out
+    print("   " + "\n   ".join(report.strip().splitlines()))
+    if code != 0:
+        if code == 2:
+            print("   !! 环境不合格（多半是字体库为空），指纹这一腿没验成 —— 不算通过")
+        elif code != 1:
+            print(f"   !! 指纹子进程失败（退出码 {code}），这一腿没验成 —— 不算通过")
         bad += 1
 
     print("③ 两档像素：本脚本只负责出新图，**看图是人的活**")

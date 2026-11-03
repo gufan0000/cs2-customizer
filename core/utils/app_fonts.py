@@ -10,6 +10,8 @@ from PySide6.QtCore import QCoreApplication
 from PySide6.QtGui import QFontDatabase
 
 UI_FONT_FAMILY = "Sail Sans SC"
+#: 一行字的高度 / 字号，= `build_tools/make_ui_fonts.py` 里 (ASCENT + DESCENT) / 1000
+UI_FONT_LINE_EM = 1.36
 _FILES = ("SailSansSC-Regular.ttf", "SailSansSC-Medium.ttf", "SailSansSC-Bold.ttf")
 _loaded = False
 

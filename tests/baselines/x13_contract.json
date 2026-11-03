@@ -3,6 +3,7 @@
     "core.utils.__init__": [],
     "core.utils.app_fonts": [
       "UI_FONT_FAMILY",
+      "UI_FONT_LINE_EM",
       "load_ui_fonts"
     ],
     "core.utils.autostart": [
@@ -59,7 +60,7 @@
       "start_mem_monitor"
     ]
   },
-  "contract_total": 35,
+  "contract_total": 36,
   "external_use": {
     "core.utils.__init__": {
       "files": [],
@@ -72,6 +73,7 @@
         "music_control_bar.py",
         "pages/about_page.py",
         "service_unavailable_dialog.py",
+        "tests/test_nav_group_header_fits_its_line.py",
         "tests/test_ui_font_is_bundled.py",
         "theme_manager.py",
         "ui_help_panel.py",
@@ -82,8 +84,9 @@
         "widgets/page_header.py"
       ],
       "names": {
-        "UI_FONT_FAMILY": 14,
-        "load_ui_fonts": 3
+        "UI_FONT_FAMILY": 16,
+        "UI_FONT_LINE_EM": 2,
+        "load_ui_fonts": 4
       }
     },
     "core.utils.autostart": {
@@ -105,8 +108,11 @@
         "tests/test_a_named_page_is_reachable_from_where_it_is_named.py",
         "tests/test_correctness_r8a.py",
         "tests/test_design_system_r7.py",
+        "tests/test_disabled_text_does_not_melt_into_the_card.py",
+        "tests/test_grey_text_after_the_weight_fix.py",
         "tests/test_master_switch_effect_is_honest.py",
         "tests/test_status_chips_do_not_look_clickable.py",
+        "tests/test_the_flash_preview_caption_is_readable.py",
         "tests/test_the_way_back_is_not_only_for_an_empty_library.py",
         "tests/test_theme_contrast.py",
         "theme_manager.py",
@@ -116,12 +122,12 @@
         "AA_LARGE": 1,
         "AA_NORMAL": 6,
         "best_on_color": 4,
-        "contrast_ratio": 12,
+        "contrast_ratio": 15,
         "ensure_contrast": 10,
         "parse_hex": 2,
         "relative_luminance": 1,
         "to_hex": 1,
-        "worst_contrast": 2
+        "worst_contrast": 3
       }
     },
     "core.utils.elevation": {
@@ -320,7 +326,7 @@
   "internal_only_modules": [],
   "loc": {
     "core.utils.__init__": 4,
-    "core.utils.app_fonts": 30,
+    "core.utils.app_fonts": 32,
     "core.utils.autostart": 95,
     "core.utils.contrast": 134,
     "core.utils.elevation": 70,
@@ -345,6 +351,7 @@
       "classes": [],
       "constants": [
         "UI_FONT_FAMILY",
+        "UI_FONT_LINE_EM",
         "_FILES",
         "_loaded"
       ],

@@ -5,6 +5,7 @@
 集成设计系统规范，确保所有组件遵循统一标准
 """
 
+import math
 import os
 import weakref
 from dataclasses import dataclass
@@ -21,8 +22,18 @@ NAV_ITEM_HEIGHT_DENSE = 24
 #: 组头的上、下内边距：组和组之间靠组头上空分开
 NAV_GROUP_PAD = (8, 2)
 NAV_GROUP_PAD_DENSE = (2, 1)
-#: 禁用字在禁用底和卡片底上都要有的对比度（批 155，原 3.0）
-DISABLED_TEXT_CONTRAST = 3.5
+#: 禁用字在禁用底和卡片底上的对比度（批 155 3.0→3.5；批 159 →4.2：3.5 是在 700 粗笔画上定的，RN-789）
+DISABLED_TEXT_CONTRAST = 4.2
+#: 说明文字（text_muted）在三种底上都要有的对比度（批 159，原 AA 4.5）。理由同上
+MUTED_TEXT_CONTRAST = 5.5
+#: 次要文字的下限：说明文字抬上来以后，绿 / 紫 / 海洋三套的次要字（5.9~6.1）和它分不开了
+SECONDARY_TEXT_CONTRAST = 6.5
+
+
+def _one_line_px(font_px: int) -> int:
+    """这套字一行的高度（批 159）：写死的组头高度在三档字号下装不下一行。"""
+    from core.utils.app_fonts import UI_FONT_LINE_EM
+    return math.ceil(font_px * UI_FONT_LINE_EM)
 
 # ============ QSS 图标资源 ============
 #
@@ -245,10 +256,13 @@ class Theme:
         """
         from core.utils.contrast import best_on_color, ensure_contrast
 
+        text_bgs = (colors.bg_primary, colors.bg_secondary, colors.bg_card)
+        colors.text_secondary = ensure_contrast(colors.text_secondary, text_bgs, SECONDARY_TEXT_CONTRAST)
         if colors.text_muted is None:
             colors.text_muted = ensure_contrast(
                 colors.text_tertiary,
                 (colors.bg_primary, colors.bg_secondary, colors.bg_card),
+                MUTED_TEXT_CONTRAST,
             )
 
         if colors.text_on_primary is None:
@@ -908,8 +922,8 @@ class Theme:
                 border: none;
                 text-align: left;
                 padding: {NAV_GROUP_PAD[0]}px {nav_padding_horizontal}px {NAV_GROUP_PAD[1]}px {nav_padding_horizontal}px;
-                /* 不吃全局按钮的 min-height（20）：组头只要装得下一行小字，五个组头每个省 4px */
-                min-height: 16px;
+                /* 不吃全局按钮的 min-height（20），只要装得下一行小字（批 159：原写死 16，RN-786） */
+                min-height: {_one_line_px(font.xs)}px;
                 font-size: {font.xs}px;
                 font-weight: 500;
                 border-radius: {radius.sm}px;

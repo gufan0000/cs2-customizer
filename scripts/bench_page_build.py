@@ -274,9 +274,13 @@ def main() -> int:
                   f"在 scripts/_audit_neutralize.py 里给出条件后再来。")
             return 2
         specs = [s for s in PAGE_SPECS if s[0] in wanted]
-        if wanted - {s[0] for s in specs}:
+        unknown = wanted - {s[0] for s in specs}
+        if not specs:
             print(f"没有匹配的页面。可选：{', '.join(s[0] for s in PAGE_SPECS)}")
             return 1
+        if unknown:
+            # 批 159：翻新基线的页单里有 basic，这里没有；原来整单拒绝，28 页的耗时一页都没取到
+            print(f"跳过不认识的页 {sorted(unknown)}（不在 PAGE_SPECS 里），其余照测")
 
     if args.with_qss:
         app = _ensure_app()

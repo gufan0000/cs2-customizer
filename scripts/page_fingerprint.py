@@ -98,6 +98,27 @@ def fingerprint(page, root):
     return items
 
 
+def _settled_fingerprint(page, root, app):
+    """等切页触发的延迟建控件、polish 和布局请求落定，再取样。
+
+    一次 processEvents 不会处理本轮回调新投递的事件；原来会把锚点的
+    未显示态、滚动区的默认几何写进指纹。要求连续三轮无变化，并至少
+    推进四轮事件；有界等待，持续变化时明确拒绝采样，不产出半成品。
+    """
+    from PySide6.QtCore import QEventLoop
+
+    previous = None
+    unchanged = 0
+    for turn in range(50):
+        app.processEvents(QEventLoop.ExcludeUserInputEvents)
+        current = fingerprint(page, root)
+        unchanged = unchanged + 1 if current == previous else 0
+        if turn >= 3 and unchanged >= 3:
+            return current
+        previous = current
+    raise RuntimeError(f"{type(page).__name__} 的指纹在 50 轮事件后仍未稳定，拒绝取样")
+
+
 def build(page_spec: str = "sound", expert: bool = False):
     from PySide6.QtCore import Qt
     from PySide6.QtGui import QFontDatabase
@@ -181,7 +202,7 @@ def build(page_spec: str = "sound", expert: bool = False):
         page = win.pages.get(pid)
         if page is None:
             continue
-        out[pid] = fingerprint(page, win)
+        out[pid] = _settled_fingerprint(page, win, app)
     # RN-195：跑完回验 —— 这一轮全程都在钉住的那一档里。
     _mbar.assert_stable(win)
     return out

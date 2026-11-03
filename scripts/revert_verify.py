@@ -213,6 +213,26 @@ class Revert:
 
 
 REVERTS = [
+    Revert("B159", "B159禁用字回到3.5", "theme_manager.py",
+           "DISABLED_TEXT_CONTRAST = 4.2\n",
+           "DISABLED_TEXT_CONTRAST = 3.5\n",
+           "tests/test_grey_text_after_the_weight_fix.py::test_disabled_text_reads_on_its_own_background",
+           "「不启用」和禁用的「默认」细笔画看着发淡"),
+    Revert("B159", "B159说明字回到AA", "theme_manager.py",
+           "                MUTED_TEXT_CONTRAST,\n",
+           "",
+           "tests/test_grey_text_after_the_weight_fix.py::test_hint_text_reads_with_thin_strokes",
+           "页头和卡片说明字偏淡"),
+    Revert("B159", "B159次要字不设下限", "theme_manager.py",
+           "        colors.text_secondary = ensure_contrast(colors.text_secondary, text_bgs, SECONDARY_TEXT_CONTRAST)\n",
+           "        pass\n",
+           "tests/test_grey_text_after_the_weight_fix.py::test_the_three_grey_tiers_stay_apart",
+           "绿 / 紫 / 海洋主题次要字和说明字分不开"),
+    Revert("B159", "B159组头高度又写死16", "theme_manager.py",
+           "                min-height: {_one_line_px(font.xs)}px;\n",
+           "                min-height: 16px;\n",
+           "tests/test_nav_group_header_fits_its_line.py::test_the_group_header_floor_holds_one_line_at_every_scale",
+           "CI 上侧栏组头时红时绿「可用高 16 需 18」"),
     Revert("B158", "B158切片又留着STAT", "build_tools/make_ui_fonts.py",
            '    if "STAT" in font:\n        del font["STAT"]\n',
            '    if "STAT" in font:\n        pass\n',
@@ -288,7 +308,7 @@ REVERTS = [
            "tests/test_the_flash_preview_caption_is_readable.py::test_the_caption_reads_on_any_flash",
            "白闪 75% 时左上角说明白底白字"),
     Revert("B155", "B155禁用字对比度回到 3", "theme_manager.py",
-           "DISABLED_TEXT_CONTRAST = 3.5\n",
+           "DISABLED_TEXT_CONTRAST = 4.2\n",  # 批 159 从 3.5 抬到 4.2
            "DISABLED_TEXT_CONTRAST = 3.0\n",
            "tests/test_disabled_text_does_not_melt_into_the_card.py::"
            "test_every_theme_derives_a_readable_disabled_text",
