@@ -19,6 +19,7 @@ os.environ.setdefault("CS2C_SAFE_MODE_ACTIVE", "1")
 os.environ.setdefault("CS2C_NO_GLOBAL_HOTKEYS", "1")
 
 from PySide6.QtCore import QPoint, Qt  # noqa: E402
+from PySide6.QtGui import QFont  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import QWidget  # noqa: E402
 
@@ -123,6 +124,26 @@ def test_a_card_with_no_page_says_so_and_only_has_its_switch(win, qapp):
     assert win._current_page_id == "basic"
 
 
+def test_the_current_nav_item_is_heavier(win, qapp):
+    """批 155：样式表 `:checked` 里的字重从没生效过（Qt 不按伪状态改控件字体），选中项和别的一样细。"""
+    for page in ("gun_sound", "basic", "gun_sound"):
+        win.show_page(page, animated=False, force=True)
+        qapp.processEvents()
+        weights = {pid: button.font().weight() for pid, button in win.nav_buttons.items()}
+        assert weights[page] == QFont.Medium, (page, weights[page])
+        assert {w for pid, w in weights.items() if pid != page} == {QFont.Normal}
+
+
+def _assert_meta_line(card, qapp, *, shown):
+    """批 155：关着的那一行不写「已关闭」（开关已经说了），名字在行里上下居中；读屏照样读到。"""
+    qapp.processEvents()
+    assert card.meta_label.isVisibleTo(card) is shown
+    assert card.accessibleDescription() == card.meta_label.full_text()
+    if not shown:
+        name = card.name_label.geometry()
+        assert abs(name.center().y() - card.rect().center().y()) <= 2, (name, card.rect())
+
+
 def test_the_card_follows_its_switch_both_ways(win, qapp):
     """摘要、名字颜色、分组计数、状态条那句「已开」、侧栏小点，开关动一下全跟。"""
     card, toggle = win.feature_cards["gun_sound"], win.switches["gun_sound"]
@@ -132,9 +153,11 @@ def test_the_card_follows_its_switch_both_ways(win, qapp):
     assert card.name_label.objectName() == "switchLabelOff"
     assert head.text() == "已开 0 / 6"
     assert "已开 0 / 17" in win.system_status_label.text()
+    _assert_meta_line(card, qapp, shown=False)
 
     for _ in range(2):
         _click_switch(toggle, qapp)
+        _assert_meta_line(card, qapp, shown=True)
         assert card.meta_label.full_text() == "还没配枪"
         assert card.accessibleDescription() == "还没配枪"
         assert card.name_label.objectName() == "switchLabelOn"
@@ -143,6 +166,7 @@ def test_the_card_follows_its_switch_both_ways(win, qapp):
         assert win.nav_buttons["gun_sound"].status_dot() == DOT_ON
         _click_switch(toggle, qapp)
         assert card.meta_label.full_text() == "已关闭"
+        _assert_meta_line(card, qapp, shown=False)
         assert head.text() == "已开 0 / 6"
         assert win.nav_buttons["gun_sound"].status_dot() == DOT_NONE
 

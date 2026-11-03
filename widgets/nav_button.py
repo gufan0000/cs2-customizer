@@ -24,6 +24,14 @@ class NavButton(QPushButton):
     def __init__(self, text: str = "", parent=None):
         super().__init__(text, parent)
         self._status_dot = DOT_NONE
+        # 选中项加粗（批 155）：样式表 `:checked` 里写字重，Qt 不改控件字体，批 145 起一直没生效。
+        # 换成属性选择器 + 重新 polish，规则在 `theme_manager._nav_density_qss`
+        self.toggled.connect(self._mark_current)
+
+    def _mark_current(self, checked: bool) -> None:
+        self.setProperty("fp_current", "true" if checked else "")
+        self.style().unpolish(self)
+        self.style().polish(self)
 
     def status_dot(self) -> str:
         return self._status_dot

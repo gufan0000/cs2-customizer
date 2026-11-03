@@ -117,6 +117,8 @@ class FeatureCard(QPushButton):
     def set_state(self, on: bool, summary: str, tone: str = "") -> None:
         self.meta_label.set_full_text(summary)
         self.setAccessibleDescription(summary)
+        # 批 154 外审：一屏十几行「已关闭」紧挨着关着的开关。关着只留名字（上下居中），读屏照样读到摘要
+        self.meta_label.setVisible(on)
         if self.meta_label.property("tone") != tone:
             self.meta_label.setProperty("tone", tone)
             _repolish(self.meta_label)

@@ -21,6 +21,8 @@ NAV_ITEM_HEIGHT_DENSE = 24
 #: 组头的上、下内边距：组和组之间靠组头上空分开
 NAV_GROUP_PAD = (8, 2)
 NAV_GROUP_PAD_DENSE = (2, 1)
+#: 禁用字在禁用底和卡片底上都要有的对比度（批 155，原 3.0）
+DISABLED_TEXT_CONTRAST = 3.5
 
 # ============ QSS 图标资源 ============
 #
@@ -255,11 +257,12 @@ class Theme:
         if colors.text_on_disabled is None:
             # 禁用态的实际底色 = bg_tertiary 以 90/255 的 alpha 叠在卡片底上。
             # 必须按**合成后**的底色收敛，按 bg_tertiary 本身算会偏。
-            # 目标 3:1 而不是 4.5——禁用控件本就该弱化，但不该消失；
-            # 3:1 是 WCAG 给大字/非文字的档，用作"看得清但明显次要"的下限。
+            # 目标不到 4.5——禁用控件本就该弱化，但不该消失。
+            # 批 155：透明底的禁用字（次要按钮、标签、武器格）也用它，所以卡片底一起收敛；
+            # 3:1 时外审仍说「像融进卡片」，抬到 3.5（暗色 #646979 → #6f7587，常态次要字是 6.9）。
             disabled_bg = self._blend_hex(colors.bg_tertiary, 90, colors.bg_card)
             colors.text_on_disabled = ensure_contrast(
-                colors.text_disabled, (disabled_bg,), 3.0)
+                colors.text_disabled, (disabled_bg, colors.bg_card), DISABLED_TEXT_CONTRAST)
 
     def _primary_button_background(self, base: str | None = None) -> str:
         """主按钮那块底 —— **全仓只有这一份**。
@@ -678,8 +681,14 @@ class Theme:
         """
 
     def _nav_density_qss(self, c) -> str:
-        """侧栏紧凑档（批 153）：窗口矮、宽松档放不下时由 `gui_widget._apply_nav_density` 打上 navDense。"""
+        """侧栏紧凑档（批 153）：窗口矮、宽松档放不下时由 `gui_widget._apply_nav_density` 打上 navDense。
+
+        也放选中项的字重（批 155，`NavButton._mark_current` 打的属性）。
+        """
         return f"""
+            QPushButton#navButton[fp_current="true"] {{
+                font-weight: 500;
+            }}
             QFrame#sidebar[navDense="true"] QPushButton#navButton {{
                 min-height: {NAV_ITEM_HEIGHT_DENSE}px;
                 max-height: {NAV_ITEM_HEIGHT_DENSE}px;
@@ -889,7 +898,7 @@ class Theme:
             QPushButton#navButton:checked {{
                 background-color: {nav_selected_bg};
                 color: {c.text_primary};   /* 批 153：紫底上的紫字读不清，字回到正文色，紫只留给底和图标 */
-                font-weight: 500;   /* RN-643：选中项只靠底色 + 字色，左侧那根紫条一并退场 */
+                /* RN-643：选中项靠底色 + 字色，左侧那根紫条一并退场；字重见 _nav_density_qss */
             }}
 
             /* 导航分组头（可折叠）。上面空出一截，组和组之间靠留白分开（批 153） */
@@ -2252,7 +2261,7 @@ class Theme:
 
             QPushButton#secondaryButton:disabled,
             QPushButton#actionButton:disabled {{
-                color: {c.text_disabled};
+                color: {c.text_on_disabled};
                 background-color: transparent;
                 border-color: {self._hex_to_rgba(c.border_secondary, 110)};
             }}
@@ -2261,7 +2270,7 @@ class Theme:
             QRadioButton:disabled,
             QLabel:disabled,
             QGroupBox:disabled {{
-                color: {c.text_disabled};
+                color: {c.text_on_disabled};
             }}
 
             QRadioButton::indicator:disabled {{
@@ -2280,7 +2289,7 @@ class Theme:
             }}
 
             QTabBar::tab:disabled {{
-                color: {c.text_disabled};
+                color: {c.text_on_disabled};
             }}
         """ + self._component_qss(c)
 
@@ -2659,7 +2668,7 @@ class Theme:
             }}
             QPushButton#weaponCellName:disabled {{
                 background: transparent;
-                color: {c.text_disabled};
+                color: {c.text_on_disabled};
             }}
             QFrame#weaponCell[fp_brush="cannot"] QPushButton#weaponCellName {{
                 color: {c.text_disabled};
@@ -2680,7 +2689,7 @@ class Theme:
             QComboBox#weaponCellCombo:disabled {{
                 background: transparent;
                 border: none;
-                color: {c.text_disabled};
+                color: {c.text_on_disabled};
             }}
             QComboBox#weaponCellCombo::drop-down {{
                 border: none;
@@ -2728,7 +2737,7 @@ class Theme:
             QPushButton#weaponCellTest:disabled, QToolButton#weaponCellTest:disabled {{
                 background: transparent;
                 border: none;
-                color: {c.text_disabled};
+                color: {c.text_on_disabled};
             }}
             QToolButton#weaponCellTest {{
                 padding-right: 14px;

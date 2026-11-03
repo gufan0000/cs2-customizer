@@ -3,10 +3,14 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, Property, Signal
+from PySide6.QtCore import QPoint, Qt, QPropertyAnimation, QEasingCurve, Property, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QLinearGradient, QFont
 from PySide6.QtWidgets import QSizePolicy, QWidget
 from core.utils.app_fonts import UI_FONT_FAMILY
+
+#: 左上角说明的底和字（批 155）。
+CAPTION_PILL = QColor(0, 0, 0, 170)
+CAPTION_TEXT = QColor("#f0f0f3")
 
 
 COLOR_MAP = {
@@ -142,11 +146,22 @@ class FlashPreviewWidget(QWidget):
         painter.setBrush(Qt.NoBrush)
         painter.drawRect(rect)
 
-        # 6) 顶部右上小标签（提示）
-        painter.setPen(QColor(255, 255, 255, 120))
-        f = QFont(UI_FONT_FAMILY, 9)
+        # 6) 左上角说明。批 155：原来是半透明白字直接画在闪光叠层上，白闪 75% 时整行看不见；
+        #    现在垫一块深色底，叠层什么颜色都读得清（判据按最亮的白闪 100% 算对比度）
+        f = QFont(UI_FONT_FAMILY)
+        f.setPixelSize(12)
         painter.setFont(f)
-        label = f"实时预览 · {self._bg_color_name} · {self._opacity_pct}%   ▷ 点击模拟一次淡入"
-        painter.drawText(rect.adjusted(12, 8, -12, 0), Qt.AlignTop | Qt.AlignLeft, label)
+        label = self.caption()
+        metrics = painter.fontMetrics()
+        pill = metrics.boundingRect(label).adjusted(-8, -4, 8, 4)
+        pill.moveTopLeft(rect.topLeft() + QPoint(10, 10))
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(CAPTION_PILL)
+        painter.drawRoundedRect(pill, 6, 6)
+        painter.setPen(CAPTION_TEXT)
+        painter.drawText(pill, Qt.AlignCenter, label)
 
         painter.end()
+
+    def caption(self) -> str:
+        return f"{self._bg_color_name} · {self._opacity_pct}%   ▷ 点击模拟一次淡入"
