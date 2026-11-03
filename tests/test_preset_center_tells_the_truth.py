@@ -1132,7 +1132,8 @@ def test_the_way_to_open_a_friends_file_is_on_the_first_screen(qapp, real_window
     #   这条守卫当时被我改成了 1108，看图才发现（RN-753）。
     # 批 153（RN-767）1018：正文 13 → 14、卡片内边距 20/16、页面上边距 20，全站换令牌，这一页高 66px。
     # 批 156 993：「和朋友交换配置」删掉复述两颗按钮的说明、「保存/导出的范围」两句并一句，矮 25px。
-    _CONTENT_H = 993
+    # 批 160 1022：字号整体大一档（正文 14 → 15），高 29px。
+    _CONTENT_H = 1022
     actual_h = scroll.widget().height()
     assert abs(actual_h - _CONTENT_H) <= 24, (
         f"这一页在夹具里的内容高是 {actual_h}，而登记的是 {_CONTENT_H}（±24）。\n"

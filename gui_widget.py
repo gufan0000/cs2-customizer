@@ -1175,7 +1175,7 @@ class MainWindow(QMainWindow):
         self._sidebar_mode_btn = QPushButton("紧凑界面")
         self._sidebar_mode_btn.setObjectName("modeToggleButton")
         self._sidebar_mode_btn.setToolTip("切换到紧凑模式")
-        self._sidebar_mode_btn.setFixedSize(64, 24)
+        self._sidebar_mode_btn.setFixedHeight(24)   # 宽度跟字走：写死 64 时字大一档就差 2px（批 160）
         self._sidebar_mode_btn.setCursor(Qt.PointingHandCursor)
         self._sidebar_mode_btn.clicked.connect(self._toggle_compact_mode)
         sidebar_footer_layout.addWidget(self._sidebar_mode_btn)
@@ -2335,7 +2335,7 @@ class MainWindow(QMainWindow):
             
             # 使用动画切换（如果启用且页面过渡管理器已初始化）
             if animated and self.page_transition:
-                self.page_transition.switch_page(new_widget, transition_type='fade_scale')
+                self.page_transition.switch_page(new_widget)
             else:
                 # 直接切换（无动画）
                 self.content_stack.setCurrentWidget(new_widget)

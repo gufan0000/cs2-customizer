@@ -372,15 +372,15 @@ def test_viewmodel_shows_more_than_one_preset_at_a_time(qapp):
     # ⚠ 自检：先证明这个数**会随几何变化**，再拿它下结论。
     # 一条"数出来 N 张"的判据最容易的失效方式不是数错，是**恒定**——
     # 定位选错一层、或者拿到的是构造期的陈旧几何，它就会稳定返回一个好看的数。
-    # 把页面压到 300px 再数一次：必须掉下来。
-    page.resize(1280, 300)
+    # 把页面压到 240px 再数一次：必须掉下来（批 160 行距 8 → 6 后，五行在 300px 下刚好还装得下）。
+    page.resize(1280, 240)
     qapp.processEvents()
     shrunk = sum(1 for pv in page.preset_vars
                  if _is_fully_drawn_in(pv["fov"], _viewmodel_page_viewport(page)))
     page.resize(1280, 800)
     qapp.processEvents()
     assert shrunk < fully, (
-        f"把页面从 800px 压到 300px，完整可见的预设还是 {shrunk} 组（原 {fully} 组）"
+        f"把页面从 800px 压到 240px，完整可见的预设还是 {shrunk} 组（原 {fully} 组）"
         " —— 这个数不随几何变化，说明判据没在量屏幕，先修测量那一段再看结论。")
 
     assert fully >= 5, (

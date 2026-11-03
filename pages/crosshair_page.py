@@ -344,6 +344,8 @@ class CrosshairPage(QWidget):
         self.preview_column = self._create_preview_column()
         body.addWidget(self.preview_column, 1)
         self.parameter_scroll = self._create_parameter_panel()
+        # 批 160：栏里内容变宽（换了样式、填进数据）不会发 StyleChange，栏宽要跟着布局请求重算
+        self.parameter_scroll.widget().installEventFilter(self)
         body.addWidget(self.parameter_scroll, 0)
         main_layout.addLayout(body, 1)
 
@@ -709,8 +711,16 @@ class CrosshairPage(QWidget):
         panel = self.parameter_scroll.widget()
         bar = self.parameter_scroll.style().pixelMetric(
             QStyle.PM_ScrollBarExtent, None, self.parameter_scroll)
-        self.parameter_scroll.setFixedWidth(
-            max(self.PANEL_MIN_WIDTH, panel.minimumSizeHint().width() + bar))
+        # 批 160：样式表的 min-width 比字宽小，栏里这几颗按钮的下限按字钉住，字大一档才不会被挤成省略号
+        action_bar = getattr(self, "action_bar", None)
+        buttons = [self._kill_test_btn] + ([action_bar.extra_btn, action_bar.secondary_btn, action_bar.primary_btn]
+                                           if action_bar is not None else [])
+        for button in buttons:
+            button.setMinimumWidth(button.sizeHint().width())
+        need = panel.minimumSizeHint().width() + bar
+        if action_bar is not None:
+            need = max(need, action_bar.minimumSizeHint().width())
+        self.parameter_scroll.setFixedWidth(max(self.PANEL_MIN_WIDTH, need))
 
     def showEvent(self, event):
         self._sync_panel_width()
@@ -720,6 +730,11 @@ class CrosshairPage(QWidget):
         super().changeEvent(event)
         if event.type() in (QEvent.StyleChange, QEvent.FontChange) and hasattr(self, "parameter_scroll"):
             self._sync_panel_width()
+
+    def eventFilter(self, watched, event):
+        if event.type() == QEvent.LayoutRequest and watched is self.parameter_scroll.widget():
+            self._sync_panel_width()
+        return super().eventFilter(watched, event)
 
     def _add_style_section(self, layout):
         layout.addWidget(self._make_section_title("样式", "准心样式"))
@@ -874,9 +889,13 @@ class CrosshairPage(QWidget):
             "十字星辉"
         ])
         self.kill_effect_combo.currentIndexChanged.connect(self._on_kill_effect_changed)
+        # 批 160：按最长项定最小宽的话，字大一档后窄栏里会把「试一下」挤成省略号
+        for combo in (self.animation_combo, self.kill_effect_combo):
+            combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+            combo.setMinimumContentsLength(5)
         grid.addWidget(self.kill_effect_combo, 1, 1)
 
-        test_btn = QPushButton("试一下")
+        test_btn = self._kill_test_btn = QPushButton("试一下")
         test_btn.setToolTip("要先打开总开关，否则看不到联动效果。")
         style_as_secondary_button(test_btn)
         test_btn.clicked.connect(self._test_kill_effect)
@@ -922,17 +941,16 @@ class CrosshairPage(QWidget):
 
     def _add_custom_section(self, layout):
         """自己画的准心和导入导出。全页唯一的紫按钮是「绘制准心」（RN-139/RN-186）。"""
-        row = QHBoxLayout()
-        row.setSpacing(8)
         self.draw_button = QPushButton("绘制准心")
         self.draw_button.setToolTip("画完会自动切到「自定义」样式")
         self.draw_button.clicked.connect(self._open_custom_editor)
-        row.addWidget(self.draw_button)
         self.action_bar = PageActionBar(None, inline=True)
         self.action_bar.adopt_button(self.draw_button, primary=True)
         style_as_primary_button(self.draw_button)
-        row.addWidget(self.action_bar, 1)
-        layout.addLayout(row)
+        # 批 160：三颗挤一排会把栏撑宽、预览挤出页面，主按钮独占一行；没有同排按钮撑高度，摘掉 fp_short 免得被压成 23px
+        self.draw_button.setProperty("fp_short", False)
+        layout.addWidget(self.draw_button)
+        layout.addWidget(self.action_bar)
 
         self.custom_summary_label = QLabel("")
         self.custom_summary_label.setObjectName("hintLabel")

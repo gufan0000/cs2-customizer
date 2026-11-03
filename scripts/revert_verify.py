@@ -228,9 +228,49 @@ REVERTS = [
            "        pass\n",
            "tests/test_grey_text_after_the_weight_fix.py::test_the_three_grey_tiers_stay_apart",
            "绿 / 紫 / 海洋主题次要字和说明字分不开"),
+    Revert("B160", "B160字号回到旧阶梯", "ui_design_system.py",
+           "    md: int = 15         # 正文、控件\n",
+           "    md: int = 14         # 正文、控件\n",
+           "tests/test_type_one_step_bigger_and_pages_fade.py::test_the_type_ladder_is_one_step_bigger",
+           "用户：「字能稍微大一点」"),
+    Revert("B160", "B160页签又写死20", "theme_manager.py",
+           "                font-weight: 500;\n                min-height: {_one_line_px(font.xs)}px;\n",
+           "                font-weight: 500;\n                min-height: 20px;\n",
+           "tests/test_type_one_step_bigger_and_pages_fade.py::test_short_rows_still_hold_one_line_of_the_bigger_type",
+           "1.25 倍字号下页签「可用高 20 需 22」"),
+    Revert("B160", "B160卡片顶边不加光", "theme_manager.py",
+           '        return self._blend_hex("#ffffff", CARD_TOP_EDGE_ALPHA, self.colors.border_secondary)\n',
+           "        return self.colors.border_secondary\n",
+           "tests/test_type_one_step_bigger_and_pages_fade.py::test_dark_cards_catch_light_on_the_top_edge_only",
+           "深色卡片四边一样暗，层次全靠底色"),
+    Revert("B160", "B160离屏也起淡出", "ui_transitions.py",
+           '        if QGuiApplication.platformName() in ("offscreen", "minimal"):\n            return False\n',
+           "",
+           "tests/test_type_one_step_bigger_and_pages_fade.py::test_offscreen_switches_land_at_once",
+           "截图和审计拍到切页动画的中间帧"),
+    Revert("B160", "B160淡出完不收覆盖层", "ui_transitions.py",
+           "            self._overlay.hide()\n            self._overlay.pixmap = None\n",
+           "            pass\n",
+           "tests/test_type_one_step_bigger_and_pages_fade.py::test_the_fade_overlay_lets_clicks_through_and_goes_away",
+           "旧页快照一直盖在新页上"),
+    Revert("B160", "B160淡出拖长", "ui_transitions.py",
+           "FADE_MS = 110\n",
+           "FADE_MS = 300\n",
+           "tests/test_type_one_step_bigger_and_pages_fade.py::test_the_fade_is_short_and_never_a_wait",
+           "切页变成等待"),
+    Revert("B160", "B160绘制准心又被压矮", "pages/crosshair_page.py",
+           '        self.draw_button.setProperty("fp_short", False)\n',
+           "",
+           "tests/test_type_one_step_bigger_and_pages_fade.py::test_the_draw_button_alone_on_its_row_keeps_its_height",
+           "「绘制准心」独占一行后高 23px，比同栏按钮矮一截"),
+    Revert("B160", "B160准心栏宽不跟内容", "pages/crosshair_page.py",
+           "        self.parameter_scroll.widget().installEventFilter(self)\n",
+           "",
+           "tests/test_type_one_step_bigger_and_pages_fade.py::test_the_crosshair_panel_widens_when_its_content_does",
+           "准心页横向溢出 18px（填进数据后栏里内容变宽）"),
     Revert("B159", "B159组头高度又写死16", "theme_manager.py",
-           "                min-height: {_one_line_px(font.xs)}px;\n",
-           "                min-height: 16px;\n",
+           "                min-height: {_one_line_px(font.xs)}px;\n                font-size: {font.xs}px;\n",
+           "                min-height: 16px;\n                font-size: {font.xs}px;\n",
            "tests/test_nav_group_header_fits_its_line.py::test_the_group_header_floor_holds_one_line_at_every_scale",
            "CI 上侧栏组头时红时绿「可用高 16 需 18」"),
     Revert("B158", "B158切片又留着STAT", "build_tools/make_ui_fonts.py",
@@ -7881,8 +7921,8 @@ REVERTS = [
     Revert(
         "RN", "锚点芯片的高度又被通用下限顶起来",
         "theme_manager.py",
-        "                min-height: {qss_box(26, 2, 1)}px;\n"
-        "                max-height: {qss_box(26, 2, 1)}px;",
+        "                min-height: {max(qss_box(26, 2, 1), _one_line_px(font.xs))}px;\n"
+        "                max-height: {max(qss_box(26, 2, 1), _one_line_px(font.xs))}px;",
         "                /* 高度声明没了 */",
         "tests/test_the_anchor_bar_says_where_you_are.py::"
         "test_anchor_chips_are_the_height_their_caller_declared",
@@ -8726,9 +8766,11 @@ Revert(
     Revert(
         "RN", "总开关关着的卡片左缘又长出灰色条",
         "theme_manager.py",
-        "                border: {container.card_border_width}px solid {c.border_secondary};\n"
+        "                border: {container.card_border_width}px solid {c.border_secondary};"
+        " border-top-color: {self._card_top_edge()};\n"
         "            }}\n\n            /* R7/D-03(UP-044)",
-        "                border: {container.card_border_width}px solid {c.border_secondary};\n"
+        "                border: {container.card_border_width}px solid {c.border_secondary};"
+        " border-top-color: {self._card_top_edge()};\n"
         "                border-left: 3px solid {c.text_tertiary};\n"
         "            }}\n\n            /* R7/D-03(UP-044)",
         "tests/test_no_left_colour_bars_remain.py"
@@ -11327,8 +11369,8 @@ REVERTS.extend([
            "tests/test_magnifier_chain_after_the_audit.py::test_a_failed_hotkey_shows_on_the_visible_badge",
            "F-096：热键注册失败，页面还显示运行·待命"),
     Revert("B143", "标题门槛又不跟字号档位走", "ui_style_applier.py",
-           "        body = round(14 * get_font_scale())\n",
-           "        body = 14\n",
+           "        body = get_design_system().font_size.md\n",
+           "        body = 15\n",
            "tests/test_font_scale_keeps_label_roles.py::test_body_sized_labels_stay_labels_at_every_scale",
            "110% / 125% 下普通标签变成 35px 大标题，数值和枪名被撑坏"),
     Revert("B143", "解码线程吞掉错误", "core/kill_icon_video.py",

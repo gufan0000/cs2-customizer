@@ -28,6 +28,8 @@ DISABLED_TEXT_CONTRAST = 4.2
 MUTED_TEXT_CONTRAST = 5.5
 #: 次要文字的下限：说明文字抬上来以后，绿 / 紫 / 海洋三套的次要字（5.9~6.1）和它分不开了
 SECONDARY_TEXT_CONTRAST = 6.5
+#: 深色主题卡片顶边叠多少白（0-255，批 160）：#25272e → #303239，看得出一道光，又不抢内容
+CARD_TOP_EDGE_ALPHA = 14
 
 
 def _one_line_px(font_px: int) -> int:
@@ -325,6 +327,12 @@ class Theme:
         h, s, v, a = c.getHsv()
         c.setHsv(h, min(255, int(s * 1.1)), max(0, int(v * factor)), a)
         return c.name()
+
+    def _card_top_edge(self) -> str:
+        """卡片顶边（批 160）：深色主题里比其余三边亮一点，像光从上面打下来；浅色主题不变。"""
+        if self._is_light_theme():
+            return self.colors.border_secondary
+        return self._blend_hex("#ffffff", CARD_TOP_EDGE_ALPHA, self.colors.border_secondary)
 
     def _is_light_theme(self) -> bool:
         """判断主题是浅色还是深色 — 基于 bg_primary 的 HSL 亮度."""
@@ -682,7 +690,7 @@ class Theme:
                 color: {c.text_secondary};
                 border: 1.5px solid {self.resting_border(c)};
                 border-radius: 14px;
-                font-size: 13px;
+                font-size: {self.ds.font_size.sm}px;
                 font-weight: 500;
                 padding: 0px;
                 min-width: 24px; max-width: 24px;
@@ -896,7 +904,7 @@ class Theme:
                 border: none;
                 text-align: left;
                 padding: 0px {nav_padding_horizontal}px;
-                font-size: {font.md}px;
+                font-size: {font.sm}px;   /* 批 160：正文大一档，导航留在 14，比正文小一号 */
                 border-radius: {radius.md}px;
                 /* ⚠ 项高只能写在这儿：全局 QPushButton 的 min-height 在 polish 时盖掉 setFixedHeight
                  * （批 145 实测：setFixedHeight(24) 之后 min 14、实高 18，挤成一团） */
@@ -983,7 +991,7 @@ class Theme:
             }}
             QLabel#helpContent {{
                 color: {c.text_secondary};
-                font-size: 13px;
+                font-size: {self.ds.font_size.xs}px;
                 line-height: 1.6;
                 background: transparent;
             }}
@@ -1145,7 +1153,7 @@ class Theme:
                  * ⭐ **同排一致这类判据，改「其余那些」和改「那一个」是等价的破坏。**
                  * ⇒ 横向照调研那版（10/9，给左侧色条让位），纵向不动。 */
                 padding: 5px 14px 5px 0px;   /* RN-643：没有色条了，靠右侧间距分隔 */
-                font-size: 12px;
+                font-size: {self.ds.font_size.xs}px;
                 font-weight: 500;
                 min-height: 28px;
             }}
@@ -1201,7 +1209,7 @@ class Theme:
             QFrame#card {{
                 background-color: {c.bg_card};
                 border-radius: {container.card_border_radius}px;
-                border: {container.card_border_width}px solid {c.border_secondary};
+                border: {container.card_border_width}px solid {c.border_secondary}; border-top-color: {self._card_top_edge()};
             }}
 
             /* R7/D-03(UP-044): 语义色条只留 warn/danger，常态无色条。
@@ -1349,8 +1357,8 @@ class Theme:
             /* v5 Phase 9: focus ring */
             QPushButton#primaryButton[fp_narrow="true"], QPushButton#secondaryButton[fp_narrow="true"], QPushButton#dangerButton[fp_narrow="true"], QPushButton#actionButton[fp_narrow="true"], QPushButton#helpCloseButton[fp_narrow="true"], QPushButton#anchorChip[fp_narrow="true"] {{ min-width: 0px; }}
             /* Fixed-height controls must leave room for the enlarged font. */
-            QPushButton#primaryButton[fp_short="true"], QPushButton#secondaryButton[fp_short="true"], QPushButton#dangerButton[fp_short="true"], QPushButton#actionButton[fp_short="true"], QPushButton#helpCloseButton[fp_short="true"], QPushButton#anchorChip[fp_short="true"] {{ min-height: {round(button.secondary_font_size * 1.4)}px; padding-top: 2px; padding-bottom: 2px; }}
-            QPushButton#primaryButton[fp_short="true"]:focus, QPushButton#secondaryButton[fp_short="true"]:focus, QPushButton#dangerButton[fp_short="true"]:focus, QPushButton#actionButton[fp_short="true"]:focus, QPushButton#helpCloseButton[fp_short="true"]:focus, QPushButton#anchorChip[fp_short="true"]:focus {{ padding-top: 1px; padding-bottom: 1px; }}
+            QPushButton#primaryButton[fp_short="true"], QPushButton#secondaryButton[fp_short="true"], QPushButton#dangerButton[fp_short="true"], QPushButton#actionButton[fp_short="true"], QPushButton#helpCloseButton[fp_short="true"], QPushButton#anchorChip[fp_short="true"] {{ min-height: {round(button.secondary_font_size * 1.4)}px; padding-top: 1px; padding-bottom: 1px; }}
+            QPushButton#primaryButton[fp_short="true"]:focus, QPushButton#secondaryButton[fp_short="true"]:focus, QPushButton#dangerButton[fp_short="true"]:focus, QPushButton#actionButton[fp_short="true"]:focus, QPushButton#helpCloseButton[fp_short="true"]:focus, QPushButton#anchorChip[fp_short="true"]:focus {{ padding-top: 0px; padding-bottom: 0px; }}
             QPushButton#secondaryButton:focus {{
                 border: 2px solid {c.border_focus};
                 padding: {max(0, button.secondary_padding_vertical - 1)}px {max(0, button.secondary_padding_horizontal - 1)}px;
@@ -1479,8 +1487,8 @@ class Theme:
                 /* RN-547 残余（批 66）：高度只有这一处声明。批 67 起走 RN-551 那条换算，
                  * 不再手算 —— 26 是这颗 chip 的目标总高，padding 2 / border 1 各占两边。 */
                 min-width: 0px;
-                min-height: {qss_box(26, 2, 1)}px;
-                max-height: {qss_box(26, 2, 1)}px;
+                min-height: {max(qss_box(26, 2, 1), _one_line_px(font.xs))}px;
+                max-height: {max(qss_box(26, 2, 1), _one_line_px(font.xs))}px;
             }}
 
             /* RN-550：下限已由通用 QLineEdit 规则给对（RN-551），这里只剩上限干活 */
@@ -1652,7 +1660,7 @@ class Theme:
             /* ========== 关于页面专用样式 ========== */
             QLabel#logoTitle {{
                 color: {c.text_primary};
-                font-size: 18px;
+                font-size: {self.ds.font_size.xxl}px;
                 font-weight: 700;
             }}
             
@@ -1927,7 +1935,7 @@ class Theme:
                 margin: 2px 1px;
                 font-size: {font.xs}px;
                 font-weight: 500;
-                min-height: 20px;
+                min-height: {_one_line_px(font.xs)}px;
             }}
 
             QTabBar::tab:hover {{
@@ -2094,23 +2102,23 @@ class Theme:
 
             QWidget#musicControlBar QLabel#musicMiniTrackLabel {{
                 color: {c.text_secondary};
-                font-size: 12px;
+                font-size: {self.ds.font_size.xs}px;
             }}
 
             QWidget#musicControlBar QLabel#musicTrackTitle {{
                 color: {c.text_primary};
-                font-size: 14px;
+                font-size: {self.ds.font_size.md}px;
                 font-weight: 700;
             }}
 
             QWidget#musicControlBar QLabel#musicTrackArtist {{
                 color: {c.text_secondary};
-                font-size: 12px;
+                font-size: {self.ds.font_size.xs}px;
             }}
 
             QWidget#musicControlBar QLabel#musicTimeLabel {{
                 color: {c.text_muted};
-                font-size: 12px;
+                font-size: {self.ds.font_size.xs}px;
                 font-weight: 500;
             }}
             

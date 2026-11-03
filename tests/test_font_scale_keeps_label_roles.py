@@ -31,9 +31,13 @@ def _styled(text, pixel_size):
 
 
 def test_body_sized_labels_stay_labels_at_every_scale():
-    for scale, body in [(1.0, 14), (1.1, 15), (1.25, 18)]:
+    """正文多大从令牌读：原来写死 14 / 15 / 18，批 160 正文改 15 后判据和产品一起错，行标签全成了标题。"""
+    from ui_design_system import get_design_system
+
+    for scale in (1.0, 1.1, 1.25):
         apply_font_scale(scale)
-        assert _styled("Glock-18", body) == "label", scale
+        body = get_design_system().font_size.md
+        assert _styled("Glock-18", body) == "label", (scale, body)
 
 
 def test_a_really_big_label_is_still_a_title():

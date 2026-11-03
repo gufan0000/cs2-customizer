@@ -34,16 +34,16 @@ class BorderRadius:
 
 @dataclass
 class FontSize:
-    """字号阶梯 12 / 13 / 14 / 15 / 20：正文 14 是读得清的下限（批 153，用户嫌字小）。"""
-    caption: int = 12
-    xs: int = 12         # 提示、页签、徽章
-    sm: int = 13         # 次要正文
-    md: int = 14         # 正文、控件
-    lg: int = 15         # 小节标题
-    card_title: int = 15
-    xl: int = 16         # 品牌名、紧凑档标题
-    xxl: int = 18
-    h1: int = 20         # 页面标题
+    """字号阶梯 13 / 14 / 15 / 16 / 22（批 160 整体大一档，用户：「字能稍微大一点」；批 153 是 12~20）。"""
+    caption: int = 13
+    xs: int = 13         # 提示、页签、徽章
+    sm: int = 14         # 次要正文
+    md: int = 15         # 正文、控件
+    lg: int = 16         # 小节标题
+    card_title: int = 16
+    xl: int = 17         # 品牌名、紧凑档标题
+    xxl: int = 19
+    h1: int = 22         # 页面标题
 
 
 @dataclass
@@ -121,35 +121,35 @@ class Shadow:
 
 @dataclass
 class ButtonSpec:
-    """按钮规范：一律高 32，字 14（批 153）。"""
+    """按钮规范：一律高 32，字 15（批 153 定 14，批 160 跟正文大一档）。"""
     primary_height: int = 32
     primary_padding_horizontal: int = 16
     primary_padding_vertical: int = 5
     primary_border_radius: int = 8
-    primary_font_size: int = 14
+    primary_font_size: int = 15
     primary_min_width: int = 64
 
     secondary_height: int = 32
     secondary_padding_horizontal: int = 14
-    secondary_padding_vertical: int = 5
+    secondary_padding_vertical: int = 4   # 批 160：字 15 一行要 21，32 - 边框 2 - 5×2 只剩 20
     secondary_border_radius: int = 8
-    secondary_font_size: int = 14
+    secondary_font_size: int = 15
     secondary_border_width: int = 1
 
     action_height: int = 32
     action_padding_horizontal: int = 12
-    action_padding_vertical: int = 5
+    action_padding_vertical: int = 4
     action_border_radius: int = 8
-    action_font_size: int = 14
+    action_font_size: int = 15
 
     icon_size: int = 32
     icon_border_radius: int = 8
 
     danger_height: int = 32
     danger_padding_horizontal: int = 12
-    danger_padding_vertical: int = 5
+    danger_padding_vertical: int = 4
     danger_border_radius: int = 8
-    danger_font_size: int = 14
+    danger_font_size: int = 15
 
 
 @dataclass

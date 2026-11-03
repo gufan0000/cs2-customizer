@@ -180,7 +180,7 @@ class ViewmodelPage(QWidget):
         presets_grid = QGridLayout()
         presets_grid.setContentsMargins(0, 0, 0, 0)
         presets_grid.setHorizontalSpacing(16)
-        presets_grid.setVerticalSpacing(8)
+        presets_grid.setVerticalSpacing(6)   # 批 160：字大一档后差 2px 装满一屏，五行各省 2px
         for column, title in enumerate(("名称", "快捷键", "FOV", "X", "Y", "Z")):
             heading = keep_single_line(QLabel(title))
             heading.setObjectName("hintLabel")
