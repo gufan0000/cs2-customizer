@@ -26,3 +26,6 @@ soundfile>=0.14.0
 # 开源裁剪时那份 requirements 被排除了），于是这条测试在本地恒绿、在 CI 恒红。
 # 教训："本地全绿"不等于"依赖声明完整"，只有干净环境能证明这件事。
 PyYAML>=6.0
+# 字体判据量随包字体的笔画（tests/test_ui_font_is_bundled.py）；切字体的 build_tools/make_ui_fonts.py 也要它。
+# 2026-11-03 开源仓 CI 批 155、156 两轮红在这里（批 154 加的判据），本机一直有，同 PyYAML 那条。
+fonttools>=4.50
