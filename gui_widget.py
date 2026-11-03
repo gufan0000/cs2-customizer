@@ -1264,6 +1264,11 @@ class MainWindow(QMainWindow):
                 root.removeWidget(bar)
                 holder_layout.addWidget(bar)
                 root.insertWidget(index, holder)
+
+        # 批 157：拉宽窗口时内容停在同一条右缘（放最后：上面会把底栏包进一层）
+        from widgets.page_width import cap_page
+
+        cap_page(page)
     
     def _create_pages(self):
         """创建页面（懒加载模式：只初始化 basic 页面）"""

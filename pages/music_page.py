@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem, QRadioButton, QButtonGroup, QFileDialog, QMessageBox,
     QInputDialog
 )
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QSize, Qt, Signal
 
 from config import config
 from core.utils.logger import get_logger
@@ -31,6 +31,9 @@ import weakref
 
 
 # 播放控制栏已移至全局 (music_control_bar.py)
+
+#: 空播放列表的高度：两行提示上下居中（批 157，原来空着也占 240px）
+EMPTY_PLAYLIST_HEIGHT = 128
 
 
 def _link_state_word(link_enabled: bool) -> str:
@@ -602,8 +605,7 @@ class MusicPage(QWidget):
         # `SingleSelection`，**N 永远是 1**。
         # ⭐ 同批 24 那条：**一句话被读错时，先问它是不是本来就该是真的。**
         self.playlist_widget.setSelectionMode(QListWidget.ExtendedSelection)
-        self.playlist_widget.setMinimumHeight(180)
-        self.playlist_widget.setMaximumHeight(320)
+        self._fit_playlist_height(empty=False)
         self.playlist_widget.itemDoubleClicked.connect(self._on_item_double_clicked)
         self.playlist_widget.itemSelectionChanged.connect(self._on_playlist_selection_changed)
         layout.addWidget(self.playlist_widget)
@@ -1005,6 +1007,14 @@ class MusicPage(QWidget):
             except Exception:
                 pass
     
+    def _fit_playlist_height(self, empty: bool) -> None:
+        """空列表只留一块提示的高度（批 157：原来空着也占 240px，把下面两张卡顶出第一屏）。"""
+        if empty:
+            self.playlist_widget.setFixedHeight(EMPTY_PLAYLIST_HEIGHT)
+        else:
+            self.playlist_widget.setMinimumHeight(180)
+            self.playlist_widget.setMaximumHeight(320)
+
     def refresh_playlist_display(self, selected_rows=None):
         """刷新播放列表显示，并尽量保留当前选择。"""
         if selected_rows is None:
@@ -1014,11 +1024,15 @@ class MusicPage(QWidget):
         playlist = list(self.player.get_playlist() or [])
         self.selected_indices = set()
 
+        self._fit_playlist_height(empty=not playlist)
         if not playlist:
             # RN-455：原来只讲怎么加，不讲加完怎么放 —— 而这一页没有任何播放控件。
             item = QListWidgetItem("播放列表为空\n点「添加音乐」，加完双击歌名就开始放")
             item.setTextAlignment(Qt.AlignCenter)
             item.setFlags(Qt.NoItemFlags)
+            # 占满整个列表高，两行字才上下居中
+            frame = self.playlist_widget.frameWidth() * 2
+            item.setSizeHint(QSize(0, EMPTY_PLAYLIST_HEIGHT - frame))
             self.playlist_widget.addItem(item)
             self._sync_overview_status()
             return

@@ -24,6 +24,10 @@ from ui_style_applier import keep_single_line
 #: RN-429：准心由 `crosshair_overlay` 画在游戏画面上。
 DRAWS_OVER_THE_GAME = True
 
+#: 滑杆那一格的行距、列距（批 157，原 6 / 8）
+SLIDER_ROW_VSPACING = 12
+SLIDER_ROW_HSPACING = 12
+
 
 #: 样式的中文名——**这是本文件里唯一一份**。
 #: R9-A 之前同一份清单在这个文件里抄了三遍（`_format_style_text` 的表、
@@ -793,14 +797,17 @@ class CrosshairPage(QWidget):
         value_label = QLabel(value_text)
         value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         keep_single_line(value_label)
+        # 数值列按最宽的「100%」留宽：拖到 100% 时滑杆不再被挤短一截
+        value_label.setMinimumWidth(value_label.fontMetrics().horizontalAdvance("100%"))
         grid.addWidget(value_label, row, 2)
         return slider, value_label
 
     def _add_slider_section(self, layout):
         grid = QGridLayout()
         grid.setContentsMargins(0, 0, 0, 0)
-        grid.setHorizontalSpacing(8)
-        grid.setVerticalSpacing(6)
+        # 批 157：五根滑杆挤在一起，名字贴着滑杆（codex 设计建议）
+        grid.setHorizontalSpacing(SLIDER_ROW_HSPACING)
+        grid.setVerticalSpacing(SLIDER_ROW_VSPACING)
         grid.setColumnStretch(1, 1)
 
         self.size_slider, self.size_value_label = self._add_slider_row(
@@ -897,7 +904,8 @@ class CrosshairPage(QWidget):
         import_btn.clicked.connect(self._import_sharecode)
         row.addWidget(import_btn)
         layout.addLayout(row)
-        export_btn = QPushButton("复制当前准心的分享码")
+        export_btn = QPushButton("复制分享码")
+        export_btn.setToolTip("把当前准心转成 CS2 分享码，复制到剪贴板。")
         style_as_secondary_button(export_btn)
         export_btn.clicked.connect(self._export_sharecode)
         layout.addWidget(export_btn)

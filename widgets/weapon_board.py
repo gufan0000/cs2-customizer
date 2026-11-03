@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QFrame, QGridLayout, QLabel, QScrollArea, QSizePol
 
 from ui_style_applier import keep_single_line
 from widgets.master_switch_effect import PARAMETER_AREA_PROPERTY
+from widgets.page_width import available_width
 
 #: 下拉和试听两段的下限。分类名和枪名那两段按字现算，字号变了跟着变。
 CELL_TAIL_MIN_WIDTH = 128
@@ -159,4 +160,5 @@ class BoardScrollArea(QScrollArea):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         bar = self.style().pixelMetric(QStyle.PM_ScrollBarExtent, None, self)
-        self.availableWidthChanged.emit(self.width() - bar)
+        # 内容区有宽度上限（批 157），列数按限过的宽算
+        self.availableWidthChanged.emit(available_width(self, self.width() - bar))

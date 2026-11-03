@@ -40,7 +40,8 @@ PROFILE_OPTIONS = [
     ("纯击杀", "kill_only"),
     ("战术信息", "tactical"),
 ]
-COLOR_OPTIONS = [("不启用", -1)] + [(f"{name} ({value})", value) for value, (name, _) in HUD_COLORS.items()]
+# 批 157：下拉只写色名，`cl_hud_color` 的编号挪进每一项的 tooltip（一屏原有十个「默认 (0)」）
+COLOR_OPTIONS = [("不启用", -1)] + [(name, value) for value, (name, _) in HUD_COLORS.items()]
 EFFECT_OPTIONS = [
     ("固定", "solid"),
     ("快闪", "flash"),
@@ -121,6 +122,7 @@ class HudColorPage(QWidget):
                 combo.addItem(name, value)
             else:
                 combo.addItem(item_icon, name, value)
+                combo.setItemData(combo.count() - 1, f"cl_hud_color {value}", Qt.ToolTipRole)
         return combo
 
     def _create_effect_combo(self):
