@@ -190,6 +190,33 @@ def test_the_draw_button_alone_on_its_row_keeps_its_height(qapp, monkeypatch):
         qapp.processEvents()
 
 
+def test_a_long_library_hint_gives_way_to_the_buttons(qapp, monkeypatch):
+    """开源版空库时提示句更长，紧凑档 1.25 倍下它拿满全宽，把「刷新风格列表」挤成省略号（批 160 开源 CI 红）。"""
+    from config import config
+    from core.utils.app_fonts import load_ui_fonts
+    import pages.kill_sound_page as kill_sound_module
+
+    assert load_ui_fonts()
+    monkeypatch.setattr(config, "save_config", lambda: None, raising=False)
+    page = kill_sound_module.KillSoundPage()
+    try:
+        page.resize(700, 600)
+        page.show()
+        page.library_hint.setText("还没有风格：放进音频后点「刷新风格列表」" * 3)
+        page.library_hint.show()
+        for _ in range(3):
+            qapp.processEvents()
+        bar = page.action_bar
+        for button in (bar.extra_btn, bar.secondary_btn, bar.primary_btn):
+            if button.isVisible():
+                assert button.width() >= button.sizeHint().width(), (button.text(), button.width())
+        hint = page.library_hint
+        assert hint.width() < hint.fontMetrics().horizontalAdvance(hint.text()), "提示没让，判据没测到挤的那一档"
+    finally:
+        page.deleteLater()
+        qapp.processEvents()
+
+
 @pytest.fixture
 def qapp():
     return QApplication.instance() or QApplication([])

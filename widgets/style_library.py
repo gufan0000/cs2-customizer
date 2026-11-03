@@ -56,6 +56,24 @@ class ElidedLabel(QLabel):
         return hint
 
 
+class ShrinkingHintLabel(QLabel):
+    """一行提示，空间不够时它先让、画成省略号（`text()` 仍是全文）。批 160：开源版空库时这句把按钮挤成了省略号。"""
+
+    def __init__(self, text: str = "", parent=None):
+        super().__init__(text, parent)
+        self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)   # 同行按钮先拿够宽，剩下的归它
+
+    def paintEvent(self, event):
+        from PySide6.QtGui import QPainter, QPalette
+
+        rect = self.contentsRect()
+        shown = self.fontMetrics().elidedText(self.text(), Qt.ElideRight, rect.width())
+        self.setToolTip(self.text() if shown != self.text() else "")
+        painter = QPainter(self)
+        self.style().drawItemText(painter, rect, int(self.alignment()), self.palette(),
+                                  self.isEnabled(), shown, QPalette.WindowText)
+
+
 class StyleCard(QPushButton):
     """一张风格卡。整张是一颗可选中的按钮（键盘也够得着），右边那颗圆的是试听。"""
 

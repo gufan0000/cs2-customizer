@@ -475,7 +475,7 @@ class SoundPageBase:
 
         from widgets.community_library import EmptyLibraryCallout
         from widgets.page_action_bar import PageActionBar
-        from widgets.style_library import StyleLibrary
+        from widgets.style_library import ShrinkingHintLabel, StyleLibrary
 
         section = QVBoxLayout()
         section.setContentsMargins(0, 0, 0, 0)
@@ -487,9 +487,9 @@ class SoundPageBase:
         title = QLabel("风格库")
         title.setObjectName("cardTitle")
         head.addWidget(title)
-        self.library_hint = keep_single_line(QLabel(""))
+        self.library_hint = keep_single_line(ShrinkingHintLabel(""))
         self.library_hint.setObjectName("hintLabel")
-        head.addWidget(self.library_hint)
+        head.addWidget(self.library_hint, 1)
 
         self.action_bar = PageActionBar(content, inline=True)
         if self.STYLE_TOOLS_MENU:
@@ -508,7 +508,7 @@ class SoundPageBase:
                                self.action_bar.extra_btn.menu())
         self.action_bar.configure_secondary("刷新风格列表", self._refresh_style_catalog, visible=True)
         self.action_bar.configure_primary("打开音频资源", self._open_audio_resource_root, visible=True)
-        head.addWidget(self.action_bar, 1)
+        head.addWidget(self.action_bar)
         section.addLayout(head)
 
         # RN-180：空库时的第一步放在风格库这里 —— 困惑发生的位置。
