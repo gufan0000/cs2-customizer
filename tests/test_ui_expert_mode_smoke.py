@@ -46,6 +46,8 @@ def test_expert_mode_visibility_smoke(qapp):
     expert_row_layout.addWidget(win.audio_task_panel_quick_btn)
     win._sync_home_tool_rows = lambda: gui_widget.MainWindow._sync_home_tool_rows(win)
     win._sync_expert_nav_buttons = lambda: gui_widget.MainWindow._sync_expert_nav_buttons(win)
+    # 批 153：项数变了侧栏要重算档位；这个替身没有侧栏，真方法会自己早退
+    win._apply_nav_density = lambda: gui_widget.MainWindow._apply_nav_density(win)
 
     gui_widget.MainWindow._apply_expert_mode_visibility(win)
     assert win.nav_buttons["audio_health"].isVisible()

@@ -24,26 +24,26 @@ class Spacing:
 
 @dataclass
 class BorderRadius:
-    """圆角：控件 6，卡片 8（批 145）。"""
+    """圆角：控件 8，卡片 12（批 153）。"""
     sm: int = 6
-    md: int = 6
-    lg: int = 8
-    xl: int = 8
+    md: int = 8
+    lg: int = 12
+    xl: int = 12
     full: str = "50%"
 
 
 @dataclass
 class FontSize:
-    """字号阶梯 12 / 13 / 14 / 16 / 18，靠字重分层，不靠猛跳字号（批 145）。"""
+    """字号阶梯 12 / 13 / 14 / 15 / 20：正文 14 是读得清的下限（批 153，用户嫌字小）。"""
     caption: int = 12
     xs: int = 12         # 提示、页签、徽章
     sm: int = 13         # 次要正文
-    md: int = 13         # 正文、控件
-    lg: int = 14         # 小节标题
-    card_title: int = 14
+    md: int = 14         # 正文、控件
+    lg: int = 15         # 小节标题
+    card_title: int = 15
     xl: int = 16         # 品牌名、紧凑档标题
     xxl: int = 18
-    h1: int = 18         # 页面标题
+    h1: int = 20         # 页面标题
 
 
 @dataclass
@@ -121,35 +121,35 @@ class Shadow:
 
 @dataclass
 class ButtonSpec:
-    """按钮规范：一律高 32（批 145）。"""
+    """按钮规范：一律高 32，字 14（批 153）。"""
     primary_height: int = 32
-    primary_padding_horizontal: int = 14
+    primary_padding_horizontal: int = 16
     primary_padding_vertical: int = 5
-    primary_border_radius: int = 6
-    primary_font_size: int = 13
+    primary_border_radius: int = 8
+    primary_font_size: int = 14
     primary_min_width: int = 64
 
     secondary_height: int = 32
-    secondary_padding_horizontal: int = 12
+    secondary_padding_horizontal: int = 14
     secondary_padding_vertical: int = 5
-    secondary_border_radius: int = 6
-    secondary_font_size: int = 13
+    secondary_border_radius: int = 8
+    secondary_font_size: int = 14
     secondary_border_width: int = 1
 
     action_height: int = 32
     action_padding_horizontal: int = 12
     action_padding_vertical: int = 5
-    action_border_radius: int = 6
-    action_font_size: int = 13
+    action_border_radius: int = 8
+    action_font_size: int = 14
 
     icon_size: int = 32
-    icon_border_radius: int = 6
+    icon_border_radius: int = 8
 
     danger_height: int = 32
     danger_padding_horizontal: int = 12
     danger_padding_vertical: int = 5
-    danger_border_radius: int = 6
-    danger_font_size: int = 13
+    danger_border_radius: int = 8
+    danger_font_size: int = 14
 
 
 @dataclass
@@ -158,22 +158,22 @@ class InputSpec:
     text_height: int = 32
     text_padding_horizontal: int = 10
     text_padding_vertical: int = 5
-    text_border_radius: int = 6
+    text_border_radius: int = 8
     text_border_width: int = 1
-    text_font_size: int = 13
+    text_font_size: int = 14
 
     textarea_padding: int = 8
-    textarea_border_radius: int = 6
+    textarea_border_radius: int = 8
     textarea_border_width: int = 1
-    textarea_font_size: int = 13
+    textarea_font_size: int = 14
     textarea_line_height: float = 1.5
 
     combobox_height: int = 32
     combobox_padding_horizontal: int = 10
     combobox_padding_vertical: int = 5
-    combobox_border_radius: int = 6
+    combobox_border_radius: int = 8
     combobox_border_width: int = 1
-    combobox_font_size: int = 13
+    combobox_font_size: int = 14
     combobox_arrow_width: int = 16
 
 
@@ -215,10 +215,10 @@ class SliderSpec:
 
 @dataclass
 class ContainerSpec:
-    """容器规范：卡片不靠阴影立，靠底色和发丝线（批 145）。"""
+    """容器规范：卡片不靠阴影立，靠底色和发丝线（批 145）；圆角 12（批 153）。"""
     card_padding: int = 16
     card_padding_compact: int = 12
-    card_border_radius: int = 8
+    card_border_radius: int = 12
     card_border_width: int = 1
     card_shadow: str = "none"
 
@@ -226,7 +226,7 @@ class ContainerSpec:
     card_section_gap: int = 12
 
     groupbox_padding: int = 12
-    groupbox_border_radius: int = 8
+    groupbox_border_radius: int = 12
     groupbox_border_width: int = 1
     groupbox_title_padding: int = 8
 

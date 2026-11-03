@@ -266,6 +266,10 @@ def main() -> int:
                          "**送外审配合排版审计时拍这一档**。"
                          "⚠ 不给的话就是交给一个 8 秒定时器决定，实测会在一轮里"
                          "拍出两种可视区（见 scripts/_audit_music_bar.py）")
+    ap.add_argument("--seed", action="store_true",
+                    help="批 153：往干净配置目录造几个假风格（`_audit_seed`，排版审计同一份），"
+                         "拍音效页「有内容」的那张脸 —— 空库时武器板和风格卡都不出现。"
+                         "基线不给这个开关。")
     _ui_mode.add_expert_argument(ap)
     args = ap.parse_args()
 
@@ -361,6 +365,11 @@ def main() -> int:
                     except Exception as exc:      # noqa: BLE001
                         print(f"   !! 场景刷新 {pid}.{hook} 失败: {exc}")
                     break
+    if args.seed:
+        import _audit_seed as _seed
+
+        _seed.seed_styles(win, app, config)
+        print(f"   造了 {len(_seed.STYLES)} 个假风格（_audit_seed）")
 
     apply_font_scale(args.scale)
     get_theme_manager().set_theme(args.theme)

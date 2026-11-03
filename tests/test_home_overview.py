@@ -31,7 +31,7 @@ from core.runtime.system_status_service import (  # noqa: E402
     RuntimeStatus,
     readiness_view,
 )
-from widgets.home_overview import FEATURE_CARD_MIN_WIDTH, READINESS_WIDE_WIDTH  # noqa: E402
+from widgets.home_overview import FEATURE_PANEL_GAP, FEATURE_PANEL_MIN_WIDTH  # noqa: E402
 from widgets.nav_button import DOT_NONE, DOT_ON, DOT_WARN  # noqa: E402
 from widgets.overlay_requirement import REQUIRED_WORDS  # noqa: E402
 
@@ -185,6 +185,49 @@ def test_an_expert_page_opened_from_a_link_fits_the_sidebar(win, qapp):
     assert about.visibleRegion().boundingRect().height() == about.height(), "「关于软件」被挤出视野了"
 
 
+def test_the_sidebar_breathes_when_the_window_is_tall_and_still_fits_when_it_is_not(win, qapp):
+    """批 153：窗口够高导航项放宽到 28；默认 800 高放不下宽松档就收回 24。两档都不用滚，来回两次。
+
+    组头也要跟着换档重算高度：属性换了不发 StyleChange，组头留着上一档缓存的 sizeHint。
+    """
+    from PySide6.QtWidgets import QPushButton
+
+    from theme_manager import NAV_GROUP_PAD, NAV_GROUP_PAD_DENSE, NAV_ITEM_HEIGHT, NAV_ITEM_HEIGHT_DENSE
+
+    scroll = win._sidebar_scroll
+    win.setMinimumSize(1200, 600)
+    for _ in range(2):
+        header_heights = []
+        for height, item in ((1000, NAV_ITEM_HEIGHT), (800, NAV_ITEM_HEIGHT_DENSE)):
+            win.resize(1280, height)
+            _settle(qapp, 12)
+            shown = [button for button in win.nav_buttons.values() if button.isVisible()]
+            assert len(shown) >= 20, f"只有 {len(shown)} 项可见，分母不对"
+            assert {button.height() for button in shown} == {item}, height
+            assert scroll.verticalScrollBar().maximum() == 0, (
+                height, scroll.widget().sizeHint().height(), scroll.viewport().height())
+            headers = {h.height() for h in scroll.widget().findChildren(QPushButton, "navGroupHeader") if h.isVisible()}
+            assert len(headers) == 1, (height, headers)
+            header_heights.append(headers.pop())
+        assert header_heights[0] - header_heights[1] == sum(NAV_GROUP_PAD) - sum(NAV_GROUP_PAD_DENSE), header_heights
+
+
+def test_the_sidebar_density_does_not_flip_back_and_forth_at_the_threshold(win, qapp):
+    """临界高度上来回翻是这套算法最可能的坏法：逐 2px 扫过门槛，每档落定后再自己算一遍，档位不许变。"""
+    win.setMinimumSize(1200, 600)
+    seen = []
+    for height in range(870, 950, 2):
+        win.resize(1280, height)
+        _settle(qapp, 8)
+        state = win.sidebar.property("navDense")
+        win._apply_nav_density()
+        _settle(qapp, 8)
+        assert win.sidebar.property("navDense") == state, height
+        assert win._sidebar_scroll.verticalScrollBar().maximum() == 0, height
+        seen.append(state)
+    assert True in seen and False in seen, "门槛不在扫的这一段里，这条判据什么也没量到"
+
+
 def test_coming_back_shows_what_was_changed_elsewhere(win, qapp):
     _click_switch(win.switches["kill_sound"], qapp)
     win.show_page("gun_sound", animated=False)
@@ -218,22 +261,27 @@ def test_cards_stay_tall_in_the_theme_without_a_stylesheet(qapp):
 
 
 def test_the_grid_follows_the_width_both_ways(qapp):
-    from widgets.home_overview import FeatureCard, FeatureGrid
+    """三块面板够宽就并排，不够就一列摞起来，不排成二加一（批 153）。"""
+    from widgets.home_overview import FeatureCard, FeatureGrid, FeaturePanel
 
     # ⚠ 放在父控件里：顶层窗口的最小尺寸由布局说了算，窄不下去，量的就不是产品里的样子
     holder = QWidget()
     holder.setAttribute(Qt.WA_DontShowOnScreen, True)
     grid = FeatureGrid(holder)
-    for index in range(6):
-        grid.add_card(FeatureCard(str(index), QWidget(), icon_name="mdi.volume-off", has_page=False))
+    for title in ("甲", "乙", "丙"):
+        panel = FeaturePanel(title)
+        for index in range(2):
+            panel.add_card(FeatureCard(f"{title}{index}", QWidget(), icon_name="mdi.volume-off", has_page=False))
+        grid.add_panel(panel)
     holder.resize(1200, 500)
     holder.show()
+    three = FEATURE_PANEL_MIN_WIDTH * 3 + FEATURE_PANEL_GAP * 2
     try:
-        for width, columns in ((1100, 4), (FEATURE_CARD_MIN_WIDTH * 2 + 8, 2), (FEATURE_CARD_MIN_WIDTH, 1), (1100, 4)):
+        for width, columns in ((1100, 3), (three, 3), (three - 1, 1), (FEATURE_PANEL_MIN_WIDTH, 1), (1100, 3)):
             grid.resize(width, 400)
             _settle(qapp)
             assert grid.columns() == columns, width
-            assert grid._grid.count() == 6, "换列时掉了卡"
+            assert grid._grid.count() == 3, "换列时掉了面板"
     finally:
         holder.close()
         holder.deleteLater()
@@ -243,7 +291,7 @@ def test_the_grid_never_pushes_the_page_sideways(win, qapp):
     """列数按自己的宽度算：最小宽要是跟着列数走，就把滚动区撑出横向滚动条，窗口变窄也退不回来。"""
     from PySide6.QtWidgets import QScrollArea
 
-    grid = win.feature_cards["kill_sound"].parentWidget()
+    grid = win.feature_grid
     scroll = win.pages["basic"].findChild(QScrollArea)
     win.setMinimumSize(860, 480)
     seen = []
@@ -252,10 +300,77 @@ def test_the_grid_never_pushes_the_page_sideways(win, qapp):
         _settle(qapp, 12)
         assert scroll.horizontalScrollBar().maximum() == 0, width
         assert scroll.widget().width() == scroll.viewport().width(), width
-        assert grid.columns() == (grid.width() + 8) // (FEATURE_CARD_MIN_WIDTH + 8), width
+        assert grid.columns() == grid.columns_for(grid.width()), width
         seen.append(grid.columns())
-    assert seen[0] == seen[2] >= 4, seen
-    assert seen[1] == seen[3] < seen[0], seen
+    assert seen[0] == seen[2] == 3, seen
+    assert seen[1] == seen[3] == 1, seen
+
+
+def test_the_overview_is_a_status_card_three_panels_and_two_cards(win, qapp):
+    """批 153 的总览：状态卡 → 三块功能面板并排 → 音量和偏好两张卡并排；窄了各自摞起来。来回两次。"""
+    grid, split = win.feature_grid, win.home_split_row
+    assert [panel.title_label.text() for panel in grid.panels()] == ["声音", "画面", "媒体与工具"]
+    assert sum(len(panel.cards) for panel in grid.panels()) == len(win.switches)
+    page = win.pages["basic"]
+    order = [widget.mapTo(page, QPoint(0, 0)).y() for widget in (win.basic_status_card, grid, split)]
+    assert order == sorted(order), f"块的上下顺序不对：{order}"
+    win.setMinimumSize(860, 480)
+    for width, wide in ((1280, True), (900, False), (1280, True), (900, False)):
+        win.resize(width, 800)
+        _settle(qapp, 12)
+        panels = grid.panels()
+        tops = {panel.mapTo(grid, QPoint(0, 0)).y() for panel in panels}
+        assert (len(tops) == 1) == wide, (width, tops)
+        if wide:
+            assert len({panel.height() for panel in panels}) == 1, "并排的三块下沿参差"
+        assert split.is_side_by_side() == wide, width
+
+
+def test_the_overview_draws_no_loud_borders_in_any_theme():
+    """批 153：总览原来一屏二十来道 border_primary 亮框（17 张卡 + 状态条），用户说「密密麻麻」。
+
+    状态卡和面板只描最软那档边，功能行不描边：换哪个主题都一样。
+    """
+    import re
+
+    from theme_manager import get_theme_manager
+
+    def body(qss, selector):
+        match = re.search(r"(?m)^\s*" + re.escape(selector) + r"\s*\{(.*?)\}", qss, re.S)
+        assert match, f"样式表里找不到 {selector}"
+        return match.group(1)
+
+    checked = 0
+    for name, theme in get_theme_manager().themes.items():
+        qss = theme.generate_stylesheet()
+        if "QFrame#featurePanel" not in qss:
+            continue  # 极简主题没有样式表
+        soft = f"border: 1px solid {theme.colors.border_secondary}"
+        for selector in ("QFrame#readinessStrip", "QFrame#featurePanel"):
+            assert soft in body(qss, selector), (name, selector)
+        rows = "QPushButton#featureCard, QPushButton#featureCard:hover, QPushButton#featureCard:pressed"
+        assert "border: none" in body(qss, rows), name
+        checked += 1
+    assert checked >= 5, f"只量了 {checked} 个主题，分母不对"
+
+
+def test_the_brand_row_carries_the_app_mark(win, qapp):
+    """批 153：侧栏顶上原来只有四个字，和任务栏、窗口上那个图标对不上号。名字左边挂应用图标，两者垂直居中。"""
+    from PySide6.QtWidgets import QLabel
+
+    from gui_widget import BrandMark
+
+    marks = win.sidebar.findChildren(BrandMark)
+    assert len(marks) == 1, f"侧栏里有 {len(marks)} 个品牌图标"
+    mark, title = marks[0], win.sidebar.findChild(QLabel, "sidebarTitleLabel")
+    assert mark.isVisible() and title is not None
+    box, words = (w.rect().translated(w.mapTo(win.sidebar, QPoint(0, 0))) for w in (mark, title))
+    assert box.right() < words.left(), (box, words)
+    assert abs(box.center().y() - words.center().y()) <= 2, (box, words)
+    # 真画出来了：一块纯底色只有一两种颜色
+    image = mark.grab().toImage()
+    colors = {image.pixel(x, y) for x in range(image.width()) for y in range(image.height())}
+    assert len(colors) >= 4, f"图标那块只有 {len(colors)} 种颜色 —— 没画出来"
 
 
 # ==================================================== 卡上那行字
@@ -401,15 +516,19 @@ def test_a_real_refresh_goes_through_the_whole_chain(win, qapp, monkeypatch):
     assert strip.checks[2].isHidden(), "读不到显示模式时那一项还摆着"
 
 
-def test_the_checks_move_below_when_the_strip_is_narrow(win, qapp):
+def test_the_checks_line_up_under_the_text_at_every_width(win, qapp):
+    """批 153：依据固定排在结论下面、和大字左对齐；宽窄来回拉也不换位置（原来按宽窄在一行两行之间跳）。"""
     strip = win.basic_status_card
+    win._sync_home_readiness(readiness_view(_status("silent")))
     win.setMinimumSize(860, 480)
-    for width, below in ((860, True), (1280, False), (860, True)):
+    for width in (860, 1280, 860, 1280):
         win.resize(width, 800)
         _settle(qapp, 12)
-        assert (strip.width() < READINESS_WIDE_WIDTH) == below, strip.width()
-        assert (strip._outer.indexOf(strip.checks_row) >= 0) == below, width
-        assert (strip._top.indexOf(strip.checks_row) >= 0) != below, width
+        first = next(check for check in strip.checks if check.isVisible())
+        text_left = strip.headline.mapTo(strip, QPoint(0, 0)).x()
+        assert first.mapTo(strip, QPoint(0, 0)).x() == text_left, width
+        above = strip.detail_label if strip.detail_label.isVisible() else strip.headline
+        assert first.mapTo(strip, QPoint(0, 0)).y() >= above.mapTo(strip, QPoint(0, above.height())).y(), width
 
 
 # ==================================================== 失效的风格

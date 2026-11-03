@@ -5,7 +5,9 @@ import pytest
 
 from ui_design_system import (
     FONT_SCALE_CHOICES,
+    ButtonSpec,
     FontSize,
+    InputSpec,
     apply_font_scale,
     get_design_system,
     get_font_scale,
@@ -38,8 +40,9 @@ def test_apply_scales_tokens_from_factory_baseline():
     assert get_font_scale() == 1.25
     assert ds.font_size.md == round(base.md * 1.25)
     assert ds.font_size.h1 == round(base.h1 * 1.25)
-    assert ds.button.primary_font_size == round(13 * 1.25)
-    assert ds.input.text_font_size == round(13 * 1.25)
+    # 基线读出厂值，不写死字号：批 153 正文 13 → 14，写死的那个数当场红了一次
+    assert ds.button.primary_font_size == round(ButtonSpec().primary_font_size * 1.25)
+    assert ds.input.text_font_size == round(InputSpec().text_font_size * 1.25)
 
 
 def test_apply_is_idempotent_no_drift():

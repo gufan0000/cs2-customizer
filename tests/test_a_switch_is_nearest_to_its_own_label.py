@@ -29,6 +29,12 @@
 
 功能开关住进了卡片，开关贴卡片右边、名字贴左边：**边框接手了归属**，不再靠距离。
 量的还是几何关系：开关和名字在同一张卡里，卡片之间留得开，同一列的开关对得齐。
+
+## 批 153
+
+17 圈亮框收成三块面板，面板里一行一个功能，行不再描边：同一块面板里靠「同一行」认归属，
+跨面板靠面板的边框。⇒ 反向守卫从「卡片不贴」换成「面板不贴」；行为证据在外审 S4 那道
+「想关掉『准心』会去拨哪一颗」里重问（批 153 外审台账）。
 """
 from __future__ import annotations
 
@@ -90,14 +96,20 @@ def test_every_home_switch_shares_a_card_with_its_own_name(win):
         assert not strangers, f"{sid} 那张卡盖住了 {strangers} 的名字"
 
 
-def test_the_cards_do_not_touch(win):
-    """⭐ 反向守卫：边框是归属的全部依据，贴在一起就又分不清了。"""
+def test_the_panels_do_not_touch(win):
+    """⭐ 反向守卫（批 153）：行不描边了，跨面板的归属全靠面板边框和面板之间那道缝，贴在一起就又分不清了。
+
+    ⚠ 缝宽写死 12 而不读 FEATURE_PANEL_GAP：读常量的话，常量被改成 0，判据跟着放成 0。
+    """
     page = win.pages["basic"]
-    rects = [(sid, _rect(card, page)) for sid, card in win.feature_cards.items()]
-    for sid, rect in rects:
+    panels = win.feature_grid.panels()
+    assert len(panels) == 3, f"只量到 {len(panels)} 块面板 —— 分母塌了"
+    rects = [(panel.title_label.text(), _rect(panel, page)) for panel in panels]
+    margin = 6
+    for name, rect in rects:
         for other, other_rect in rects:
-            if other != sid:
-                assert not rect.adjusted(-4, -4, 4, 4).intersects(other_rect), (sid, other)
+            if other != name:
+                assert not rect.adjusted(-margin, -margin, margin, margin).intersects(other_rect), (name, other)
 
 
 def test_the_switches_still_line_up_in_columns(win):

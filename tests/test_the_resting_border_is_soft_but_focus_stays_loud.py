@@ -65,7 +65,9 @@ def _border_color(body: str) -> str:
     return m.group(1).lower()
 
 
-RESTING_SELECTORS = ("QComboBox", "QPushButton#secondaryButton", "QLineEdit, QSpinBox, QDoubleSpinBox")
+#: 批 153 加风格卡：一排六张卡原来各描一圈 border_primary，和 RN-640 那一族同病
+RESTING_SELECTORS = ("QComboBox", "QPushButton#secondaryButton", "QLineEdit, QSpinBox, QDoubleSpinBox",
+                     "QPushButton#styleCard")
 
 
 def test_the_resting_border_is_softer_than_the_hover_border_in_every_theme(themes, audit):

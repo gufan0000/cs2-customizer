@@ -14,6 +14,14 @@ from ui_design_system import get_design_system, qss_box
 
 logger = get_logger(__name__)
 
+#: 侧栏导航两档密度（批 153）。窗口够高用宽松档；放不下换紧凑档，默认窗口 800 高也不用滚。
+#: 两档只差项高和组头上空，`gui_widget._apply_nav_density` 拿这几个数算宽松档放不放得下。
+NAV_ITEM_HEIGHT = 28
+NAV_ITEM_HEIGHT_DENSE = 24
+#: 组头的上、下内边距：组和组之间靠组头上空分开
+NAV_GROUP_PAD = (8, 2)
+NAV_GROUP_PAD_DENSE = (2, 1)
+
 # ============ QSS 图标资源 ============
 #
 # ⚠⚠ **QSS 的 `image: url(...)` 只认真实文件路径（和 Qt 资源路径），
@@ -669,6 +677,19 @@ class Theme:
             }}
         """
 
+    def _nav_density_qss(self, c) -> str:
+        """侧栏紧凑档（批 153）：窗口矮、宽松档放不下时由 `gui_widget._apply_nav_density` 打上 navDense。"""
+        return f"""
+            QFrame#sidebar[navDense="true"] QPushButton#navButton {{
+                min-height: {NAV_ITEM_HEIGHT_DENSE}px;
+                max-height: {NAV_ITEM_HEIGHT_DENSE}px;
+            }}
+            QFrame#sidebar[navDense="true"] QPushButton#navGroupHeader {{
+                padding-top: {NAV_GROUP_PAD_DENSE[0]}px;
+                padding-bottom: {NAV_GROUP_PAD_DENSE[1]}px;
+            }}
+        """
+
     def _sidebar_scrollbar_qss(self, c) -> str:
         """侧栏滚动条的把手（现在和通用那条同色，只是分开成一条规则）。
 
@@ -683,9 +704,18 @@ class Theme:
           会压在 bg_primary / bg_secondary / bg_tertiary 三种底色上。
         ⚠ 顺带记一笔：连**名字叫「高对比度」的那个主题**，原来也只有 1.97。
         """
+        # 批 153：侧栏那条细一点（6px）。普通模式侧栏按窗口高换档，平时不出现；
+        # 槽照 RN-045 画出来：透明的槽读不出「这里能滚」
         return f"""
+            QScrollArea#sidebarScroll QScrollBar:vertical {{
+                background: {c.bg_tertiary};
+                width: 6px;
+                border-radius: 3px;
+                margin: 2px 2px 2px 0px;
+            }}
             QScrollArea#sidebarScroll QScrollBar::handle:vertical {{
                 background: {c.scrollbar_handle};
+                border-radius: 3px;
             }}
             QScrollArea#sidebarScroll QScrollBar::handle:vertical:hover {{
                 background: {c.scrollbar_hover};
@@ -709,10 +739,10 @@ class Theme:
         table = self.ds.table
         list_spec = self.ds.list
 
-        # 导航项高 24：1280×800 不滚动就放得下 23 项（批 145）
-        nav_item_height = 24
-        nav_padding_horizontal = 8
-        nav_selected_bg = self._blend_hex(c.accent_primary, 40, c.bg_secondary)
+        # 导航项高见文件头 NAV_ITEM_HEIGHT：宽松档 28，窗口矮放不下时侧栏换紧凑档 24
+        nav_item_height = NAV_ITEM_HEIGHT
+        nav_padding_horizontal = 10
+        nav_selected_bg = self._blend_hex(c.accent_primary, 46, c.bg_secondary)
         selection_bg = self._blend_hex(c.accent_primary, 56, c.bg_secondary)
 
 
@@ -858,17 +888,19 @@ class Theme:
 
             QPushButton#navButton:checked {{
                 background-color: {nav_selected_bg};
-                color: {self._accent_text_on(nav_selected_bg)};
+                color: {c.text_primary};   /* 批 153：紫底上的紫字读不清，字回到正文色，紫只留给底和图标 */
                 font-weight: 500;   /* RN-643：选中项只靠底色 + 字色，左侧那根紫条一并退场 */
             }}
 
-            /* 导航分组头（可折叠）— v2.2 紧凑化 */
+            /* 导航分组头（可折叠）。上面空出一截，组和组之间靠留白分开（批 153） */
             QPushButton#navGroupHeader {{
                 background-color: transparent;
                 color: {c.text_muted};
                 border: none;
                 text-align: left;
-                padding: 2px {nav_padding_horizontal}px 1px {nav_padding_horizontal}px;
+                padding: {NAV_GROUP_PAD[0]}px {nav_padding_horizontal}px {NAV_GROUP_PAD[1]}px {nav_padding_horizontal}px;
+                /* 不吃全局按钮的 min-height（20）：组头只要装得下一行小字，五个组头每个省 4px */
+                min-height: 16px;
                 font-size: {font.xs}px;
                 font-weight: 500;
                 border-radius: {radius.sm}px;
@@ -2271,36 +2303,59 @@ class Theme:
                 background-color: {self._hex_to_rgba(c.accent_primary, 28)};
                 border-color: {self._hex_to_rgba(c.accent_primary, 120)};  /* RN-643：选中 = 薄染 + 淡描边，不用色条 */
             }}
-        """ + self._spin_box_qss(c) + self._weapon_board_qss(c) + self._tuning_page_qss(c) + self._home_overview_qss(c) + self._search_hit_qss(c)
+        """ + self._spin_box_qss(c) + self._weapon_board_qss(c) + self._tuning_page_qss(c) + self._home_overview_qss(c) + self._nav_density_qss(c) + self._search_hit_qss(c)
 
     def _home_overview_qss(self, c) -> str:
-        """总览页（批 148）。⚠ 功能卡是按钮，盒模型规则同风格卡（见 `_weapon_board_qss`）。"""
+        """总览页（批 148；批 153 改成面板）。⚠ 功能行是按钮，盒模型规则同风格卡（见 `_weapon_board_qss`）。
+
+        批 153：原来 17 张卡和状态条都描一圈 `border_primary`（≥3:1 的控件边），一屏几十道亮框，
+        用户说「密密麻麻」。面板和状态卡只靠比页面亮一档的底色立起来，行与行之间只靠留白。
+        """
         font = self.ds.font_size
         radius = self.ds.radius
         return f"""
             QFrame#readinessStrip {{
                 background-color: {c.bg_card};
-                border: 1px solid {c.border_primary};
+                border: 1px solid {c.border_secondary};
                 border-radius: {radius.lg}px;
             }}
+            /* 有事的时候整块带一点点那个颜色：一眼看出这块在说「还差什么」，又不至于读成「亮着」 */
+            QFrame#readinessStrip[tone="warn"] {{
+                background-color: {self._blend_hex(c.warning, 10, c.bg_card)};
+                border-color: {self._blend_hex(c.warning, 56, c.bg_card)};
+            }}
+            QFrame#readinessStrip[tone="error"] {{
+                background-color: {self._blend_hex(c.error, 12, c.bg_card)};
+                border-color: {self._blend_hex(c.error, 70, c.bg_card)};
+            }}
             QLabel#readinessBadge {{
-                background-color: {self._hex_to_rgba(c.success, 40)};
-                border-radius: 18px;
+                background-color: {self._hex_to_rgba(c.success, 36)};
+                border-radius: 22px;
             }}
             QLabel#readinessBadge[tone="warn"] {{
-                background-color: {self._hex_to_rgba(c.warning, 40)};
+                background-color: {self._hex_to_rgba(c.warning, 36)};
             }}
             QLabel#readinessBadge[tone="error"] {{
-                background-color: {self._hex_to_rgba(c.error, 40)};
+                background-color: {self._hex_to_rgba(c.error, 36)};
             }}
             QLabel#readinessTitle {{
                 color: {c.text_primary};
-                font-size: {font.h1}px;
+                font-size: {font.xxl}px;
                 font-weight: 700;
                 background: transparent;
             }}
+            QLabel#readinessDetail {{
+                color: {c.text_secondary};
+                font-size: {font.sm}px;
+                background: transparent;
+            }}
+            QFrame#readinessCheck {{
+                background-color: {c.bg_tertiary};
+                border: none;
+                border-radius: {radius.md}px;
+            }}
             QLabel#readinessCheckName {{
-                color: {c.text_muted};
+                color: {c.text_secondary};
                 font-size: {font.xs}px;
                 background: transparent;
             }}
@@ -2310,15 +2365,38 @@ class Theme:
                 font-weight: 500;
                 background: transparent;
             }}
-            QPushButton#featureCard, QPushButton#featureCard:hover, QPushButton#featureCard:pressed {{
+            QFrame#featurePanel {{
                 background-color: {c.bg_card};
-                border: 1px solid {c.border_primary};
+                border: 1px solid {c.border_secondary};
                 border-radius: {radius.lg}px;
+            }}
+            QLabel#featurePanelTitle {{
+                color: {c.text_primary};
+                font-size: {font.lg}px;
+                font-weight: 700;
+                background: transparent;
+            }}
+            QLabel#featurePanelCount {{
+                color: {c.text_muted};
+                font-size: {font.xs}px;
+                background: transparent;
+            }}
+            QPushButton#featureCard, QPushButton#featureCard:hover, QPushButton#featureCard:pressed {{
+                background-color: transparent;
+                border: none;
+                border-radius: {radius.md}px;
                 min-height: 52px; max-height: 52px;
                 padding: 0px;
             }}
             QPushButton#featureCard[fp_link="true"]:hover {{
-                border-color: {c.text_tertiary};
+                background-color: {c.bg_card_hover};
+            }}
+            QLabel#featureIconChip {{
+                background-color: {c.bg_tertiary};
+                border-radius: {radius.md}px;
+            }}
+            QLabel#featureIconChip[on="true"] {{
+                background-color: {self._hex_to_rgba(c.accent_primary, 40)};
             }}
             QLabel#featureCardMeta {{
                 color: {c.text_muted};
@@ -2327,6 +2405,15 @@ class Theme:
             }}
             QLabel#featureCardMeta[tone="warning"] {{
                 color: {c.warning};
+            }}
+            QLabel#homeFieldLabel {{
+                color: {c.text_secondary};
+                background: transparent;
+            }}
+            QLabel#homeValueLabel {{
+                color: {c.text_secondary};
+                font-size: {font.sm}px;
+                background: transparent;
             }}
         """
 
@@ -2453,7 +2540,7 @@ class Theme:
                    "QFrame#segmentGroup", "QFrame#pageActionBarInline", "QFrame#statusStrip",
                    "QPushButton#primaryButton", "QPushButton#secondaryButton",
                    "QPushButton#actionButton", "QPushButton#dangerButton", "QFrame#weaponCell",
-                   "QPushButton#featureCard", "QFrame#readinessStrip",
+                   "QPushButton#featureCard", "QFrame#readinessStrip", "QLabel#homeFieldLabel",
                    'QFrame#weaponBoard[masterOff="true"] QFrame#weaponCell')
 
         def rule(state, fill, line):
@@ -2490,16 +2577,17 @@ class Theme:
                 right: 6px;
             }}
 
+            /* 静止边和下拉框、次级按钮同一档软边（RN-640），一排六张卡不再是六圈亮框（批 153） */
             QPushButton#styleCard {{
                 background-color: {c.bg_card};
-                border: 1px solid {c.border_primary};
+                border: 1px solid {self.resting_border(c)};
                 border-radius: {radius.lg}px;
                 min-height: 66px; max-height: 66px;
                 padding: 0px;
             }}
             QPushButton#styleCard:hover {{
-                background-color: {c.bg_card};
-                border-color: {c.text_tertiary};
+                background-color: {c.bg_card_hover};
+                border-color: {c.border_primary};
             }}
             QPushButton#styleCard:checked, QPushButton#styleCard:checked:hover {{
                 background-color: {accent_soft};
@@ -2677,38 +2765,39 @@ class DarkTheme(Theme):
     """深色主题（v5 美学重做：注入蓝调 + dual accent + 卡片浮起）"""
 
     def __init__(self):
+        # 批 153：侧栏比页面暗一档往后退，卡片比页面亮一档浮起来；层次靠底色，不靠描边。
         colors = ThemeColors(
-            bg_primary="#0f1115",     # 页面底
-            bg_secondary="#12141a",   # 侧栏、输入框
-            bg_tertiary="#1f232c",    # hover、嵌套层
-            bg_elevated="#2a2f3a",    # 选中的页签、按下
+            bg_primary="#121317",     # 页面底
+            bg_secondary="#0d0e11",   # 侧栏、输入框
+            bg_tertiary="#23252b",    # hover、嵌套层
+            bg_elevated="#2c2f36",    # 选中的页签、按下
 
-            bg_card="#171a21",
-            bg_card_hover="#1f232c",
+            bg_card="#1a1b20",
+            bg_card_hover="#202228",
 
-            text_primary="#e8eaf0",
-            text_secondary="#a3a9b8",
-            text_tertiary="#8a91a1",
-            text_disabled="#4d5362",
+            text_primary="#ececf1",
+            text_secondary="#a4a8b4",
+            text_tertiary="#868b98",
+            text_disabled="#4f5360",
 
-            # 紫色只留给选中和本屏唯一的主按钮
-            accent_primary="#7c3aed",
-            accent_hover="#8b5cf6",
-            accent_pressed="#6d28d9",
-            accent_secondary="#a78bfa",
+            # 紫色只留给选中和本屏唯一的主按钮。偏蓝一点的紫：白字 4.6:1，压在深底上也看得见
+            accent_primary="#7357ff",
+            accent_hover="#8470ff",
+            accent_pressed="#6244ee",
+            accent_secondary="#b3a5ff",
             accent_warm="#f5b042",
 
             border_primary="#6c727f",     # hover 时的控件边，≥3:1
-            border_secondary="#22262f",   # 卡片发丝线
-            border_focus="#a78bfa",
-            border_control="#2a2f3a",     # 控件静止时的边
+            border_secondary="#25272e",   # 卡片发丝线
+            border_focus="#a898ff",
+            border_control="#30333b",     # 控件静止时的边
 
-            success="#4ade80",
+            success="#3fcf8e",
             warning="#f5b042",
-            error="#ef4444",
-            info="#7c3aed",
+            error="#f05252",
+            info="#7357ff",
 
-            scrollbar_bg="#12141a",
+            scrollbar_bg="#0d0e11",
             scrollbar_handle="#6e7480",
             scrollbar_hover="#7e8490",
 

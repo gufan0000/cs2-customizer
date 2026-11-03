@@ -135,6 +135,11 @@ READINESS_HEADLINE = {
     "failed": "联动服务没起来",
     "stopped": "联动服务还没起来",
 }
+#: 大字下面那句，和徽章 tooltip 那句不一样的几种：徽章那句是独立读的，放在大字下面就把大字又念了一遍。
+READINESS_DETAIL = {
+    "stopped": "软件启动时会自动起，稍等几秒。",
+    "cfg_missing": "去「高级设置」选一次 CS2 目录，软件会把它写进游戏。",
+}
 NO_CS2_DIR_HEADLINE = "还差一步：选 CS2 目录"
 NO_CS2_DIR_DETAIL = "选好之后软件会自己写好联动配置。点右边的上手引导，三步走完。"
 #: 显示模式三档（`core.cs2_video_mode`）在总览上的说法。
@@ -176,7 +181,7 @@ def readiness_view(status: RuntimeStatus, display_mode=None, *, overlay_on: bool
     elif link in ("connected", "no_game"):
         level, headline, detail = "ok", READINESS_HEADLINE[link], ""
     else:
-        level, headline, detail = "warn", READINESS_HEADLINE[link], fix
+        level, headline, detail = "warn", READINESS_HEADLINE[link], READINESS_DETAIL.get(link, fix)
     if level == "ok" and exclusive and overlay_on:
         # 大字也要变：「可以进游戏了」下面跟一句「先去改显示模式」，两句话是打架的
         level, headline, detail = "warn", f"{headline}，但画面功能会被盖住", EXCLUSIVE_DETAIL

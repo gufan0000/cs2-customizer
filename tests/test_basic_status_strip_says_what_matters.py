@@ -81,7 +81,9 @@ def test_an_alarm_says_where_to_go_and_fix_it(app):
 
     ⛔ 那句话不许指向「资源体检」：它是专家页，普通模式下没有入口（RN-134）。
     """
-    from core.runtime.system_status_service import GSI_LINK_TEXT, READINESS_HEADLINE, RuntimeStatus, readiness_view
+    from core.runtime.system_status_service import (
+        GSI_LINK_TEXT, READINESS_DETAIL, READINESS_HEADLINE, RuntimeStatus, readiness_view,
+    )
 
     for link in READINESS_HEADLINE:
         if link in ("connected", "no_game", "failed"):
@@ -89,8 +91,10 @@ def test_an_alarm_says_where_to_go_and_fix_it(app):
         view = readiness_view(RuntimeStatus(
             gsi={"startup_error": ""}, audio_health={"ok": True}, config_dirty=False,
             last_error="", level="warn", gsi_link=link, gsi_cfg={"status": "ok"}))
-        assert view.detail == GSI_LINK_TEXT[link][2], link
+        assert view.detail == READINESS_DETAIL.get(link, GSI_LINK_TEXT[link][2]), link
         assert "体检" not in view.detail, link
+        # 批 153：大字说过的话小字不再说一遍（原来「联动服务还没起来（……）」紧贴在同一句大字下面）
+        assert view.headline not in view.detail, link
 
 
 @pytest.mark.parametrize("viewport", sorted(VIEWPORTS))

@@ -149,46 +149,6 @@
   },
   {
    "page": "basic",
-   "text": "主音量",
-   "card": "",
-   "tab": "",
-   "kind": "label",
-   "src": "runtime"
-  },
-  {
-   "page": "basic",
-   "text": "主题",
-   "card": "",
-   "tab": "",
-   "kind": "label",
-   "src": "runtime"
-  },
-  {
-   "page": "basic",
-   "text": "任务面板",
-   "card": "",
-   "tab": "",
-   "kind": "button",
-   "src": "runtime"
-  },
-  {
-   "page": "basic",
-   "text": "体检页面",
-   "card": "",
-   "tab": "",
-   "kind": "button",
-   "src": "runtime"
-  },
-  {
-   "page": "basic",
-   "text": "其它",
-   "card": "",
-   "tab": "",
-   "kind": "label",
-   "src": "runtime"
-  },
-  {
-   "page": "basic",
    "text": "准心",
    "card": "",
    "tab": "",
@@ -221,34 +181,10 @@
   },
   {
    "page": "basic",
-   "text": "分类音量",
-   "card": "",
-   "tab": "",
-   "kind": "label",
-   "src": "runtime"
-  },
-  {
-   "page": "basic",
    "text": "切枪音效",
    "card": "",
    "tab": "",
    "kind": "label",
-   "src": "runtime"
-  },
-  {
-   "page": "basic",
-   "text": "刷新状态",
-   "card": "",
-   "tab": "",
-   "kind": "button",
-   "src": "runtime"
-  },
-  {
-   "page": "basic",
-   "text": "响度归一",
-   "card": "",
-   "tab": "",
-   "kind": "check",
    "src": "runtime"
   },
   {
@@ -301,14 +237,6 @@
   },
   {
    "page": "basic",
-   "text": "日志目录",
-   "card": "",
-   "tab": "",
-   "kind": "button",
-   "src": "runtime"
-  },
-  {
-   "page": "basic",
    "text": "枪声替换",
    "card": "",
    "tab": "",
@@ -325,23 +253,7 @@
   },
   {
    "page": "basic",
-   "text": "游戏模式",
-   "card": "",
-   "tab": "",
-   "kind": "label",
-   "src": "runtime"
-  },
-  {
-   "page": "basic",
    "text": "游戏联动",
-   "card": "",
-   "tab": "",
-   "kind": "label",
-   "src": "runtime"
-  },
-  {
-   "page": "basic",
-   "text": "特殊音效",
    "card": "",
    "tab": "",
    "kind": "label",
@@ -353,30 +265,6 @@
    "card": "",
    "tab": "",
    "kind": "label",
-   "src": "runtime"
-  },
-  {
-   "page": "basic",
-   "text": "界面",
-   "card": "",
-   "tab": "",
-   "kind": "label",
-   "src": "runtime"
-  },
-  {
-   "page": "basic",
-   "text": "立即体检",
-   "card": "",
-   "tab": "",
-   "kind": "button",
-   "src": "runtime"
-  },
-  {
-   "page": "basic",
-   "text": "自定义目录",
-   "card": "",
-   "tab": "",
-   "kind": "button",
    "src": "runtime"
   },
   {
@@ -413,14 +301,6 @@
   },
   {
    "page": "basic",
-   "text": "载入音频",
-   "card": "",
-   "tab": "",
-   "kind": "button",
-   "src": "runtime"
-  },
-  {
-   "page": "basic",
    "text": "道具瞄点",
    "card": "",
    "tab": "",
@@ -429,18 +309,154 @@
   },
   {
    "page": "basic",
-   "text": "重置ID",
+   "text": "音乐播放",
    "card": "",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "主题",
+   "card": "偏好",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "任务面板",
+   "card": "偏好",
    "tab": "",
    "kind": "button",
    "src": "runtime"
   },
   {
    "page": "basic",
-   "text": "音乐播放",
-   "card": "",
+   "text": "体检页面",
+   "card": "偏好",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "偏好",
+   "card": "偏好",
+   "tab": "",
+   "kind": "card",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "刷新状态",
+   "card": "偏好",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "日志目录",
+   "card": "偏好",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "游戏模式",
+   "card": "偏好",
    "tab": "",
    "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "玩家",
+   "card": "偏好",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "界面",
+   "card": "偏好",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "立即体检",
+   "card": "偏好",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "自定义目录",
+   "card": "偏好",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "载入音频",
+   "card": "偏好",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "重置ID",
+   "card": "偏好",
+   "tab": "",
+   "kind": "button",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "主音量",
+   "card": "音量",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "分类音量",
+   "card": "音量",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "响度归一",
+   "card": "音量",
+   "tab": "",
+   "kind": "check",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "特殊音效",
+   "card": "音量",
+   "tab": "",
+   "kind": "label",
+   "src": "runtime"
+  },
+  {
+   "page": "basic",
+   "text": "音量",
+   "card": "音量",
+   "tab": "",
+   "kind": "card",
    "src": "runtime"
   },
   {

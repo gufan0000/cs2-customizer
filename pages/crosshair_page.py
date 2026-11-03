@@ -221,7 +221,9 @@ class CrosshairPage(QWidget):
     #: RN-116：换动画之后预览示意多久（毫秒）。**有限**是这条设计的全部要害——
     #: 用户裁定里明确否决了"常驻定时器"那个方案。
     PREVIEW_BURST_MS = 1500
-    PANEL_MIN_WIDTH = 348
+    #: 批 153 正文 14px 起：1.25 倍字号下「绘制 / 导入 / 导出准心」三颗按钮一行要 364。
+    #: 按钮的布局下限被样式表 min-width 钉在字宽以下，`minimumSizeHint` 算不出这一行，只能靠这个下限
+    PANEL_MIN_WIDTH = 368
 
     def __init__(self, parent=None):
         super().__init__(parent)

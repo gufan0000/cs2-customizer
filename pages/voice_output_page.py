@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QFileDialog, QMessageBox,
     QTabWidget, QGridLayout, QSizePolicy
 )
-from PySide6.QtCore import Qt, Signal, QTimer
+from PySide6.QtCore import Qt, Signal, QTimer, QSize
 import keyboard
 import os
 import threading
@@ -73,6 +73,20 @@ SFX_FORWARD_MODE_NOTE = (
 #: 卡片写着「VB-Cable 未安装」，而这里写着「最近状态：就绪」。外审多发判**高**。
 #: ⭐ 「就绪」是一个初始占位符，而它长得像一个判断结果。
 NO_OPERATION_TEXT = "还没有操作"
+
+
+#: 槽位列表的首选高度：三行（行高 32、行距 8）。
+#: 行数由用户定（初始 5、上限 50），首选高度原来跟着行数涨：外层滚动区按首选高度算，
+#: 5 行时 1280×800 就多出一条外层滚动条，10 行多滚两百多像素，和这份列表叠成两层滚动（批 153）。
+SLOT_LIST_PREFERRED_HEIGHT = 3 * 32 + 2 * 8
+
+
+class SlotList(QScrollArea):
+    """槽位列表：首选高度钉在三行，多出来的行在列表里滚；窗口高了照样往下撑满。"""
+
+    def sizeHint(self):
+        hint = super().sizeHint()
+        return QSize(hint.width(), min(hint.height(), SLOT_LIST_PREFERRED_HEIGHT))
 
 
 class VoiceOutputPage(QWidget):
@@ -624,7 +638,7 @@ class VoiceOutputPage(QWidget):
         slot_legend.setWordWrap(True)
         card_layout.addWidget(slot_legend)
 
-        scroll = QScrollArea()
+        scroll = SlotList()
         scroll.setObjectName("voiceSlotList")
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)

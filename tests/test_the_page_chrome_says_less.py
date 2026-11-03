@@ -365,7 +365,9 @@ def test_every_bottom_bar_lines_up_with_the_content(main_window, qapp):
             insets[page_id] = (x - left, left + stack.width() - x - bar.width())
     # 批 147：七个音效页的操作条都进了标题行；批 149：目录好好的时高级设置的底栏不显示
     assert len(insets) >= 5, f"只量到 {sorted(insets)}"
-    assert set(insets.values()) == {(20, 20)}, insets
+    from gui_widget import PAGE_MARGIN_H
+
+    assert set(insets.values()) == {(PAGE_MARGIN_H, PAGE_MARGIN_H)}, insets
 
 
 def test_the_switch_comes_before_help_in_keyboard_order(main_window, qapp):

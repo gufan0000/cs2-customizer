@@ -17,11 +17,18 @@ from PySide6.QtWidgets import (
     QSpinBox, QDoubleSpinBox, QSizePolicy, QCheckBox
 )
 from PySide6.QtCore import Qt, QEvent, QSize, Signal, Slot
-from PySide6.QtGui import QFont, QColor
+from PySide6.QtGui import QFont, QColor, QIcon, QPainter
 
 from config import config, VERSION
 from core.utils.logger import get_logger
-from theme_manager import get_theme_manager, get_stylesheet
+from theme_manager import (
+    NAV_GROUP_PAD,
+    NAV_GROUP_PAD_DENSE,
+    NAV_ITEM_HEIGHT,
+    NAV_ITEM_HEIGHT_DENSE,
+    get_stylesheet,
+    get_theme_manager,
+)
 from ui_design_system import get_design_system
 from ui_style_applier import apply_unified_styles, keep_single_line
 from ui_animations import get_animation_manager
@@ -37,6 +44,11 @@ from core.page_traits import DEVICE_OWNING_PAGES
 from core.runtime.system_status_service import GSI_LINK_TEXT, collect_runtime_status
 from source_backup_manager import run_startup_source_backup
 from core.utils.app_fonts import UI_FONT_FAMILY
+
+#: 总览音量卡左边那列字的宽度：放得下「被击杀音效」，主音量和分类音量的滑条起点对齐。
+HOME_VOLUME_LABEL_WIDTH = 76
+#: 页面内容离窗边的左右留白（批 153）。
+PAGE_MARGIN_H = 28
 
 
 class NavGroupWidget(QWidget):
@@ -88,6 +100,33 @@ class NavGroupWidget(QWidget):
             self._expanded = expanded
             self._update_header_text()
             self.content.setVisible(self._expanded)
+
+
+def _app_icon_path():
+    """窗口图标那张 icon.ico：打包后在 _MEIPASS 根上，源码运行时在本文件旁边。找不到返回 None。"""
+    import sys
+
+    base = getattr(sys, "_MEIPASS", None) or os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(base, "icon.ico")
+    return path if os.path.exists(path) else None
+
+
+class BrandMark(QWidget):
+    """侧栏品牌行的应用图标（批 153）。
+
+    自己画而不用 QLabel.setPixmap：pixmap 建控件时就定死了倍率，窗口拖到缩放不同的屏上会糊；
+    QIcon.paint 每次按当下那块屏挑尺寸。
+    """
+
+    def __init__(self, icon, size, parent=None):
+        super().__init__(parent)
+        self._icon = icon
+        self.setFixedSize(size, size)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform)
+        self._icon.paint(painter, self.rect())
 
 
 class MainWindow(QMainWindow):
@@ -632,10 +671,10 @@ class MainWindow(QMainWindow):
         btn.setObjectName("navButton")
         btn.setCheckable(True)
         btn.setFocusPolicy(Qt.TabFocus)   # RN-640：点选不留焦点环，Tab 上去才有（RN-546 只要键盘可见）
-        icon = get_page_icon(page_id, role="secondary", size=14)
+        icon = get_page_icon(page_id, role="secondary", size=16)
         if not icon.isNull():
             btn.setIcon(icon)
-            btn.setIconSize(QSize(14, 14))
+            btn.setIconSize(QSize(16, 16))
         # RN-025：把 page_id 存在按钮本身，兼容不在 nav_buttons 表里的常用按钮。
         btn.setProperty("fp_page_id", page_id)
         btn.clicked.connect(lambda checked, pid=page_id: self.show_page(pid))
@@ -653,6 +692,8 @@ class MainWindow(QMainWindow):
     def _apply_expert_mode_visibility(self):
         is_expert = bool(getattr(self.config, "ui_expert_mode", False))
         self._sync_expert_nav_buttons()
+        # 项数变了，侧栏的档位要重算：内容比视口矮时变高变矮都不发 Resize
+        self._apply_nav_density()
         if hasattr(self, "system_status_health_btn"):
             self.system_status_health_btn.setVisible(is_expert)
         if hasattr(self, "system_status_open_health_btn"):
@@ -764,12 +805,14 @@ class MainWindow(QMainWindow):
                      or (_scroll is not None and watched is _scroll.viewport()))):
             page_id = getattr(self, "_current_page_id", None)
             # 重入保护：校正里会 activate() 布局，那有可能再发一次 Resize。
-            if (page_id and not getattr(self, "_is_closing", False)
+            if (not getattr(self, "_is_closing", False)
                     and not getattr(self, "_ensuring_nav_visible", False)
                     and self._nav_natural_geometry_changed(_scroll)):
                 self._ensuring_nav_visible = True
                 try:
-                    self._ensure_nav_button_visible(page_id)
+                    self._apply_nav_density()
+                    if page_id:
+                        self._ensure_nav_button_visible(page_id)
                 finally:
                     self._ensuring_nav_visible = False
 
@@ -956,20 +999,27 @@ class MainWindow(QMainWindow):
         """创建侧边栏"""
         sidebar = QFrame()
         sidebar.setObjectName("sidebar")
-        # v2.2 紧凑化：220 → 200，给主内容区多 20px
-        sidebar.setFixedWidth(200)
+        # 批 153：200 → 216。字号到 14 之后「死亡刷短视频」后面还要留出状态点的位置
+        sidebar.setFixedWidth(216)
         sidebar.setFrameShape(QFrame.StyledPanel)
-        
+        # 默认窗口 800 高放不下宽松档，先按紧凑档建，够高时 `_apply_nav_density` 再放宽
+        sidebar.setProperty("navDense", True)
+
         layout = QVBoxLayout(sidebar)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        
+
         # 搜索框位于品牌下方，页面标题作为内容区首行。
         header_widget = QWidget()
         header_widget.setObjectName("sidebarBrand")
         header_layout = QHBoxLayout(header_widget)
-        header_layout.setContentsMargins(12, 12, 12, 8)
+        # 左边距 20 + 图标 20：图标中线和下面导航图标的中线对齐，名字和导航文字左缘对齐
+        header_layout.setContentsMargins(20, 12, 16, 8)
         header_layout.setSpacing(6)
+
+        icon_path = _app_icon_path()
+        if icon_path:
+            header_layout.addWidget(BrandMark(QIcon(icon_path), 20), 0, Qt.AlignVCenter)
 
         # 标题
         title = QLabel("CS2 Customizer")
@@ -990,7 +1040,7 @@ class MainWindow(QMainWindow):
         search_host = QWidget()
         search_host.setObjectName("sidebarSearch")
         self._sidebar_search_layout = QVBoxLayout(search_host)
-        self._sidebar_search_layout.setContentsMargins(8, 0, 8, 4)
+        self._sidebar_search_layout.setContentsMargins(12, 0, 12, 4)
         self._sidebar_search_layout.setSpacing(0)
         layout.addWidget(search_host)
 
@@ -1007,7 +1057,7 @@ class MainWindow(QMainWindow):
         nav_container = QWidget()
         nav_layout = QVBoxLayout(nav_container)
         # 普通模式可临时多出一个专家页入口，需为其留出高度，避免挤出末项。
-        nav_layout.setContentsMargins(8, 0, 8, 4)
+        nav_layout.setContentsMargins(12, 0, 12, 4)
         nav_layout.setSpacing(0)
         
         # 导航按钮 - 可折叠分组
@@ -1111,8 +1161,8 @@ class MainWindow(QMainWindow):
         sidebar_footer = QWidget()
         sidebar_footer.setObjectName("sidebarFooter")
         sidebar_footer_layout = QHBoxLayout(sidebar_footer)
-        sidebar_footer_layout.setContentsMargins(12, 6, 8, 8)
-        sidebar_footer_layout.setSpacing(6)
+        sidebar_footer_layout.setContentsMargins(18, 4, 12, 6)
+        sidebar_footer_layout.setSpacing(8)
         self._sidebar_link_dot = QLabel()
         self._sidebar_link_dot.setObjectName("sidebarLinkDot")
         self._sidebar_link_dot.setFixedSize(8, 8)
@@ -1155,13 +1205,18 @@ class MainWindow(QMainWindow):
 
     def _harmonize_page_chrome(self, page):
         """保守统一页面根层与卡片节奏，不触碰业务布局结构。"""
+        # 批 153：左右 20 → 28、上 16 → 20。内容离窗边和侧栏远一点，整屏才不显得挤
+        page_margins = (PAGE_MARGIN_H, 20, PAGE_MARGIN_H, 0)
         root_margin_map = {
             # 底部音乐栏常驻时，去掉页面底部冗余留白，避免出现一条突兀的暗色缝隙。
-            (16, 16, 16, 16): (20, 16, 20, 0),
-            (16, 16, 16, 0): (20, 16, 20, 0),
-            (20, 20, 20, 20): (20, 16, 20, 0),
-            (24, 20, 24, 20): (20, 16, 20, 0),
-            (24, 20, 24, 24): (20, 16, 20, 0),
+            (16, 16, 16, 16): page_margins,
+            (16, 16, 16, 0): page_margins,
+            # 原来的统一值本身（关于、音乐两页手写的）：不认它，这两页的内容左缘就停在旧的 20
+            (20, 16, 20, 0): page_margins,
+            (20, 16, 20, 20): (PAGE_MARGIN_H, 20, PAGE_MARGIN_H, 20),
+            (20, 20, 20, 20): page_margins,
+            (24, 20, 24, 20): page_margins,
+            (24, 20, 24, 24): page_margins,
         }
         root_spacing_map = {
             10: 12,
@@ -1169,12 +1224,13 @@ class MainWindow(QMainWindow):
             16: 12,
             20: 16,
         }
+        card_margins = (20, 16, 20, 16)
         card_margin_map = {
-            (14, 12, 14, 12): (16, 12, 16, 12),
-            (20, 20, 20, 20): (16, 12, 16, 12),
-            (16, 14, 16, 14): (16, 12, 16, 12),
-            (15, 15, 15, 15): (16, 12, 16, 12),
-            (25, 25, 25, 25): (16, 12, 16, 12),
+            (14, 12, 14, 12): card_margins,
+            (20, 20, 20, 20): card_margins,
+            (16, 14, 16, 14): card_margins,
+            (15, 15, 15, 15): card_margins,
+            (25, 25, 25, 25): card_margins,
         }
         card_spacing_map = {
             10: 8,
@@ -1203,7 +1259,7 @@ class MainWindow(QMainWindow):
             if index >= 0 and root.contentsMargins().left() == 0:
                 holder = QWidget(page)
                 holder_layout = QVBoxLayout(holder)
-                holder_layout.setContentsMargins(20, 0, 20, 0)
+                holder_layout.setContentsMargins(PAGE_MARGIN_H, 0, PAGE_MARGIN_H, 0)
                 holder_layout.setSpacing(0)
                 root.removeWidget(bar)
                 holder_layout.addWidget(bar)
@@ -1707,8 +1763,8 @@ class MainWindow(QMainWindow):
 
         scroll_content = QWidget()
         scroll_layout = QVBoxLayout(scroll_content)
-        scroll_layout.setContentsMargins(0, 0, 0, 16)
-        scroll_layout.setSpacing(12)
+        scroll_layout.setContentsMargins(0, 0, 0, 24)
+        scroll_layout.setSpacing(20)
 
         header_row = QHBoxLayout()
         title = QLabel("总览")
@@ -1721,11 +1777,15 @@ class MainWindow(QMainWindow):
         from ui_help_panel import install_help_panel, PAGE_HELP_TEXTS
         install_help_panel(header_row, scroll_layout, PAGE_HELP_TEXTS["basic"])
 
+        # 批 153：状态一块、功能三块面板、音量和偏好两块卡。块和块之间只靠留白分开
         self._build_home_readiness(scroll_layout)
         self._build_home_features(scroll_layout)
-        self._build_home_volume(scroll_layout)
-        self._build_home_category_volumes(scroll_layout)
-        self._build_home_other_settings(scroll_layout)
+        from widgets.home_overview import SplitRow
+
+        volume_card = self._build_home_volume_card()
+        prefs_card = self._build_home_prefs_card()
+        self.home_split_row = SplitRow(volume_card, prefs_card, stretch=(3, 2))
+        scroll_layout.addWidget(self.home_split_row)
         scroll_layout.addStretch()
 
         scroll.setWidget(scroll_content)
@@ -1754,9 +1814,9 @@ class MainWindow(QMainWindow):
         parent_layout.addWidget(strip)
 
     def _build_home_features(self, parent_layout):
-        """三组功能卡。开关还是这 17 颗，拨它走的还是 `_on_switch_changed`。"""
+        """三块功能面板。开关还是这 17 颗，拨它走的还是 `_on_switch_changed`。"""
         from ui_toggle_switch import ToggleSwitch
-        from widgets.home_overview import FeatureCard, FeatureGrid
+        from widgets.home_overview import FeatureCard, FeatureGrid, FeaturePanel
         from widgets.icon_provider import PAGE_ICON_MAP
 
         switch_configs = [
@@ -1789,21 +1849,11 @@ class MainWindow(QMainWindow):
         self.feature_cards = {}
         self._feature_group_labels = []
         self._switch_id_by_config_key: dict[str, str] = {}
+        grid = FeatureGrid()
+        self.feature_grid = grid
         for title, switch_ids in groups:
-            head = QHBoxLayout()
-            head.setSpacing(8)
-            title_label = QLabel(title)
-            title_label.setObjectName("panelSectionTitle")
-            head.addWidget(title_label)
-            count_label = keep_single_line(QLabel(""))
-            count_label.setObjectName("hintLabel")
-            count_label.setProperty("fp_index_skip", True)  # 当前值：索引随包发布（RN-568）
-            head.addWidget(count_label)
-            head.addStretch()
-            parent_layout.addLayout(head)
-            self._feature_group_labels.append((count_label, switch_ids))
-
-            grid = FeatureGrid()
+            panel = FeaturePanel(title)
+            self._feature_group_labels.append((panel.count_label, switch_ids))
             for switch_id in switch_ids:
                 text, config_key = by_id[switch_id]
                 toggle = ToggleSwitch(checked=getattr(self.config, config_key, False))
@@ -1820,13 +1870,14 @@ class MainWindow(QMainWindow):
                 if target_page:
                     card.setToolTip(f"点击进入：{self._page_names.get(target_page, text)}")
                     card.clicked.connect(lambda _checked=False, pid=target_page: self.show_page(pid))
-                grid.add_card(card)
+                panel.add_card(card)
                 self.feature_cards[switch_id] = card
                 # ⚠ RN-089：`self.switches` 的真读者是 `sync_feature_switch`：配置从别处被改时
                 # 靠它把开关拨回来。同时记下 config_key → switch_id 的反查。
                 self.switches[switch_id] = toggle
                 self._switch_id_by_config_key[config_key] = switch_id
-            parent_layout.addWidget(grid)
+            grid.add_panel(panel)
+        parent_layout.addWidget(grid)
         self._sync_feature_cards()
 
     def _sync_feature_cards(self):
@@ -1878,23 +1929,35 @@ class MainWindow(QMainWindow):
         if strip is not None:
             strip.refresh_icons()
 
-    def _build_home_volume(self, parent_layout):
+    def _home_card(self, title):
+        """总览下面两张卡的壳：抬头一行字，内容各自往 `card.body` 里放。"""
+        from widgets.settings_card import SettingsCard
+
+        card = SettingsCard(title, margins=(20, 16, 20, 20), spacing=14)
+        card.setProperty("fp_home_card", True)
+        return card
+
+    def _build_home_volume_card(self):
+        """主音量一行、分类音量两列、响度归一。分类音量是相对主音量的倍率。"""
+        card = self._home_card("音量")
+
         row = QHBoxLayout()
         row.setSpacing(12)
-        volume_label = QLabel("主音量")
+        volume_label = keep_single_line(QLabel("主音量"))
         volume_label.setObjectName("switchLabelOn")
+        volume_label.setFixedWidth(HOME_VOLUME_LABEL_WIDTH)
         row.addWidget(volume_label)
         self.volume_slider = QSlider(Qt.Horizontal)
         self.volume_slider.setMinimum(0)
         self.volume_slider.setMaximum(100)
         self.volume_slider.setValue(int(self.config.volume * 100))
-        self.volume_slider.setMaximumWidth(420)
         self.volume_slider.valueChanged.connect(self._on_volume_changed)
         row.addWidget(self.volume_slider, 1)
 
         self.volume_value_label = QLabel(f"{int(self.config.volume * 100)}%")
-        self.volume_value_label.setMinimumWidth(45)
-        self.volume_value_label.setAlignment(Qt.AlignCenter)
+        self.volume_value_label.setObjectName("valueLabel")
+        self.volume_value_label.setMinimumWidth(44)
+        self.volume_value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         row.addWidget(self.volume_value_label)
 
         # 只有两头才说话（`_refresh_volume_hint`）
@@ -1902,19 +1965,29 @@ class MainWindow(QMainWindow):
         self.volume_hint_label.setObjectName("hintLabel")
         self._refresh_volume_hint()
         row.addWidget(self.volume_hint_label)
-        row.addStretch()
-        parent_layout.addSpacing(4)
-        parent_layout.addLayout(row)
+        card.add_layout(row)
 
-    def _build_home_category_volumes(self, parent_layout):
+        divider = QFrame()
+        divider.setObjectName("panelDivider")
+        divider.setFixedHeight(1)
+        card.add_widget(divider)
+
+        self._build_home_category_volumes(card)
+        card.add_stretch()
+        return card
+
+    def _build_home_category_volumes(self, card):
         """每类音效独立音量（相对主音量的倍率）+ 响度归一。"""
         from PySide6.QtWidgets import QGridLayout
 
-        parent_layout.addSpacing(12)
-        title = QLabel("分类音量")
+        head = QHBoxLayout()
+        head.setSpacing(8)
+        title = keep_single_line(QLabel("分类音量"))
         title.setObjectName("panelSectionTitle")
         title.setToolTip("为每类音效单独设音量（相对主音量的倍率）。例如把切枪声调小、击杀声保持最大，互不影响。")
-        parent_layout.addWidget(title)
+        head.addWidget(title)
+        head.addStretch()
+        card.add_layout(head)
 
         self.category_volume_sliders = {}
         self.category_volume_labels = {}
@@ -1928,13 +2001,14 @@ class MainWindow(QMainWindow):
             ("special_sound", "特殊音效"),
         ]
         grid = QGridLayout()
-        grid.setHorizontalSpacing(8)
-        grid.setVerticalSpacing(4)
+        grid.setHorizontalSpacing(10)
+        grid.setVerticalSpacing(10)
         cat_vols = getattr(self.config, "category_volumes", {}) or {}
         for index, (cat_key, cat_text) in enumerate(category_defs):
             row, block = index // 2, (index % 2) * 4
-            cat_name = QLabel(cat_text)
-            cat_name.setFixedWidth(72)
+            cat_name = keep_single_line(QLabel(cat_text))
+            cat_name.setObjectName("homeFieldLabel")
+            cat_name.setFixedWidth(HOME_VOLUME_LABEL_WIDTH)
             grid.addWidget(cat_name, row, block)
 
             cat_slider = QSlider(Qt.Horizontal)
@@ -1951,40 +2025,50 @@ class MainWindow(QMainWindow):
             grid.addWidget(cat_slider, row, block + 1)
 
             cat_value = QLabel(f"{cat_slider.value()}%")
-            cat_value.setMinimumWidth(45)
-            cat_value.setAlignment(Qt.AlignCenter)
+            cat_value.setObjectName("homeValueLabel")
+            cat_value.setMinimumWidth(40)
+            cat_value.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             grid.addWidget(cat_value, row, block + 2)
 
             self.category_volume_sliders[cat_key] = cat_slider
             self.category_volume_labels[cat_key] = cat_value
         grid.setColumnStretch(1, 1)
         grid.setColumnStretch(5, 1)
-        grid.setColumnMinimumWidth(3, 16)
+        grid.setColumnMinimumWidth(3, 20)
 
-        # 响度归一开关（默认关闭；对之后加载的音效生效）
+        # 响度归一开关（默认关闭；对之后加载的音效生效）。放在「分类音量」那一行右边，不夹在滑条中间
         self.loudness_norm_check = QCheckBox("响度归一")
         self.loudness_norm_check.setToolTip("拉平不同素材的音量差（开启后对之后加载的音效生效）")
         self.loudness_norm_check.setChecked(bool(getattr(self.config, "audio_loudness_normalize_enabled", False)))
         self.loudness_norm_check.stateChanged.connect(self._on_loudness_normalize_toggled)
-        grid.addWidget(self.loudness_norm_check, len(category_defs) // 2, 4, 1, 3)
-        parent_layout.addLayout(grid)
+        head.addWidget(self.loudness_norm_check)
+        card.add_layout(grid)
 
-    def _build_home_other_settings(self, parent_layout):
-        """其余全局设置：游戏模式、界面、主题、玩家 ID、维护工具。"""
-        parent_layout.addSpacing(12)
-        title = QLabel("其它")
-        title.setObjectName("panelSectionTitle")
-        parent_layout.addWidget(title)
+    def _build_home_prefs_card(self):
+        """其余全局设置：游戏模式、界面、主题、玩家 ID，底下是维护工具。一项一行，标签在左、控件在右。"""
+        from PySide6.QtWidgets import QGridLayout
 
-        combos = QHBoxLayout()
-        combos.setSpacing(8)
+        card = self._home_card("偏好")
+        form = QGridLayout()
+        form.setHorizontalSpacing(16)
+        form.setVerticalSpacing(10)
+        # 余下的宽度留在控件右边：摞成整行宽时控件还紧跟标签，不被推到最右（批 153 外审 S4，同朴素设置行）
+        form.setColumnStretch(2, 1)
+        # 控件这一列钉 240：玩家 ID 和「重置ID」挤在这一列里，按下拉框的首选宽排会把按钮字切掉
+        form.setColumnMinimumWidth(1, 240)
+
+        def add_row(text, widget):
+            row = form.rowCount()
+            label = keep_single_line(QLabel(text))
+            label.setObjectName("homeFieldLabel")
+            form.addWidget(label, row, 0)
+            form.addWidget(widget, row, 1)
 
         def add_combo(text, combo):
-            label = keep_single_line(QLabel(text))
-            combos.addWidget(label)
-            combo.setFixedWidth(130)
-            combos.addWidget(combo)
-            combos.addSpacing(16)
+            combo.setMinimumWidth(140)
+            combo.setMaximumWidth(240)
+            combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            add_row(text, combo)
 
         self.mode_combo = QComboBox()
         self.mode_combo.addItems(["1. 官匹竞技", "2. aim rush", "3. 死斗模式"])
@@ -2017,66 +2101,70 @@ class MainWindow(QMainWindow):
             self.theme_combo.setCurrentIndex(idx)
         self.theme_combo.currentIndexChanged.connect(self._on_theme_combo_changed)
         add_combo("主题", self.theme_combo)
-        combos.addStretch()
-        parent_layout.addLayout(combos)
 
-        player_row = QHBoxLayout()
+        player_box = QWidget()
+        # 和上面几个下拉框一样宽，按钮的右边和下拉框的右边对齐；长 ID 在这个宽度里从右边省略（RN-403）
+        player_box.setMaximumWidth(240)
+        player_row = QHBoxLayout(player_box)
+        player_row.setContentsMargins(0, 0, 0, 0)
         player_row.setSpacing(8)
         self.player_label = QLabel()
         self.player_label.setWordWrap(False)
         self.player_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
-        self.player_label.setMaximumWidth(280)
         player_row.addWidget(self.player_label, 1)
 
         reset_btn = QPushButton("重置ID")
         reset_btn.setObjectName("secondaryButton")
         reset_btn.setMaximumWidth(100)
+        reset_btn.setToolTip("进过一次游戏后自动记上，不用手填。"
+                             "ID 只用于本地配置识别；重置会清除当前关联的设置。")
         reset_btn.clicked.connect(self._reset_player_id)
         player_row.addWidget(reset_btn, 0, Qt.AlignVCenter)
-
-        # 玩家 ID 自动获取，无需手填。
-        player_hint = keep_single_line(QLabel("进过一次游戏后自动记上，不用手填。"))
-        player_hint.setObjectName("hintLabel")
-        player_hint.setToolTip("靠 GSI 联动读到。ID 只用于本地配置识别；重置会清除当前关联的设置。")
-        player_row.addWidget(player_hint)
-        player_row.addStretch()
-        parent_layout.addLayout(player_row)
+        add_row("玩家", player_box)
+        card.add_layout(form)
         self._refresh_home_player_label()
 
+        divider = QFrame()
+        divider.setObjectName("panelDivider")
+        divider.setFixedHeight(1)
+        card.add_widget(divider)
+
         self.home_primary_tools_row = QWidget()
-        primary_tools_layout = QHBoxLayout(self.home_primary_tools_row)
-        primary_tools_layout.setContentsMargins(0, 2, 0, 0)
-        primary_tools_layout.setSpacing(8)
+        primary_tools_layout = QGridLayout(self.home_primary_tools_row)
+        primary_tools_layout.setContentsMargins(0, 0, 0, 0)
+        primary_tools_layout.setHorizontalSpacing(8)
+        primary_tools_layout.setVerticalSpacing(8)
 
         self.system_status_refresh_btn = self._create_home_tool_button(
             "刷新状态",
             self._refresh_system_status_strip,
             tooltip="立即刷新总览的状态",
         )
-        primary_tools_layout.addWidget(self.system_status_refresh_btn)
+        primary_tools_layout.addWidget(self.system_status_refresh_btn, 0, 0)
 
         self.home_reload_audio_btn = self._create_home_tool_button(
             "载入音频",
             self._reload_audio,
             tooltip="重新载入音频资源与配置",
         )
-        primary_tools_layout.addWidget(self.home_reload_audio_btn)
+        primary_tools_layout.addWidget(self.home_reload_audio_btn, 0, 1)
 
         self.home_custom_folder_btn = self._create_home_tool_button(
             "自定义目录",
             self._open_custom_folder,
             tooltip="打开自定义资源文件夹",
         )
-        primary_tools_layout.addWidget(self.home_custom_folder_btn)
+        primary_tools_layout.addWidget(self.home_custom_folder_btn, 1, 0)
 
         self.system_status_logs_btn = self._create_home_tool_button(
             "日志目录",
             self._open_log_directory,
             tooltip="打开运行日志目录",
         )
-        primary_tools_layout.addWidget(self.system_status_logs_btn)
-        primary_tools_layout.addStretch()
-        parent_layout.addWidget(self.home_primary_tools_row)
+        primary_tools_layout.addWidget(self.system_status_logs_btn, 1, 1)
+        # 多出来的宽度给空着的第三列：卡片摞成整宽时按钮不被拉成一长条
+        primary_tools_layout.setColumnStretch(2, 1)
+        card.add_widget(self.home_primary_tools_row)
 
         self.home_expert_tools_row = QWidget()
         expert_tools_layout = QHBoxLayout(self.home_expert_tools_row)
@@ -2104,7 +2192,9 @@ class MainWindow(QMainWindow):
         )
         expert_tools_layout.addWidget(self.audio_task_panel_quick_btn)
         expert_tools_layout.addStretch()
-        parent_layout.addWidget(self.home_expert_tools_row)
+        card.add_widget(self.home_expert_tools_row)
+        card.add_stretch()
+        return card
 
     @staticmethod
     def _get_home_switch_target_page(switch_id):
@@ -2128,7 +2218,7 @@ class MainWindow(QMainWindow):
         }
         return page_map.get(switch_id)
 
-    def _create_home_tool_button(self, text, callback, *, primary=False, tooltip=None, minimum_width=112):
+    def _create_home_tool_button(self, text, callback, *, primary=False, tooltip=None, minimum_width=120):
         button = QPushButton(text)
         button.setObjectName("primaryButton" if primary else "secondaryButton")
         button.setMinimumHeight(32)
@@ -2308,6 +2398,36 @@ class MainWindow(QMainWindow):
         except Exception as e:
             # warning 而不是 debug：用户看不见这条日志，下次再红时它就是第一手证据
             self.logger.warning(f"导航项滚动定位失败: {e}")
+
+    def _apply_nav_density(self):
+        """宽松档（项高 28）放得下就用宽松档，放不下换紧凑档（24），默认窗口 800 高也一屏看全（批 153）。
+
+        宽松档要多高是拿两档的差算出来的，不是切过去再量 —— 切过去量，临界高度上会来回翻。
+        从紧凑档切回宽松档再多留 8px，字体度量差一两像素也翻不起来。
+        """
+        sidebar = getattr(self, "sidebar", None)
+        scroll = getattr(self, "_sidebar_scroll", None)
+        content = scroll.widget() if scroll is not None else None
+        if sidebar is None or content is None:
+            return
+        dense = sidebar.property("navDense") is True
+        items = [b for b in content.findChildren(QPushButton, "navButton") if b.isVisibleTo(content)]
+        headers = [h for h in content.findChildren(QPushButton, "navGroupHeader")
+                   if h.isVisibleTo(content)]
+        roomy_needed = content.sizeHint().height()
+        if dense:
+            roomy_needed += ((NAV_ITEM_HEIGHT - NAV_ITEM_HEIGHT_DENSE) * len(items)
+                             + (sum(NAV_GROUP_PAD) - sum(NAV_GROUP_PAD_DENSE)) * len(headers))
+        available = scroll.viewport().height() + scroll.viewportMargins().bottom()
+        want_dense = roomy_needed > available - (8 if dense else 0)
+        if want_dense == dense:
+            return
+        sidebar.setProperty("navDense", want_dense)
+        # 档位挂在侧栏上，子控件不会自己重新套样式；组头的高度还缓存在 sizeHint 里，补一个 StyleChange
+        for widget in items + headers:
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+            QApplication.sendEvent(widget, QEvent(QEvent.StyleChange))
 
     def _nav_natural_geometry_changed(self, scroll) -> bool:
         """这次 Resize 是外界真变了，还是校正自己切底边距引起的（RN-732：不拦就自激）。

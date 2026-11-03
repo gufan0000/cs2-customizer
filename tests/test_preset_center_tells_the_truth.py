@@ -1119,7 +1119,8 @@ def test_the_way_to_open_a_friends_file_is_on_the_first_screen(qapp, real_window
     # 批 149（RN-745）952：七个范围勾选合成一行，「和朋友交换」少一句说明。
     # ⚠ 批 149 第一版读到 1108：多出来的 156 px 是尾巴上的空白（流式容器的策略），
     #   这条守卫当时被我改成了 1108，看图才发现（RN-753）。
-    _CONTENT_H = 952
+    # 批 153（RN-767）1018：正文 13 → 14、卡片内边距 20/16、页面上边距 20，全站换令牌，这一页高 66px。
+    _CONTENT_H = 1018
     actual_h = scroll.widget().height()
     assert abs(actual_h - _CONTENT_H) <= 24, (
         f"这一页在夹具里的内容高是 {actual_h}，而登记的是 {_CONTENT_H}（±24）。\n"
