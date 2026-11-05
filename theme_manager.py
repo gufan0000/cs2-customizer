@@ -28,8 +28,8 @@ DISABLED_TEXT_CONTRAST = 4.2
 MUTED_TEXT_CONTRAST = 5.5
 #: 次要文字的下限：说明文字抬上来以后，绿 / 紫 / 海洋三套的次要字（5.9~6.1）和它分不开了
 SECONDARY_TEXT_CONTRAST = 6.5
-#: 深色主题卡片顶边叠多少白（0-255，批 160）：#25272e → #303239，看得出一道光，又不抢内容
-CARD_TOP_EDGE_ALPHA = 14
+#: 深色主题卡片顶边叠多少白（0-255）。批 160 定 14，外审整窗图 12/12 看不出；批 161 提到 26
+CARD_TOP_EDGE_ALPHA = 26
 
 
 def _one_line_px(font_px: int) -> int:

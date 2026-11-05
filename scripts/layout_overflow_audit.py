@@ -723,6 +723,9 @@ def main():
     base_w, base_h = COMPACT_SIZE if args.compact else FULL_SIZE
     width = args.width if args.width is not None else base_w
     height = args.height if args.height is not None else base_h
+    themes = ALL_THEMES if args.themes.strip() == "all" else tuple(
+        t.strip() for t in args.themes.split(",") if t.strip())
+    scales = tuple(float(s) for s in args.scales.split(",") if s.strip())
 
     if args.offscreen:
         os.environ["QT_QPA_PLATFORM"] = "offscreen"
@@ -772,6 +775,10 @@ def main():
     # 构造完再改这个配置项，窗口不会跟着变——只会得到一个"尺寸像紧凑、外壳是完整"的
     # 四不像，量出来的可视区是假的。
     config.compact_mode = bool(args.compact)
+    # 批 161：产品是先 `apply_font_scale` 再建窗口（main_widget），只量一档时照做，
+    # 否则侧栏和外壳是按 1.0 建的、量的却是别的档。
+    if len(scales) == 1:
+        apply_font_scale(scales[0])
 
     import gui_widget
 
@@ -818,10 +825,6 @@ def main():
             neutralized.append(neutralize_describe([pid]))
         skipped = sorted(p for p in page_ids if p in unsafe_pages())
         page_ids = [p for p in page_ids if p not in skipped]
-
-    themes = ALL_THEMES if args.themes.strip() == "all" else tuple(
-        t.strip() for t in args.themes.split(",") if t.strip())
-    scales = tuple(float(s) for s in args.scales.split(",") if s.strip())
 
     problems = []
     elided = []
@@ -1248,10 +1251,53 @@ def main():
     # 那四条纵向债在 CI 的字体度量下根本不复现。像素级棘轮是一台机器的事实。
     # RN-672：对话框的命中和建不起来**都判红**。
     # ⛔ 「建不起来」尤其要红 —— 那正是"静默少测被读成全都覆盖了"的入口。
-    return 1 if (blocking_overflow or of_fresh or of_worse
-                 or blocking_clip or cl_fresh or cl_worse
-                 or elided or sq_fresh or sq_worse or clipped_labels or uneven or nested_hidden
-                 or dialog_hits or dialog_failed) else 0
+    rc = 1 if (blocking_overflow or of_fresh or of_worse
+               or blocking_clip or cl_fresh or cl_worse
+               or elided or sq_fresh or sq_worse or clipped_labels or uneven or nested_hidden
+               or dialog_hits or dialog_failed) else 0
+    return max(rc, _start_at_largest_scale(scales, themes))
+
+
+def _start_at_largest_scale(scales, themes) -> int:
+    """批 161：多档顺序跑完，再起一个进程**直接从最大那档起步**量一遍。
+
+    顺序跑时页面都是按 1.0 建的、之后才换档，「只在建页时算一次」的尺寸换档后可能被
+    顺手重算掉；用户把字号设成 1.25 再启动，页面是按 1.25 建的。B160 的「绘制准心」
+    被压扁、帮助抽屉藏字都只在单跑 1.25 时出现，顺序跑全绿。
+    """
+    big = max(scales) if scales else 1.0
+    if len(scales) < 2 or scales[0] == big:
+        return 0
+    import subprocess
+
+    from _audit_verdict import parse_verdict
+
+    argv, skip = [], False
+    for arg in sys.argv[1:]:
+        if skip:
+            skip = False
+            continue
+        if arg in ("--scales", "--themes"):
+            skip = True
+            continue
+        if arg.startswith(("--scales=", "--themes=")):
+            continue
+        argv.append(arg)
+    argv += ["--scales", str(big), "--themes", themes[0], "--no-dialogs"]
+    print(f"\n== 从 {big} 起步再量一遍（{themes[0]}，页面按这一档建）==", flush=True)
+    proc = subprocess.run([sys.executable, os.path.abspath(__file__), *argv],
+                          capture_output=True, text=True, encoding="utf-8", errors="replace")
+    out = proc.stdout + proc.stderr
+    got = parse_verdict(out, "layout")
+    # 子进程的裁定行不原样转出：gate 取最后一条裁定行，不能让它顶掉本进程的。
+    for line in out.splitlines():
+        if not line.startswith("RESULT"):
+            print("   │ " + line)
+    if got is None:
+        print("!! 起步那一遍没交裁定，按红算")
+        return 1
+    print(f"   起步那一遍 rc={got}")
+    return got
 
 
 if __name__ == "__main__":

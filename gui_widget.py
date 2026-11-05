@@ -1265,6 +1265,13 @@ class MainWindow(QMainWindow):
                 holder_layout.addWidget(bar)
                 root.insertWidget(index, holder)
 
+        # 批 161：有固定底栏的页，滚到底时最后一行别贴着底栏那条分隔线
+        if any(bar.objectName() == "pageActionBar" for bar in page.findChildren(PageActionBar)):
+            from widgets.page_width import keep_scroll_end_clear, page_level_scrolls
+
+            for scroll in page_level_scrolls(page):
+                keep_scroll_end_clear(scroll)
+
         # 批 157：拉宽窗口时内容停在同一条右缘（放最后：上面会把底栏包进一层）
         from widgets.page_width import cap_page
 

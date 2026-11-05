@@ -10,10 +10,12 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QScrollArea
+from PySide6.QtWidgets import QBoxLayout, QScrollArea, QWidget
 
 #: 页面从左缘起最多这么宽（含左右页边距），靠左对齐
 PAGE_CONTENT_MAX_WIDTH = 1200
+#: 批 161：有固定底栏的页，内容要滚时末尾至少留这么多
+SCROLL_END_GAP = 12
 
 
 def cap_page(page) -> None:
@@ -43,6 +45,31 @@ def cap_page(page) -> None:
         if content is not None:
             content.setMaximumWidth(limit if scroll.parentWidget() is page else PAGE_CONTENT_MAX_WIDTH)
             scroll.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+
+
+def keep_scroll_end_clear(scroll: QScrollArea, gap: int = SCROLL_END_GAP) -> None:
+    """内容本来就要滚时，末尾垫一截 `gap`，滚到底最后一行不贴着底栏（预设中心原来 0px）。
+
+    ⚠ 放得下时不垫：垫了会平白多出几像素可滚、冒一条滚动条（局内视角 5px、语音输出 2px）。
+    所以不能写成布局的下边距，只能是一截跟着滚动范围显隐的占位。
+    """
+    content = scroll.widget()
+    lay = content.layout() if content is not None else None
+    if not isinstance(lay, QBoxLayout) or lay.contentsMargins().bottom() >= gap:
+        return
+    spacer = QWidget(content)
+    spacer.setObjectName("scrollEndGap")
+    spacer.setFixedHeight(max(0, gap - max(0, lay.spacing())))   # 它前面那段布局间距也算在 gap 里
+    spacer.hide()
+    lay.addWidget(spacer)
+
+    def sync(_low, high):
+        shown = spacer.isVisibleTo(content)
+        overflow = high - (spacer.height() + max(0, lay.spacing()) if shown else 0)   # 不垫的话还要滚多少
+        if (overflow > 0) != shown:
+            spacer.setVisible(overflow > 0)
+
+    scroll.verticalScrollBar().rangeChanged.connect(sync)
 
 
 def available_width(scroll: QScrollArea, width: int) -> int:

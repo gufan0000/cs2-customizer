@@ -154,26 +154,26 @@ class ButtonSpec:
 
 @dataclass
 class InputSpec:
-    """输入框规范"""
+    """输入框规范。批 161：字跟正文 15（原 14），高仍 32，上下内边距 5 → 4（同按钮）"""
     text_height: int = 32
     text_padding_horizontal: int = 10
-    text_padding_vertical: int = 5
+    text_padding_vertical: int = 4
     text_border_radius: int = 8
     text_border_width: int = 1
-    text_font_size: int = 14
+    text_font_size: int = 15
 
     textarea_padding: int = 8
     textarea_border_radius: int = 8
     textarea_border_width: int = 1
-    textarea_font_size: int = 14
+    textarea_font_size: int = 15
     textarea_line_height: float = 1.5
 
     combobox_height: int = 32
     combobox_padding_horizontal: int = 10
-    combobox_padding_vertical: int = 5
+    combobox_padding_vertical: int = 4
     combobox_border_radius: int = 8
     combobox_border_width: int = 1
-    combobox_font_size: int = 14
+    combobox_font_size: int = 15
     combobox_arrow_width: int = 16
 
 
