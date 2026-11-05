@@ -1493,7 +1493,7 @@ class Theme:
 
             /* RN-550：下限已由通用 QLineEdit 规则给对（RN-551），这里只剩上限干活 */
             QLineEdit#settingsSearchBox {{
-                max-height: {qss_box(input_spec.text_height, input_spec.text_padding_vertical, input_spec.text_border_width)}px;
+                max-height: {qss_box(input_spec.text_height, input_spec.text_padding_vertical, input_spec.text_border_width) + 1}px;
             }}
 
             QPushButton#anchorChip:hover {{
@@ -1828,20 +1828,20 @@ class Theme:
                 color: {c.text_primary};
                 border: {input_spec.text_border_width}px solid {self.resting_border(c)};  /* RN-640 */
                 border-radius: {input_spec.text_border_radius}px;
-                padding: {input_spec.text_padding_vertical}px {input_spec.text_padding_horizontal}px;
+                padding: {input_spec.text_padding_vertical}px {input_spec.text_padding_horizontal}px {input_spec.text_padding_vertical - 1}px;  /* 批 162：QLineEdit 自带上下 1px，下边让 1px 才和按钮同高 */
                 font-size: {input_spec.text_font_size}px;
-                min-height: {qss_box(input_spec.text_height, input_spec.text_padding_vertical, input_spec.text_border_width)}px;
+                min-height: {qss_box(input_spec.text_height, input_spec.text_padding_vertical, input_spec.text_border_width) + 1}px;
                 selection-background-color: {c.accent_primary};
                 selection-color: {c.text_on_primary};
             }}
-            
+            QComboBox QLineEdit, QComboBox QLineEdit:hover, QComboBox QLineEdit:focus {{ background: transparent; border: none; padding: 0px; min-height: 0px; }}  /* 批 162：可编辑下拉框里那个框别再套一层，字被挤到底 */
             QLineEdit:hover, QSpinBox:hover, QDoubleSpinBox:hover {{
                 border-color: {c.border_primary};
             }}
             
             QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus {{
                 border: {focus_border_width}px solid {c.border_focus};
-                padding: {focus_padding_vertical}px {focus_padding_horizontal}px;
+                padding: {focus_padding_vertical}px {focus_padding_horizontal}px {max(0, focus_padding_vertical - 1)}px;
             }}
             
             QSpinBox::up-button, QDoubleSpinBox::up-button {{

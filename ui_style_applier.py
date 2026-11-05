@@ -182,8 +182,8 @@ class StyleApplier:
         except Exception:
             pass
         
-        # 设置统一的最小高度
-        if lineedit.minimumHeight() < self.ds.input.text_height:
+        # 设置统一的最小高度（批 162：可编辑下拉框里那个框除外，它撑到 32 就把字挤到框底）
+        if not isinstance(lineedit.parentWidget(), QComboBox) and lineedit.minimumHeight() < self.ds.input.text_height:
             lineedit.setMinimumHeight(self.ds.input.text_height)
     
     def _style_textedit(self, textedit):
@@ -383,8 +383,8 @@ class StyleApplier:
                 widget.setWordWrap(not self._is_field_label(widget.text()))
             widget.adjustSize()
 
-        elif isinstance(widget, (QLineEdit, QComboBox)):
-            # 确保输入框和下拉框有足够的高度
+        elif isinstance(widget, (QLineEdit, QComboBox)) and not isinstance(widget.parentWidget(), QComboBox):
+            # 确保输入框和下拉框有足够的高度（批 162：可编辑下拉框里那个框除外）
             if not self._height_is_fixed(widget) and widget.minimumHeight() < self.ds.input.text_height:
                 widget.setMinimumHeight(self.ds.input.text_height)
 
